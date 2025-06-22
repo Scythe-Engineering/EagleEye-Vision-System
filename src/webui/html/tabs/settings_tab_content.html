@@ -1,0 +1,141 @@
+<!-- Settings view -->
+<div id="view-settings" class="view hidden">
+    <div
+        class="text-gray-200 bg-[#111] max-w-[400px] mx-auto p-5 rounded-lg border-2 border-[#333]"
+    >
+        <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
+            Settings (scrollable)
+        </h2>
+        <form
+            id="settingsForm"
+            class="[&>fieldset]:bg-[#111] [&>fieldset]:border-2 [&>fieldset]:border-[#333] [&>fieldset]:mb-4 [&>fieldset]:p-2.5 [&>fieldset]:rounded-md [&_legend]:text-[#f9c84a] [&_legend]:font-bold [&_legend]:px-1 [&_legend]:text-yellow-400 [&_input]:bg-[#222] [&_input]:border-2 [&_input]:border-[#333] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded max-h-[70vh] overflow-y-auto"
+        >
+            <fieldset>
+                <legend>General</legend>
+                <label>
+                    <span>Enable Logging</span>
+                    <input
+                        type="checkbox"
+                        id="logCheckbox"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Print to Terminal</span>
+                    <input
+                        type="checkbox"
+                        id="printTerminalCheckbox"
+                        checked
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Detection Logging</span>
+                    <input
+                        type="checkbox"
+                        id="detectionLoggingCheckbox"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Simulation Mode</span>
+                    <input
+                        type="checkbox"
+                        id="simulationModeCheckbox"
+                        checked
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Network Table</legend>
+                <label>
+                    <span>Server Address:</span>
+                    <input
+                        type="text"
+                        id="serverAddressInput"
+                        value="10.0.0.62"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Robot Position Key:</span>
+                    <input
+                        type="text"
+                        id="robotPositionKeyInput"
+                        value="robot_position"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Robot Rotation Key:</span>
+                    <input
+                        type="text"
+                        id="robotRotationKeyInput"
+                        value="robot_rotation"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Object Detection</legend>
+                <label>
+                    <span>Input Size:</span>
+                    <input
+                        type="number"
+                        id="inputSizeInput"
+                        value="320"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Confidence Threshold:</span>
+                    <input
+                        type="number"
+                        id="confidenceThresholdInput"
+                        step="0.01"
+                        value="0.5"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Combined Threshold (meters):</span>
+                    <input
+                        type="number"
+                        id="combinedThresholdInput"
+                        step="0.01"
+                        value="0.25"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+                <label>
+                    <span>Max Distance (meters):</span>
+                    <input
+                        type="number"
+                        id="maxDistanceInput"
+                        value="15"
+                        autocomplete="off"
+                        data-form-type="other"
+                    />
+                </label>
+            </fieldset>
+            <button
+                type="button"
+                id="saveSettingsBtn"
+                class="block w-full p-2.5 bg-[#444] text-yellow-400 rounded-md border-0 cursor-pointer text-base font-semibold hover:bg-[#666] transition-colors duration-200"
+            >
+                Save Settings
+            </button>
+        </form>
+    </div>
+</div>

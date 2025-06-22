@@ -9,21 +9,30 @@ print(
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.custom_logging.log import Logger
 from src.constants.constants import constants
+from src.custom_logging.log import Logger
 
 logger = Logger(None)
 log = logger.log
 
+# Define constant for the web server key
+RUN_WEB_SERVER_KEY = "DisplayConstants.run_web_server"
+
 # run web server that streams video
-if constants["DisplayConstants.run_web_server"]:
+if constants[RUN_WEB_SERVER_KEY]:
     from webui.web_server import EagleEyeInterface
 
     web_interface = EagleEyeInterface(settings_object=constants, log=log)
 else:
     web_interface = None
 
+import struct
+from threading import Lock, Thread
+from time import sleep, time
+
 import numpy as np
+from networktables import NetworkTables
+
 from src.devices.simple_device import SimpleDevice
 from src.math_conversions import (
     calculate_local_position,
@@ -31,10 +40,6 @@ from src.math_conversions import (
     pixels_to_degrees,
 )
 from src.utils.results_to_image import results_to_image
-from time import sleep, time
-from threading import Thread, Lock
-from networktables import NetworkTables
-import struct
 
 # ANSI color codes
 RED = "\033[91m"
@@ -165,9 +170,7 @@ class EagleEye:
                         )
                         if (
                             distance
-                            < constants[
-                                "ObjectDetectionConstants.combined_threshold"
-                            ]
+                            < constants["ObjectDetectionConstants.combined_threshold"]
                         ):
                             detections.pop(j)
                             break
@@ -238,7 +241,7 @@ class EagleEye:
             if not results.boxes:
                 with self.data_lock:
                     self.data[device.get_current_camera().get_name()] = []
-                if constants["DisplayConstants.run_web_server"]:
+                if constants[RUN_WEB_SERVER_KEY]:
                     estimated_fps = int(1000 / (time_ms() - start_time))
                     web_interface.update_camera_frame(
                         device.get_current_camera().get_name(),
@@ -306,7 +309,7 @@ class EagleEye:
                     }
                 )
 
-            if constants["DisplayConstants.run_web_server"]:
+            if constants[RUN_WEB_SERVER_KEY]:
                 web_interface.update_camera_frame(
                     device.get_current_camera().get_name(),
                     results_to_image(frame=frame, results=results, fps=estimated_fps),

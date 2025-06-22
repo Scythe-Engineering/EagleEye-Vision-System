@@ -3,7 +3,7 @@ import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings } from "./settings/saveSettings.js";
 import { updateTrackedCameraTransform } from "./init3DView.js";
-import "../index.css";
+import "../style.css";
 import io from "socket.io-client";
 
 window.onload = () => {
@@ -32,7 +32,7 @@ window.onload = () => {
     })
     
     socket.on("update_sphere_position", (data) => {
-        if (data && data.transform_matrix && Array.isArray(data.transform_matrix) && data.transform_matrix.length === 4) {
+        if (data?.transform_matrix && Array.isArray(data.transform_matrix) && data.transform_matrix.length === 4) {
             // Validate that it's a proper 4x4 matrix
             const isValid4x4Matrix = data.transform_matrix.every(row => Array.isArray(row) && row.length === 4);
             

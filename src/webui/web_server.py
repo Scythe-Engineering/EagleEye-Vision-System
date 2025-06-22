@@ -13,7 +13,11 @@ from src.object_detection.src.constants.constants import Constants
 from src.object_detection.src.devices.utils.get_available_cameras import (
     detect_cameras_with_names,
 )
-from src.webui.web_server_utils.serve_static_files import index, serve_js
+from src.webui.web_server_utils.serve_static_files import (
+    serve_index,
+    serve_js,
+    serve_css,
+)
 
 current_path = os.path.dirname(__file__)
 
@@ -88,13 +92,16 @@ class EagleEyeInterface:
         """
         Register all Flask endpoints.
         """
-        self.app.add_url_rule("/", "index", index)
+        self.app.add_url_rule("/", "index", lambda: serve_index())
         self.app.add_url_rule("/script.js", "script", lambda: serve_js())
+        self.app.add_url_rule("/main.css", "style", lambda: serve_css())
+
         self.app.add_url_rule(
-            "/bundle.js.map",
-            "bundle",
-            lambda: send_from_directory("./static", "bundle.js.map"),
+            "/background.png",
+            "background",
+            lambda: send_from_directory("./static", "background.png"),
         )
+
         self.app.add_url_rule(
             "/save-settings", "save_settings", self.set_settings, methods=["POST"]
         )
@@ -106,11 +113,6 @@ class EagleEyeInterface:
             "get_available_cameras",
             self.get_available_cameras,
             methods=["GET"],
-        )
-        self.app.add_url_rule(
-            "/background.png",
-            "background",
-            lambda: send_from_directory("./static", "background.png"),
         )
         self.app.add_url_rule(
             "/update-sphere-position",

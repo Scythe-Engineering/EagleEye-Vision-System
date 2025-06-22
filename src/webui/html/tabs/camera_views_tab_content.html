@@ -1,0 +1,61 @@
+<!-- Default "Views" grid with feed controls -->
+<div id="view-views" class="view active flex-col w-full h-full flex">
+    <div
+        id="noCamerasMessage"
+        class="no-cameras-message text-center text-[rgb(119,119,119)] text-2xl mt-5"
+    >
+        No Cameras Available
+    </div>
+    <div
+        id="cameraList"
+        class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] h-[calc(100%_-_80px)] text-base grid overflow-y-auto mx-0 my-5 p-2.5"
+    ></div>
+    <div class="feed-controls justify-center gap-2.5 flex mt-2.5">
+        <button
+            class="feed-btn text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base transition-[background-color] duration-[0.2s] px-2.5 py-[5px] rounded-xl border-solid border-[rgb(68,68,68)]"
+            id="addFeedBtn"
+        >
+            +
+        </button>
+    </div>
+</div>
+
+<!-- Add Feed Modal -->
+<div
+    id="addFeedBackgroundDiv"
+    class="z-[1000] bg-[rgba(0,0,0,0.8)] justify-center items-center w-full h-full hidden fixed left-0 top-0"
+>
+    <div
+        class="feed-content text-[rgb(249,200,74)] text-center bg-[rgb(17,17,17)] w-[400px] shadow-[rgba(0,0,0,0.6)_0px_4px_15px] p-5 rounded-lg"
+    >
+        <h2 class="mb-5">Add Feed Configuration</h2>
+        <form id="addFeedForm" class="flex-col gap-[15px] flex">
+            <label for="cameraSelect">Select Camera:</label>
+            <select
+                id="cameraSelect"
+                class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base p-2.5 rounded-md border-solid border-[rgb(68,68,68)]"
+            >
+                <option disabled selected>Select a camera</option>
+            </select>
+            <!-- Removed rotation input and label -->
+            <div
+                class="button-container justify-center items-center gap-2.5 flex mt-2.5"
+            >
+                <button
+                    type="button"
+                    id="saveFeedBtn"
+                    class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base text-center flex-1 p-2.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(68,68,68)]"
+                >
+                    Save
+                </button>
+                <button
+                    type="button"
+                    id="cancelFeedBtn"
+                    class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base text-center flex-1 p-2.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(68,68,68)]"
+                >
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

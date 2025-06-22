@@ -15,7 +15,6 @@ import {
     Matrix4,
     NearestFilter,
     Vector3,
-    Quaternion,
     BufferGeometry,
     BufferAttribute,
     LineSegments,
