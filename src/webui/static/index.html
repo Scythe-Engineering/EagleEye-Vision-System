@@ -2,15 +2,15 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <title>Eagle Eye</title>
-        <link rel="stylesheet" href="./static/main.css" />
+        <title>Eagle Eye</title>
+      <link rel="stylesheet" crossorigin href="/main.css">
     </head>
     <body
         class="background [background:url('./static/background.png')_50%_center_/_cover_no-repeat_fixed] w-full h-full [font-family:Arial,sans-serif]"
     >
         <!-- Connection Lost Overlay -->
         <div id="connection-lost-overlay" class="fixed inset-0 bg-black opacity-75 flex items-center justify-center z-50 hidden">
-            <div class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center">
+            <div class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center opacity-100">
                 <h2 class="text-2xl font-bold mb-2">Connection Lost</h2>
                 <p class="text-lg">Attempting to reconnect...</p>
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mt-4"></div>
@@ -45,54 +45,6 @@
                             id="cameraList"
                             class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] h-[calc(100%_-_80px)] text-base grid overflow-y-auto mx-0 my-5 p-2.5"
                         ></div>
-                        <div class="feed-controls justify-center gap-2.5 flex mt-2.5">
-                            <button
-                                class="feed-btn text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base transition-[background-color] duration-[0.2s] px-2.5 py-[5px] rounded-xl border-solid border-[rgb(68,68,68)]"
-                                id="addFeedBtn"
-                            >
-                                +
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Add Feed Modal -->
-                    <div
-                        id="addFeedBackgroundDiv"
-                        class="z-[1000] bg-[rgba(0,0,0,0.8)] justify-center items-center w-full h-full hidden fixed left-0 top-0"
-                    >
-                        <div
-                            class="feed-content text-[rgb(249,200,74)] text-center bg-[rgb(17,17,17)] w-[400px] shadow-[rgba(0,0,0,0.6)_0px_4px_15px] p-5 rounded-lg"
-                        >
-                            <h2 class="mb-5">Add Feed Configuration</h2>
-                            <form id="addFeedForm" class="flex-col gap-[15px] flex">
-                                <label for="cameraSelect">Select Camera:</label>
-                                <select
-                                    id="cameraSelect"
-                                    class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base p-2.5 rounded-md border-solid border-[rgb(68,68,68)]"
-                                >
-                                    <option disabled selected>Select a camera</option>
-                                </select>
-                                <!-- Removed rotation input and label -->
-                                <div
-                                    class="button-container justify-center items-center gap-2.5 flex mt-2.5"
-                                >
-                                    <button
-                                        type="button"
-                                        id="saveFeedBtn"
-                                        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base text-center flex-1 p-2.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(68,68,68)]"
-                                    >
-                                        Save
-                                    </button>
-                                    <button
-                                        type="button"
-                                        id="cancelFeedBtn"
-                                        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(34,34,34)] border text-base text-center flex-1 p-2.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(68,68,68)]"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
                     </div>
                     <!-- 3D View (WebGL model will load here) -->
                     <div

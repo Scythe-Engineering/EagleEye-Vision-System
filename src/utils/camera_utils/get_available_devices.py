@@ -20,6 +20,7 @@ def get_cpu_name():
     except Exception:
         return "Unknown CPU"
 
+
 def get_available_devices():
     devices = {"CPU": [get_cpu_name()], "GPU": [], "TPU": []}
 
@@ -29,8 +30,9 @@ def get_available_devices():
         for i in range(gpu_count):
             devices["GPU"].append(torch.cuda.get_device_name(i))
 
-    # Check for Coral TPU availability (Linux only)
+    # Check for TPU availability (Linux only)
     if os.name == "posix":
+        # Check for Coral TPU availability
         try:
             result = subprocess.run(
                 ["lsusb"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
@@ -43,9 +45,23 @@ def get_available_devices():
         except FileNotFoundError:
             pass
 
+        try:
+            # Check for memryx
+            result = subprocess.run(
+                ["ls /dev/memx*", "-h"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for line in result.stdout.splitlines():
+                if "Memx" in line:
+                    devices["TPU"].append("memx:" + line.split("/dev/memx")[1].strip())
+        except FileNotFoundError:
+            pass
+
     return devices
+
 
 if __name__ == "__main__":
     available_devices = get_available_devices()
     print("Available Devices:", available_devices)
-

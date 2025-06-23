@@ -1,8 +1,10 @@
+from typing import Callable
+
 import cv2
 import imutils
 import numpy as np
-from typing import Callable
-from src.devices.utils.cameras.camera import Camera
+
+from src.utils.camera_utils.cameras.camera import Camera
 
 
 class PhysicalCamera(Camera):

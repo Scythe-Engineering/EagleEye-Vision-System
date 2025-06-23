@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from typing import Callable
-from src.devices.utils.cameras.camera import Camera
+from src.utils.camera_utils.utils.cameras.camera import Camera
 import imutils
 
 
@@ -59,5 +59,5 @@ class VideoFileCamera(Camera):
 
     def __del__(self):
         """Release the video capture object."""
-        if hasattr(self, 'cap') and self.cap.isOpened():
+        if hasattr(self, "cap") and self.cap.isOpened():
             self.cap.release()

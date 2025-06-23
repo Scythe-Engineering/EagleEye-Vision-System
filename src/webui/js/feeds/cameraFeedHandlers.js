@@ -1,44 +1,18 @@
 export function setupCameraFeedHandlers() {
+    const cameraList = document.getElementById("cameraList");
+    const noCamerasMessage = document.getElementById("noCamerasMessage");
+
+    // Hide manual feed control elements if they exist
+    const feedControls = document.querySelector(".feed-controls");
+    if (feedControls) {
+        feedControls.style.display = "none";
+    }
     const addFeedBackgroundDiv = document.getElementById("addFeedBackgroundDiv");
-    const cameraSelect = document.getElementById("cameraSelect");
-    const saveFeedBtn = document.getElementById("saveFeedBtn");
-    const cancelFeedBtn = document.getElementById("cancelFeedBtn");
-
-    document.getElementById("addFeedBtn").addEventListener("click", () => {
-        fetch("/get-available-cameras", {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-            },
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                cameraSelect.innerHTML =
-                    "<option disabled selected>Select a camera</option>";
-                for (const key of Object.keys(data)) {
-                    const option = document.createElement("option");
-                    option.value = data[key];
-                    option.textContent = key;
-                    cameraSelect.appendChild(option);
-                }
-            })
-            .catch((error) => {
-                console.error("Error fetching cameras:", error);
-            });
-
-        addFeedBackgroundDiv.classList.remove("hidden");
-        addFeedBackgroundDiv.style.display = "flex";
-        document.body.classList.add("overflow-hidden");
-    });
-
-    cancelFeedBtn.addEventListener("click", () => {
-        addFeedBackgroundDiv.classList.add("hidden");
-        addFeedBackgroundDiv.style.display = "none";
-        document.body.classList.remove("overflow-hidden");
-    });
+    if (addFeedBackgroundDiv) {
+        addFeedBackgroundDiv.remove();
+    }
 
     function updateGridLayout() {
-        const cameraList = document.getElementById("cameraList");
         const cameraCount = cameraList.children.length;
         let columns;
         if (cameraCount === 2) {
@@ -55,49 +29,54 @@ export function setupCameraFeedHandlers() {
         cameraList.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
     }
 
-    saveFeedBtn.addEventListener("click", () => {
-        const selectedCamera = cameraSelect.value;
-        if (!selectedCamera) {
-            alert("Please select a camera.");
+    function renderCameras(cameraNames) {
+        // Clear current list then rebuild based on latest cameraNames
+        cameraList.innerHTML = "";
+
+        if (cameraNames.length === 0) {
+            noCamerasMessage.style.display = "block";
+            updateGridLayout();
             return;
         }
-        const selectedCameraName =
-            cameraSelect.options[cameraSelect.selectedIndex].textContent;
-        const cameraBox = document.createElement("div");
-        cameraBox.className = "camera-box";
-        cameraBox.textContent = `${selectedCameraName}`;
-        const cameraView = document.createElement("img");
-        cameraView.className = "camera-view";
-        cameraView.src = `/feed/${selectedCameraName.replace(/ /g, "_")}`;
-        cameraBox.appendChild(cameraView);
-        const removeButton = document.createElement("button");
-        removeButton.className = "camera-remove-btn";
-        removeButton.textContent = "×";
-        removeButton.addEventListener("click", function () {
-            cameraBox.remove();
-            const cameraList = document.getElementById("cameraList");
-            if (cameraList.children.length === 0) {
-                document.getElementById("noCamerasMessage").style.display =
-                    "block";
-            } else {
-                updateGridLayout();
-            }
-        });
-        cameraBox.appendChild(removeButton);
-        const cameraList = document.getElementById("cameraList");
-        cameraList.appendChild(cameraBox);
-        updateGridLayout();
-        document.getElementById("noCamerasMessage").style.display = "none";
-        addFeedBackgroundDiv.classList.add("hidden");
-        addFeedBackgroundDiv.style.display = "none";
-        document.body.classList.remove("overflow-hidden");
-    });
 
-    window.addEventListener("click", (event) => {
-        if (event.target === addFeedBackgroundDiv) {
-            addFeedBackgroundDiv.classList.add("hidden");
-            addFeedBackgroundDiv.style.display = "none";
-            document.body.classList.remove("overflow-hidden");
-        }
-    });
+        noCamerasMessage.style.display = "none";
+
+        cameraNames.forEach((name) => {
+            const cameraBox = document.createElement("div");
+            cameraBox.className = "camera-box";
+            cameraBox.dataset.cameraName = name;
+            cameraBox.textContent = name;
+
+            const cameraView = document.createElement("img");
+            cameraView.className = "camera-view";
+            cameraView.src = `/feed/${name.replace(/ /g, "_")}`;
+            cameraBox.appendChild(cameraView);
+
+            cameraList.appendChild(cameraBox);
+        });
+
+        updateGridLayout();
+    }
+
+    function fetchAndUpdateCameras() {
+        fetch("/get-available-cameras", {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                const cameraNames = Object.keys(data);
+                renderCameras(cameraNames);
+            })
+            .catch((error) => {
+                console.error("Error fetching cameras:", error);
+            });
+    }
+
+    // Initial fetch
+    fetchAndUpdateCameras();
+    // Poll every 5 seconds
+    setInterval(fetchAndUpdateCameras, 5000);
 }

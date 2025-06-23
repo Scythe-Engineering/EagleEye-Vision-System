@@ -7,10 +7,13 @@ import cv2
 # For Windows camera enumeration using DirectShow via pygrabber.
 if platform.system() == "Windows":
     import comtypes
+
     try:
         from pygrabber.dshow_graph import FilterGraph
     except ImportError:
-        raise ImportError("pygrabber is required on Windows. Install with: pip install pygrabber")
+        raise ImportError(
+            "pygrabber is required on Windows. Install with: pip install pygrabber"
+        )
 
 
 def get_linux_camera_mapping():
@@ -24,7 +27,9 @@ def get_linux_camera_mapping():
     mapping = {}
     try:
         # Run v4l2-ctl to list devices
-        output = subprocess.check_output(["v4l2-ctl", "--list-devices"], universal_newlines=True)
+        output = subprocess.check_output(
+            ["v4l2-ctl", "--list-devices"], universal_newlines=True
+        )
         current_name = None
         for line in output.splitlines():
             # If the line starts without whitespace, it's a device name:
@@ -37,7 +42,10 @@ def get_linux_camera_mapping():
                 if line.startswith("/dev/video"):
                     mapping[line] = current_name
     except Exception as e:
-        print("Warning: Unable to run 'v4l2-ctl --list-devices'. Camera names may not be available on Linux.", e)
+        print(
+            "Warning: Unable to run 'v4l2-ctl --list-devices'. Camera names may not be available on Linux.",
+            e,
+        )
     return mapping
 
 
@@ -62,8 +70,10 @@ def get_macos_camera_mapping():
                 mapping[f"Camera {index}"] = current_name
                 index += 1
     except Exception as e:
-        print("Warning: Unable to run 'system_profiler SPCameraDataType'. Camera names may not be available on macOS.",
-              e)
+        print(
+            "Warning: Unable to run 'system_profiler SPCameraDataType'. Camera names may not be available on macOS.",
+            e,
+        )
     return mapping
 
 
@@ -107,6 +117,19 @@ def _detect_generic_cameras(max_tested):
 
 
 def detect_cameras_with_names(max_tested=10):
+    """
+    Detect available cameras with their names and indices.
+
+    Attempts to detect cameras using platform-specific methods to get
+    meaningful names. Falls back to generic detection if platform-specific
+    methods are not available.
+
+    Args:
+        max_tested: Maximum number of camera indices to test for generic detection.
+
+    Returns:
+        Dictionary mapping camera names to their indices.
+    """
     system = platform.system()
     if system == "Linux":
         return _detect_linux_cameras()

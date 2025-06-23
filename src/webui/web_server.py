@@ -4,13 +4,12 @@ import time
 from threading import Thread
 from typing import Any, Callable, Generator
 
-import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_socketio import SocketIO
 
-from src.object_detection.src.constants.constants import Constants
-from src.object_detection.src.devices.utils.get_available_cameras import (
+from src.main_operations.object_detection.src.constants.constants import Constants
+from src.utils.camera_utils.get_available_cameras import (
     detect_cameras_with_names,
 )
 from src.webui.web_server_utils.serve_static_files import (
@@ -122,6 +121,12 @@ class EagleEyeInterface:
             methods=["GET"],
         )
         self.app.add_url_rule(
+            "/feed/<string:camera_name>",
+            "camera_feed",
+            self.serve_camera_feed_route,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
             "/frc2025r2.json",
             "frc2025r2",
             lambda: send_from_directory(
@@ -158,6 +163,10 @@ class EagleEyeInterface:
             dict: A dict of available cameras.
         """
         self.cameras = detect_cameras_with_names()
+        self.available_cameras = {}
+        for camera_name in self.cameras:
+            url_safe_name = camera_name.replace(" ", "_")
+            self.available_cameras[camera_name] = url_safe_name
         return self.available_cameras
 
     def run(self) -> None:
@@ -227,81 +236,48 @@ class EagleEyeInterface:
 
             time.sleep(max((1 / 120) - (time.time() - time_start), 0))
 
-    def serve_camera_feed(self, camera_name: str, direct_serve: bool = False) -> None:
+    def _frame_generator_no_image(self) -> Generator[bytes, Any, Any]:
+        """
+        Generate no image frames when camera is not found.
+
+        Yields:
+            Generator: The no image feed.
+        """
+        while True:
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + no_image + b"\r\n"
+            time.sleep(1 / 30)
+
+    def serve_camera_feed_route(self, camera_name: str) -> Response:
         """
         Serve the camera feed.
 
         Args:
-            camera_name (str): The ID of the camera.
-            direct_serve (bool): Whether to directly serve the camera feed.
+            camera_name (str): The URL-safe camera name.
 
         Returns:
             Response: The camera feed.
         """
-        # Create URL path and unique endpoint
-        url_name = camera_name.replace(" ", "_")
-        route = f"/feed/{url_name}"
-        endpoint = f"feed_{url_name}"
+        # Convert URL-safe name back to original camera name
+        original_camera_name = camera_name.replace("_", " ")
 
-        # Define view function for this camera
-        def _make_feed(name: str = camera_name) -> Response:
-            return Response(
-                self._frame_generator(name),
-                mimetype="multipart/x-mixed-replace; boundary=frame",
-            )
+        # Check if camera exists in our available cameras
+        if original_camera_name not in self.cameras:
+            # Try to find camera by URL-safe name in reverse mapping
+            for orig_name, url_name in self.available_cameras.items():
+                if url_name == camera_name:
+                    original_camera_name = orig_name
+                    break
+            else:
+                # Return no image if camera not found
+                return Response(
+                    self._frame_generator_no_image(),
+                    mimetype="multipart/x-mixed-replace; boundary=frame",
+                )
 
-        # Register the route with a unique endpoint
-        self.app.add_url_rule(route, endpoint, _make_feed, methods=["GET"])
-
-        if direct_serve:
-            camera_thread = Thread(
-                target=self._update_camera_feed, args=(camera_name,), daemon=True
-            )
-            camera_thread.start()
-
-        self.available_cameras[camera_name] = self.cameras[camera_name]
-
-        self.log(
-            f"Serving camera feed for {camera_name} at /feed/{camera_name.replace(' ', '_')}"
+        return Response(
+            self._frame_generator(original_camera_name),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
         )
-
-    def _update_camera_feed(self, camera_name: str) -> None:
-        """
-        Update the camera feed.
-
-        Args:
-            camera_name (str): The ID of the camera.
-        """
-        camera = cv2.VideoCapture(0)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-        if not camera.isOpened():
-            self.log(f"Error: Unable to open camera: {camera_name}.")
-            return
-
-        try:
-            time_start = time.time()
-            while True:
-                ret, frame = camera.read()
-
-                if not ret:
-                    self.log(
-                        f"Warning: Unable to grab frame from camera {camera_name}."
-                    )
-                    time.sleep(1)
-                    continue
-
-                ret, buffer = cv2.imencode(".jpg", frame)
-                frame_bytes = buffer.tobytes()
-
-                # Check if processing time exceeds target frame time
-                processing_time = time.time() - time_start
-                if processing_time > (1 / 30):
-                    self.update_camera_frame(camera_name, frame_bytes)
-                    time_start = time.time()
-        finally:
-            camera.release()
 
     def update_robot_position(self, transformation_matrix: np.ndarray) -> None:
         """
