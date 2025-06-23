@@ -2,12 +2,21 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
-        <title>Eagle Eye</title>
-      <link rel="stylesheet" crossorigin href="/main.css">
+        <title>Eagle Eye</title>
+        <link rel="stylesheet" href="./static/main.css" />
     </head>
     <body
         class="background [background:url('./static/background.png')_50%_center_/_cover_no-repeat_fixed] w-full h-full [font-family:Arial,sans-serif]"
     >
+        <!-- Connection Lost Overlay -->
+        <div id="connection-lost-overlay" class="fixed inset-0 bg-black opacity-75 flex items-center justify-center z-50 hidden">
+            <div class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center">
+                <h2 class="text-2xl font-bold mb-2">Connection Lost</h2>
+                <p class="text-lg">Attempting to reconnect...</p>
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mt-4"></div>
+            </div>
+        </div>
+
         <div
             class="main-container bg-[rgb(27,27,27)] flex-col w-[calc(100%_-_20px)] h-[calc(-20px_+_100vh)] flex overflow-hidden shadow-[rgba(0,0,0,0.6)_0px_4px_15px] m-2.5 rounded-lg"
         >
@@ -92,7 +101,7 @@
                     >
                         <div
                             id="fieldDropdown"
-                            class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] hidden z-10"
+                            class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
                         >
                             <label for="yearSelect">Year:</label>
                             <select
@@ -110,18 +119,31 @@
                             </select>
                         </div>
                     
+                        <div
+                            id="robotDropdown"
+                            class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
+                        >
+                            <label for="robotFileSelect">Robot File:</label>
+                            <select
+                                id="robotFileSelect"
+                                class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(17,17,17)] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+                            >
+                                <option disabled selected>Select Robot File</option>
+                            </select>
+                        </div>
+                    
                         <button
                             id="toggleGamePiecesBtn"
-                            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] hidden z-10"
+                            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
                         >
                             Toggle Game Pieces
                         </button>
                         <button
                             id="toggleShadowBtn"
-                            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] hidden z-10"
+                            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
                         >
                             Toggle Shadows
-                        </button>
+                        </button>    
                     
                         <div
                             id="statsDisplay"
@@ -134,7 +156,7 @@
                             class="text-gray-200 bg-[#111] max-w-[400px] mx-auto p-5 rounded-lg border-2 border-[#333]"
                         >
                             <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
-                                Settings (scrollable)
+                                Backend Settings (scrollable)
                             </h2>
                             <form
                                 id="settingsForm"
@@ -265,6 +287,35 @@
                                     class="block w-full p-2.5 bg-[#444] text-yellow-400 rounded-md border-0 cursor-pointer text-base font-semibold hover:bg-[#666] transition-colors duration-200"
                                 >
                                     Save Settings
+                                </button>
+                            </form>
+                        </div>
+                    
+                        <div class="text-gray-200 bg-[#111] max-w-[400px] mx-auto p-5 rounded-lg border-2 border-[#333]">
+                            <h3 class="text-center text-yellow-400 mb-5 text-2xl font-bold">Frontend Settings</h3>
+                            <form id="frontendSettingsForm" class="space-y-4">
+                                <fieldset class="space-y-4">
+                                    <legend class="text-lg font-medium text-white mb-3">Display Options</legend>
+                                    <label class="flex flex-col space-y-2">
+                                        <span class="text-white font-medium">Theme Mode:</span>
+                                        <select
+                                            id="themeModeSelect"
+                                            class="p-2.5 bg-[#444] text-white rounded-md border border-[#666] focus:border-yellow-400 focus:outline-none"
+                                            autocomplete="off"
+                                            data-form-type="other"
+                                        >
+                                            <option value="dark">Dark</option>
+                                            <option value="light">Light</option>
+                                            <option value="auto">Auto</option>
+                                        </select>
+                                    </label>
+                                </fieldset>
+                                <button
+                                    type="button"
+                                    id="saveFrontendSettingsBtn"
+                                    class="block w-full p-2.5 bg-[#444] text-yellow-400 rounded-md border-0 cursor-pointer text-base font-semibold hover:bg-[#666] transition-colors duration-200"
+                                >
+                                    Save Frontend Settings
                                 </button>
                             </form>
                         </div>

@@ -4,7 +4,7 @@
         class="text-gray-200 bg-[#111] max-w-[400px] mx-auto p-5 rounded-lg border-2 border-[#333]"
     >
         <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
-            Settings (scrollable)
+            Backend Settings (scrollable)
         </h2>
         <form
             id="settingsForm"
@@ -135,6 +135,35 @@
                 class="block w-full p-2.5 bg-[#444] text-yellow-400 rounded-md border-0 cursor-pointer text-base font-semibold hover:bg-[#666] transition-colors duration-200"
             >
                 Save Settings
+            </button>
+        </form>
+    </div>
+
+    <div class="text-gray-200 bg-[#111] max-w-[400px] mx-auto p-5 rounded-lg border-2 border-[#333]">
+        <h3 class="text-center text-yellow-400 mb-5 text-2xl font-bold">Frontend Settings</h3>
+        <form id="frontendSettingsForm" class="space-y-4">
+            <fieldset class="space-y-4">
+                <legend class="text-lg font-medium text-white mb-3">Display Options</legend>
+                <label class="flex flex-col space-y-2">
+                    <span class="text-white font-medium">Theme Mode:</span>
+                    <select
+                        id="themeModeSelect"
+                        class="p-2.5 bg-[#444] text-white rounded-md border border-[#666] focus:border-yellow-400 focus:outline-none"
+                        autocomplete="off"
+                        data-form-type="other"
+                    >
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </label>
+            </fieldset>
+            <button
+                type="button"
+                id="saveFrontendSettingsBtn"
+                class="block w-full p-2.5 bg-[#444] text-yellow-400 rounded-md border-0 cursor-pointer text-base font-semibold hover:bg-[#666] transition-colors duration-200"
+            >
+                Save Frontend Settings
             </button>
         </form>
     </div>

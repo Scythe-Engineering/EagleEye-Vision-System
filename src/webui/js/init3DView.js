@@ -21,6 +21,7 @@ import {
     LineBasicMaterial,
 } from "three";
 import { OrbitControls } from "OrbitControls";
+import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
 
 let renderer, scene, camera, directionalLight;
 let shadowsEnabled = true;
@@ -29,7 +30,8 @@ let statsDisplay;
 let frameCount = 0;
 let lastTime = performance.now();
 
-let trackedCamera = null;
+let maxFPS = 60;
+let interval = 1 / maxFPS;
 
 function updateStats() {
     const currentTime = performance.now();
@@ -50,7 +52,7 @@ function updateStats() {
     }
 }
 
-export function init3DView(modelUrl) {
+export async function init3DView(modelUrl) {
     const container = document.getElementById("view-3d");
     statsDisplay = document.getElementById("statsDisplay");
     statsDisplay.style.position = "absolute";
@@ -60,21 +62,89 @@ export function init3DView(modelUrl) {
     statsDisplay.style.fontSize = "1rem";
     statsDisplay.style.zIndex = "10";
 
-    // Clear previous scene if exists
+    const scale = 40;
+
+    await populateRobotDropdown();
+
+    // Clear and destroy existing scene if it exists
     if (scene) {
-        container.removeChild(renderer.domElement);
-        scene.traverse((object) => {
-            if (object.isMesh) {
-                object.geometry.dispose();
+        // Remove all objects from the scene
+        while (scene.children.length > 0) {
+            const child = scene.children[0];
+            scene.remove(child);
+            
+            // Dispose of geometries and materials to free memory
+            if (child.geometry) {
+                child.geometry.dispose();
             }
-        });
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(material => material.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        }
+        
+        // Clear the scene
         scene.clear();
+        scene = null;
     }
 
     scene = new Scene();
     scene.background = new Color(0x222222);
 
-    const scale = 40;
+    let robotObject = null;
+
+    function loadRobot(robotFile) {
+        console.log("Loading robot:", robotFile);
+        try {
+            if (robotObject) {
+                scene.remove(robotObject);
+            }
+            const robotLoader = new GLTFLoader();
+            robotLoader.load("/get-robot-file/" + robotFile, (gltf) => {
+                robotObject = gltf.scene;
+                robotObject.scale.set(1000, 1000, 1000);
+
+                robotObject.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        child.geometry.computeVertexNormals();
+                        
+                        // Remove reflective properties from materials
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(material => {
+                                    material.metalness = 0;
+                                    material.roughness = 1;
+                                });
+                            } else {
+                                child.material.metalness = 0;
+                                child.material.roughness = 1;
+                            }
+                        }
+                    }
+                });
+
+                scene.add(robotObject);
+            });
+        } catch (error) {
+            console.error("Error loading robot:", error);
+        }
+        console.log("Loaded robot:", robotFile);
+    }
+
+    const robotFileSelect = document.getElementById("robotFileSelect");
+    let selectedRobotFile = robotFileSelect.value;
+
+    loadRobot(selectedRobotFile);
+
+    robotFileSelect.addEventListener("change", () => {
+        selectedRobotFile = robotFileSelect.value;
+        loadRobot(selectedRobotFile);
+    });
 
     camera = new PerspectiveCamera(
         75,
@@ -110,11 +180,11 @@ export function init3DView(modelUrl) {
     directionalLight.shadow.camera.top = 150 * scale;
     directionalLight.shadow.camera.bottom = -150 * scale;
     directionalLight.shadow.camera.near = 100 * scale;
-    directionalLight.shadow.camera.far = 400 * scale;
+    directionalLight.shadow.camera.far = 500 * scale;
     scene.add(directionalLight);
 
-    const loader = new GLTFLoader();
-    loader.load(
+    const fieldLoader = new GLTFLoader();
+    fieldLoader.load(
         modelUrl,
         (gltf) => {
             const model = gltf.scene;
@@ -145,8 +215,8 @@ export function init3DView(modelUrl) {
 
     const gamePieces = [];
 
-    const gp_loader = new GLTFLoader();
-    gp_loader.load(
+    const gpLoader = new GLTFLoader();
+    gpLoader.load(
         gamePiecePath,
         (gltf) => {
             const model = gltf.scene;
@@ -181,7 +251,6 @@ export function init3DView(modelUrl) {
 
     let clock = new Clock();
     let delta = 0;
-    let interval = 1 / 60;
 
     function animate() {
         requestAnimationFrame(animate);
@@ -212,46 +281,6 @@ export function init3DView(modelUrl) {
         directionalLight.castShadow = shadowsEnabled;
         renderer.shadowMap.enabled = shadowsEnabled;
     });
-
-    // Add tracked camera wireframe
-    if (!trackedCamera) {
-        const cameraGeometry = new BufferGeometry();
-        
-        // Define camera wireframe vertices
-        const size = 300;
-        const depth = 600;
-        
-        // Front rectangle corners
-        const frontTopLeft = [-size, size, 0];
-        const frontTopRight = [size, size, 0];
-        const frontBottomRight = [size, -size, 0];
-        const frontBottomLeft = [-size, -size, 0];
-        
-        // Back point (camera origin)
-        const backPoint = [0, 0, -depth];
-        
-        // Create vertices array for line segments
-        const vertices = new Float32Array([
-            // Front rectangle (4 lines)
-            ...frontTopLeft, ...frontTopRight,
-            ...frontTopRight, ...frontBottomRight,
-            ...frontBottomRight, ...frontBottomLeft,
-            ...frontBottomLeft, ...frontTopLeft,
-            
-            // Lines from corners to back point (4 lines)
-            ...frontTopLeft, ...backPoint,
-            ...frontTopRight, ...backPoint,
-            ...frontBottomRight, ...backPoint,
-            ...frontBottomLeft, ...backPoint,
-        ]);
-        
-        cameraGeometry.setAttribute('position', new BufferAttribute(vertices, 3));
-        
-        const cameraMaterial = new LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-        trackedCamera = new LineSegments(cameraGeometry, cameraMaterial);
-        trackedCamera.position.set(0, 0, 0);
-        scene.add(trackedCamera);
-    }
 
     // Add AprilTag PNGs as planes at fiducial transforms
     fetch("/frc2025r2.json")
@@ -307,8 +336,8 @@ export function init3DView(modelUrl) {
         });
 }
 
-export function updateTrackedCameraTransform(transformMatrix) {
-    if (trackedCamera) {
+export function updateRobotTransform(transformMatrix) {
+    if (robotObject) {
         const matrix = new Matrix4();
         matrix.set(
             transformMatrix[0][0], transformMatrix[0][1], transformMatrix[0][2], transformMatrix[0][3],
@@ -317,15 +346,15 @@ export function updateTrackedCameraTransform(transformMatrix) {
             transformMatrix[3][0], transformMatrix[3][1], transformMatrix[3][2], transformMatrix[3][3]
         );
         
-        trackedCamera.matrixAutoUpdate = false;
-        trackedCamera.matrix.copy(matrix);
-        trackedCamera.matrixWorldNeedsUpdate = true;
+        robotObject.matrixAutoUpdate = false;
+        robotObject.matrix.copy(matrix);
+        robotObject.matrixWorldNeedsUpdate = true;
         
         // Force immediate re-render when transformation updates
         if (renderer && scene && camera) {
             renderer.render(scene, camera);
         }
     } else {
-        console.warn("Tracked camera not initialized yet");
+        console.warn("Robot not initialized yet");
     }
 }

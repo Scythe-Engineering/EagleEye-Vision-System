@@ -8,6 +8,15 @@
     <body
         class="background [background:url('./static/background.png')_50%_center_/_cover_no-repeat_fixed] w-full h-full [font-family:Arial,sans-serif]"
     >
+        <!-- Connection Lost Overlay -->
+        <div id="connection-lost-overlay" class="fixed inset-0 bg-black opacity-75 flex items-center justify-center z-50 hidden">
+            <div class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center">
+                <h2 class="text-2xl font-bold mb-2">Connection Lost</h2>
+                <p class="text-lg">Attempting to reconnect...</p>
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mt-4"></div>
+            </div>
+        </div>
+
         <div
             class="main-container bg-[rgb(27,27,27)] flex-col w-[calc(100%_-_20px)] h-[calc(-20px_+_100vh)] flex overflow-hidden shadow-[rgba(0,0,0,0.6)_0px_4px_15px] m-2.5 rounded-lg"
         >

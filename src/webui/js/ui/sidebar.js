@@ -11,23 +11,16 @@ export function setupSidebar() {
             sidebarItems.forEach((i) => i.classList.remove("active"));
             item.classList.add("active");
             
-            // Hide all views using both visibility mechanisms
+            // Hide all views using only Tailwind classes
             views.forEach((view) => {
-                // Handle regular CSS views
-                view.classList.remove("active");
-                
-                // Handle Tailwind elements
-                if (!view.classList.contains("hidden")) {
-                    view.classList.add("hidden");
-                }
+                view.classList.add("hidden");
             });
 
             const targetViewId = item.getAttribute("data-view");
             const targetView = document.getElementById(targetViewId);
 
             if (targetView) {
-                // Show target view using both mechanisms
-                targetView.classList.add("active");
+                // Show target view using only Tailwind classes
                 targetView.classList.remove("hidden");
                 
                 // Toggle visibility of controls based on the view

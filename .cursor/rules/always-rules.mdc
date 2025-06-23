@@ -15,4 +15,4 @@ alwaysApply: true
 <related changes>
     format of change; change; change; ...
 
-8. Always context7 for getting libary information if the libary is often updated or is a nich libary. If context7 is not available warn the user and then continue with other methods.
+8. Always context7 for getting libary information, including libaries like Tailwind css. If context7 is not available warn the user and then continue with other methods.

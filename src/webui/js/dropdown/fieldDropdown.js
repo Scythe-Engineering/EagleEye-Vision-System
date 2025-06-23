@@ -15,10 +15,9 @@ export function populateFieldDropdown() {
         yearSelect.appendChild(option);
     });
 
-    yearSelect.addEventListener("change", () => {
+    function populateFieldFiles(year) {
         fileSelect.innerHTML =
             "<option disabled selected>Select Field File</option>";
-        const year = yearSelect.value;
         if (fields[year]) {
             fields[year].forEach((file) => {
                 const opt = document.createElement("option");
@@ -27,6 +26,15 @@ export function populateFieldDropdown() {
                 fileSelect.appendChild(opt);
             });
         }
+    }
+
+    // set both to first year and first file
+    yearSelect.selectedIndex = 1;
+    populateFieldFiles(yearSelect.value);
+    fileSelect.selectedIndex = 1;
+
+    yearSelect.addEventListener("change", () => {
+        populateFieldFiles(yearSelect.value);
     });
 
     fileSelect.addEventListener("change", () => {

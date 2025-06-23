@@ -14,9 +14,9 @@ from src.object_detection.src.devices.utils.get_available_cameras import (
     detect_cameras_with_names,
 )
 from src.webui.web_server_utils.serve_static_files import (
+    serve_css,
     serve_index,
     serve_js,
-    serve_css,
 )
 
 current_path = os.path.dirname(__file__)
@@ -101,6 +101,13 @@ class EagleEyeInterface:
             "background",
             lambda: send_from_directory("./static", "background.png"),
         )
+        self.app.add_url_rule(
+            "/favicon.ico",
+            "favicon",
+            lambda: send_from_directory(
+                os.path.join(current_path, "assets"), "favicon.ico"
+            ),
+        )
 
         self.app.add_url_rule(
             "/save-settings", "save_settings", self.set_settings, methods=["POST"]
@@ -115,12 +122,6 @@ class EagleEyeInterface:
             methods=["GET"],
         )
         self.app.add_url_rule(
-            "/update-sphere-position",
-            "update_sphere_position",
-            self.handle_sphere_position_request,
-            methods=["POST"],
-        )
-        self.app.add_url_rule(
             "/frc2025r2.json",
             "frc2025r2",
             lambda: send_from_directory(
@@ -132,6 +133,20 @@ class EagleEyeInterface:
             "apriltags_png",
             lambda filename: send_from_directory(
                 os.path.join(current_path, "assets", "apriltags"), filename
+            ),
+        )
+
+        self.app.add_url_rule(
+            "/get-available-robots",
+            "get_available_robots",
+            self.get_available_robots,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-robot-file/<path:filename>",
+            "get_robot_file",
+            lambda filename: send_from_directory(
+                os.path.join(current_path, "assets", "robots"), filename
             ),
         )
 
@@ -288,28 +303,9 @@ class EagleEyeInterface:
         finally:
             camera.release()
 
-    def handle_sphere_position_request(self) -> tuple[dict, int]:
+    def update_robot_position(self, transformation_matrix: np.ndarray) -> None:
         """
-        Handle HTTP POST request to update sphere position.
-
-        Returns:
-            Response: A success or failure message.
-        """
-        try:
-            data = request.get_json()
-            if "transform_matrix" in data:
-                transform_matrix = np.array(data["transform_matrix"])
-                self.update_sphere_position(transform_matrix)
-            else:
-                return {"message": "Missing transform_matrix in request"}, 400
-            return {"message": "Sphere position updated successfully"}, 200
-        except Exception as e:
-            self.log("Error updating sphere position:", e)
-            return {"message": "Failed to update sphere position"}, 500
-
-    def update_sphere_position(self, transformation_matrix: np.ndarray) -> None:
-        """
-        Push the tracked sphere's transformation matrix to the frontend via websocket.
+        Push the tracked robot's transformation matrix to the frontend via websocket.
 
         Args:
             transformation_matrix (np.ndarray): The new transformation matrix as a 4x4 numpy array.
@@ -319,8 +315,27 @@ class EagleEyeInterface:
 
         # Convert matrix to list for JSON serialization
         matrix_list = transformation_matrix.tolist()
-        self.socketio.emit("update_sphere_position", {"transform_matrix": matrix_list})
+        self.socketio.emit("update_robot_transform", {"transform_matrix": matrix_list})
         self.socketio.sleep(0)
+
+    def get_available_robots(self) -> dict:
+        """
+        Get a dict of available robots.
+
+        Returns:
+            dict:
+                robots: list of dicts with the name and path of the robot file.
+                    name: the name of the robot file.
+                    path: the path of the robot file.
+        """
+
+        return {
+            "robots": [
+                os.path.basename(file)
+                for file in os.listdir(os.path.join(current_path, "assets", "robots"))
+                if file.endswith(".glb")
+            ]
+        }
 
 
 if __name__ == "__main__":
@@ -328,16 +343,6 @@ if __name__ == "__main__":
 
     try:
         while True:
-            # Example 4x4 transformation matrix with position and rotation
-            transform_matrix = np.array(
-                [
-                    [1.0, 0.0, 0.0, 16.96816403],
-                    [0.0, 1.0, 0.0, 6.57341747],
-                    [0.0, 0.0, 1.0, 0.66152486],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
-            interface.update_sphere_position(transform_matrix)
             time.sleep(1)
     except KeyboardInterrupt:
         print("Program terminated.")
