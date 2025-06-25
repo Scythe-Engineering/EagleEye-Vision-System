@@ -1,8 +1,9 @@
 import threading
 import time
-from typing import Dict
+from typing import Dict, Optional, Tuple
 
 import cv2
+import numpy as np
 
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.webui.web_server import EagleEyeInterface
@@ -22,6 +23,8 @@ class CameraThreadManager:
         self.camera_threads: Dict[str, threading.Thread] = {}
         self.camera_objects: Dict[str, PhysicalCamera] = {}
         self.running_cameras: Dict[str, bool] = {}
+        self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
+        self.start_time_ms = time.time() * 1000.0
 
     def create_camera_config(self, camera_name: str, camera_index: int) -> dict:
         # TODO: Add correct camera config code
@@ -61,6 +64,14 @@ class CameraThreadManager:
             try:
                 frame = camera.get_frame()
                 if frame is not None:
+                    current_time_ms = time.time() * 1000.0
+                    timestamp_from_start = current_time_ms - self.start_time_ms
+
+                    self.current_frames[camera_name] = (
+                        frame.copy(),
+                        timestamp_from_start,
+                    )
+
                     success, encoded_frame = cv2.imencode(".jpg", frame)
                     if success:
                         frame_bytes = encoded_frame.tobytes()
@@ -135,6 +146,9 @@ class CameraThreadManager:
             if camera_name in self.camera_objects:
                 del self.camera_objects[camera_name]
 
+            if camera_name in self.current_frames:
+                del self.current_frames[camera_name]
+
     def stop_all_cameras(self) -> None:
         """Stop all camera threads."""
         print("Stopping all camera threads...")
@@ -142,3 +156,33 @@ class CameraThreadManager:
         for camera_name in camera_names:
             self.stop_camera_thread(camera_name)
         print("All camera threads stopped")
+
+    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
+        """
+        Get the most current frame and timestamp for a specific camera.
+
+        Args:
+            camera_name: The name of the camera.
+
+        Returns:
+            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
+        """
+        return self.current_frames.get(camera_name)
+
+    def get_all_current_frames(self) -> Dict[str, Tuple[np.ndarray, float]]:
+        """
+        Get the most current frames and timestamps for all cameras.
+
+        Returns:
+            Dictionary mapping camera names to (frame, timestamp_ms_from_start) tuples.
+        """
+        return self.current_frames.copy()
+
+    def get_start_time_ms(self) -> float:
+        """
+        Get the start time in milliseconds when the manager was initialized.
+
+        Returns:
+            Start time in milliseconds since epoch.
+        """
+        return self.start_time_ms

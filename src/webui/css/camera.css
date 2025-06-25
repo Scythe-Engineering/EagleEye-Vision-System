@@ -11,21 +11,6 @@
     overflow-y: auto;
 }
 
-.camera-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100px;
-    background-color: #222;
-    color: #f9c84a;
-    border: 2px solid #444;
-    border-radius: 8px;
-    padding: 30px 15px;
-    font-size: 1.1rem;
-    text-align: center;
-}
-
 .camera-view {
     position: absolute;
     top: 0;

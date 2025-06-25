@@ -43,9 +43,13 @@ export function setupCameraFeedHandlers() {
 
         cameraNames.forEach((name) => {
             const cameraBox = document.createElement("div");
-            cameraBox.className = "camera-box";
+            cameraBox.className = "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
             cameraBox.dataset.cameraName = name;
-            cameraBox.textContent = name;
+
+            const cameraNameLabel = document.createElement("div");
+            cameraNameLabel.className = "absolute top-2 left-3 bg-[#111]/90 text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
+            cameraNameLabel.textContent = name;
+            cameraBox.appendChild(cameraNameLabel);
 
             const cameraView = document.createElement("img");
             cameraView.className = "camera-view";
