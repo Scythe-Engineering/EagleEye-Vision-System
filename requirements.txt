@@ -16,3 +16,6 @@ clearml~=2.0.0
 
 pygrabber~=0.2
 comtypes~=1.4.11
+
+imutils~=0.5.4
+flask_socketio~=5.5.1

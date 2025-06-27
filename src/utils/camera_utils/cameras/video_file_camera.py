@@ -1,24 +1,23 @@
 import cv2
 import numpy as np
 from typing import Callable
-from src.utils.camera_utils.utils.cameras.camera import Camera
+from src.utils.camera_utils.cameras.camera import Camera
 import imutils
 
 
 class VideoFileCamera(Camera):
     """Concrete Camera that reads frames from a local video file."""
 
-    def __init__(self, camera_data: dict, log: Callable[[str], None]) -> None:
+    def __init__(self, camera_data: dict, camera_intrinsics_path: str, video_file_path: str, log: Callable[[str], None] = print) -> None:
         """
         Args:
-            camera_data: Must include 'video_path' (str, path to file)
-                         and 'loop' (bool, whether to loop the video).
+            camera_data: Camera data.
+            camera_intrinsics_path: Path to the camera intrinsics file.
+            video_file_path: Path to the video file.
             log: Logging function.
         """
-        self.video_path = camera_data["video_path"]
-        self.loop = camera_data.get("loop", False)
-        self.type = camera_data["camera_type"]
-        super().__init__(camera_data, log)
+        self.video_path = video_file_path
+        super().__init__(camera_data, camera_intrinsics_path, log)
 
         self.frames = self.load_frames()
         self.current_frame_index = 0
@@ -48,10 +47,7 @@ class VideoFileCamera(Camera):
         Returns None when the video ends unless looping is enabled.
         """
         if self.current_frame_index >= len(self.frames):
-            if self.loop:
-                self.current_frame_index = 0
-            else:
-                return None
+            self.current_frame_index = 0
 
         frame = self.frames[self.current_frame_index]
         self.current_frame_index += 1

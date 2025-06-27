@@ -67,17 +67,16 @@ class Camera(abc.ABC):
     """Abstract base class defining a common camera interface."""
 
     def __init__(
-        self, camera_data: dict, log: Callable[[str], None], camera_intrinsics_path: str
+        self, camera_data: dict, camera_intrinsics_path: str, log: Callable[[str], None] = print
     ) -> None:
         """
         Initialize common parameters and start the camera.
 
         Args:
             camera_data: Dict containing at least the keys
-                'name', 'camera_offset_pos', 'camera_pitch',
-                'camera_yaw', 'processing_device', 'frame_rotation'.
-            log: Logging function, e.g. `print` or logger.
+                'name', 'camera_offset_pos', 'camera_pitch', 'camera_yaw', 'frame_rotation'.
             camera_intrinsics_path: Path to the camera intrinsics JSON file.
+            log: Logging function, e.g. `print` or logger. Defaults to `print`.
         """
         self.name: str = camera_data["name"]
         self.camera_offset_pos: np.ndarray = camera_data["camera_offset_pos"]
@@ -113,10 +112,6 @@ class Camera(abc.ABC):
             The latest frame, or None on failure/end-of-stream.
         """
         pass
-
-    def get_processing_device(self) -> str:
-        """Returns which device (CPU/GPU/TPU) this camera will use."""
-        return self.processing_device
 
     def get_camera_offset_pos(self) -> np.ndarray:
         """Returns the 3D offset position of the camera."""

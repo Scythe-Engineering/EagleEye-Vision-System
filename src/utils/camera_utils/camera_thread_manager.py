@@ -1,11 +1,12 @@
 import threading
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
+from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.webui.web_server import EagleEyeInterface
 
 
@@ -21,7 +22,7 @@ class CameraThreadManager:
         """
         self.web_interface = web_interface
         self.camera_threads: Dict[str, threading.Thread] = {}
-        self.camera_objects: Dict[str, PhysicalCamera] = {}
+        self.camera_objects: Dict[str, Union[PhysicalCamera, VideoFileCamera]] = {}
         self.running_cameras: Dict[str, bool] = {}
         self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
         self.start_time_ms = time.time() * 1000.0
@@ -50,7 +51,7 @@ class CameraThreadManager:
             "frame_rotation": 0,
         }
 
-    def camera_feed_worker(self, camera_name: str, camera: PhysicalCamera) -> None:
+    def camera_feed_worker(self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]) -> None:
         """
         Worker function that continuously captures frames and updates the web interface.
 
@@ -90,20 +91,25 @@ class CameraThreadManager:
 
         print(f"Camera feed worker for {camera_name} stopped")
 
-    def start_camera_thread(self, camera_name: str, camera_index: int) -> bool:
+    def start_camera_thread(self, camera_name: str, camera_index: int, camera_intrinsics_path: str, video_file_path: Optional[str] = None) -> bool:
         """
         Start a thread for a specific camera.
 
         Args:
             camera_name: The name of the camera.
             camera_index: The index of the camera.
+            camera_intrinsics_path: The path to the camera intrinsics file.
+            video_file_path: The path to the video file.
 
         Returns:
             True if the thread was started successfully, False otherwise.
         """
         try:
             camera_config = self.create_camera_config(camera_name, camera_index)
-            camera = PhysicalCamera(camera_config, print)
+            if video_file_path:
+                camera = VideoFileCamera(camera_config, camera_intrinsics_path, video_file_path, print)
+            else:
+                camera = PhysicalCamera(camera_config, camera_intrinsics_path, print)
 
             self.camera_objects[camera_name] = camera
             self.running_cameras[camera_name] = True

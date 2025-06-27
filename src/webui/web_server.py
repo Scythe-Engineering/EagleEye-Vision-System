@@ -9,10 +9,7 @@ from flask import Flask, Response, request, send_from_directory
 from flask_socketio import SocketIO
 
 from src.main_operations.object_detection.src.constants.constants import Constants
-from src.utils.camera_utils.get_available_cameras import (
-    detect_cameras_with_names,
-)
-from src.webui.web_server_utils.serve_static_files import (
+from src.webui.web_server_utils.serve_static_files import ( 
     serve_css,
     serve_index,
     serve_js,
@@ -38,6 +35,8 @@ class EagleEyeInterface:
 
         Args:
             settings_object (Constants | None): Optional settings object.
+            dev_mode (bool): Whether to run in development mode.
+            log (Callable | None): Optional logging function.
         """
         if log is None:
             self.log = print
@@ -51,15 +50,13 @@ class EagleEyeInterface:
             async_mode="threading",
             ping_timeout=60,
             ping_interval=25,
+            logger=False,
             engineio_logger=False,
-            socketio_logger=False,
         )
 
-        self.cameras = detect_cameras_with_names()
-        self.log(f"Detected Cameras: {self.cameras}")
+        self.cameras = {}
+        self.log(f"Initialized with cameras: {self.cameras}")
         self.frame_list = {}
-        for camera in self.cameras:
-            self.frame_list[camera] = no_image
         self.available_cameras = {}
 
         self.frame_list_lock = threading.Lock()
@@ -155,6 +152,66 @@ class EagleEyeInterface:
             ),
         )
 
+    def add_camera(self, camera_name: str, camera_id: int | str | None = None) -> None:
+        """
+        Add a camera to the available cameras list.
+
+        Args:
+            camera_name (str): The name of the camera.
+            camera_id (int | str | None, optional): The ID of the camera. If None, uses the camera name.
+        """
+        if camera_id is None:
+            camera_id = camera_name
+        
+        self.cameras[camera_name] = camera_id
+        
+        with self.frame_list_lock:
+            if camera_name not in self.frame_list:
+                self.frame_list[camera_name] = no_image
+        
+        url_safe_name = camera_name.replace(" ", "_")
+        self.available_cameras[camera_name] = url_safe_name
+        
+        self.log(f"Added camera: {camera_name} with ID: {camera_id}")
+
+    def remove_camera(self, camera_name: str) -> None:
+        """
+        Remove a camera from the available cameras list.
+
+        Args:
+            camera_name (str): The name of the camera to remove.
+        """
+        if camera_name in self.cameras:
+            del self.cameras[camera_name]
+            
+            with self.frame_list_lock:
+                if camera_name in self.frame_list:
+                    del self.frame_list[camera_name]
+            
+            if camera_name in self.available_cameras:
+                del self.available_cameras[camera_name]
+            
+            self.log(f"Removed camera: {camera_name}")
+
+    def set_cameras(self, cameras_dict: dict[str, int | str]) -> None:
+        """
+        Set multiple cameras at once, replacing the current camera list.
+
+        Args:
+            cameras_dict (dict[str, int | str]): A dictionary mapping camera names to camera IDs.
+        """
+        with self.frame_list_lock:
+            self.cameras = cameras_dict.copy()
+            self.frame_list = {}
+            self.available_cameras = {}
+            
+            for camera_name in self.cameras:
+                self.frame_list[camera_name] = no_image
+                url_safe_name = camera_name.replace(" ", "_")
+                self.available_cameras[camera_name] = url_safe_name
+        
+        self.log(f"Set cameras: {self.cameras}")
+
     def get_available_cameras(self) -> dict:
         """
         Get a dict of available cameras.
@@ -162,11 +219,6 @@ class EagleEyeInterface:
         Returns:
             dict: A dict of available cameras.
         """
-        self.cameras = detect_cameras_with_names()
-        self.available_cameras = {}
-        for camera_name in self.cameras:
-            url_safe_name = camera_name.replace(" ", "_")
-            self.available_cameras[camera_name] = url_safe_name
         return self.available_cameras
 
     def run(self) -> None:
