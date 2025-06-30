@@ -1,4 +1,5 @@
 from typing import Callable
+from time import sleep
 
 import cv2
 import imutils
@@ -10,26 +11,22 @@ from src.utils.camera_utils.cameras.camera import Camera
 class PhysicalCamera(Camera):
     """Concrete Camera that reads from a real hardware device via OpenCV."""
 
-    def __init__(self, camera_data: dict, camera_intrinsics_path: str, log: Callable[[str], None] = print) -> None:
+    def __init__(self, camera_name: str, camera_index: int, camera_calibration_folder: str | None, log: Callable[[str], None] = print) -> None:
         """
         Args:
-            camera_data: Must include 'camera_id' (int or str that OpenCV accepts).
+            camera_name: Name of the camera.
+            camera_index: Index of the camera.
+            camera_calibration_folder: Path to the camera calibration folder.
             log: Logging function.
         """
-        self.camera_id: int = camera_data["camera_id"]
-        self.type = camera_data["camera_type"]
-        super().__init__(camera_data, camera_intrinsics_path, log)
+        self.camera_index: int = camera_index
+        super().__init__(camera_name, camera_calibration_folder, log)
 
     def _start_camera(self) -> None:
         """Open the physical camera and apply settings."""
-        self.cap = cv2.VideoCapture(self.camera_id)
-        self.cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.fov[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.fov[1])
-        self.cap.set(cv2.CAP_PROP_FPS, 60)
+        self.cap = cv2.VideoCapture(int(self.camera_index))
         if not self.cap.isOpened():
-            raise RuntimeError(f"Error opening camera {self.camera_id}")
+            raise RuntimeError(f"Error opening camera at index {self.camera_index} with name {self.name}")
 
     def get_frame(self) -> np.ndarray | None:
         ret, frame = self.cap.read()

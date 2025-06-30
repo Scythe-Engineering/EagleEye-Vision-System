@@ -4,52 +4,11 @@ import time
 from typing import Set
 
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
-from src.utils.camera_utils.get_available_cameras import detect_cameras_with_names
+from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras
 from src.webui.web_server import EagleEyeInterface
 
 current_dir = Path(__file__).parent
-
-
-def check_and_add_new_cameras(
-    web_interface: EagleEyeInterface,
-    camera_manager: CameraThreadManager,
-    known_cameras: Set[str],
-) -> Set[str]:
-    """
-    Check for new cameras and add them to the system.
-
-    Args:
-        web_interface: The web interface instance.
-        camera_manager: The camera thread manager instance.
-        known_cameras: Set of camera names already known to the system.
-
-    Returns:
-        Updated set of known camera names.
-    """
-    detected_cameras = detect_cameras_with_names()
-    new_cameras = {}
-
-    for camera_name, camera_index in detected_cameras.items():
-        if camera_name not in known_cameras:
-            new_cameras[camera_name] = camera_index
-
-    if new_cameras:
-        print(f"Found {len(new_cameras)} new cameras: {list(new_cameras.keys())}")
-
-        for camera_name, camera_index in new_cameras.items():
-            web_interface.add_camera(camera_name, camera_index)
-            print(
-                f"Added new camera to web interface: {camera_name} (index: {camera_index})"
-            )
-
-            if camera_manager.start_camera_thread(camera_name, camera_index):
-                known_cameras.add(camera_name)
-                print(f"Successfully started thread for new camera: {camera_name}")
-            else:
-                web_interface.remove_camera(camera_name)
-                print(f"Failed to start thread for new camera: {camera_name}")
-
-    return known_cameras
+spacer = " " * 4
 
 
 def add_video_file_cameras(
@@ -65,9 +24,8 @@ def add_video_file_cameras(
     video_files = list(Path(video_folder).glob("*.mp4"))
     for video_file in video_files:
         camera_name = video_file.stem
-        camera_index = len(known_cameras)
-        web_interface.add_camera(camera_name, camera_index)
-        camera_manager.start_camera_thread(camera_name, camera_index)
+        web_interface.add_camera(camera_name, -1)
+        camera_manager.start_camera_thread(camera_name, os.path.join(current_dir, "utils", "camera_utils", "camera_calibrations", "sim_camera"), str(video_file))
         known_cameras.add(camera_name)
         print(f"Added video file camera: {camera_name}")
 

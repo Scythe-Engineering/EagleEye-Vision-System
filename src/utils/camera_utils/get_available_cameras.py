@@ -183,7 +183,9 @@ def detect_cameras_with_names(max_tested: int = 10) -> dict[str, dict[str, str]]
         max_tested: Maximum number of camera indices to test for generic detection.
 
     Returns:
-        Dictionary mapping camera names to their indices.
+        Dictionary mapping camera indices to dictionaries with camera names and bus values.
+        Format: {"camera_index": {"name": "camera_name", "bus_value": "bus_value"}}
+        Returns None if no cameras are detected or detection fails.
     """
     system = platform.system()
     if system == "Linux":

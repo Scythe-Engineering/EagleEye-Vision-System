@@ -1,0 +1,18 @@
+{
+    "camera": "HD Webcam USB (0c45:6366)",
+    "platform": "Windows NT 10.0; Win64; x64",
+    "camera_matrix": [
+        [840.4546581605222, 0, 666.7967969478676],
+        [0, 841.5992661692136, 345.67052770251246],
+        [0, 0, 1]
+    ],
+    "distortion_coefficients": [
+        -0.4133213057081229, 0.2200662405308744, -0.000148742243782178,
+        -0.0002418701330644714, -0.06709418668006771
+    ],
+    "distortion_model": "rectilinear",
+    "avg_reprojection_error": 0.35070461951131515,
+    "img_size": [1280, 720],
+    "keyframes": 8,
+    "calibration_time": "Mon, 30 Jun 2025 01:01:24 GMT"
+}

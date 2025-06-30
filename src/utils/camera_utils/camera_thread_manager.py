@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 from typing import Dict, Optional, Tuple, Union
 
 import cv2
@@ -26,30 +27,6 @@ class CameraThreadManager:
         self.running_cameras: Dict[str, bool] = {}
         self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
         self.start_time_ms = time.time() * 1000.0
-
-    def create_camera_config(self, camera_name: str, camera_index: int) -> dict:
-        # TODO: Add correct camera config code
-        """
-        Create a camera configuration dictionary for the PhysicalCamera class.
-
-        Args:
-            camera_name: The name of the camera.
-            camera_index: The index of the camera.
-
-        Returns:
-            Camera configuration dictionary.
-        """
-        return {
-            "name": camera_name,
-            "camera_id": camera_index,
-            "camera_type": "physical",
-            "fov": [640, 480],
-            "camera_offset_pos": [0, 0, 0],
-            "camera_pitch": 0,
-            "camera_yaw": 0,
-            "processing_device": "CPU",
-            "frame_rotation": 0,
-        }
 
     def camera_feed_worker(self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]) -> None:
         """
@@ -91,25 +68,25 @@ class CameraThreadManager:
 
         print(f"Camera feed worker for {camera_name} stopped")
 
-    def start_camera_thread(self, camera_name: str, camera_index: int, camera_intrinsics_path: str, video_file_path: Optional[str] = None) -> bool:
+    def start_camera_thread(self, camera_name: str, camera_calibration_folder: str | None, video_file_path: Optional[str] = None, camera_index: Optional[int] = None) -> bool:
         """
         Start a thread for a specific camera.
 
         Args:
             camera_name: The name of the camera.
-            camera_index: The index of the camera.
-            camera_intrinsics_path: The path to the camera intrinsics file.
+            camera_calibration_folder: The path to the camera calibration folder.
             video_file_path: The path to the video file.
 
         Returns:
             True if the thread was started successfully, False otherwise.
         """
         try:
-            camera_config = self.create_camera_config(camera_name, camera_index)
             if video_file_path:
-                camera = VideoFileCamera(camera_config, camera_intrinsics_path, video_file_path, print)
+                camera = VideoFileCamera(camera_name, camera_calibration_folder, video_file_path, print)
             else:
-                camera = PhysicalCamera(camera_config, camera_intrinsics_path, print)
+                if camera_index is None:
+                    raise ValueError("Camera index is required for physical cameras")
+                camera = PhysicalCamera(camera_name, camera_index, camera_calibration_folder, print)
 
             self.camera_objects[camera_name] = camera
             self.running_cameras[camera_name] = True
@@ -131,6 +108,7 @@ class CameraThreadManager:
 
         except Exception as start_error:
             print(f"Failed to start camera thread for {camera_name}: {start_error}")
+            print(f"Full traceback: {traceback.format_exc()}")
             self.running_cameras[camera_name] = False
             return False
 

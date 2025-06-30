@@ -8,16 +8,16 @@ import imutils
 class VideoFileCamera(Camera):
     """Concrete Camera that reads frames from a local video file."""
 
-    def __init__(self, camera_data: dict, camera_intrinsics_path: str, video_file_path: str, log: Callable[[str], None] = print) -> None:
+    def __init__(self, camera_name: str, camera_calibration_folder: str | None, video_file_path: str, log: Callable[[str], None] = print) -> None:
         """
         Args:
-            camera_data: Camera data.
-            camera_intrinsics_path: Path to the camera intrinsics file.
+            camera_name: Name of the camera.
+            camera_calibration_folder: Path to the camera calibration folder.
             video_file_path: Path to the video file.
             log: Logging function.
         """
         self.video_path = video_file_path
-        super().__init__(camera_data, camera_intrinsics_path, log)
+        super().__init__(camera_name, camera_calibration_folder, log)
 
         self.frames = self.load_frames()
         self.current_frame_index = 0
