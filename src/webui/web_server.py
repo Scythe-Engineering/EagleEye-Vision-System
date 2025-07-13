@@ -4,11 +4,12 @@ import time
 from threading import Thread
 from typing import Any, Callable, Generator
 
+import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_socketio import SocketIO
 
-from src.main_operations.object_detection.src.constants.constants import Constants
+from src.main_operations.modules.object_detection.src.constants.constants import Constants
 from src.webui.web_server_utils.serve_static_files import ( 
     serve_css,
     serve_index,
@@ -127,7 +128,7 @@ class EagleEyeInterface:
             "/frc2025r2.json",
             "frc2025r2",
             lambda: send_from_directory(
-                os.path.join("../", "apriltags", "utils"), "frc2025r2.json"
+                os.path.join("../", "utils", "field_data"), "frc2025r2.json"
             ),
         )
         self.app.add_url_rule(
@@ -283,6 +284,15 @@ class EagleEyeInterface:
             time_start = time.time()
             with self.frame_list_lock:
                 frame = self.frame_list[camera_name]
+                
+            if frame is not None:
+                frame_array = np.frombuffer(frame, dtype=np.uint8)
+                decoded_frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+                if decoded_frame is not None:
+                    resized_frame = cv2.resize(decoded_frame, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+                    success, encoded_frame = cv2.imencode('.jpg', resized_frame)
+                    if success:
+                        frame = encoded_frame.tobytes()
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 

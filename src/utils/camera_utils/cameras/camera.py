@@ -106,6 +106,7 @@ class Camera(abc.ABC):
         except FileNotFoundError:
             self.log(f"Camera: {self.name} created without extrinsics calibration")
             
+        self.camera_ready: bool = False
 
         self.log = log
         self.cap = None

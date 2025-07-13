@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Optional
 
-from src.apriltags.utils.apriltag import Apriltag
+from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
 
 
 def load_fmap_file(fmap_file_path: str) -> Dict[int, Apriltag]:

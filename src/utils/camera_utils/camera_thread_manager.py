@@ -37,10 +37,14 @@ class CameraThreadManager:
             camera: The PhysicalCamera instance.
         """
         print(f"Starting camera feed worker for {camera_name}")
+        
+        frame_count = 0
 
         while self.running_cameras.get(camera_name, False):
             try:
+                start_time = time.time()
                 frame = camera.get_frame()
+                frame_count += 1
                 if frame is not None:
                     current_time_ms = time.time() * 1000.0
                     timestamp_from_start = current_time_ms - self.start_time_ms
@@ -53,14 +57,18 @@ class CameraThreadManager:
                     success, encoded_frame = cv2.imencode(".jpg", frame)
                     if success:
                         frame_bytes = encoded_frame.tobytes()
-                        self.web_interface.update_camera_frame(camera_name, frame_bytes)
+                        
+                        if frame_count % 10 == 0: # Update every 10 frames to reduce load on the web interface
+                            self.web_interface.update_camera_frame(camera_name, frame_bytes)
                     else:
                         print(f"Failed to encode frame for {camera_name}")
                 else:
                     print(f"Failed to get frame from {camera_name}")
                     time.sleep(0.1)
 
-                time.sleep(1 / 30)  # Target 30 FPS
+                time_to_sleep = 1 / 120 - (time.time() - start_time)
+                if time_to_sleep > 0:
+                    time.sleep(time_to_sleep)
 
             except Exception as camera_error:
                 print(f"Error in camera feed worker for {camera_name}: {camera_error}")
@@ -170,3 +178,21 @@ class CameraThreadManager:
             Start time in milliseconds since epoch.
         """
         return self.start_time_ms
+    
+    def get_all_camera_names(self) -> list[str]:
+        """
+        Get the names of all cameras.
+
+        Returns:
+            List of camera names.
+        """
+        return list(self.running_cameras.keys())
+    
+    def get_camera_ready(self, camera_name: str) -> bool:
+        """
+        Get the ready state of a specific camera.
+
+        Args:
+            camera_name: The name of the camera.
+        """
+        return self.camera_objects[camera_name].camera_ready

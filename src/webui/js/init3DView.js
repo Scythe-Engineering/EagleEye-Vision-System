@@ -19,6 +19,7 @@ import {
     BufferAttribute,
     LineSegments,
     LineBasicMaterial,
+    Group,
 } from "three";
 import { OrbitControls } from "OrbitControls";
 import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
@@ -29,6 +30,8 @@ let gamePiecesVisible = true;
 let statsDisplay;
 let frameCount = 0;
 let lastTime = performance.now();
+let robotObject = null;
+let robotAxes = null;
 
 let maxFPS = 60;
 let interval = 1 / maxFPS;
@@ -50,6 +53,45 @@ function updateStats() {
 
         statsDisplay.textContent = `Verts: ${numVerts} | FPS: ${fps}`;
     }
+}
+
+function createRobotAxes() {
+    // TODO: Create coordinate axes for robot visualization
+    const axesGroup = new Group();
+    const axisLength = 500; // Adjust length as needed
+    
+    // Create geometry for axes lines
+    const positions = new Float32Array([
+        // X-axis (red)
+        0, 0, 0,  axisLength, 0, 0,
+        // Y-axis (green)
+        0, 0, 0,  0, axisLength, 0,
+        // Z-axis (blue)
+        0, 0, 0,  0, 0, axisLength
+    ]);
+    
+    const colors = new Float32Array([
+        // X-axis (red)
+        1, 0, 0,  1, 0, 0,
+        // Y-axis (green)
+        0, 1, 0,  0, 1, 0,
+        // Z-axis (blue)
+        0, 0, 1,  0, 0, 1
+    ]);
+    
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new BufferAttribute(colors, 3));
+    
+    const material = new LineBasicMaterial({ 
+        vertexColors: true,
+        linewidth: 3
+    });
+    
+    const axes = new LineSegments(geometry, material);
+    axesGroup.add(axes);
+    
+    return axesGroup;
 }
 
 export async function init3DView(modelUrl) {
@@ -94,14 +136,17 @@ export async function init3DView(modelUrl) {
     scene = new Scene();
     scene.background = new Color(0x222222);
 
-    let robotObject = null;
-
     function loadRobot(robotFile) {
         console.log("Loading robot:", robotFile);
         try {
             if (robotObject) {
                 scene.remove(robotObject);
             }
+            if (robotAxes) {
+                scene.remove(robotAxes);
+                robotAxes = null;
+            }
+            
             const robotLoader = new GLTFLoader();
             robotLoader.load("/get-robot-file/" + robotFile, (gltf) => {
                 robotObject = gltf.scene;
@@ -129,6 +174,9 @@ export async function init3DView(modelUrl) {
                 });
 
                 scene.add(robotObject);
+                
+                robotAxes = createRobotAxes();
+                scene.add(robotAxes);
             });
         } catch (error) {
             console.error("Error loading robot:", error);
@@ -338,17 +386,24 @@ export async function init3DView(modelUrl) {
 
 export function updateRobotTransform(transformMatrix) {
     if (robotObject) {
-        const matrix = new Matrix4();
-        matrix.set(
-            transformMatrix[0][0], transformMatrix[0][1], transformMatrix[0][2], transformMatrix[0][3],
-            transformMatrix[1][0], transformMatrix[1][1], transformMatrix[1][2], transformMatrix[1][3],
-            transformMatrix[2][0], transformMatrix[2][1], transformMatrix[2][2], transformMatrix[2][3],
-            transformMatrix[3][0], transformMatrix[3][1], transformMatrix[3][2], transformMatrix[3][3]
-        );
+        // Create a scale matrix to preserve the robot's scale (1000)
+        const scaleMatrix = new Matrix4();
+        scaleMatrix.makeScale(1000, 1000, 1000);
+        
+        // Combine the input transformation with the scale
+        const finalMatrix = new Matrix4();
+        finalMatrix.multiplyMatrices(transformMatrix, scaleMatrix);
         
         robotObject.matrixAutoUpdate = false;
-        robotObject.matrix.copy(matrix);
+        robotObject.matrix.copy(finalMatrix);
         robotObject.matrixWorldNeedsUpdate = true;
+
+        // Update robot axes to match robot transformation
+        if (robotAxes) {
+            robotAxes.matrixAutoUpdate = false;
+            robotAxes.matrix.copy(finalMatrix);
+            robotAxes.matrixWorldNeedsUpdate = true;
+        }
         
         // Force immediate re-render when transformation updates
         if (renderer && scene && camera) {

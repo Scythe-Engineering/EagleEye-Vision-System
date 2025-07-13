@@ -1,0 +1,31 @@
+{
+    "basic_test": [
+        {
+            "action_name": "detect_apriltags",
+            "action_params": {
+            }
+        },
+        {
+            "action_name": "camera_localization",
+            "action_params": {
+                "camera_parameters_path": "/home/eagle/EagleEye-Object-Detection/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
+                "apriltag_map_path": "/home/eagle/EagleEye-Object-Detection/src/utils/field_data/frc2025r2.json"
+            }
+        },
+        {
+            "action_name": "velocity_based_filtering",
+            "action_params": {
+            }
+        },
+        {
+            "action_name": "flatten_pose",
+            "action_params": {
+            }
+        },
+        {
+            "action_name": "robot_pose_output",
+            "action_params": {
+            }
+        }
+    ]
+}

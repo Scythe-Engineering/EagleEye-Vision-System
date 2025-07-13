@@ -21,7 +21,9 @@ export default defineConfig({
             },
         },
         sourcemap: false,
-        minify: "esbuild",
+        minify: "rolldown",
+        chunkSizeWarningLimit: 1000000,
+        reportCompressedSize: true,
     },
 
     plugins: [
@@ -50,10 +52,5 @@ export default defineConfig({
             ),
         },
         extensions: [".js"],
-    },
-
-    esbuild: {
-        minify: true,
-        legalComments: 'none',
     },
 });

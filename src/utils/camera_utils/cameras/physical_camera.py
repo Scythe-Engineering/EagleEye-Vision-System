@@ -27,6 +27,7 @@ class PhysicalCamera(Camera):
         self.cap = cv2.VideoCapture(int(self.camera_index))
         if not self.cap.isOpened():
             raise RuntimeError(f"Error opening camera at index {self.camera_index} with name {self.name}")
+        self.camera_ready = True
 
     def get_frame(self) -> np.ndarray | None:
         ret, frame = self.cap.read()

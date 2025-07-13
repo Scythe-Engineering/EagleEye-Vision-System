@@ -6,6 +6,7 @@ from typing import Set
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras
 from src.webui.web_server import EagleEyeInterface
+from src.config.utils.generate_all_pipelines import generate_all_pipelines
 
 current_dir = Path(__file__).parent
 spacer = " " * 4
@@ -17,7 +18,7 @@ def add_video_file_cameras(
     known_cameras: Set[str],
 ) -> None:
     """
-    Add video file cameras to the system.
+    Add video file cameras to the system. (Mostly for testing and development purposes)
     """
     # Add a video file cameras
     video_folder = os.path.join(current_dir, "utils", "sim_videos")
@@ -37,7 +38,8 @@ def main() -> None:
     web_interface = EagleEyeInterface()
     camera_manager = CameraThreadManager(web_interface)
     known_cameras: Set[str] = set()
-
+    pipelines = generate_all_pipelines(web_interface)
+    
     # Initial camera detection
     print("Performing initial camera detection...")
     known_cameras = check_and_add_new_cameras(
@@ -45,6 +47,14 @@ def main() -> None:
     )
 
     add_video_file_cameras(web_interface, camera_manager, known_cameras)
+    
+    available_cameras = camera_manager.get_all_camera_names()
+    for pipeline in pipelines:
+        if pipeline.camera_bus_id in available_cameras:
+            pipeline.thread_run(camera_manager, pipeline.camera_bus_id)
+            print(f"Started pipeline for camera bus id: {pipeline.camera_bus_id}")
+        else:
+            print(f"Pipeline bus id: {pipeline.camera_bus_id} was not found in available cameras")
 
     if not known_cameras:
         print(
@@ -68,6 +78,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nShutting down...")
         camera_manager.stop_all_cameras()
+        for pipeline in pipelines:
+            pipeline.stop()
         print("Shutdown complete")
 
 

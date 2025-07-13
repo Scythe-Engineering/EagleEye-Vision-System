@@ -33,6 +33,7 @@ class VideoFileCamera(Camera):
                 break
             frames.append(imutils.rotate_bound(frame, angle=self.frame_rotation))
         print("Frames loaded.")
+        self.camera_ready = True
         return frames
 
     def _start_camera(self) -> None:
@@ -40,7 +41,7 @@ class VideoFileCamera(Camera):
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
             raise RuntimeError(f"Error opening video file {self.video_path}")
-
+        
     def get_frame(self) -> np.ndarray | None:
         """
         Read the next frame, rotate it, and return.

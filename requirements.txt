@@ -19,3 +19,5 @@ comtypes~=1.4.11
 
 imutils~=0.5.4
 flask_socketio~=5.5.1
+
+pupil-apriltags~=1.0.4
