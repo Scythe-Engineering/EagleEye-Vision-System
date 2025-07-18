@@ -1,5 +1,5 @@
 import os
-from typing import Tuple
+from typing import Tuple, Union, overload
 
 import cv2
 import numpy as np
@@ -17,9 +17,19 @@ GRID_WIDTH = 20
 GRID_HEIGHT = 20
 
 
+@overload
+def letterbox_image(img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = False) -> np.ndarray:
+    ...
+
+
+@overload
+def letterbox_image(img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = True) -> tuple[np.ndarray, tuple[int, int]]:
+    ...
+
+
 def letterbox_image(
     img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = False
-) -> np.ndarray:
+) -> Union[np.ndarray, tuple[np.ndarray, tuple[int, int]]]:
     """
     Resize and letterbox a color image to a target size while maintaining aspect ratio. Input can be color or greyscale, output is always greyscale.
 
@@ -64,7 +74,7 @@ class LetterboxTransform:
         self.target_size = target_size
 
     def __call__(self, img: np.ndarray) -> np.ndarray:
-        return letterbox_image(img, self.target_size)
+        return letterbox_image(img, self.target_size, return_resized_size=False)
 
 
 def calculate_crop_regions_from_grid(
@@ -81,8 +91,9 @@ def calculate_crop_regions_from_grid(
     Returns:
         list: A list of tuples representing the crop regions (x0, y0, x1, y1).
     """
-    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(
-        conf_grid_mask.astype(np.uint8), 8, cv2.CV_32S
+    # this works, it has been tested, ignore the type checker
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats( # type: ignore
+        conf_grid_mask.astype(np.uint8), 8, cv2.CV_32S # type: ignore
     )
 
     regions = []

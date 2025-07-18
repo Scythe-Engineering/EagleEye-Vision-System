@@ -7,10 +7,10 @@ from PIL import Image, ImageDraw
 from pupil_apriltags import Detector
 from tqdm import tqdm
 
-from utils import TARGET_WIDTH, TARGET_HEIGHT, letterbox_image, GRID_WIDTH, GRID_HEIGHT
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import TARGET_WIDTH, TARGET_HEIGHT, letterbox_image, GRID_WIDTH, GRID_HEIGHT
 
 
-def confidence_to_color(conf, min_conf, max_conf):
+def confidence_to_color(conf: float, min_conf: float, max_conf: float) -> tuple[int, int, int, int]:
     """Convert confidence to a color (green for high, red for low)."""
     normalized = (conf - min_conf) / (max_conf - min_conf + 1e-6)
     red = int((1 - normalized) * 255)
@@ -18,7 +18,7 @@ def confidence_to_color(conf, min_conf, max_conf):
     return (red, green, 0, 128)  # RGBA with transparency
 
 
-def visualize_grid_on_image(img, grid):
+def visualize_grid_on_image(img: Image.Image, grid: list[list[float]]) -> Image.Image:
     """
     Overlay a 10×10 grid on the image, display confidence values, and adjust hue based on confidence.
     """
@@ -52,7 +52,7 @@ def visualize_grid_on_image(img, grid):
     return img
 
 
-def visualize_grid_on_image_cv2(frame, grid, tag_boxes):
+def visualize_grid_on_image_cv2(frame: np.ndarray, grid: list[list[float]], tag_boxes: list[np.ndarray]) -> np.ndarray:
     """
     Overlay a 10×10 grid on the image using OpenCV, display detected tag boxes,
     and slightly darken grid tiles without tags.
@@ -105,7 +105,7 @@ def process_single_image(img_path: str, output_dir: str, frame_index: int, detec
     if frame is None:
         raise RuntimeError(f"Unable to read image: {img_path}")
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.uint8)
     tags = detector.detect(gray)
 
     resized_frame, (nw, nh) = letterbox_image(frame, (TARGET_WIDTH, TARGET_HEIGHT), greyscale=False, return_resized_size=True)
@@ -121,7 +121,7 @@ def process_single_image(img_path: str, output_dir: str, frame_index: int, detec
     pad_x = (w - nw) // 2
     pad_y = (h - nh) // 2
 
-    for tag in tags:
+    for tag in tags: # type: ignore
         pts = tag.corners
         pts_resized = pts.copy()
         pts_resized[:, 0] = pts[:, 0] * scale_x + pad_x
@@ -151,7 +151,11 @@ def process_single_image(img_path: str, output_dir: str, frame_index: int, detec
     ]
     with open(output_json_path, "w") as jf:
         json.dump({"grid": grid}, jf, indent=2)
-    vis_frame = visualize_grid_on_image_cv2(resized_frame.copy(), grid, tag_boxes)
+    vis_frame = visualize_grid_on_image_cv2(
+        resized_frame.copy(),
+        [[float(cell) for cell in row] for row in grid],
+        tag_boxes,
+    )
     cv2.imshow("Visualization", vis_frame)
     if cv2.waitKey(1) & 0xFF == ord("q"):
         return False

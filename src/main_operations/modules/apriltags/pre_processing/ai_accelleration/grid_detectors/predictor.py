@@ -1,6 +1,9 @@
 import torch
 from torch import nn
-from utils import GRID_WIDTH, GRID_HEIGHT
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+    GRID_HEIGHT,
+    GRID_WIDTH,
+)
 
 
 class GridPredictor(nn.Module):

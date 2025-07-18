@@ -1,7 +1,8 @@
 import time
 import cv2
+import numpy as np
 
-from utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
     VIDEO_PATH,
     MODEL_PATH,
     CONF_THRESHOLD,
@@ -27,7 +28,7 @@ def initialize_video_capture(video_path: str) -> cv2.VideoCapture | None:
     return cap
 
 
-def process_frame_logic(frame, frame_count: int, preprocessor: ApriltagCnnPreprocessor) -> tuple[float, any]:
+def process_frame_logic(frame: np.ndarray, frame_count: int, preprocessor: ApriltagCnnPreprocessor) -> tuple[float, np.ndarray | None]:
     """Process a single frame for inference and visualization.
 
     Args:

@@ -1,18 +1,20 @@
 import json
 import os
-from typing import Tuple
+from typing import Tuple, cast
 
 import torch
 import torch.optim.lr_scheduler as lr_scheduler
+import torch.onnx
 from cv2 import imread
 from torch import nn, optim
-from torch.amp import GradScaler, autocast
+from torch.amp.grad_scaler import GradScaler
+from torch.amp.autocast_mode import autocast
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 from tqdm import tqdm
 
 from grid_detectors.predictor import GridPredictor
-from utils import TARGET_WIDTH, TARGET_HEIGHT, MODEL_PATH, LetterboxTransform, GRID_WIDTH, GRID_HEIGHT
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import TARGET_WIDTH, TARGET_HEIGHT, MODEL_PATH, LetterboxTransform
 
 
 class GridDataset(Dataset):
@@ -62,6 +64,7 @@ class GridDataset(Dataset):
         base = self.bases[idx]
         img = imread(os.path.join(self.data_dir, base + ".png"))
         img_t = self.transform(img)
+        img_t = cast(torch.Tensor, img_t) # Explicitly cast to torch.Tensor to satisfy the type checker
         with open(os.path.join(self.data_dir, base + ".json"), "r") as jf:
             grid = json.load(jf)["grid"]
         label = torch.tensor(grid, dtype=torch.float32)
@@ -93,11 +96,16 @@ def train():
     train_sz = int(0.9 * len(dataset))
     val_sz = len(dataset) - train_sz
     train_ds, val_ds = random_split(dataset, [train_sz, val_sz])
+    num_cpu_workers = os.cpu_count()
+    if num_cpu_workers is None:
+        num_cpu_workers = 1 # Default to 1 worker if cpu_count is None
+    num_workers_dataloader = max(1, num_cpu_workers - 1)
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=max(1, os.cpu_count() - 1),
+        num_workers=num_workers_dataloader,
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=8,
@@ -106,7 +114,7 @@ def train():
         val_ds,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=max(1, os.cpu_count() - 1),
+        num_workers=num_workers_dataloader,
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=8,
@@ -172,6 +180,24 @@ def train():
 
     print(f"Model saved to {output}")
 
+    # Export to ONNX
+    onnx_output_path = output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
+    dummy_input = torch.randn(1, 3, TARGET_HEIGHT, TARGET_WIDTH).to(device) # Batch size 1, 3 channels, TARGET_HEIGHT, TARGET_WIDTH
+    try:
+        torch.onnx.export(
+            model,
+            dummy_input,
+            onnx_output_path,
+            verbose=False,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+            opset_version=11, # ONNX opset version
+            do_constant_folding=True,
+        )
+        print(f"Model successfully exported to ONNX format at {onnx_output_path}")
+    except Exception as e:
+        print(f"Error exporting model to ONNX: {e}")
 
 if __name__ == "__main__":
     train()
