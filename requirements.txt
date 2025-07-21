@@ -10,7 +10,7 @@ customtkinter~=5.2.2
 torch~=2.7.1
 tqdm~=4.67.1
 pip~=25.1
-pillow~=11.2.1
+pillow~=11.3.0
 filelock~=3.18.0
 clearml~=2.0.2
 
