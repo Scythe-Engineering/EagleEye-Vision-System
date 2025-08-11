@@ -1,7 +1,7 @@
 opencv-python~=4.12.0.88
 numpy<3
 pynetworktables~=2021.0.0
-ultralytics~=8.3.173
+ultralytics~=8.3.176
 Flask~=3.1.1
 numba~=0.60.0
 tensorflow~=2.19.0
