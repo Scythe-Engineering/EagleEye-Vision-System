@@ -11,7 +11,7 @@ torch~=2.8.0
 tqdm~=4.67.1
 pip~=25.2
 pillow~=11.3.0
-filelock~=3.18.0
+filelock~=3.19.1
 clearml~=2.0.2
 
 pygrabber~=0.2
