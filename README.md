@@ -1,8 +1,8 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Scythe-Engineering_EagleEye-Object-Detection&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Scythe-Engineering_EagleEye-Object-Detection) [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Scythe-Engineering_EagleEye-Object-Detection&metric=bugs)](https://sonarcloud.io/summary/new_code?id=Scythe-Engineering_EagleEye-Object-Detection) [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=Scythe-Engineering_EagleEye-Object-Detection&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=Scythe-Engineering_EagleEye-Object-Detection) 
 
-# EagleEye-Object-Detection 
+# EagleEye-Vision-System
 
-**EagleEye Object Detection** is a Python-based project aimed at detecting game pieces using YOLO Ai object detection. This project was created by DarkEden-Coding on the FRC Team 3322 Eagle Evolution.
+**EagleEye Vision System** is a Python-based project aimed at detecting game pieces using YOLO Ai object detection. This project was created by DarkEden-Coding on the FRC Team 3322 Eagle Evolution.
 
 ## Table of Contents
 - [Introduction](#introduction)
