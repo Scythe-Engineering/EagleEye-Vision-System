@@ -3,25 +3,32 @@ name: "Dependabot Automerge - Action"
 on:
   pull_request:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   worker:
     runs-on: ubuntu-latest
-
     if: github.actor == 'dependabot[bot]'
     steps:
-      - name: automerge
-        uses: actions/github-script@0.2.0
+      - name: Automerge (using PAT)
+        uses: actions/github-script@v6
         with:
+          github-token: ${{ secrets.ACTIONS_PAT }}
           script: |
-            github.pullRequests.createReview({
-              owner: context.payload.repository.owner.login,
-              repo: context.payload.repository.name,
-              pull_number: context.payload.pull_request.number,
+            const pr = context.payload.pull_request;
+            if (!pr) throw new Error("No pull_request payload");
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
               event: 'APPROVE'
-            })
-            github.pullRequests.merge({
-              owner: context.payload.repository.owner.login,
-              repo: context.payload.repository.name,
-              pull_number: context.payload.pull_request.number
-            })
-          github-token: ${{github.token}}
+            });
+
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
