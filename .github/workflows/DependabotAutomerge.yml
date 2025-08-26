@@ -2,8 +2,6 @@ name: "Dependabot Automerge - Action"
 
 on:
   pull_request:
-  issue_comment:
-    types: [created]
 
 permissions:
   contents: write
@@ -12,53 +10,25 @@ permissions:
 jobs:
   worker:
     runs-on: ubuntu-latest
-
-    if: >
-      (github.event_name == 'pull_request' && github.actor == 'dependabot[bot'])
-      || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/automerge'))
-
+    if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Automerge
+      - name: Automerge (using PAT)
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.ACTIONS_PAT }}
           script: |
-            const TRIGGER = '/automerge';
+            const pr = context.payload.pull_request;
+            if (!pr) throw new Error("No pull_request payload");
 
-            // Determine PR number for pull_request or issue_comment (PR comments emit issue_comment)
-            const prPayload = context.payload.pull_request
-              ? context.payload.pull_request
-              : (context.payload.issue && context.payload.issue.pull_request)
-              ? { number: context.payload.issue.number }
-              : null;
-
-            if (!prPayload) {
-              throw new Error('No pull_request payload found (not a PR or PR comment).');
-            }
-
-            // If triggered by a comment, ensure it contains the trigger (defensive)
-            if (context.eventName === 'issue_comment') {
-              const body = (context.payload.comment && context.payload.comment.body) || '';
-              if (!body.includes(TRIGGER)) {
-                throw new Error('Comment trigger not present; skipping.');
-              }
-            }
-
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const pull_number = prPayload.number;
-
-            // Approve
             await github.rest.pulls.createReview({
-              owner,
-              repo,
-              pull_number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
               event: 'APPROVE'
             });
 
-            // Merge (defaults to merge commit; change merge_method if needed)
             await github.rest.pulls.merge({
-              owner,
-              repo,
-              pull_number
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
             });
