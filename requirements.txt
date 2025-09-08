@@ -15,7 +15,7 @@ filelock~=3.19.1
 clearml~=2.0.2
 
 pygrabber~=0.2
-comtypes~=1.4.11
+comtypes~=1.4.12
 
 imutils~=0.5.4
 flask_socketio~=5.5.1
