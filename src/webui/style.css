@@ -2,3 +2,36 @@
 
 @import './css/sidebar.css';
 @import './css/camera.css';
+
+/* Backend state warning styling */
+.backend-state-warning {
+    animation: pulse-warning 2s infinite;
+    border-color: #dc2626 !important; /* red-600 */
+}
+
+.backend-state-warning svg {
+    animation: bounce 1s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% {
+        background-color: rgba(153, 27, 27, 0.9); /* red-800/90 */
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+    }
+    50% {
+        background-color: rgba(127, 29, 29, 0.95); /* darker red */
+        box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-3px);
+    }
+    60% {
+        transform: translateY(-1px);
+    }
+}

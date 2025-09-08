@@ -1,8 +1,6 @@
 import os
 import sys
 
-from line_profiler import profile
-
 print(
     f"Setting Working Dir to: {os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}"
 )
@@ -208,7 +206,6 @@ class EagleEye:
                 [detection["ratio"] for detection in detections],
             )
 
-    @profile
     def detection_thread(self, device: SimpleDevice):
         log(f"Starting thread for {device.get_current_camera().get_name()} camera")
         estimated_fps = 0

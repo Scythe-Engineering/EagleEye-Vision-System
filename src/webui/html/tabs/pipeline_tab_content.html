@@ -1,0 +1,325 @@
+<div id="view-pipeline" class="view hidden flex flex-1 min-h-0">
+    <div class="h-full min-h-0 bg-transparent text-white flex-1">
+        <div class="flex h-full min-h-0 gap-4 p-0">
+            <!-- Pipeline Area -->
+            <div
+                class="flex-1 flex flex-col bg-[#1f1f1f] rounded-[15px] min-h-0 mt-[5px]"
+            >
+                <div
+                    class="bg-[#1E1E1E] p-4 border-b border-[#414141] flex items-center justify-between rounded-[15px]"
+                >
+                    <div class="flex items-center gap-4">
+                        <div class="flex flex-col gap-2">
+                            <div class="flex items-center gap-4">
+                                <h1 class="text-2xl font-bold text-[#f9c845]">
+                                    Pipeline Builder
+                                </h1>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <p class="text-[#ac8a2f] mt-1">
+                                    Drag operations to build your pipeline
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="flex flex-col gap-2">
+                            <label
+                                for="cameraSelect"
+                                class="text-[#f9c845] text-sm font-medium text-center"
+                                >Camera:</label
+                            >
+                            <select
+                                id="cameraSelect"
+                                class="text-[#f9c845] cursor-pointer bg-[#1E1E1E] border text-sm p-1 rounded-md border-solid border-[#414141] hover:bg-[#2a2a2a] focus:outline-none focus:border-[#f9c845]"
+                            >
+                                <option disabled selected>Select Camera</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label
+                                for="pipelineSelect"
+                                class="text-[#f9c845] text-sm font-medium text-center"
+                                >Pipeline:</label
+                            >
+                            <select
+                                id="pipelineSelect"
+                                class="text-[#f9c845] cursor-pointer bg-[#1E1E1E] border text-sm p-1 rounded-md border-solid border-[#414141] hover:bg-[#2a2a2a] focus:outline-none focus:border-[#f9c845]"
+                            >
+                                <option disabled selected>
+                                    Select Pipeline
+                                </option>
+                            </select>
+                        </div>
+                        <button
+                            id="newPipelineButton"
+                            class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            title="Create a new pipeline"
+                        >
+                            New Pipeline
+                        </button>
+                    </div>
+                </div>
+
+                <div
+                    id="pipelineArea"
+                    class="flex-1 p-6 pb-10 relative overflow-auto dark:[color-scheme:dark]"
+                    style="
+                        background-image: radial-gradient(
+                            circle,
+                            rgba(249, 115, 22, 0.1) 1px,
+                            transparent 1px
+                        );
+                        background-size: 20px 20px;
+                    "
+                >
+                    <!-- Restart Required Indicator -->
+                    <div
+                        id="restartIndicator"
+                        class="hidden absolute top-6 left-6 z-10 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
+                    >
+                        <svg
+                            class="w-5 h-5 text-red-300"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"
+                            ></path>
+                        </svg>
+                        <span class="text-red-100 text-sm font-medium"
+                            >Restart Required</span
+                        >
+                        <button
+                            id="restartBackendButton"
+                            class="ml-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+                            title="Restart backend to apply configuration changes"
+                        >
+                            Restart
+                        </button>
+                    </div>
+                    <div
+                        id="pipelinePlaceholder"
+                        class="flex items-center justify-center h-full"
+                    >
+                        <div class="text-center">
+                            <div
+                                class="w-24 h-24 mx-auto mb-4 bg-[rgb(35,35,35)] rounded-2xl flex items-center justify-center"
+                            >
+                                <!-- Small branch icon -->
+                                <svg
+                                    class="w-10 h-10 text-[#f9c84a]"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                >
+                                    <path d="M6 3v12"></path>
+                                    <circle cx="6" cy="18" r="2"></circle>
+                                    <circle cx="18" cy="6" r="2"></circle>
+                                    <path d="M18 8v12"></path>
+                                </svg>
+                            </div>
+                            <p class="text-[#ac8a2f] text-lg">
+                                Start by dragging operations here
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Delete Pipeline Button -->
+                    <button
+                        id="deletePipelineButton"
+                        class="hidden absolute top-6 right-6 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
+                        title="Delete current pipeline"
+                    >
+                        Delete Pipeline
+                    </button>
+
+                    <div id="pipelineContainer" class="max-w-md mx-auto"></div>
+                </div>
+            </div>
+
+            <!-- Operations Panel -->
+            <div
+                class="w-80 bg-[#1f1f1f] border border-transparent flex flex-col rounded-[15px] min-h-0 mt-[5px]"
+            >
+                <div
+                    class="p-4 border-b border-[#414141] rounded-[15px] bg-[#1E1E1E]"
+                >
+                    <h2 class="text-2xl font-bold text-[#f9c845]">
+                        Operations
+                    </h2>
+                    <p class="text-[#ac8a2f] mt-1">Drag to pipeline</p>
+                </div>
+
+                <div
+                    id="operationsList"
+                    class="flex-1 p-4 pb-10 overflow-auto dark:[color-scheme:dark]"
+                ></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Operation settings modal partial (inlined) -->
+<div id="operationSettingsOverlay" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black opacity-60"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="flex gap-4 max-w-6xl w-full">
+            <!-- Settings Panel -->
+            <div
+                id="operationSettingsModal"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+            >
+                <div
+                    class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"
+                >
+                    <h3
+                        class="text-xl font-semibold text-[#f9c845]"
+                        data-role="modal-title"
+                    >
+                        Operation Settings
+                    </h3>
+                    <button
+                        class="text-gray-400 hover:text-white"
+                        title="Close"
+                        data-action="close"
+                    >
+                        <svg
+                            class="w-5 h-5"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                        >
+                            <path
+                                fill-rule="evenodd"
+                                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                clip-rule="evenodd"
+                            />
+                        </svg>
+                    </button>
+                </div>
+                <div
+                    class="px-5 py-4 max-h-[70vh] overflow-auto"
+                    data-role="modal-body"
+                >
+                    <!-- Dynamic form fields will be injected here -->
+                </div>
+                <div
+                    class="px-5 py-4 bg-[#1E1E1E] border-t border-[#414141] flex items-center justify-end gap-2"
+                >
+                    <button
+                        class="px-4 py-2 rounded-lg bg-[#2b2b2b] text-white hover:bg-[#3a3a3a]"
+                        data-action="cancel"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        class="px-4 py-2 rounded-lg bg-[#f9c845] text-black font-semibold hover:bg-[#e6b73c]"
+                        data-action="save"
+                    >
+                        Done
+                    </button>
+                    <button class="hidden" data-action="close"></button>
+                </div>
+            </div>
+
+            <!-- Live View Panel -->
+            <div
+                id="operationLiveViewPanel"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+            >
+                <div
+                    class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"
+                >
+                    <h3 class="text-xl font-semibold text-[#f9c845]">
+                        Live View
+                    </h3>
+                </div>
+                <div
+                    class="flex-1 flex items-center justify-center p-8 min-h-[400px]"
+                    data-role="live-view-container"
+                >
+                    <div
+                        class="text-center"
+                        style="position: relative; width: 100%"
+                    >
+                        <div
+                            class="w-32 h-32 mx-auto mb-6 bg-[#232323] rounded-2xl flex items-center justify-center"
+                            data-role="live-view-placeholder"
+                        >
+                            <svg
+                                class="w-16 h-16 text-[#f9c845]"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                            >
+                                <rect
+                                    x="2"
+                                    y="3"
+                                    width="20"
+                                    height="14"
+                                    rx="2"
+                                    ry="2"
+                                ></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                        </div>
+                        <p class="text-[#ac8a2f] text-lg font-medium">
+                            Live Preview
+                        </p>
+                        <p class="text-[#666] text-sm mt-2">
+                            Visualizer will appear here when operation is active
+                        </p>
+
+                        <!-- No visualization message (hidden by default) -->
+                        <div
+                            id="noVisualizationMessage"
+                            class="hidden mt-4 p-3 bg-[#2a2a2a] rounded-lg border border-[#f9c845]/20"
+                        >
+                            <div
+                                class="flex items-center gap-2 text-[#f9c845] text-sm"
+                            >
+                                <svg
+                                    class="w-4 h-4"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line
+                                        x1="12"
+                                        y1="16"
+                                        x2="12.01"
+                                        y2="16"
+                                    ></line>
+                                </svg>
+                                <span
+                                    >This operation does not provide a live
+                                    visualization</span
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Image element updated dynamically by settings popup (hidden until used) -->
+                        <img
+                            id="operationLiveImage"
+                            alt="Live visualization"
+                            class="mx-auto mt-4 rounded-lg max-w-full max-h-[60vh] hidden"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load settings popup script (ensures SettingsPopup is available) -->
+<script src="../../js/pipeline/settingsPopup.js"></script>

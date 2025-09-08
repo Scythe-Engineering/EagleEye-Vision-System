@@ -1,0 +1,13 @@
+---
+description: This rule should always be used when interacting with the webui.
+alwaysApply: false
+---
+
+If the user asks for a task and does not provided needed file or location context, and or you need to get additional context on how the webui is structured you should look through docs/overviews/webui which has markdown doc files that cover general webui strucutre and more in depth feture details. After your task is done try to opdate the docs that relate to the change.
+
+@API_DOCUMENTATION.md
+@API_ENDPOINTS_SUMMARY.md
+@ASSETS_OVERVIEW.md
+@BACKEND_OVERVIEW.md
+@FRONTEND_OVERVIEW.md
+@WEBUI_OVERVIEW.md

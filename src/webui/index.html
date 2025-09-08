@@ -3,17 +3,24 @@
     <head>
         <meta charset="UTF-8" />
         <title>Eagle Eye</title>
-        <link rel="stylesheet" href="./static/main.css" />
+        <link rel="stylesheet" href="http://localhost:5173/style.css" />
     </head>
     <body
         class="background [background:url('./static/background.png')_50%_center_/_cover_no-repeat_fixed] w-full h-full [font-family:Arial,sans-serif]"
     >
         <!-- Connection Lost Overlay -->
-        <div id="connection-lost-overlay" class="fixed inset-0 bg-black opacity-75 flex items-center justify-center z-50 hidden">
-            <div class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center">
+        <div
+            id="connection-lost-overlay"
+            class="fixed inset-0 bg-black opacity-75 flex items-center justify-center z-50 hidden"
+        >
+            <div
+                class="bg-[#1b1b1b] text-[#fdc700] px-8 py-6 rounded-lg shadow-lg text-center"
+            >
                 <h2 class="text-2xl font-bold mb-2">Connection Lost</h2>
                 <p class="text-lg">Attempting to reconnect...</p>
-                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mt-4"></div>
+                <div
+                    class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mt-4"
+                ></div>
             </div>
         </div>
 
@@ -28,31 +35,25 @@
             </div>
 
             <!-- CONTENT: Left view area and right sidebar -->
-            <div
-                class="Content flex-1 gap-2.5 flex overflow-hidden px-5 py-2.5"
-            >
+            <div class="Content flex-1 gap-2.5 flex overflow-hidden p-5">
                 <!-- LEFT CONTENT -->
                 <div class="Left-Content flex-col flex-1 flex relative">
-                    {{> camera_views_tab_content}}
-                    {{> 3d_tab_content}}
-                    {{> settings_tab_content}}
-                    {{> calibration_tab_content}}
-                    {{> setup_tab_content}}
+                    {{> camera_views_tab_content}} {{> 3d_tab_content}} {{>
+                    pipeline_tab_content}} {{> settings_tab_content}}
                 </div>
 
                 <!-- SIDEBAR -->
-                <nav class="sidebar">
+                <nav class="sidebar p-0 w-[200px] bg-[#1b1b1b] overflow-y-auto">
                     <ul class="list-none">
                         <li class="active" data-view="view-views">Views</li>
                         <li data-view="view-3d">3D View</li>
+                        <li data-view="view-pipeline">Pipeline</li>
                         <li data-view="view-settings">Settings</li>
-                        <li data-view="view-calibration">Calibration</li>
-                        <li data-view="view-setup">Setup</li>
                     </ul>
                 </nav>
             </div>
         </div>
 
-        <script src="./script.js"></script>
+        <script type="module" src="http://localhost:5173/js/main.js"></script>
     </body>
 </html>

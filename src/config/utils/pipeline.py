@@ -5,26 +5,55 @@ import importlib
 from src.webui.web_server import EagleEyeInterface
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 import threading
+from src.utils.device_management_utils.compute_pool import ComputePool
+import traceback
+from collections import deque
+from src.config.utils.print_timing_summary import print_timing_summary
+from networktables import NetworkTable
 
-debug_mode = True
+
+debug_mode = False
 
 
 class Pipeline:
     """Pipeline for processing data through a sequence of operations."""
 
-    def __init__(self, pipeline_config: dict, web_interface: EagleEyeInterface, camera_bus_id: str) -> None:
+    def __init__(
+        self,
+        pipeline_config: dict,
+        web_interface: EagleEyeInterface,
+        camera_bus_id: str,
+        compute_pool: ComputePool,
+        network_table: NetworkTable,
+    ) -> None:
         """Initialize the pipeline with configuration.
 
         Args:
             pipeline_config: Dictionary containing pipeline configuration.
+            web_interface: The web interface to use for the pipelines.
+            camera_bus_id: The bus ID of the camera to run the pipeline on.
+            compute_pool: The compute pool to use for the pipelines.
+            network_table: The network table to use for the pipelines.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
         self.camera_bus_id = camera_bus_id
+        self.compute_pool = compute_pool
+        self.network_table = network_table
+
         self.thread_running = False
         self.thread = None
         self.operations = self._initialize_operations()
-        
+        self.operation_time_history: List[deque[float]] = [
+            deque(maxlen=50) for _ in range(len(self.operations))
+        ]
+        self.total_time_history: deque[float] = deque(maxlen=50)
+        self.all_total_times: List[float] = []
+
+        self.set_visualize = False
+        self.current_frame = None
+        self.current_frame_lock = threading.Lock()
+
     def _snake_to_camel(self, snake_str: str) -> str:
         """Convert snake_case string to CamelCase.
 
@@ -34,8 +63,8 @@ class Pipeline:
         Returns:
             String in CamelCase format.
         """
-        components = snake_str.split('_')
-        return ''.join(word.capitalize() for word in components)
+        components = snake_str.split("_")
+        return "".join(word.capitalize() for word in components)
 
     def _initialize_operations(self) -> List[Any]:
         """Initialize operation instances based on configuration.
@@ -44,17 +73,21 @@ class Pipeline:
             List of initialized operation instances.
         """
         operations = []
-        
+
         for operation_config in self.pipeline_config:
             action_name = operation_config["action_name"]
             action_params = operation_config.get("action_params", {})
-            
-            operation_instance = self._create_operation_instance(action_name, action_params)
+
+            operation_instance = self._create_operation_instance(
+                action_name, action_params
+            )
             operations.append(operation_instance)
-        
+
         return operations
 
-    def _create_operation_instance(self, action_name: str, action_params: Dict[str, Any]) -> Any:
+    def _create_operation_instance(
+        self, action_name: str, action_params: Dict[str, Any]
+    ) -> Any:
         """Create an operation instance based on action name and parameters.
 
         Args:
@@ -69,7 +102,7 @@ class Pipeline:
         """
         try:
             class_name = self._snake_to_camel(action_name)
-            
+
             # Try to import from main_operations/definitions first
             try:
                 module_path = f"src.main_operations.definitions.{action_name}"
@@ -85,14 +118,36 @@ class Pipeline:
                     # For secondary operations, use class name as-is
                     operation_class = getattr(module, class_name)
                 except (ImportError, AttributeError):
-                    raise ValueError(f"Could not find class for action: {class_name} at {action_name}")
-                
-            # Add web_interface parameter if the operation requires it
-            if hasattr(operation_class.__init__, '__code__') and 'web_interface' in operation_class.__init__.__code__.co_varnames:
-                action_params['web_interface'] = self.web_interface
-                
+                    raise ValueError(
+                        f"Could not find class for action: {class_name} at {action_name}"
+                    )
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "web_interface" in operation_class.__init__.__code__.co_varnames
+            ):
+                action_params["web_interface"] = self.web_interface
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "compute_pool" in operation_class.__init__.__code__.co_varnames
+            ):
+                action_params["compute_pool"] = self.compute_pool
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "pipeline" in operation_class.__init__.__code__.co_varnames
+            ):
+                action_params["pipeline"] = self
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "network_table" in operation_class.__init__.__code__.co_varnames
+            ):
+                action_params["network_table"] = self.network_table
+
             return operation_class(**action_params)
-            
+
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
 
@@ -112,42 +167,112 @@ class Pipeline:
             raise ValueError("No operations configured in pipeline")
 
         current_data = input_data
-        
-        time_elapsed = 0
-        
+
+        time_elapsed = 0.0
+
         for i, operation in enumerate(self.operations):
             try:
                 start_time = time.time()
                 current_data = operation.run(current_data)
                 if current_data is None and i != len(self.operations) - 1:
                     if debug_mode:
-                        print(f"Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline")
+                        print(
+                            f"Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline"
+                        )
+                    self.web_interface.update_robot_position(
+                        np.zeros((4, 4), dtype=np.float32)
+                    )
                     break
                 end_time = time.time()
+                elapsed = end_time - start_time
                 if debug_mode:
-                    print(f"Operation {i} ({type(operation).__name__}) time: {round((end_time - start_time) * 1000, 2)} ms")
-                    time_elapsed += end_time - start_time
-            except Exception as e:
-                raise RuntimeError(f"Error in operation {i} ({type(operation).__name__}): {str(e)}")
+                    self.operation_time_history[i].append(elapsed)
+                    time_elapsed += elapsed
+            except Exception as _:
+                raise RuntimeError(
+                    f"Error in operation {i} ({type(operation).__name__}): {traceback.format_exc()}"
+                )
         if debug_mode:
-            print(f"Total time elapsed: {round(time_elapsed * 1000, 2)} ms")
-            print(f"Fps: {round(1 / time_elapsed, 2)}")
-            print("\n")
+            self.total_time_history.append(time_elapsed)
+            self.all_total_times.append(time_elapsed)
+            print_timing_summary(
+                self.operations, self.operation_time_history, self.total_time_history
+            )
 
         return current_data
-    
-    def thread_run(self, camera_thread_manager: CameraThreadManager, camera_bus_id: str) -> None:
+
+    def get_operation_by_class_name(self, class_name: str) -> Any:
+        """Get an operation by its class name.
+
+        Args:
+            class_name: The name of the operation class.
+        """
+        return next(
+            (
+                op
+                for op in self.operations
+                if op.__class__.__name__.strip("Definition")
+                == class_name.strip("Definition")
+            ),
+            None,
+        )
+
+    def update_operations_config(self, operations_config: List[Dict[str, Any]]) -> None:
+        """Update the configuration of multiple operations in the pipeline.
+
+        This method allows live updating of operation parameters that are marked as
+        restart_for_change: false in their configuration definition files.
+
+        Args:
+            operations_config: List of operation configurations, where each config
+                is a dictionary with 'action_name' and 'action_params' keys.
+                Format should match the pipeline configuration JSON format.
+        """
+        for operation_config in operations_config:
+            action_name = operation_config.get("action_name")
+            action_params = operation_config.get("action_params", {})
+
+            if not action_name:
+                continue
+
+            # Convert action_name to class name format for lookup
+            class_name = self._snake_to_camel(action_name)
+
+            # Find the operation instance
+            operation = self.get_operation_by_class_name(class_name)
+
+            if operation is not None and hasattr(operation, "update_config"):
+                try:
+                    operation.update_config(action_params)
+                    if debug_mode:
+                        print(f"Updated config for {action_name}: {action_params}")
+                except Exception as e:
+                    print(f"Error updating config for {action_name}: {e}")
+            elif operation is not None:
+                if debug_mode:
+                    print(f"Operation {action_name} does not support config updates")
+            else:
+                if debug_mode:
+                    print(f"Operation {action_name} not found in pipeline")
+
+    def thread_run(
+        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+    ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
             camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
-        self.thread = threading.Thread(target=self._thread_run, args=(camera_thread_manager, camera_bus_id))
+        self.thread = threading.Thread(
+            target=self._thread_run, args=(camera_thread_manager, camera_bus_id)
+        )
         self.thread.start()
         self.thread_running = True
 
-    def _thread_run(self, camera_thread_manager: CameraThreadManager, camera_bus_id: str) -> None:
+    def _thread_run(
+        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+    ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
@@ -155,22 +280,59 @@ class Pipeline:
             camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
         if not camera_thread_manager.get_camera_ready(camera_bus_id):
-            print(f"Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready")
+            print(
+                f"Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready"
+            )
             while not camera_thread_manager.get_camera_ready(camera_bus_id):
                 time.sleep(0.01)
             print(f"Camera bus id: {camera_bus_id} is ready")
-        
+
         print(f"Starting pipeline for camera bus id: {camera_bus_id}")
+        time.sleep(0.1)
         while self.thread_running:
-            result = camera_thread_manager.get_current_frame(camera_bus_id)
-            if result is not None:
-                frame, _ = result
+            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
+            if camera_frame_result is not None:
+                frame, _ = camera_frame_result
                 try:
+                    if self.set_visualize:
+                        with self.current_frame_lock:
+                            self.current_frame = frame.copy()
                     self.run(frame)
-                except Exception as e:
-                    print(f"Error in pipeline: {e}")
+                except Exception as _:
+                    print(f"Error in pipeline itself: {traceback.format_exc()}")
             else:
                 time.sleep(0.01)
+
+    def visualize(self, action_name: str) -> np.ndarray:
+        """Visualize the pipeline up to the given action name.
+
+        Args:
+            action_name: The name of the action to visualize up to.
+
+        Returns:
+            The visualized frame.
+        """
+        with self.current_frame_lock:
+            if self.current_frame is None:
+                raise ValueError("No current frame to visualize")
+            current_frame = self.current_frame
+
+        for operation in self.operations:
+            current_frame = operation.visualize(current_frame)
+            if operation.__class__.__name__.lower().replace(
+                "definition", ""
+            ) == action_name.lower().replace("_", ""):
+                break
+
+        return current_frame
+
+    def start_visualize(self) -> None:
+        """Start visualizing the pipeline."""
+        self.set_visualize = True
+
+    def stop_visualize(self) -> None:
+        """Stop visualizing the pipeline."""
+        self.set_visualize = False
 
     def stop(self) -> None:
         """Stop the pipeline thread."""

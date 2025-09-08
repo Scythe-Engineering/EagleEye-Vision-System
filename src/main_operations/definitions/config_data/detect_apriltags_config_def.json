@@ -1,0 +1,68 @@
+{
+    "class_name": "DetectApriltagsDefinition",
+    "description": "Detects AprilTag markers in camera images and extracts their IDs and corner positions for robot localization",
+    "category": "det",
+    "parameters": {
+        "families": {
+            "type": "str",
+            "description": "AprilTag family to detect (e.g., 'tag16h5', 'tag25h9', 'tag36h11')",
+            "default": "tag36h11",
+            "required": false,
+            "options": [
+                "tag16h5",
+                "tag25h9",
+                "tag36h11",
+                "tagCircle21h7",
+                "tagCircle49h12",
+                "tagCustom48h12",
+                "tagStandard41h12",
+                "tagStandard52h13"
+            ],
+            "restart_for_change": false
+        },
+        "nthreads": {
+            "type": "int",
+            "description": "Number of threads to use for detection",
+            "default": 1,
+            "required": false,
+            "min": 1,
+            "max": 16,
+            "restart_for_change": false
+        },
+        "quad_decimate": {
+            "type": "float",
+            "description": "Detection of quads can be done on a lower-resolution image, improving speed at a cost of pose accuracy",
+            "default": 2.0,
+            "required": false,
+            "min": 1.0,
+            "max": 10.0,
+            "restart_for_change": false
+        },
+        "quad_sigma": {
+            "type": "float",
+            "description": "Gaussian blur standard deviation in pixels applied to segmented image for quad detection",
+            "default": 0.0,
+            "required": false,
+            "min": 0.0,
+            "max": 5.0,
+            "restart_for_change": false
+        },
+        "refine_edges": {
+            "type": "int",
+            "description": "When non-zero, the edges of each quad are adjusted to snap to strong gradients nearby",
+            "default": 1,
+            "required": false,
+            "options": [0, 1],
+            "restart_for_change": false
+        },
+        "decode_sharpening": {
+            "type": "float",
+            "description": "How much sharpening should be done to decoded images",
+            "default": 0.25,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0,
+            "restart_for_change": false
+        }
+    }
+}

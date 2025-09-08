@@ -1,11 +1,4 @@
 /* Sidebar nav */
-.sidebar {
-    width: 200px;
-    background-color: #1b1b1b;
-    padding: 10px;
-    overflow-y: auto;
-}
-
 .sidebar ul {
     list-style: none;
     padding: 0;
@@ -14,7 +7,7 @@
 .sidebar li {
     padding: 5px;
     margin: 5px;
-    color: #ccc;
+    color: #666666;
     cursor: pointer;
     user-select: none;
     border-radius: 4px;

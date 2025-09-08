@@ -1,0 +1,31 @@
+{
+    "class_name": "ApriltagCnnPreprocessorDefinition",
+    "description": "Enhances AprilTag detection speed by preprocessing camera images with a convolutional neural network to crop the input image to the area of interest",
+    "category": "prep",
+    "parameters": {
+        "model_path": {
+            "type": "str",
+            "description": "Path to the trained model weights file",
+            "default": "{project_root}/models/apriltag_cnn/model.pth",
+            "required": true,
+            "restart_for_change": true
+        },
+        "device_id": {
+            "type": "str",
+            "description": "The id of the computation device for processing",
+            "options": ["CPU", "CUDA", "MX3_001", "CORAL"],
+            "default": "MX3_001",
+            "required": true,
+            "restart_for_change": true
+        },
+        "conf_threshold": {
+            "type": "float",
+            "description": "Confidence threshold for predictions (0.0 to 1.0)",
+            "default": 0.15,
+            "min": 0.0,
+            "max": 1.0,
+            "required": false,
+            "restart_for_change": false
+        }
+    }
+}

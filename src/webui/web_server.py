@@ -1,6 +1,8 @@
+import json
 import os
 import threading
 import time
+import traceback
 from threading import Thread
 from typing import Any, Callable, Generator
 
@@ -8,15 +10,19 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_socketio import SocketIO
+from flask_cors import CORS
 
-from src.main_operations.modules.object_detection.src.constants.constants import Constants
-from src.webui.web_server_utils.serve_static_files import ( 
+from src.main_operations.modules.object_detection.src.constants.constants import (
+    Constants,
+)
+from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,
     serve_js,
 )
 
 current_path = os.path.dirname(__file__)
+src_path = current_path.split("/src")[0] + "/src"
 
 with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
     no_image = f.read()
@@ -25,6 +31,8 @@ with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
 class EagleEyeInterface:
     def __init__(
         self,
+        restart_callback: Callable,
+        pipeline_objects_callback: Callable,
         settings_object: Constants | None = None,
         dev_mode: bool = False,
         log: Callable | None = None,
@@ -44,7 +52,21 @@ class EagleEyeInterface:
         else:
             self.log = log
 
-        self.app = Flask(__name__, static_folder=current_path, static_url_path="")
+        self.restart_callback = restart_callback
+        self.pipeline_objects_callback = pipeline_objects_callback
+
+        self.restart_required_for_config = False
+
+        self.app = Flask(
+            __name__,
+            static_folder=current_path,
+            static_url_path="",
+        )
+        CORS(
+            self.app,
+            resources={r"/*": {"origins": ["http://localhost:5173"]}},
+            supports_credentials=True,
+        )
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins="*",
@@ -75,14 +97,14 @@ class EagleEyeInterface:
             self.app_thread = Thread(
                 target=self.socketio.run,
                 args=(self.app,),
-                kwargs={"host": "0.0.0.0", "port": 5001},
+                kwargs={"host": "0.0.0.0", "port": 5001, "allow_unsafe_werkzeug": True},
                 daemon=True,
             )
             self.app_thread.start()
 
         @self.app.errorhandler(Exception)
-        def _log_and_raise(e):
-            self.log("Error:", e)
+        def _log_and_raise(_):
+            self.log("Error:", traceback.format_exc())
             return {"message": "Internal server error"}, 500
 
     def _register_routes(self) -> None:
@@ -105,7 +127,6 @@ class EagleEyeInterface:
                 os.path.join(current_path, "assets"), "favicon.ico"
             ),
         )
-
         self.app.add_url_rule(
             "/save-settings", "save_settings", self.set_settings, methods=["POST"]
         )
@@ -138,7 +159,6 @@ class EagleEyeInterface:
                 os.path.join(current_path, "assets", "apriltags"), filename
             ),
         )
-
         self.app.add_url_rule(
             "/get-available-robots",
             "get_available_robots",
@@ -152,6 +172,104 @@ class EagleEyeInterface:
                 os.path.join(current_path, "assets", "robots"), filename
             ),
         )
+        self.app.add_url_rule(
+            "/draco/<path:filename>",
+            "draco",
+            lambda filename: send_from_directory(
+                os.path.join(current_path, "web_server_utils", "drako_loader"), filename
+            ),
+        )
+        self.app.add_url_rule(
+            "/get-available-operations",
+            "get_available_operations",
+            self.get_available_operations,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-operation-config-data/<path:operation_name>/<int:is_secondary>",
+            "get_operation_config_data",
+            self.get_operation_config_data,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-pipeline-config/<string:camera_name>/<string:pipeline_name>",
+            "get_pipeline_config",
+            self.get_pipeline_config,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-pipeline-names-for-camera/<string:camera_name>",
+            "get_pipeline_names_for_camera",
+            self.get_pipeline_names_for_camera,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/save-pipeline-config/<string:camera_name>/<string:pipeline_name>",
+            "save_pipeline_config",
+            self.save_pipeline_config,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/delete-pipeline/<string:camera_name>/<string:pipeline_name>",
+            "delete_pipeline",
+            self.delete_pipeline,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/restart-backend",
+            "restart_backend",
+            self.restart_backend,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/start-visualize/<string:camera_name>/<string:pipeline_name>",
+            "start_visualize",
+            self.start_visualize,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/stop-visualize/<string:camera_name>/<string:pipeline_name>",
+            "stop_visualize",
+            self.stop_visualize,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/visualize/<string:camera_name>/<string:pipeline_name>/<string:action_name>",
+            "visualize",
+            self.visualize,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/shutdown",
+            "shutdown",
+            self.shutdown,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/set_restart_required",
+            "set_restart_required",
+            self.set_restart_required,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/get_restart_required",
+            "get_restart_required",
+            self.get_restart_required,
+            methods=["GET"],
+        )
+
+    def shutdown(self) -> tuple[dict, int]:
+        """
+        Shutdown the web interface.
+
+        Returns:
+            tuple[dict, int]: A success or failure message.
+        """
+        try:
+            os._exit(0)
+        except Exception as e:
+            self.log("Error during shutdown:", e)
+            return {"message": "Failed to shutdown server"}, 500
 
     def add_camera(self, camera_name: str, camera_id: int | str | None = None) -> None:
         """
@@ -163,16 +281,16 @@ class EagleEyeInterface:
         """
         if camera_id is None:
             camera_id = camera_name
-        
+
         self.cameras[camera_name] = camera_id
-        
+
         with self.frame_list_lock:
             if camera_name not in self.frame_list:
                 self.frame_list[camera_name] = no_image
-        
+
         url_safe_name = camera_name.replace(" ", "_")
         self.available_cameras[camera_name] = url_safe_name
-        
+
         self.log(f"Added camera: {camera_name} with ID: {camera_id}")
 
     def remove_camera(self, camera_name: str) -> None:
@@ -184,14 +302,14 @@ class EagleEyeInterface:
         """
         if camera_name in self.cameras:
             del self.cameras[camera_name]
-            
+
             with self.frame_list_lock:
                 if camera_name in self.frame_list:
                     del self.frame_list[camera_name]
-            
+
             if camera_name in self.available_cameras:
                 del self.available_cameras[camera_name]
-            
+
             self.log(f"Removed camera: {camera_name}")
 
     def set_cameras(self, cameras_dict: dict[str, int | str]) -> None:
@@ -205,12 +323,12 @@ class EagleEyeInterface:
             self.cameras = cameras_dict.copy()
             self.frame_list = {}
             self.available_cameras = {}
-            
+
             for camera_name in self.cameras:
                 self.frame_list[camera_name] = no_image
                 url_safe_name = camera_name.replace(" ", "_")
                 self.available_cameras[camera_name] = url_safe_name
-        
+
         self.log(f"Set cameras: {self.cameras}")
 
     def get_available_cameras(self) -> dict:
@@ -231,6 +349,7 @@ class EagleEyeInterface:
             host="0.0.0.0",
             port=5001,
             debug=False,
+            allow_unsafe_werkzeug=True,
             extra_files=["./static/bundle.js", "./style.css", "./index.html"],
         )
 
@@ -284,13 +403,19 @@ class EagleEyeInterface:
             time_start = time.time()
             with self.frame_list_lock:
                 frame = self.frame_list[camera_name]
-                
+
             if frame is not None:
                 frame_array = np.frombuffer(frame, dtype=np.uint8)
                 decoded_frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
                 if decoded_frame is not None:
-                    resized_frame = cv2.resize(decoded_frame, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-                    success, encoded_frame = cv2.imencode('.jpg', resized_frame)
+                    resized_frame = cv2.resize(
+                        decoded_frame,
+                        None,
+                        fx=0.5,
+                        fy=0.5,
+                        interpolation=cv2.INTER_AREA,
+                    )
+                    success, encoded_frame = cv2.imencode(".jpg", resized_frame)
                     if success:
                         frame = encoded_frame.tobytes()
 
@@ -354,7 +479,6 @@ class EagleEyeInterface:
         # Convert matrix to list for JSON serialization
         matrix_list = transformation_matrix.tolist()
         self.socketio.emit("update_robot_transform", {"transform_matrix": matrix_list})
-        self.socketio.sleep(0)
 
     def get_available_robots(self) -> dict:
         """
@@ -371,9 +495,254 @@ class EagleEyeInterface:
             "robots": [
                 os.path.basename(file)
                 for file in os.listdir(os.path.join(current_path, "assets", "robots"))
-                if file.endswith(".glb")
+                if file.endswith(".glb") and not file.startswith("_")
             ]
         }
+
+    def get_available_operations(self) -> dict:
+        """
+        Get a dict of available operations.
+
+        Returns:
+            dict:
+                operations: list of dicts with the name and path of the operation file.
+        """
+        main_opearations = []
+
+        for file in os.listdir(
+            os.path.join(src_path, "main_operations", "definitions")
+        ):
+            if file.endswith(".py") and not file.startswith("_"):
+                config_data_path = os.path.join(
+                    src_path,
+                    "main_operations",
+                    "definitions",
+                    "config_data",
+                    file.rstrip(".py") + "_config_def.json",
+                )
+                main_opearations.append(
+                    {
+                        "name": os.path.basename(file),
+                        "path": os.path.join(
+                            src_path, "main_operations", "definitions", file
+                        ),
+                        "config_data_path": config_data_path,
+                        "description": json.load(open(config_data_path))["description"],
+                        "category": json.load(open(config_data_path))["category"],
+                        "is_secondary": False,
+                    }
+                )
+
+        secondary_operations = []
+
+        for file in os.listdir(os.path.join(src_path, "secondary_operations")):
+            if file.endswith(".py") and not file.startswith("_"):
+                config_data_path = os.path.join(
+                    src_path,
+                    "secondary_operations",
+                    "config_data",
+                    file.rstrip(".py") + "_config_def.json",
+                )
+                secondary_operations.append(
+                    {
+                        "name": os.path.basename(file),
+                        "path": os.path.join(src_path, "secondary_operations", file),
+                        "config_data_path": config_data_path,
+                        "description": json.load(open(config_data_path))["description"],
+                        "category": json.load(open(config_data_path))["category"],
+                        "is_secondary": True,
+                    }
+                )
+
+        return {
+            "operations": main_opearations + secondary_operations,
+        }
+
+    def get_operation_config_data(
+        self, operation_name: str, is_secondary: bool = False
+    ) -> dict:
+        """
+        Get the config data for an operation.
+
+        Args:
+            operation_name (str): The name of the operation.
+            is_secondary (bool): Whether the operation is a secondary operation.
+
+        Returns:
+            dict: The config data for the operation.
+        """
+        if is_secondary:
+            return json.load(
+                open(
+                    os.path.join(
+                        src_path,
+                        "secondary_operations",
+                        "config_data",
+                        operation_name.lower().replace(" ", "_").replace(".py", "")
+                        + "_config_def.json",
+                    )
+                )
+            )
+        return json.load(
+            open(
+                os.path.join(
+                    src_path,
+                    "main_operations",
+                    "definitions",
+                    "config_data",
+                    operation_name.lower().replace(" ", "_").replace(".py", "")
+                    + "_config_def.json",
+                )
+            )
+        )
+
+    def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> dict:
+        """
+        Get the config data for a pipeline.
+
+        Args:
+            camera_name (str): The name of the camera.
+            pipeline_name (str): The name of the pipeline.
+
+        Returns:
+            dict: The config data for the pipeline.
+        """
+        return json.load(
+            open(os.path.join(src_path, "config", "pipeline_config.json"))
+        )[camera_name][pipeline_name]
+
+    def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
+        """
+        Get the names of the pipelines for a camera.
+
+        Args:
+            camera_name (str): The name of the camera.
+
+        Returns:
+            list[str]: The names of the pipelines for the camera.
+        """
+        return list(
+            json.load(open(os.path.join(src_path, "config", "pipeline_config.json")))[
+                camera_name
+            ].keys()
+        )
+
+    def save_pipeline_config(
+        self, camera_name: str, pipeline_name: str
+    ) -> tuple[dict, int]:
+        """
+        Save the pipeline config.
+
+        Args:
+            camera_name (str): The name of the camera.
+            pipeline_name (str): The name of the pipeline.
+
+        Returns:
+            tuple[dict, int]: A success or failure message.
+        """
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
+            current_config = json.load(f)
+            new_data = request.get_json()
+
+            for operation in new_data:
+                operation_name = operation["action_name"]
+                operation_params = operation["action_params"]
+
+                operation_names = [
+                    opearation["action_name"]
+                    for opearation in current_config[camera_name][pipeline_name]
+                ]
+
+                if operation_name in operation_names:
+                    for key, value in operation_params.items():
+                        current_config[camera_name][pipeline_name][
+                            operation_names.index(operation_name)
+                        ]["action_params"][key] = value
+                else:
+                    current_config[camera_name][pipeline_name].append(
+                        {
+                            "action_name": operation_name,
+                            "action_params": operation_params,
+                        }
+                    )
+
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
+            json.dump(current_config, f, indent=4)
+        self.pipeline_objects_callback()[camera_name][
+            pipeline_name
+        ].update_operations_config(request.get_json())
+        return {"message": "Pipeline config saved successfully"}, 200
+
+    def delete_pipeline(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Delete a pipeline.
+        """
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
+            current_config = json.load(f)
+            del current_config[camera_name][pipeline_name]
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
+            json.dump(current_config, f, indent=4)
+        return {"message": "Pipeline deleted successfully"}, 200
+
+    def start_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Start visualizing the pipeline.
+        """
+        self.pipeline_objects_callback()[camera_name][pipeline_name].start_visualize()
+        return {"message": "Pipeline visualized successfully"}, 200
+
+    def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Stop visualizing the pipeline.
+        """
+        self.pipeline_objects_callback()[camera_name][pipeline_name].stop_visualize()
+        return {"message": "Pipeline visualized stopped"}, 200
+
+    def visualize(
+        self, camera_name: str, pipeline_name: str, action_name: str
+    ) -> Response:
+        """
+        Visualize the pipeline up to the given action name.
+
+        Returns the image as JPEG binary data.
+        """
+        # Get the numpy array from the pipeline's visualize method
+        image_array = self.pipeline_objects_callback()[camera_name][
+            pipeline_name
+        ].visualize(action_name)
+
+        if image_array is None:
+            return Response(
+                "Function has no visualization", status=500, mimetype="text/plain"
+            )
+
+        # Encode the numpy array to JPEG format
+        success, encoded_image = cv2.imencode(".jpg", image_array)
+        if not success:
+            return Response("Failed to encode image", status=500, mimetype="text/plain")
+
+        # Return the encoded image as binary data with proper content type
+        return Response(encoded_image.tobytes(), mimetype="image/jpeg")
+
+    def restart_backend(self) -> tuple[dict, int]:
+        """
+        Restart the backend.
+        """
+        self.restart_callback()
+        return {"message": "Backend restarted successfully"}, 200
+
+    def set_restart_required(self) -> tuple[dict, int]:
+        """
+        Set the restart required flag.
+        """
+        self.restart_required_for_config = True
+        return {"message": "Restart required for config set successfully"}, 200
+
+    def get_restart_required(self) -> tuple[dict, int]:
+        """
+        Get the restart required flag.
+        """
+        return {"restart_required": self.restart_required_for_config}, 200
 
 
 if __name__ == "__main__":

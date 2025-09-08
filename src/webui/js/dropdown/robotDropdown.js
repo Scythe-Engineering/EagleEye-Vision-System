@@ -3,7 +3,9 @@ export async function populateRobotDropdown() {
 
     async function fetchAvailableRobots() {
         try {
-            const response = await fetch("/get-available-robots");
+            const response = await fetch(
+                "http://localhost:5001/get-available-robots",
+            );
             const data = await response.json();
             return data.robots;
         } catch (error) {
@@ -14,12 +16,14 @@ export async function populateRobotDropdown() {
 
     async function loadRobots() {
         const robots = await fetchAvailableRobots();
-        
+
         // Save the currently selected value before clearing
-        const previouslySelectedValue = robotFileSelect.selectedIndex > 0 ? robotFileSelect.value : null;
-        
-        robotFileSelect.innerHTML = "<option disabled selected>Select Robot File</option>";
-        
+        const previouslySelectedValue =
+            robotFileSelect.selectedIndex > 0 ? robotFileSelect.value : null;
+
+        robotFileSelect.innerHTML =
+            "<option disabled selected>Select Robot File</option>";
+
         robots.forEach((robot) => {
             const option = document.createElement("option");
             option.value = robot;
@@ -28,7 +32,10 @@ export async function populateRobotDropdown() {
         });
 
         // Restore previous selection if it still exists in the new list
-        if (previouslySelectedValue && robots.includes(previouslySelectedValue)) {
+        if (
+            previouslySelectedValue &&
+            robots.includes(previouslySelectedValue)
+        ) {
             robotFileSelect.value = previouslySelectedValue;
         }
         // Otherwise, select first robot if robots are available and no previous selection
@@ -39,5 +46,3 @@ export async function populateRobotDropdown() {
 
     await loadRobots();
 }
-
-    

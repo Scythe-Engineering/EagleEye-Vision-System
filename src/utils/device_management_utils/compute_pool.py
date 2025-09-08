@@ -45,8 +45,30 @@ class ComputePool:
 
         Args:
             compute_device_id (str): The id of the compute device to be retrieved.
+
+        Returns:
+            ComputeDevice: The compute device with the given id.
         """
         for compute_device in self.compute_pool:
             if compute_device.device_id == compute_device_id:
                 return compute_device
         raise ValueError(f"Compute device with id {compute_device_id} not found")
+    
+    def get_compute_devices_by_type(self, compute_device_type: str) -> list[ComputeDevice]:
+        """
+        Get compute devices from the compute pool by their type.
+
+        Args:
+            compute_device_type (str): The type of the compute device to be retrieved.
+
+        Returns:
+            list[ComputeDevice]: A list of compute devices of the given type.
+        """
+        return [compute_device for compute_device in self.compute_pool if compute_device.device_type == compute_device_type]
+    
+    def stop_all_devices(self) -> None:
+        """
+        Stop all devices in the compute pool.
+        """
+        for compute_device in self.compute_pool:
+            compute_device.stop()

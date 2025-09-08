@@ -1,8 +1,21 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import cv2
 import numpy as np
 from pupil_apriltags import Detector, Detection
+
+
+@dataclass
+class CustomDetection:
+    """A detection of an AprilTag.
+    
+    Attributes:
+        tag_id: The ID of the detected AprilTag.
+        corners: The corners of the detected AprilTag.
+    """
+    tag_id: int
+    corners: np.ndarray
 
 
 class AprilTagDetector:
@@ -104,26 +117,43 @@ class AprilTagDetector:
 
     def detect(
         self,
-        image: np.ndarray,
-    ) -> Detection:
+        images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
+    ) -> list[Detection] | list[CustomDetection]:
         """Detect AprilTags in an image.
         Note:
         - Input image is always converted to grayscale.
 
         Args:
-            image: Input image (grayscale or BGR).
+            images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
 
         Returns:
-            List of Detection objects containing tag information.
+            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
         """
-        if len(image.shape) == 3:
-            gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if isinstance(images, np.ndarray):
+            if len(images.shape) == 3:
+                gray_image = cv2.cvtColor(images, cv2.COLOR_BGR2GRAY)
+            else:
+                gray_image = images
+
+            gray_image = gray_image.astype(np.uint8)
+
+            return self.detector.detect(
+                gray_image
+            )
         else:
-            gray_image = image.copy()
+            detections = []
+            for image, offset in images:
+                if len(image.shape) == 3:
+                    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                else:
+                    gray_image = image
 
-        gray_image = gray_image.astype(np.uint8)
+                gray_image = gray_image.astype(np.uint8)
 
-        return self.detector.detect(
-            gray_image
-        )
- 
+                for detection in self.detector.detect(gray_image):
+                    detections.append(CustomDetection(
+                        tag_id=detection.tag_id,
+                        corners=(detection.corners + offset)
+                    ))
+
+            return detections
