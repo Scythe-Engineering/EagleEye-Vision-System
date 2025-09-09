@@ -23,12 +23,10 @@ export function uid(prefix = "") {
 }
 
 export function getIconSVG(name) {
-    switch (name) {
-        case "grip":
-            return '<svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 4a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 10a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 16a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2z"/></svg>';
-        default:
-            return "";
+    if (name === "grip") {
+        return '<svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 4a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 10a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 16a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2z"/></svg>';
     }
+    return "";
 }
 
 export function parseDropPayload(dataTransfer) {
@@ -40,7 +38,8 @@ export function parseDropPayload(dataTransfer) {
         const parsed = JSON.parse(json);
         if (parsed && (parsed.id || parsed.instanceId)) return parsed;
         return null;
-    } catch (_) {
+    } catch (error) {
+        console.warn("Failed to parse drop payload:", error);
         return null;
     }
 }

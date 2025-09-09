@@ -55,10 +55,7 @@ export function addHoverListeners(element, name, description) {
     });
 
     element.addEventListener("mousemove", (e) => {
-        if (
-            descriptionPopup &&
-            descriptionPopup.classList.contains("opacity-100")
-        ) {
+        if (descriptionPopup?.classList.contains("opacity-100")) {
             // Update position as mouse moves
             descriptionPopup.style.left = e.clientX + 10 + "px";
             descriptionPopup.style.top = e.clientY + 10 + "px";
@@ -129,18 +126,14 @@ export function renderPipeline(
     pipeline,
     pipelineContainer,
     pipelinePlaceholder,
-    openOperationSettings,
-    updateRunButton,
-    removeFromPipeline,
-    handleDragStart,
-    handleDragEnd,
+    callbacks,
 ) {
     // Reset container
     pipelineContainer.innerHTML = "";
 
     if (pipeline.length === 0) {
         pipelinePlaceholder.classList.remove("hidden");
-        updateRunButton();
+        callbacks.updateRunButton();
         return;
     }
 
@@ -174,10 +167,10 @@ export function renderPipeline(
 
         // Events
         wrapper.addEventListener("dragstart", (e) =>
-            handleDragStart(e, item, index, pipeline),
+            callbacks.handleDragStart(e, item, index, pipeline),
         );
         wrapper.addEventListener("dragend", (e) =>
-            handleDragEnd(e, pipelineContainer, pipelinePlaceholder, pipeline),
+            callbacks.handleDragEnd(e, pipelineContainer, pipelinePlaceholder, pipeline),
         );
 
         // Add hover listeners for description popup
@@ -186,14 +179,14 @@ export function renderPipeline(
         const removeBtn = wrapper.querySelector(".remove-btn");
         removeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            removeFromPipeline(item.instanceId);
+            callbacks.removeFromPipeline(item.instanceId);
         });
 
         const opSettingsBtn = wrapper.querySelector(".op-settings-btn");
         if (opSettingsBtn) {
             opSettingsBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
-                openOperationSettings(item);
+                callbacks.openOperationSettings(item);
             });
         }
 
@@ -208,5 +201,5 @@ export function renderPipeline(
         }
     });
 
-    updateRunButton();
+    callbacks.updateRunButton();
 }

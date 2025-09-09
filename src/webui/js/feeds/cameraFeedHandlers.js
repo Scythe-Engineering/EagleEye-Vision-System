@@ -113,7 +113,7 @@ export function pauseCameraFeeds() {
 
     const imageElements = document.querySelectorAll("img.camera-view");
     imageElements.forEach((img) => {
-        if (img && img.src && img.src !== "") {
+        if (img?.src && img.src !== "") {
             img.dataset.pausedSrc = img.src;
             img.src = "";
         }
@@ -125,12 +125,12 @@ export function resumeCameraFeeds() {
 
     const imageElements = document.querySelectorAll("img.camera-view");
     imageElements.forEach((img) => {
-        if (img.dataset && img.dataset.pausedSrc) {
+        if (img.dataset?.pausedSrc) {
             img.src = img.dataset.pausedSrc;
             delete img.dataset.pausedSrc;
         } else if (img && (!img.src || img.src.trim() === "")) {
             const container = img.closest("[data-camera-name]");
-            if (container && container.dataset.cameraName) {
+            if (container?.dataset?.cameraName) {
                 const name = container.dataset.cameraName;
                 img.src = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
             }

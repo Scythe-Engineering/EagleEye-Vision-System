@@ -1,4 +1,4 @@
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -31,26 +31,26 @@ class PnpLocalization:
         self.distortion_coefficients = distortion_coefficients
         self.apriltag_map = apriltag_map
 
-    def fast_se3_inverse(self, T: np.ndarray) -> np.ndarray:
+    def fast_se3_inverse(self, t: np.ndarray) -> np.ndarray:
         """Fast analytical inverse for SE(3) transformation matrix.
 
         Args:
-            T (np.ndarray): 4x4 SE(3) transformation matrix.
+            t (np.ndarray): 4x4 SE(3) transformation matrix.
 
         Returns:
             np.ndarray: 4x4 inverse transformation matrix.
         """
-        R = T[:3, :3]
-        t = T[:3, 3]
+        R = t[:3, :3]
+        translation = t[:3, 3]
 
-        R_inv = R.T
-        t_inv = -R_inv @ t
+        r_inv = R.T
+        t_inv = -r_inv @ translation
 
-        T_inv = np.eye(4)
-        T_inv[:3, :3] = R_inv
-        T_inv[:3, 3] = t_inv
+        t_inv_matrix = np.eye(4)
+        t_inv_matrix[:3, :3] = r_inv
+        t_inv_matrix[:3, 3] = t_inv
 
-        return T_inv
+        return t_inv_matrix
 
     def estimate_pose_from_detections(
         self,

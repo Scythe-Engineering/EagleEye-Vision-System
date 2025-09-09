@@ -10,7 +10,7 @@ export function createDropIndicator() {
 
 export function removeDropIndicator() {
     const dropIndicatorElem = document.querySelector(".drop-indicator");
-    if (dropIndicatorElem && dropIndicatorElem.parentNode) {
+    if (dropIndicatorElem?.parentNode) {
         dropIndicatorElem.parentNode.removeChild(dropIndicatorElem);
     }
 }
@@ -26,7 +26,7 @@ let isDragOverScheduled = false;
 let lastDragOverEvent = null;
 
 // Drag/drop handlers
-export function handleDragStart(e, item, fromIndex = null, operations) {
+export function handleDragStart(e, item, operations, fromIndex = null) {
     draggedItem = item;
     draggedFromIndex = fromIndex;
     e.dataTransfer.effectAllowed = fromIndex !== null ? "move" : "copy";
@@ -43,6 +43,7 @@ export function handleDragStart(e, item, fromIndex = null, operations) {
         e.dataTransfer.setData("text/plain", payload);
     } catch (err) {
         // some browsers restrict certain mime types during drag
+        console.warn("Failed to set drag data:", err);
     }
 
     // Visual cue
@@ -122,20 +123,18 @@ export function handleDragOverPipeline(e, pipeline, pipelineContainer) {
 
         if (nonDragged.length === 0) {
             pipelineContainer.appendChild(dropIndicatorElem);
-        } else {
-            if (k < nonDragged.length) {
-                const refId = nonDragged[k].instanceId;
-                const refEl = pipelineContainer.querySelector(
-                    `[data-instance-id="${refId}"]`,
-                );
-                if (refEl) {
-                    pipelineContainer.insertBefore(dropIndicatorElem, refEl);
-                } else {
-                    pipelineContainer.appendChild(dropIndicatorElem);
-                }
+        } else if (k < nonDragged.length) {
+            const refId = nonDragged[k].instanceId;
+            const refEl = pipelineContainer.querySelector(
+                `[data-instance-id="${refId}"]`,
+            );
+            if (refEl) {
+                pipelineContainer.insertBefore(dropIndicatorElem, refEl);
             } else {
                 pipelineContainer.appendChild(dropIndicatorElem);
             }
+        } else {
+            pipelineContainer.appendChild(dropIndicatorElem);
         }
     });
 }
@@ -158,9 +157,7 @@ export function handleDropOnPipeline(
     operations,
     pipelineContainer,
     pipelinePlaceholder,
-    renderPipeline,
-    updateRunButton,
-    openOperationSettings,
+    callbacks,
 ) {
     e.preventDefault();
     e.stopPropagation();
@@ -252,14 +249,11 @@ export function handleDropOnPipeline(
             newPipeline.splice(finalIndex, 0, removedItem);
             pipeline.length = 0;
             pipeline.push(...newPipeline);
-            renderPipeline();
+            callbacks.renderPipeline();
 
             // Auto-save when reordering items
             setTimeout(() => {
-                if (
-                    window.pipelineCreator &&
-                    window.pipelineCreator.autoSavePipeline
-                ) {
+                if (window.pipelineCreator?.autoSavePipeline) {
                     window.pipelineCreator.autoSavePipeline();
                 }
             }, 100);
@@ -274,14 +268,11 @@ export function handleDropOnPipeline(
         newPipeline.splice(finalIndex, 0, newItem);
         pipeline.length = 0;
         pipeline.push(...newPipeline);
-        renderPipeline();
+        callbacks.renderPipeline();
 
         // Auto-save when adding new items
         setTimeout(() => {
-            if (
-                window.pipelineCreator &&
-                window.pipelineCreator.autoSavePipeline
-            ) {
+            if (window.pipelineCreator?.autoSavePipeline) {
                 window.pipelineCreator.autoSavePipeline();
             }
         }, 100);

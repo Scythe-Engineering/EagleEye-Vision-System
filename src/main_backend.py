@@ -1,18 +1,16 @@
 import csv
 import os
-from time import sleep
 from pathlib import Path
+from time import sleep
 from typing import Callable, Dict, Set
 
-import requests
-
+from src.config.utils.generate_all_pipelines import generate_all_pipelines
+from src.config.utils.pipeline import Pipeline
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras
-from src.webui.web_server import EagleEyeInterface
-from src.config.utils.generate_all_pipelines import generate_all_pipelines
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
-from src.config.utils.pipeline import Pipeline
+from src.webui.web_server import EagleEyeInterface
 
 current_dir = Path(__file__).parent
 
@@ -35,7 +33,7 @@ class DummyNetworkTable:
                 frame_data = {header[i]: row[i] for i in range(1, len(header))}
                 self.sim_data[frame_key] = frame_data
 
-    def getNumber(self, key: str, default: float | bool = 0.0) -> float | bool:
+    def get_number(self, key: str, default: float | bool = 0.0) -> float | bool:
         frame_key = str(self.video_camera_index_callback())
         if frame_key in self.sim_data and str(key) in self.sim_data[frame_key]:
             return float(self.sim_data[frame_key][str(key)])

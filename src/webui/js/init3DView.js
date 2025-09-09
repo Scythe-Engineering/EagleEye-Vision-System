@@ -58,7 +58,6 @@ function updateStats() {
 }
 
 function createRobotAxes() {
-    // TODO: Create coordinate axes for robot visualization
     const axesGroup = new Group();
     const axisLength = 500; // Adjust length as needed
 

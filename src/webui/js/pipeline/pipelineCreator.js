@@ -339,7 +339,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
 async function checkAndTriggerAutoFill() {
     try {
         // Check if camera dropdown has a selected value and update selectedCamera if needed
-        if (cameraSelect && cameraSelect.value) {
+        if (cameraSelect?.value) {
             const selectedCameraValue = cameraSelect.value;
             const cameraObj = cameras.find(
                 (c) => c.urlSafeName === selectedCameraValue,
@@ -356,7 +356,7 @@ async function checkAndTriggerAutoFill() {
         }
 
         // Check if pipeline dropdown has a selected value
-        if (!pipelineSelect || !pipelineSelect.value) {
+        if (!pipelineSelect?.value) {
             console.log("No pipeline selected, skipping auto-fill");
             return;
         }
@@ -394,11 +394,13 @@ async function removeFromPipeline(instanceId) {
         pipeline,
         pipelineContainer,
         pipelinePlaceholder,
-        openOperationSettings,
-        updateRunButton,
-        removeFromPipeline,
-        handleDragStart,
-        handleDragEnd,
+        {
+            openOperationSettings,
+            updateRunButton,
+            removeFromPipeline,
+            handleDragStart,
+            handleDragEnd,
+        },
     );
 
     // Auto-save when removing items
@@ -831,10 +833,8 @@ async function updateRestartIndicator(show = false) {
             // Add warning styling
             restartIndicator.classList.add("backend-state-warning");
         }
-    } else {
-        if (restartIndicator) {
-            restartIndicator.classList.add("hidden");
-        }
+    } else if (restartIndicator) {
+        restartIndicator.classList.add("hidden");
     }
 }
 
@@ -855,7 +855,9 @@ async function handleRestartBackend() {
             await fetch("http://localhost:5001/restart-backend", {
                 method: "POST",
             });
-        } catch (error) {}
+        } catch (error) {
+            console.warn("Failed to send restart request:", error);
+        }
 
         console.log("Backend restarted successfully");
 
@@ -947,7 +949,7 @@ async function checkSpecificParameterRestart(
             const params = configData.parameters || {};
             const paramDef = params[paramName];
 
-            if (paramDef && paramDef.restart_for_change) {
+            if (paramDef?.restart_for_change) {
                 // Get the original value from when the pipeline was loaded
                 const originalValue = operationItem.originalConfig[paramName];
 
@@ -1085,19 +1087,21 @@ export async function initPipelineCreator() {
                 operations,
                 pipelineContainer,
                 pipelinePlaceholder,
-                () =>
-                    renderPipeline(
-                        pipeline,
-                        pipelineContainer,
-                        pipelinePlaceholder,
-                        openOperationSettings,
-                        updateRunButton,
-                        removeFromPipeline,
-                        handleDragStart,
-                        handleDragEnd,
-                    ),
-                updateRunButton,
-                openOperationSettings,
+                {
+                    renderPipeline: () =>
+                        renderPipeline(
+                            pipeline,
+                            pipelineContainer,
+                            pipelinePlaceholder,
+                            openOperationSettings,
+                            updateRunButton,
+                            removeFromPipeline,
+                            handleDragStart,
+                            handleDragEnd,
+                        ),
+                    updateRunButton,
+                    openOperationSettings,
+                },
             );
 
             // Check if pipeline structure changed (added, removed, or reordered)
@@ -1119,16 +1123,14 @@ export async function initPipelineCreator() {
 
                 // Auto-save when pipeline structure changes (add, remove, reorder)
                 autoSavePipeline();
-            } else {
+            } else if (pipeline.length > pipelineLengthBefore) {
                 // If operations were added, check restart requirements for all operations
-                if (pipeline.length > pipelineLengthBefore) {
-                    pipeline.forEach((item) => {
-                        checkPipelineRestartRequirements(item);
-                    });
+                pipeline.forEach((item) => {
+                    checkPipelineRestartRequirements(item);
+                });
 
-                    // Auto-save when operations are added
-                    autoSavePipeline();
-                }
+                // Auto-save when operations are added
+                autoSavePipeline();
             }
         });
     };
@@ -1171,11 +1173,13 @@ export async function initPipelineCreator() {
         pipeline,
         pipelineContainer,
         pipelinePlaceholder,
-        openOperationSettings,
-        updateRunButton,
-        removeFromPipeline,
-        handleDragStart,
-        handleDragEnd,
+        {
+            openOperationSettings,
+            updateRunButton,
+            removeFromPipeline,
+            handleDragStart,
+            handleDragEnd,
+        },
     );
 
     // Check backend restart status on initialization

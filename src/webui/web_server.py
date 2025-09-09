@@ -9,8 +9,8 @@ from typing import Any, Callable, Generator
 import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
-from flask_socketio import SocketIO
 from flask_cors import CORS
+from flask_socketio import SocketIO
 
 from src.main_operations.modules.object_detection.src.constants.constants import (
     Constants,

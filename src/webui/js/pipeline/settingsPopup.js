@@ -129,16 +129,18 @@
 
         // Add event listener to detect real-time changes
         const updateIndicator = () => {
-            const currentVal =
-                input.tagName.toLowerCase() === "select"
-                    ? input.value
-                    : input.type === "checkbox"
-                      ? input.checked
-                      : def.type === "int"
-                        ? parseInt(input.value, 10)
-                        : def.type === "float"
-                          ? parseFloat(input.value)
-                          : input.value;
+            let currentVal;
+            if (input.tagName.toLowerCase() === "select") {
+                currentVal = input.value;
+            } else if (input.type === "checkbox") {
+                currentVal = input.checked;
+            } else if (def.type === "int") {
+                currentVal = parseInt(input.value, 10);
+            } else if (def.type === "float") {
+                currentVal = parseFloat(input.value);
+            } else {
+                currentVal = input.value;
+            }
 
             const edited =
                 JSON.stringify(currentVal) !== JSON.stringify(originalValue);
@@ -175,7 +177,7 @@
         modalBody.innerHTML = "";
         const fields = [];
 
-        const params = (config && config.parameters) || {};
+        const params = config?.parameters || {};
         Object.keys(params).forEach((key) => {
             const field = buildField(
                 key,
@@ -224,11 +226,11 @@
             originalValues,
             config,
         ) => {
-            if (!config || !config.parameters) return false;
+            if (!config?.parameters) return false;
 
             for (const field of fields) {
-                const paramConfig = config.parameters[field.name];
-                if (paramConfig && paramConfig.restart_for_change) {
+                const paramConfig = config.parameters?.[field.name];
+                if (paramConfig?.restart_for_change) {
                     const currentValue = currentValues[field.name];
                     const originalValue = originalValues[field.name];
                     if (
@@ -280,10 +282,7 @@
                 onSave(currentValues);
 
                 // Update restart indicator if available
-                if (
-                    window.pipelineCreator &&
-                    window.pipelineCreator.updateRestartIndicator
-                ) {
+                if (window.pipelineCreator?.updateRestartIndicator) {
                     const requiresRestart = checkIfRestartRequired(
                         currentValues,
                         originalValues,
@@ -398,7 +397,7 @@
     }
 
     function init() {
-        let { overlay, modal } = findOverlayElements();
+        let { overlay } = findOverlayElements();
 
         const closeButtons = overlay.querySelectorAll("[data-action='close']");
         closeButtons.forEach((btn) =>
@@ -438,7 +437,7 @@
                     cameraSelectEl.options[cameraSelectEl.selectedIndex]
                         .textContent;
             }
-            if (pipelineSelectEl && pipelineSelectEl.value) {
+            if (pipelineSelectEl?.value) {
                 selectedPipelineName = pipelineSelectEl.value;
             }
         } catch (err) {
@@ -620,7 +619,9 @@
         if (_currentVisObjectUrl) {
             try {
                 URL.revokeObjectURL(_currentVisObjectUrl);
-            } catch (e) {}
+            } catch (e) {
+                console.warn("Failed to revoke object URL:", e);
+            }
             _currentVisObjectUrl = null;
         }
         stopVisualizationIfActive();

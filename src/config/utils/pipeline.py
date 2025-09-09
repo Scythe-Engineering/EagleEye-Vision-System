@@ -1,16 +1,17 @@
-import time
-from typing import Any, Dict, List
-import numpy as np
 import importlib
-from src.webui.web_server import EagleEyeInterface
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 import threading
-from src.utils.device_management_utils.compute_pool import ComputePool
+import time
 import traceback
 from collections import deque
-from src.config.utils.print_timing_summary import print_timing_summary
+from typing import Any, Dict, List
+
+import numpy as np
 from networktables import NetworkTable
 
+from src.config.utils.print_timing_summary import print_timing_summary
+from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+from src.utils.device_management_utils.compute_pool import ComputePool
+from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
 
