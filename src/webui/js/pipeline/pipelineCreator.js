@@ -11,6 +11,7 @@ import {
     handleDragLeavePipeline,
     handleDropOnPipeline,
 } from "./dragDrop.js";
+import { BACKEND_BASE_URL } from "../config.js";
 
 // --- Operation definitions (populated from server)
 let operations = [];
@@ -45,7 +46,7 @@ let restartIndicator;
 async function fetchAvailableOperations() {
     try {
         const response = await fetch(
-            "http://localhost:5001/get-available-operations",
+            `${BACKEND_BASE_URL}/get-available-operations`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -77,7 +78,7 @@ async function fetchAvailableOperations() {
 async function fetchAvailableCameras() {
     try {
         const response = await fetch(
-            "http://localhost:5001/get-available-cameras",
+            `${BACKEND_BASE_URL}/get-available-cameras`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -116,7 +117,7 @@ function populateCameraDropdown() {
 async function fetchPipelinesForCamera(cameraName) {
     try {
         const response = await fetch(
-            `http://localhost:5001/get-pipeline-names-for-camera/${encodeURIComponent(cameraName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-names-for-camera/${encodeURIComponent(cameraName)}`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -142,7 +143,7 @@ async function fetchPipelinesForCamera(cameraName) {
 async function fetchPipelineConfig(cameraName, pipelineName) {
     try {
         const response = await fetch(
-            `http://localhost:5001/get-pipeline-config/${encodeURIComponent(cameraName)}/${encodeURIComponent(pipelineName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(cameraName)}/${encodeURIComponent(pipelineName)}`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -566,13 +567,13 @@ async function autoSavePipeline() {
         console.log(
             "Sending API request to save pipeline (all config values):",
             {
-                url: `http://localhost:5001/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+                url: `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
                 pipelineConfig: pipelineConfig,
             },
         );
 
         const response = await fetch(
-            `http://localhost:5001/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
             {
                 method: "POST",
                 headers: {
@@ -713,7 +714,7 @@ async function deleteCurrentPipeline() {
     try {
         // Call the backend delete endpoint
         const response = await fetch(
-            `http://localhost:5001/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
             {
                 method: "DELETE",
                 headers: {
@@ -802,7 +803,7 @@ function updateDeleteButtonVisibility() {
 async function updateRestartIndicator(show = false) {
     // Notify backend about restart requirement status
     try {
-        await fetch("http://localhost:5001/set_restart_required", {
+        await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -852,7 +853,7 @@ async function handleRestartBackend() {
         }
 
         try {
-            await fetch("http://localhost:5001/restart-backend", {
+            await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
                 method: "POST",
             });
         } catch (error) {
@@ -874,7 +875,7 @@ async function handleRestartBackend() {
 async function checkBackendRestartStatus() {
     try {
         const response = await fetch(
-            "http://localhost:5001/get_restart_required",
+            `${BACKEND_BASE_URL}/get_restart_required`,
         );
 
         if (response.ok) {
@@ -941,7 +942,7 @@ async function checkSpecificParameterRestart(
         // Fetch the operation's config definition
         const isSecondary = operationItem.isSecondary || false;
         const response = await fetch(
-            `http://localhost:5001/get-operation-config-data/${encodeURIComponent(operationItem.id)}/${isSecondary ? 1 : 0}`,
+            `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(operationItem.id)}/${isSecondary ? 1 : 0}`,
         );
 
         if (response.ok) {

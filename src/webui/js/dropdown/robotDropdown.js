@@ -1,10 +1,12 @@
+import { BACKEND_BASE_URL } from "../config.js";
+
 export async function populateRobotDropdown() {
     const robotFileSelect = document.getElementById("robotFileSelect");
 
     async function fetchAvailableRobots() {
         try {
             const response = await fetch(
-                "http://localhost:5001/get-available-robots",
+                `${BACKEND_BASE_URL}/get-available-robots`,
             );
             const data = await response.json();
             return data.robots;

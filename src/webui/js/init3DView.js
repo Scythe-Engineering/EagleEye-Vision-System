@@ -24,6 +24,7 @@ import {
 import { OrbitControls } from "OrbitControls";
 import { DRACOLoader } from "DRACOLoader";
 import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
+import { BACKEND_BASE_URL } from "./config.js";
 
 let renderer, scene, camera, directionalLight;
 let shadowsEnabled = true;
@@ -152,7 +153,7 @@ export async function init3DView(modelUrl) {
     scene = new Scene();
 
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath("http://localhost:5001/draco/");
+    dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/`);
 
     scene.background = new Color(0x222222);
 
@@ -167,7 +168,7 @@ export async function init3DView(modelUrl) {
             robotLoader.setDRACOLoader(dracoLoader);
 
             robotLoader.load(
-                "http://localhost:5001/get-robot-file/" + robotFile,
+                `${BACKEND_BASE_URL}/get-robot-file/${robotFile}`,
                 (gltf) => {
                     robotObject = gltf.scene;
                     robotObject.scale.set(1000, 1000, 1000);
@@ -368,14 +369,14 @@ export async function init3DView(modelUrl) {
     });
 
     // Add AprilTag PNGs as planes at fiducial transforms
-    fetch("http://localhost:5001/frc2025r2.json")
+    fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
         .then((response) => response.json())
         .then((json) => {
             const textureLoader = new TextureLoader();
             json.fiducials.forEach((fiducial) => {
                 const tagId = fiducial.id;
                 const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
-                const pngPath = `http://localhost:5001/src/webui/assets/apriltags/${pngName}`;
+                const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
                 textureLoader.load(pngPath, (texture) => {
                     // Configure texture for crisp pixel art
                     texture.magFilter = NearestFilter;

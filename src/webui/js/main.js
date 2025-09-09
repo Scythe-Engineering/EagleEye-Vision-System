@@ -3,6 +3,7 @@ import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings } from "./settings/saveSettings.js";
 import { updateRobotTransform } from "./init3DView.js";
+import { BACKEND_BASE_URL } from "./config.js";
 import "../style.css";
 import io from "socket.io-client";
 import { Matrix4 } from "three";
@@ -56,7 +57,7 @@ window.onload = async () => {
     };
 
     // Socket.IO client for camera position updates
-    const socket = io("http://localhost:5001", {
+    const socket = io(BACKEND_BASE_URL, {
         transports: ["websocket"],
         upgrade: false,
         rememberUpgrade: false,

@@ -1,3 +1,5 @@
+import { BACKEND_BASE_URL } from "../config.js";
+
 (function () {
     const OVERLAY_ID = "operationSettingsOverlay";
     const MODAL_ID = "operationSettingsModal";
@@ -457,7 +459,7 @@
             if (!selectedCameraName || !selectedPipelineName) return;
             try {
                 await fetch(
-                    `http://localhost:5001/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}`,
+                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}`,
                     { method: "POST" },
                 );
 
@@ -503,7 +505,7 @@
                 if (_visInterval) clearInterval(_visInterval);
                 _visInterval = setInterval(async () => {
                     try {
-                        const url = `http://localhost:5001/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}/${encodeURIComponent(_currentVisAction)}`;
+                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}/${encodeURIComponent(_currentVisAction)}`;
                         const response = await fetch(url, {
                             cache: "no-store",
                         });
@@ -595,7 +597,7 @@
         if (!_currentVisCamera || !_currentVisPipeline) return;
         try {
             fetch(
-                `http://localhost:5001/stop-visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`,
+                `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`,
                 { method: "POST" },
             ).catch((err) =>
                 console.warn("Failed to stop visualization:", err),
@@ -689,7 +691,7 @@
         const isSecondaryInt = isSecondary ? 1 : 0;
 
         return fetch(
-            `http://localhost:5001/get-operation-config-data/${encodeURIComponent(operationName)}/${isSecondaryInt}`,
+            `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(operationName)}/${isSecondaryInt}`,
         )
             .then((response) => {
                 if (!response.ok) {

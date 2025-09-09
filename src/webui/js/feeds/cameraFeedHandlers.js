@@ -1,7 +1,8 @@
+import { BACKEND_BASE_URL } from "../config.js";
+
 let cameraFeedsPaused = false;
 let cameraListPollIntervalId = null;
 let cameraFetchFn = null;
-const BACKEND_BASE_URL = "http://localhost:5001";
 
 export function setupCameraFeedHandlers() {
     const cameraList = document.getElementById("cameraList");
