@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
+from typing import Optional, List, TypedDict
 
 from src.main_operations.modules.apriltags.ytd_camera_localization.ytd_localization import (
     YtdLocalization,
@@ -8,6 +8,24 @@ from src.main_operations.modules.apriltags.ytd_camera_localization.ytd_localizat
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 import numpy as np
+
+
+class ApriltagDetection(TypedDict):
+    """Type definition for AprilTag detection data."""
+    tag_id: int
+    corners: np.ndarray
+    center: np.ndarray
+    pose_R: Optional[np.ndarray]
+    pose_t: Optional[np.ndarray]
+    tag_family: str
+    decision_margin: float
+    hamming: int
+    homography: np.ndarray
+
+
+class LocalizationResult(TypedDict):
+    """Type definition for camera localization result."""
+    transform: np.ndarray
 
 
 class YtdCameraLocalizationDefinition:
@@ -38,23 +56,23 @@ class YtdCameraLocalizationDefinition:
             apriltag_map=apriltag_map,
         )
 
-    def set_attribute(self, attribute_name: str, value: Any) -> None:
+    def set_attribute(self, attribute_name: str, value: float) -> None:
         """Set a named attribute on the underlying implementation.
 
         Args:
-                attribute_name: Name of the attribute to set.
-                value: Value to assign to the attribute.
+                attribute_name: Name of the attribute to set. Supported: "camera_yaw", "camera_pitch".
+                value: Float value to assign to the attribute.
         """
         self.pose_estimator.set_attribute(attribute_name, value)
 
-    def run(self, detections: List[Any]) -> Optional[Dict[str, Any]]:
+    def run(self, detections: List[ApriltagDetection]) -> Optional[np.ndarray]:
         """Delegate run to the `YtdLocalization` implementation.
 
         Args:
                 detections: List of AprilTag detections.
 
         Returns:
-                Fused localization output dictionary or None.
+                4x4 transformation matrix as numpy array or None if localization fails.
         """
         return self.pose_estimator.estimate_pose_from_detections(detections)
 
