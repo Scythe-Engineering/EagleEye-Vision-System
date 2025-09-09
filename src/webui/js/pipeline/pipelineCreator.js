@@ -102,6 +102,16 @@ async function fetchAvailableCameras() {
 function populateCameraDropdown() {
     cameraSelect.innerHTML = "";
 
+    if (!Array.isArray(cameras) || cameras.length === 0) {
+        const option = document.createElement("option");
+        option.disabled = true;
+        option.selected = true;
+        option.textContent = "No cameras available";
+        cameraSelect.appendChild(option);
+        selectedCamera = null;
+        return;
+    }
+
     cameras.forEach((camera, index) => {
         const option = document.createElement("option");
         option.value = camera.urlSafeName;
