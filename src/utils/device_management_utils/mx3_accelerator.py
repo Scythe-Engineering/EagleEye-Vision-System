@@ -2,7 +2,6 @@ from src.utils.device_management_utils.compute_device import ComputeDevice
 import numpy as np
 from torch import Tensor
 import time
-from typing import Generator
 
 print("Initializing MX3 Library")
 from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
@@ -20,21 +19,21 @@ class MX3ModelIO:
         """
         self.stop_signal: bool = False
         self.model_object: MultiStreamAsyncAccl = model_object
-        self.input_data_shape: tuple[int, int] = np.array([input_data_shape[0], input_data_shape[1], 1, 1])
+        self.input_data_shape: np.ndarray = np.array([input_data_shape[0], input_data_shape[1], 1, 1])
         self.zero_object = np.zeros(self.input_data_shape, dtype=np.float32)
         
         self.model_most_recent_inputs: dict[int, np.ndarray] = {}
         self.model_most_recent_outputs: dict[int, np.ndarray] = {}
         
-    def model_input_generator(self, stream_idx: int) -> Generator[np.ndarray, None, None]:
+    def model_input_generator(self, stream_idx: int) -> np.ndarray | None:
         """
         Generator for the model input.
 
         Args:
             stream_idx (int): Index of the stream to be run.
 
-        Yields:
-            Generator[np.ndarray, None, None]: Generator for the model input.
+        Returns:
+            np.ndarray | None: Input data for the model, or None if stopped.
         """
         if stream_idx in self.model_most_recent_inputs and not self.stop_signal:
             return self.model_most_recent_inputs[stream_idx]
