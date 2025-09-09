@@ -31,6 +31,10 @@ let selectedCamera = null;
 let pipelines = [];
 let selectedPipeline = null;
 
+// Auto-save state
+let isAutoSaving = false;
+let pendingAutoSave = false;
+
 // DOM refs (assigned at init time)
 let pipelineArea;
 let pipelineContainer;
@@ -532,77 +536,52 @@ function updateRunButton() {
 }
 
 async function autoSavePipeline() {
-    console.log("autoSavePipeline called with:", {
-        selectedCamera,
-        selectedPipeline,
-    });
     if (!selectedCamera || !selectedPipeline) {
         console.log("No camera or pipeline selected, skipping auto-save");
         return;
     }
 
+    if (isAutoSaving) {
+        pendingAutoSave = true;
+        return;
+    }
+    isAutoSaving = true;
     try {
-        // Transform pipeline data to match server expectations
-        const pipelineConfig = await Promise.all(
-            pipeline.map(async (item) => {
-                let configParams = {};
-
-                // Include all config values (no filtering of defaults)
-                if (item.config && Object.keys(item.config).length > 0) {
-                    console.log(
-                        `Including all config values for ${item.name}:`,
-                        item.config,
-                    );
-                    // Include all config values without filtering
-                    Object.keys(item.config).forEach((key) => {
-                        const value = item.config[key];
-                        // Include the value if it's not undefined/null
-                        if (value !== undefined && value !== null) {
-                            configParams[key] = value;
-                        }
-                    });
-                    console.log(
-                        `Final config params for ${item.name}:`,
-                        configParams,
-                    );
-                }
-
-                return {
-                    action_name: item.id.replace(".py", ""), // Remove .py extension for server
-                    action_params: configParams, // Include all config values
-                };
-            }),
-        );
-
-        console.log(
-            "Sending API request to save pipeline (all config values):",
-            {
-                url: `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
-                pipelineConfig: pipelineConfig,
-            },
-        );
+        const pipelineConfig = pipeline.map((item) => {
+            const configParams = {};
+            if (item.config) {
+                Object.keys(item.config).forEach((key) => {
+                    const value = item.config[key];
+                    if (value !== undefined && value !== null) {
+                        configParams[key] = value;
+                    }
+                });
+            }
+            return {
+                action_name: item.id.replace(".py", ""),
+                action_params: configParams,
+            };
+        });
 
         const response = await fetch(
             `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
             {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(pipelineConfig),
-            },
+            }
         );
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log("Pipeline auto-saved successfully:", result);
-        console.log("API call completed successfully");
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        await response.json();
     } catch (error) {
         console.error("Failed to auto-save pipeline:", error);
-        // Don't show alert for auto-save failures to avoid interrupting user experience
+    } finally {
+        isAutoSaving = false;
+        if (pendingAutoSave) {
+            pendingAutoSave = false;
+            // Trigger another save with the latest state
+            autoSavePipeline();
+        }
     }
 }
 
