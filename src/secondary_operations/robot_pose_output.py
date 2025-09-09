@@ -1,6 +1,7 @@
-from src.webui.web_server import EagleEyeInterface
 import numpy as np
 from line_profiler import profile
+
+from src.webui.web_server import EagleEyeInterface
 
 
 class RobotPoseOutput:
@@ -17,12 +18,12 @@ class RobotPoseOutput:
     @profile
     def run(self, pose: np.ndarray) -> None:
         """Output the robot pose to the web interface."""
-        if (
-            self._last_sent_pose is not None
-            and self._last_sent_pose.all() == pose.all()
+        if self._last_sent_pose is not None and np.array_equal(
+            self._last_sent_pose, pose
         ):
             return None
         self.web_interface.update_robot_position(pose)
+        self._last_sent_pose = pose.copy()
 
     def visualize(self, frame: np.ndarray) -> None:
         """Visualize the robot pose output.
