@@ -507,7 +507,7 @@ class EagleEyeInterface:
             dict:
                 operations: list of dicts with the name and path of the operation file.
         """
-        main_opearations = []
+        main_operations = []
 
         for file in os.listdir(
             os.path.join(src_path, "main_operations", "definitions")
@@ -520,15 +520,24 @@ class EagleEyeInterface:
                     "config_data",
                     file.rstrip(".py") + "_config_def.json",
                 )
-                main_opearations.append(
+                try:
+                    with open(config_data_path, "r") as f:
+                        config_data = json.load(f)
+                    description = config_data.get("description", "No description available")
+                    category = config_data.get("category", "Uncategorized")
+                except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                    description = "No description available"
+                    category = "Uncategorized"
+
+                main_operations.append(
                     {
                         "name": os.path.basename(file),
                         "path": os.path.join(
                             src_path, "main_operations", "definitions", file
                         ),
                         "config_data_path": config_data_path,
-                        "description": json.load(open(config_data_path))["description"],
-                        "category": json.load(open(config_data_path))["category"],
+                        "description": description,
+                        "category": category,
                         "is_secondary": False,
                     }
                 )
@@ -543,19 +552,28 @@ class EagleEyeInterface:
                     "config_data",
                     file.rstrip(".py") + "_config_def.json",
                 )
+                try:
+                    with open(config_data_path, "r") as f:
+                        config_data = json.load(f)
+                    description = config_data.get("description", "No description available")
+                    category = config_data.get("category", "Uncategorized")
+                except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                    description = "No description available"
+                    category = "Uncategorized"
+
                 secondary_operations.append(
                     {
                         "name": os.path.basename(file),
                         "path": os.path.join(src_path, "secondary_operations", file),
                         "config_data_path": config_data_path,
-                        "description": json.load(open(config_data_path))["description"],
-                        "category": json.load(open(config_data_path))["category"],
+                        "description": description,
+                        "category": category,
                         "is_secondary": True,
                     }
                 )
 
         return {
-            "operations": main_opearations + secondary_operations,
+            "operations": main_operations + secondary_operations,
         }
 
     def get_operation_config_data(
@@ -571,30 +589,33 @@ class EagleEyeInterface:
         Returns:
             dict: The config data for the operation.
         """
-        if is_secondary:
-            return json.load(
-                open(
-                    os.path.join(
-                        src_path,
-                        "secondary_operations",
-                        "config_data",
-                        operation_name.lower().replace(" ", "_").replace(".py", "")
-                        + "_config_def.json",
-                    )
-                )
-            )
-        return json.load(
-            open(
-                os.path.join(
-                    src_path,
-                    "main_operations",
-                    "definitions",
-                    "config_data",
-                    operation_name.lower().replace(" ", "_").replace(".py", "")
-                    + "_config_def.json",
-                )
-            )
+        config_file_name = (
+            operation_name.lower().replace(" ", "_").replace(".py", "")
+            + "_config_def.json"
         )
+
+        if is_secondary:
+            config_path = os.path.join(
+                src_path,
+                "secondary_operations",
+                "config_data",
+                config_file_name,
+            )
+        else:
+            config_path = os.path.join(
+                src_path,
+                "main_operations",
+                "definitions",
+                "config_data",
+                config_file_name,
+            )
+
+        try:
+            with open(config_path, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.log(f"Error loading config for operation {operation_name}: {e}")
+            return {}
 
     def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> dict:
         """
@@ -649,8 +670,8 @@ class EagleEyeInterface:
                 operation_params = operation["action_params"]
 
                 operation_names = [
-                    opearation["action_name"]
-                    for opearation in current_config[camera_name][pipeline_name]
+                    operation["action_name"]
+                    for operation in current_config[camera_name][pipeline_name]
                 ]
 
                 if operation_name in operation_names:
