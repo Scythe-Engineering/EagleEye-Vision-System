@@ -20,11 +20,15 @@ export const DEV_SERVER_BASE_URL = typeof window !== 'undefined' && window.DEV_S
     : "http://localhost:5173";
 
 // Helper function to construct backend URLs
+// @param {string} path - The endpoint path (with or without leading slash)
+// @returns {string} A complete URL with the backend base URL and normalized path
 export function buildBackendUrl(path) {
     return `${BACKEND_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
 }
 
 // Helper function to construct development server URLs
+// @param {string} path - The endpoint path (with or without leading slash)
+// @returns {string} A complete URL with the development server base URL and normalized path
 export function buildDevUrl(path) {
     return `${DEV_SERVER_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
 }
