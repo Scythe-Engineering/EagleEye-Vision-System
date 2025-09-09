@@ -790,41 +790,31 @@ function updateDeleteButtonVisibility() {
 // --- Restart Indicator Functions
 
 async function updateRestartIndicator(show = false) {
-    // Notify backend about restart requirement status
     try {
         await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ required: show }),
         });
-        console.log(
-            `Backend notified: restart ${show ? "required" : "not required"}`,
-        );
+        console.log(`Backend notified: restart ${show ? "required" : "not required"}`);
     } catch (error) {
-        console.error(
-            "Failed to notify backend about restart requirement:",
-            error,
-        );
+        console.error("Failed to notify backend about restart requirement:", error);
     }
 
+    if (!restartIndicator) return;
+
+    const restartMessage =
+        restartIndicator.querySelector(".text-red-100") ||
+        restartIndicator.querySelector("span");
+
     if (show) {
-        if (restartIndicator) {
-            restartIndicator.classList.remove("hidden");
-
-            const restartMessage = restartIndicator.querySelector(
-                ".text-red-100, span",
-            );
-            if (restartMessage) {
-                restartMessage.textContent = "Backend restart required";
-            }
-
-            // Add warning styling
-            restartIndicator.classList.add("backend-state-warning");
-        }
-    } else if (restartIndicator) {
+        restartIndicator.classList.remove("hidden");
+        if (restartMessage) restartMessage.textContent = "Backend restart required";
+        restartIndicator.classList.add("backend-state-warning");
+    } else {
         restartIndicator.classList.add("hidden");
+        // Clear warning styling so future checks can show it correctly
+        restartIndicator.classList.remove("backend-state-warning");
     }
 }
 
