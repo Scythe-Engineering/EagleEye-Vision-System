@@ -628,9 +628,8 @@ class EagleEyeInterface:
         Returns:
             dict: The config data for the pipeline.
         """
-        return json.load(
-            open(os.path.join(src_path, "config", "pipeline_config.json"))
-        )[camera_name][pipeline_name]
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
+            return json.load(f)[camera_name][pipeline_name]
 
     def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
         """
@@ -642,11 +641,8 @@ class EagleEyeInterface:
         Returns:
             list[str]: The names of the pipelines for the camera.
         """
-        return list(
-            json.load(open(os.path.join(src_path, "config", "pipeline_config.json")))[
-                camera_name
-            ].keys()
-        )
+        with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
+            return list(json.load(f)[camera_name].keys())
 
     def save_pipeline_config(
         self, camera_name: str, pipeline_name: str
