@@ -6,21 +6,35 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 
-export function setupSidebar() {
-    const sidebarItems = document.querySelectorAll(".sidebar li");
-    const views = document.querySelectorAll("[id^='view-']");
+class ViewManager {
+    constructor() {
+        this.sidebarItems = document.querySelectorAll(".sidebar li");
+        this.views = document.querySelectorAll("[id^='view-']");
+        this.controls = document.querySelectorAll(
+            "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn",
+        );
+    }
 
-    function activateView(targetViewId) {
-        // Update active sidebar item
-        sidebarItems.forEach((sidebarItem) => {
+    activateView(targetViewId) {
+        this.updateActiveSidebarItem(targetViewId);
+        this.showTargetView(targetViewId);
+        this.toggleControlsVisibility(targetViewId);
+        this.executeViewHandlers(targetViewId);
+        this.executeCameraFeedHandlers(targetViewId);
+    }
+
+    updateActiveSidebarItem(targetViewId) {
+        this.sidebarItems.forEach((sidebarItem) => {
             sidebarItem.classList.toggle(
                 "active",
                 sidebarItem.getAttribute("data-view") === targetViewId,
             );
         });
+    }
 
+    showTargetView(targetViewId) {
         // Hide all views using only Tailwind classes
-        views.forEach((view) => {
+        this.views.forEach((view) => {
             view.classList.add("hidden");
         });
 
@@ -31,68 +45,82 @@ export function setupSidebar() {
 
         // Show target view using only Tailwind classes
         targetView.classList.remove("hidden");
+    }
 
-        // Toggle visibility of controls based on the view
-        const controls = document.querySelectorAll(
-            "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn",
-        );
-        controls.forEach((element) => {
-            element.classList.toggle("hidden", targetView.id !== "view-3d");
+    toggleControlsVisibility(targetViewId) {
+        this.controls.forEach((element) => {
+            element.classList.toggle("hidden", targetViewId !== "view-3d");
         });
+    }
 
-        // View-specific initialization handlers
+    executeViewHandlers(targetViewId) {
         const viewHandlers = {
-            'view-3d': () => init3DView(
-                "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
-            ),
-            'view-settings': () => loadSettings(),
-            'view-pipeline': () => initPipelineCreator()
+            "view-3d": () =>
+                init3DView(
+                    "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
+                ),
+            "view-settings": () => loadSettings(),
+            "view-pipeline": () => initPipelineCreator(),
         };
 
-        // Camera feed control handlers
-        const cameraFeedHandlers = {
-            'view-3d': () => pauseCameraFeeds(),
-            'view-views': () => resumeCameraFeeds(),
-            // default: pauseCameraFeeds for all other views
-        };
-
-        // Execute view-specific handler if it exists
-        const viewHandler = viewHandlers[targetView.id];
+        const viewHandler = viewHandlers[targetViewId];
         if (viewHandler) {
             viewHandler();
         }
+    }
 
-        // Execute camera feed handler or default to pause
-        const cameraHandler = cameraFeedHandlers[targetView.id];
+    executeCameraFeedHandlers(targetViewId) {
+        const cameraFeedHandlers = {
+            "view-3d": () => pauseCameraFeeds(),
+            "view-views": () => resumeCameraFeeds(),
+        };
+
+        const cameraHandler = cameraFeedHandlers[targetViewId];
         if (cameraHandler) {
             cameraHandler();
         } else {
             pauseCameraFeeds();
         }
     }
+}
 
-    function setTabQueryParam(targetViewId) {
+class URLManager {
+    updateTab(viewId) {
         const url = new URL(window.location.href);
-        url.searchParams.set("tab", targetViewId);
+        url.searchParams.set("tab", viewId);
         window.history.replaceState({}, "", url.toString());
+    }
+
+    getInitialTab() {
+        const url = new URL(window.location.href);
+        return url.searchParams.get("tab");
+    }
+}
+
+export function setupSidebar() {
+    const viewManager = new ViewManager();
+    const urlManager = new URLManager();
+    const sidebarItems = document.querySelectorAll(".sidebar li");
+
+    function handleSidebarItemClick(targetViewId) {
+        if (!targetViewId) {
+            return;
+        }
+        viewManager.activateView(targetViewId);
+        urlManager.updateTab(targetViewId);
     }
 
     sidebarItems.forEach((item) => {
         item.addEventListener("click", () => {
             const targetViewId = item.getAttribute("data-view");
-            if (!targetViewId) {
-                return;
-            }
-            activateView(targetViewId);
-            setTabQueryParam(targetViewId);
+            handleSidebarItemClick(targetViewId);
         });
     });
 
-    const initialUrl = new URL(window.location.href);
-    const initialTab = initialUrl.searchParams.get("tab");
+    const initialTab = urlManager.getInitialTab();
     if (initialTab && document.getElementById(initialTab)) {
-        activateView(initialTab);
-        setTabQueryParam(initialTab);
+        viewManager.activateView(initialTab);
+        urlManager.updateTab(initialTab);
         return;
     }
 
@@ -100,8 +128,8 @@ export function setupSidebar() {
     if (firstItem) {
         const defaultViewId = firstItem.getAttribute("data-view");
         if (defaultViewId) {
-            activateView(defaultViewId);
-            setTabQueryParam(defaultViewId);
+            viewManager.activateView(defaultViewId);
+            urlManager.updateTab(defaultViewId);
         }
     }
 }
