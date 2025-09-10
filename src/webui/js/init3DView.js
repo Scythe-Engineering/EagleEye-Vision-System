@@ -283,6 +283,7 @@ export async function init3DView(modelUrl) {
         undefined,
         (error) => {
             console.error("Error loading the model:", error);
+            startAnimationLoop();
         },
     );
 
@@ -311,7 +312,6 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
-            startAnimationLoop();
         },
         undefined,
         (error) => {

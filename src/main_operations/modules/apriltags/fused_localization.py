@@ -1,14 +1,13 @@
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from pupil_apriltags import Detection
 
+from src.main_operations.modules.apriltags.pnp_localization import PnpLocalization
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
-
 from src.main_operations.modules.apriltags.ytd_camera_localization.ytd_localization import (
     YtdLocalization,
 )
-from src.main_operations.modules.apriltags.pnp_localization import PnpLocalization
 
 
 class FusedLocalization:
@@ -21,7 +20,8 @@ class FusedLocalization:
         """Initialize the FusedLocalization class.
 
         Args:
-            camera_parameters_path (str): Path to the camera parameters file.
+            camera_matrix (np.ndarray): Camera intrinsic matrix.
+            distortion_coefficients (np.ndarray): Camera distortion coefficients.
             apriltag_map (Dict[int, Apriltag]): Dictionary of apriltag objects.
         """
         self.apriltag_map = apriltag_map
@@ -41,10 +41,11 @@ class FusedLocalization:
             apriltag_map,
         )
 
-        self.counter = 0
-
     def set_attribute(self, attribute_name: str, value: Any) -> None:
         """Set an attribute of the FusedLocalization class.
+
+        Propagates the attribute to both YTD and PNP localization methods
+        for consistent state management.
 
         Args:
             attribute_name (str): Name of the attribute to set.
@@ -61,16 +62,16 @@ class FusedLocalization:
     ) -> Optional[Dict[str, Any]]:
         """Run the FusedLocalization class.
 
+        Uses YTD localization for single detection and PNP localization for multiple detections.
+
         Args:
             detections (List[Detection] | None): List of detections.
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary of fused localization results.
+            Optional[Dict[str, Any]]: Dictionary of fused localization results, or None if no detections.
         """
-        self.counter += 1
-        if len(detections) == 0:
+        if not detections:
             return None
-        elif len(detections) == 1:
+        if len(detections) == 1:
             return self.ytd_localization.estimate_pose_from_detections(detections)
-        else:
-            return self.pnp_localization.estimate_pose_from_detections(detections)
+        return self.pnp_localization.estimate_pose_from_detections(detections)

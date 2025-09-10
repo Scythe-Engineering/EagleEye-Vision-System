@@ -6,21 +6,46 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 
-export function setupSidebar() {
-    const sidebarItems = document.querySelectorAll(".sidebar li");
-    const views = document.querySelectorAll("[id^='view-']");
+const VIEWS = {
+    THREE_D: "view-3d",
+    CAMERA: "view-views",
+    SETTINGS: "view-settings",
+    PIPELINE: "view-pipeline",
+};
 
-    function activateView(targetViewId) {
-        // Update active sidebar item
-        sidebarItems.forEach((sidebarItem) => {
+const FIELD_ASSETS = {
+    FIELD_2025_DEFAULT:
+        "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
+};
+
+class ViewManager {
+    constructor() {
+        this.sidebarItems = document.querySelectorAll(".sidebar li");
+        this.views = document.querySelectorAll("[id^='view-']");
+        this.controls = document.querySelectorAll(
+            "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn",
+        );
+    }
+
+    activateView(targetViewId) {
+        this.updateActiveSidebarItem(targetViewId);
+        this.showTargetView(targetViewId);
+        this.toggleControlsVisibility(targetViewId);
+        this.handleViewSpecificBehavior(targetViewId);
+    }
+
+    updateActiveSidebarItem(targetViewId) {
+        this.sidebarItems.forEach((sidebarItem) => {
             sidebarItem.classList.toggle(
                 "active",
                 sidebarItem.getAttribute("data-view") === targetViewId,
             );
         });
+    }
 
+    showTargetView(targetViewId) {
         // Hide all views using only Tailwind classes
-        views.forEach((view) => {
+        this.views.forEach((view) => {
             view.classList.add("hidden");
         });
 
@@ -31,57 +56,72 @@ export function setupSidebar() {
 
         // Show target view using only Tailwind classes
         targetView.classList.remove("hidden");
-
-        // Toggle visibility of controls based on the view
-        const controls = document.querySelectorAll(
-            "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn",
-        );
-        controls.forEach((element) => {
-            element.classList.toggle("hidden", targetView.id !== "view-3d");
-        });
-
-        if (targetView.id === "view-3d") {
-            init3DView(
-                "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
-            );
-            pauseCameraFeeds();
-        } else if (targetView.id === "view-views") {
-            resumeCameraFeeds();
-        } else {
-            pauseCameraFeeds();
-        }
-
-        if (targetView.id === "view-settings") {
-            loadSettings();
-        }
-
-        if (targetView.id === "view-pipeline") {
-            initPipelineCreator();
-        }
     }
 
-    function setTabQueryParam(targetViewId) {
+    toggleControlsVisibility(targetViewId) {
+        this.controls.forEach((element) => {
+            element.classList.toggle("hidden", targetViewId !== VIEWS.THREE_D);
+        });
+    }
+
+    handleViewSpecificBehavior(viewId) {
+        switch (viewId) {
+            case VIEWS.THREE_D:
+                init3DView(FIELD_ASSETS.FIELD_2025_DEFAULT);
+                pauseCameraFeeds();
+                break;
+            case VIEWS.CAMERA:
+                resumeCameraFeeds();
+                break;
+            case VIEWS.SETTINGS:
+                loadSettings();
+                break;
+            case VIEWS.PIPELINE:
+                initPipelineCreator();
+                break;
+            default:
+                pauseCameraFeeds();
+        }
+    }
+}
+
+class URLManager {
+    updateTab(viewId) {
         const url = new URL(window.location.href);
-        url.searchParams.set("tab", targetViewId);
+        url.searchParams.set("tab", viewId);
         window.history.replaceState({}, "", url.toString());
+    }
+
+    getInitialTab() {
+        const url = new URL(window.location.href);
+        return url.searchParams.get("tab");
+    }
+}
+
+export function setupSidebar() {
+    const viewManager = new ViewManager();
+    const urlManager = new URLManager();
+    const sidebarItems = document.querySelectorAll(".sidebar li");
+
+    function handleSidebarItemClick(targetViewId) {
+        if (!targetViewId) {
+            return;
+        }
+        viewManager.activateView(targetViewId);
+        urlManager.updateTab(targetViewId);
     }
 
     sidebarItems.forEach((item) => {
         item.addEventListener("click", () => {
             const targetViewId = item.getAttribute("data-view");
-            if (!targetViewId) {
-                return;
-            }
-            activateView(targetViewId);
-            setTabQueryParam(targetViewId);
+            handleSidebarItemClick(targetViewId);
         });
     });
 
-    const initialUrl = new URL(window.location.href);
-    const initialTab = initialUrl.searchParams.get("tab");
+    const initialTab = urlManager.getInitialTab();
     if (initialTab && document.getElementById(initialTab)) {
-        activateView(initialTab);
-        setTabQueryParam(initialTab);
+        viewManager.activateView(initialTab);
+        urlManager.updateTab(initialTab);
         return;
     }
 
@@ -89,8 +129,8 @@ export function setupSidebar() {
     if (firstItem) {
         const defaultViewId = firstItem.getAttribute("data-view");
         if (defaultViewId) {
-            activateView(defaultViewId);
-            setTabQueryParam(defaultViewId);
+            viewManager.activateView(defaultViewId);
+            urlManager.updateTab(defaultViewId);
         }
     }
 }
