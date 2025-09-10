@@ -20,7 +20,8 @@ class FusedLocalization:
         """Initialize the FusedLocalization class.
 
         Args:
-            camera_parameters_path (str): Path to the camera parameters file.
+            camera_matrix (np.ndarray): Camera intrinsic matrix.
+            distortion_coefficients (np.ndarray): Camera distortion coefficients.
             apriltag_map (Dict[int, Apriltag]): Dictionary of apriltag objects.
         """
         self.apriltag_map = apriltag_map
@@ -58,11 +59,13 @@ class FusedLocalization:
     ) -> Optional[Dict[str, Any]]:
         """Run the FusedLocalization class.
 
+        Uses YTD localization for single detection and PNP localization for multiple detections.
+
         Args:
             detections (List[Detection] | None): List of detections.
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary of fused localization results.
+            Optional[Dict[str, Any]]: Dictionary of fused localization results, or None if no detections.
         """
         if len(detections) == 0:
             return None
