@@ -6,6 +6,18 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 
+const VIEWS = {
+    THREE_D: "view-3d",
+    CAMERA: "view-views",
+    SETTINGS: "view-settings",
+    PIPELINE: "view-pipeline",
+};
+
+const FIELD_ASSETS = {
+    FIELD_2025_DEFAULT:
+        "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
+};
+
 class ViewManager {
     constructor() {
         this.sidebarItems = document.querySelectorAll(".sidebar li");
@@ -19,8 +31,7 @@ class ViewManager {
         this.updateActiveSidebarItem(targetViewId);
         this.showTargetView(targetViewId);
         this.toggleControlsVisibility(targetViewId);
-        this.executeViewHandlers(targetViewId);
-        this.executeCameraFeedHandlers(targetViewId);
+        this.handleViewSpecificBehavior(targetViewId);
     }
 
     updateActiveSidebarItem(targetViewId) {
@@ -49,37 +60,27 @@ class ViewManager {
 
     toggleControlsVisibility(targetViewId) {
         this.controls.forEach((element) => {
-            element.classList.toggle("hidden", targetViewId !== "view-3d");
+            element.classList.toggle("hidden", targetViewId !== VIEWS.THREE_D);
         });
     }
 
-    executeViewHandlers(targetViewId) {
-        const viewHandlers = {
-            "view-3d": () =>
-                init3DView(
-                    "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
-                ),
-            "view-settings": () => loadSettings(),
-            "view-pipeline": () => initPipelineCreator(),
-        };
-
-        const viewHandler = viewHandlers[targetViewId];
-        if (viewHandler) {
-            viewHandler();
-        }
-    }
-
-    executeCameraFeedHandlers(targetViewId) {
-        const cameraFeedHandlers = {
-            "view-3d": () => pauseCameraFeeds(),
-            "view-views": () => resumeCameraFeeds(),
-        };
-
-        const cameraHandler = cameraFeedHandlers[targetViewId];
-        if (cameraHandler) {
-            cameraHandler();
-        } else {
-            pauseCameraFeeds();
+    handleViewSpecificBehavior(viewId) {
+        switch (viewId) {
+            case VIEWS.THREE_D:
+                init3DView(FIELD_ASSETS.FIELD_2025_DEFAULT);
+                pauseCameraFeeds();
+                break;
+            case VIEWS.CAMERA:
+                resumeCameraFeeds();
+                break;
+            case VIEWS.SETTINGS:
+                loadSettings();
+                break;
+            case VIEWS.PIPELINE:
+                initPipelineCreator();
+                break;
+            default:
+                pauseCameraFeeds();
         }
     }
 }
