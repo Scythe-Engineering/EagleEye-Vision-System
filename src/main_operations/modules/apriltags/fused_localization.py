@@ -44,6 +44,9 @@ class FusedLocalization:
     def set_attribute(self, attribute_name: str, value: Any) -> None:
         """Set an attribute of the FusedLocalization class.
 
+        Propagates the attribute to both YTD and PNP localization methods
+        for consistent state management.
+
         Args:
             attribute_name (str): Name of the attribute to set.
             value (Any): Value to set the attribute to.
@@ -67,9 +70,8 @@ class FusedLocalization:
         Returns:
             Optional[Dict[str, Any]]: Dictionary of fused localization results, or None if no detections.
         """
-        if len(detections) == 0:
+        if not detections:
             return None
-        elif len(detections) == 1:
+        if len(detections) == 1:
             return self.ytd_localization.estimate_pose_from_detections(detections)
-        else:
-            return self.pnp_localization.estimate_pose_from_detections(detections)
+        return self.pnp_localization.estimate_pose_from_detections(detections)
