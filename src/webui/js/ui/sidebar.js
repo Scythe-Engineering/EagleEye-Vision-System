@@ -40,23 +40,34 @@ export function setupSidebar() {
             element.classList.toggle("hidden", targetView.id !== "view-3d");
         });
 
-        if (targetView.id === "view-3d") {
-            init3DView(
+        // View-specific initialization handlers
+        const viewHandlers = {
+            'view-3d': () => init3DView(
                 "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb",
-            );
-            pauseCameraFeeds();
-        } else if (targetView.id === "view-views") {
-            resumeCameraFeeds();
+            ),
+            'view-settings': () => loadSettings(),
+            'view-pipeline': () => initPipelineCreator()
+        };
+
+        // Camera feed control handlers
+        const cameraFeedHandlers = {
+            'view-3d': () => pauseCameraFeeds(),
+            'view-views': () => resumeCameraFeeds(),
+            // default: pauseCameraFeeds for all other views
+        };
+
+        // Execute view-specific handler if it exists
+        const viewHandler = viewHandlers[targetView.id];
+        if (viewHandler) {
+            viewHandler();
+        }
+
+        // Execute camera feed handler or default to pause
+        const cameraHandler = cameraFeedHandlers[targetView.id];
+        if (cameraHandler) {
+            cameraHandler();
         } else {
             pauseCameraFeeds();
-        }
-
-        if (targetView.id === "view-settings") {
-            loadSettings();
-        }
-
-        if (targetView.id === "view-pipeline") {
-            initPipelineCreator();
         }
     }
 
