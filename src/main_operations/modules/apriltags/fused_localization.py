@@ -1,14 +1,13 @@
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from pupil_apriltags import Detection
 
+from src.main_operations.modules.apriltags.pnp_localization import PnpLocalization
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
-
 from src.main_operations.modules.apriltags.ytd_camera_localization.ytd_localization import (
     YtdLocalization,
 )
-from src.main_operations.modules.apriltags.pnp_localization import PnpLocalization
 
 
 class FusedLocalization:
@@ -41,8 +40,6 @@ class FusedLocalization:
             apriltag_map,
         )
 
-        self.counter = 0
-
     def set_attribute(self, attribute_name: str, value: Any) -> None:
         """Set an attribute of the FusedLocalization class.
 
@@ -67,7 +64,6 @@ class FusedLocalization:
         Returns:
             Optional[Dict[str, Any]]: Dictionary of fused localization results.
         """
-        self.counter += 1
         if len(detections) == 0:
             return None
         elif len(detections) == 1:
