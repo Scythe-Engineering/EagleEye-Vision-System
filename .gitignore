@@ -265,7 +265,6 @@ src/apriltags/pre-processing/ai_accelleration/training_data/*
 src/apriltags/ai_accelleration/model.pth
 src/apriltags/ai_accelleration/test.mp4
 
-*test.mp4
 *model.pth
 *input_data
 *training_data
@@ -273,3 +272,9 @@ src/apriltags/ai_accelleration/test.mp4
 src/utils/camera_calibration/calibration_images/*
 src/utils/camera_calibration/camera_intrinsics.json
 src/utils/camera_calibration/apriltag_test.png
+
+*profile_*
+
+*testing
+
+*temp_data/

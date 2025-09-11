@@ -1,7 +1,8 @@
 from importlib import import_module
 
 from networktables import NetworkTable
-from src.devices.utils.cameras.camera import Camera
+from src.utils.camera_utils.cameras.camera import Camera
+
 
 class Device:
     def __init__(
@@ -35,7 +36,10 @@ class Device:
         Respond to a NetworkTables entry changing the active camera index.
         Override in child classes if you need a different key format.
         """
-        if table == self.eagle_eye_nt and key == f"device:{self.device_index}_active_camera":
+        if (
+            table == self.eagle_eye_nt
+            and key == f"device:{self.device_index}_active_camera"
+        ):
             self.set_camera(value)
 
     def add_camera(self, camera_data: dict) -> Camera:

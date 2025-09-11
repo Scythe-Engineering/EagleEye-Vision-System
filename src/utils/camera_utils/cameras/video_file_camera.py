@@ -8,7 +8,13 @@ import imutils
 class VideoFileCamera(Camera):
     """Concrete Camera that reads frames from a local video file."""
 
-    def __init__(self, camera_name: str, camera_calibration_folder: str | None, video_file_path: str, log: Callable[[str], None] = print) -> None:
+    def __init__(
+        self,
+        camera_name: str,
+        camera_calibration_folder: str | None,
+        video_file_path: str,
+        log: Callable[[str], None] = print,
+    ) -> None:
         """
         Args:
             camera_name: Name of the camera.
@@ -41,7 +47,7 @@ class VideoFileCamera(Camera):
         self.cap = cv2.VideoCapture(self.video_path)
         if not self.cap.isOpened():
             raise RuntimeError(f"Error opening video file {self.video_path}")
-        
+
     def get_frame(self) -> np.ndarray | None:
         """
         Read the next frame, rotate it, and return.
@@ -53,6 +59,10 @@ class VideoFileCamera(Camera):
         frame = self.frames[self.current_frame_index]
         self.current_frame_index += 1
         return frame
+
+    def get_frame_index(self) -> int:
+        """Return the current frame index."""
+        return self.current_frame_index
 
     def __del__(self):
         """Release the video capture object."""

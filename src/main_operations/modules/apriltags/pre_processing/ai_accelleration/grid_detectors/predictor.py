@@ -1,13 +1,16 @@
 import torch
 from torch import nn
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
-    GRID_HEIGHT,
-    GRID_WIDTH,
-)
 
 
 class GridPredictor(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, grid_height: int, grid_width: int) -> None:
+        """
+        Initialize the GridPredictor.
+
+        Args:
+            grid_height (int): The height of the grid.
+            grid_width (int): The width of the grid.
+        """
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, padding=1),
@@ -25,9 +28,9 @@ class GridPredictor(nn.Module):
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(),
         )
-        self.classifier = nn.Conv2d(128, 1, kernel_size=1)
-        self.pool10 = nn.AdaptiveAvgPool2d((GRID_HEIGHT, GRID_WIDTH))
         self.dropout = nn.Dropout(p=0.4)
+        self.classifier = nn.Conv2d(128, 1, kernel_size=1)
+        self.pool10 = nn.AdaptiveAvgPool2d((grid_height, grid_width))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass for grid prediction.

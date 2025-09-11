@@ -1,3 +1,9 @@
+import { BACKEND_BASE_URL } from "../config.js";
+
+let cameraFeedsPaused = false;
+let cameraListPollIntervalId = null;
+let cameraFetchFn = null;
+
 export function setupCameraFeedHandlers() {
     const cameraList = document.getElementById("cameraList");
     const noCamerasMessage = document.getElementById("noCamerasMessage");
@@ -7,7 +13,9 @@ export function setupCameraFeedHandlers() {
     if (feedControls) {
         feedControls.style.display = "none";
     }
-    const addFeedBackgroundDiv = document.getElementById("addFeedBackgroundDiv");
+    const addFeedBackgroundDiv = document.getElementById(
+        "addFeedBackgroundDiv",
+    );
     if (addFeedBackgroundDiv) {
         addFeedBackgroundDiv.remove();
     }
@@ -30,30 +38,37 @@ export function setupCameraFeedHandlers() {
     }
 
     function renderCameras(cameraNames) {
-        // Clear current list then rebuild based on latest cameraNames
         cameraList.innerHTML = "";
 
         if (cameraNames.length === 0) {
-            noCamerasMessage.style.display = "block";
+            if (noCamerasMessage) noCamerasMessage.style.display = "block";
             updateGridLayout();
             return;
         }
 
-        noCamerasMessage.style.display = "none";
+        if (noCamerasMessage) noCamerasMessage.style.display = "none";
 
         cameraNames.forEach((name) => {
             const cameraBox = document.createElement("div");
-            cameraBox.className = "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
+            cameraBox.className =
+                "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
             cameraBox.dataset.cameraName = name;
 
             const cameraNameLabel = document.createElement("div");
-            cameraNameLabel.className = "absolute top-2 left-3 bg-[#111]/90 text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
+            cameraNameLabel.className =
+                "absolute top-2 left-3 bg-[#111]/90 text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
             cameraNameLabel.textContent = name;
             cameraBox.appendChild(cameraNameLabel);
 
             const cameraView = document.createElement("img");
             cameraView.className = "camera-view";
-            cameraView.src = `/feed/${name.replace(/ /g, "_")}`;
+            const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+            if (cameraFeedsPaused) {
+                cameraView.dataset.pausedSrc = feedSrc;
+                cameraView.src = "";
+            } else {
+                cameraView.src = feedSrc;
+            }
             cameraBox.appendChild(cameraView);
 
             cameraList.appendChild(cameraBox);
@@ -63,7 +78,7 @@ export function setupCameraFeedHandlers() {
     }
 
     function fetchAndUpdateCameras() {
-        fetch("/get-available-cameras", {
+        fetch(`${BACKEND_BASE_URL}/get-available-cameras`, {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
@@ -71,7 +86,7 @@ export function setupCameraFeedHandlers() {
         })
             .then((response) => response.json())
             .then((data) => {
-                const cameraNames = Object.keys(data);
+                const cameraNames = Object.keys(data || {});
                 renderCameras(cameraNames);
             })
             .catch((error) => {
@@ -79,8 +94,55 @@ export function setupCameraFeedHandlers() {
             });
     }
 
+    cameraFetchFn = fetchAndUpdateCameras;
+
     // Initial fetch
     fetchAndUpdateCameras();
-    // Poll every 5 seconds
-    setInterval(fetchAndUpdateCameras, 5000);
+
+    // Poll every 5 seconds and keep interval id so we can stop/start
+    if (cameraListPollIntervalId === null) {
+        cameraListPollIntervalId = setInterval(fetchAndUpdateCameras, 5000);
+    }
+}
+
+export function pauseCameraFeeds() {
+    cameraFeedsPaused = true;
+    if (cameraListPollIntervalId !== null) {
+        clearInterval(cameraListPollIntervalId);
+        cameraListPollIntervalId = null;
+    }
+
+    const imageElements = document.querySelectorAll("img.camera-view");
+    imageElements.forEach((img) => {
+        if (img?.src && img.src !== "") {
+            img.dataset.pausedSrc = img.src;
+            img.src = "";
+        }
+    });
+}
+
+export function resumeCameraFeeds() {
+    cameraFeedsPaused = false;
+
+    const imageElements = document.querySelectorAll("img.camera-view");
+    imageElements.forEach((img) => {
+        if (img.dataset?.pausedSrc) {
+            img.src = img.dataset.pausedSrc;
+            delete img.dataset.pausedSrc;
+        } else if (img && (!img.src || img.src.trim() === "")) {
+            const container = img.closest("[data-camera-name]");
+            if (container?.dataset?.cameraName) {
+                const name = container.dataset.cameraName;
+                img.src = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+            }
+        }
+    });
+
+    if (
+        cameraListPollIntervalId === null &&
+        typeof cameraFetchFn === "function"
+    ) {
+        cameraFetchFn();
+        cameraListPollIntervalId = setInterval(cameraFetchFn, 5000);
+    }
 }

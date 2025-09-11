@@ -14,7 +14,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from grid_detectors.predictor import GridPredictor
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import TARGET_WIDTH, TARGET_HEIGHT, MODEL_PATH, LetterboxTransform
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import LetterboxTransform
 
 
 class GridDataset(Dataset):
@@ -72,12 +72,18 @@ class GridDataset(Dataset):
 
 
 # ——— Config ———
-data_dir = "apriltags/ai_accelleration/training_data"
+data_dir = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
 epochs = 400
 batch_size = 64
 lr = 1e-3
-output = MODEL_PATH
+output = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/model.pth"
 patience = 10  # early stopping
+
+target_width = 320
+target_height = 320
+
+grid_height = 20
+grid_width = 20
 
 
 def train():
@@ -87,7 +93,7 @@ def train():
 
     tf = transforms.Compose(
         [
-            LetterboxTransform((TARGET_WIDTH, TARGET_HEIGHT)),
+            LetterboxTransform((target_width, target_height)),
             transforms.ToTensor(),
         ]
     )
@@ -120,7 +126,7 @@ def train():
         prefetch_factor=8,
     )
 
-    model = GridPredictor()
+    model = GridPredictor(grid_height=grid_height, grid_width=grid_width)
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         print(f"Using {torch.cuda.device_count()} GPUs")
         model = nn.DataParallel(model)
@@ -182,7 +188,7 @@ def train():
 
     # Export to ONNX
     onnx_output_path = output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
-    dummy_input = torch.randn(1, 3, TARGET_HEIGHT, TARGET_WIDTH).to(device) # Batch size 1, 3 channels, TARGET_HEIGHT, TARGET_WIDTH
+    dummy_input = torch.randn(1, 3, target_height, target_width).to(device) # Batch size 1, 3 channels, target_height, target_width
     try:
         torch.onnx.export(
             model,

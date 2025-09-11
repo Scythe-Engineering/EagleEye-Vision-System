@@ -1,0 +1,183 @@
+---
+description: Rules for creating pipeline operations in EagleEye Object Detection system
+alwaysApply: false
+---
+
+# Pipeline Operation Creation Rules
+
+## Implementation Checklist
+
+- [ ] **Choose Operation Type** - Determine if this is a main operation (complex, >200 lines) or secondary operation (simple, <200 lines)
+- [ ] **Create Implementation File** - Place in `src/main_operations/definitions/` or `src/secondary_operations/` with correct naming
+- [ ] **Implement Constructor** - Include automatic injection parameters (`web_interface`, `compute_pool`) and operation-specific params
+- [ ] **Implement Run Method** - Create `run(self, input)` method with proper input/output types and documentation
+- [ ] **Create Config Definition** - Add `{operation_name}_config_def.json` file with parameters, validation, and metadata
+- [ ] **Update Pipeline Config** - Add operation entry to `src/config/pipeline_config.json` with `action_name` and `action_params`
+- [ ] **Add Type Hints & Docstrings** - Include Google-style docstrings and type hints for all parameters and return values
+- [ ] **Use Thin-Wrapper Pattern** - For main operations, separate heavy logic into `src/modules/{operation_name}/implementation.py`
+- [ ] **Test Integration** - Verify operation works by running pipeline with sample `np.ndarray` frame
+- [ ] **Follow Naming Conventions** - Use `CamelCaseDefinition` for main operations, `CamelCase` for secondary operations
+
+## Context and Additional Information
+
+### Operation Types and Placement
+
+### Main Operations (Definitions)
+
+- **Location**: `src/main_operations/definitions/{operation_name}.py`
+- **Class Naming**: Use `CamelCaseDefinition` suffix (e.g., `MyOpDefinition`)
+- **Purpose**: Complex operations with heavy logic, use thin-wrapper pattern
+- **Implementation**: Delegate to `src/modules/{operation_name}/implementation.py`
+
+### Secondary Operations
+
+- **Location**: `src/secondary_operations/{operation_name}.py`
+- **Class Naming**: Use `CamelCase` (e.g., `MyFilter`)
+- **Limit**: Must be under 200 lines of code
+- **Purpose**: Simple operations, standalone implementation
+
+## Constructor Requirements
+
+### Automatic Injection
+
+- Include `web_interface` parameter → injects `EagleEyeInterface`
+- Include `compute_pool` parameter → injects `ComputePool`
+- Use parameter names (not annotations) for injection detection
+
+### Parameter Sources
+
+- Operation-specific params via `action_params` in `pipeline_config.json`
+- Injected params for `web_interface` and `compute_pool`
+- All other parameters must come from `action_params`
+
+## Run Method Contract
+
+### Method Signature
+
+```python
+def run(self, input) -> Any:
+    """Process input and return output"""
+```
+
+### Common Input/Output Types
+
+- **Image/Frame Processing**: `np.ndarray` → `np.ndarray`
+- **Detection/Features**: `np.ndarray` → `list` or structured object
+- **Pose Estimation**: `np.ndarray` → 4x4 `np.ndarray` transform
+
+### Documentation
+
+- Document concrete input/output types in class docstring
+- Include type hints for parameters and return values
+
+## Thin-Wrapper Pattern (Recommended for Main Operations)
+
+### Structure
+
+- **Implementation**: `src/modules/{operation_name}/implementation.py`
+- **Wrapper**: `src/main_operations/definitions/{operation_name}.py`
+- **Pattern**: Definition resolves resources, delegates to implementation
+
+### Example Structure
+
+```python
+# src/modules/my_op/implementation.py
+class MyOpImplementation:
+    def __init__(self, model_path: str, device: object, threshold: float = 0.1):
+        self.model_path = model_path
+        self.device = device
+
+    def run(self, frame: np.ndarray) -> np.ndarray:
+        return frame
+
+# src/main_operations/definitions/my_op.py
+from src.modules.my_op.implementation import MyOpImplementation
+from src.utils.device_management_utils.compute_pool import ComputePool
+
+class MyOpDefinition:
+    def __init__(self, model_path: str, device_id: str, compute_pool: ComputePool, threshold: float = 0.1):
+        device = compute_pool.get_compute_device(device_id)
+        self.delegate = MyOpImplementation(model_path, device, threshold)
+
+    def run(self, frame):
+        return self.delegate.run(frame)
+```
+
+## Configuration Files
+
+### Config Definition Location
+
+- **Main Operations**: `src/main_operations/definitions/config_data/{operation_name}_config_def.json`
+- **Secondary Operations**: `src/secondary_operations/config_data/{operation_name}_config_def.json`
+
+### Config Definition Structure
+
+```json
+{
+    "class_name": "OperationClassName",
+    "description": "Brief description of operation purpose",
+    "category": "cat",
+    "parameters": {
+        "parameter_name": {
+            "type": "str|int|float|bool",
+            "description": "Parameter purpose explanation",
+            "default": "default_value",
+            "required": true|false,
+            "min": 0,           // for numeric types
+            "max": 100,         // for numeric types
+            "restart_for_change": true|false
+        }
+    }
+}
+```
+
+### Categories
+
+- `"prep"` - preprocessing operations
+- `"det"` - detection operations
+- `"proc"` - processing operations
+- `"filt"` - filtering operations
+- `"net"` - networking operations
+
+## Pipeline Configuration
+
+### Pipeline Config Location
+
+- File: `src/config/pipeline_config.json`
+- Structure: Per-camera operation lists
+
+### Action Entry Format
+
+```json
+{
+    "action_name": "my_op",
+    "action_params": {
+        "model_path": "/models/model.onnx",
+        "device_id": "MX3",
+        "threshold": 0.1
+    }
+}
+```
+
+## Best Practices
+
+### Code Style
+
+- Use Google-style docstrings for all functions
+- Include type hints for all parameters and return values
+- Use descriptive variable names instead of comments
+- Keep secondary operations under 200 lines
+
+### Performance
+
+- Minimize allocations in `run` method
+- Use appropriate data types for performance
+- Consider memory usage for large frames
+
+## Related Files
+
+- [src/config/utils/pipeline.py](mdc:src/config/utils/pipeline.py) - Core pipeline orchestration
+- [src/config/utils/generate_all_pipelines.py](mdc:src/config/utils/generate_all_pipelines.py) - Pipeline generation
+- [src/config/pipeline_config.json](mdc:src/config/pipeline_config.json) - Pipeline configuration
+- [docs/md_docs/pipeline_docs/ImplementPipelineOperation.md](mdc:docs/md_docs/pipeline_docs/ImplementPipelineOperation.md) - Implementation details
+- [docs/md_docs/pipeline_docs/PipelineOverview.md](mdc:docs/md_docs/pipeline_docs/PipelineOverview.md) - Architecture overview

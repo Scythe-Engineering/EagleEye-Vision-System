@@ -6,10 +6,9 @@ import torch
 import torch.onnx
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.grid_detectors.predictor import GridPredictor
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import TARGET_WIDTH, TARGET_HEIGHT, MODEL_PATH
 
 
-def load_pytorch_model(model_path: str) -> GridPredictor:
+def load_pytorch_model(model_path: str, grid_height: int, grid_width: int) -> GridPredictor:
     """Load the trained PyTorch model from file.
     
     Args:
@@ -20,7 +19,7 @@ def load_pytorch_model(model_path: str) -> GridPredictor:
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    model = GridPredictor()
+    model = GridPredictor(grid_height=grid_height, grid_width=grid_width)
     
     checkpoint = torch.load(model_path, map_location=device)
     
@@ -35,7 +34,7 @@ def load_pytorch_model(model_path: str) -> GridPredictor:
     return model.to(device)
 
 
-def create_dummy_input(batch_size: int = 1) -> torch.Tensor:
+def create_dummy_input(batch_size: int = 1, target_height: int = 320, target_width: int = 320) -> torch.Tensor:
     """Create dummy input tensor for ONNX export.
     
     Args:
@@ -45,7 +44,7 @@ def create_dummy_input(batch_size: int = 1) -> torch.Tensor:
         torch.Tensor: Dummy input tensor of shape (batch_size, 1, TARGET_HEIGHT, TARGET_WIDTH).
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.randn(batch_size, 1, TARGET_HEIGHT, TARGET_WIDTH, device=device)
+    return torch.randn(batch_size, 1, target_height, target_width, device=device)
 
 
 def convert_to_onnx(
@@ -139,9 +138,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Convert PyTorch model to ONNX format")
     parser.add_argument(
         "--input-model", 
-        type=str, 
-        default=MODEL_PATH,
-        help=f"Path to input PyTorch model (.pth file). Default: {MODEL_PATH}"
+        type=str,
+        help="Path to input PyTorch model (.pth file)"
     )
     parser.add_argument(
         "--output-model", 
@@ -152,6 +150,21 @@ def main() -> None:
         "--skip-verification", 
         action="store_true",
         help="Skip verification step (faster but less safe)"
+    )
+    parser.add_argument(
+        "--target-height",
+        type=int,
+        help="Target height for the model"
+    )
+    parser.add_argument(
+        "--target-width",
+        type=int,
+        help="Target width for the model"
+    )
+    parser.add_argument(
+        "--grid-size",
+        type=int,
+        help="Grid size for the model"
     )
     
     args = parser.parse_args()
@@ -166,10 +179,10 @@ def main() -> None:
         raise FileNotFoundError(f"Model file not found: {model_path}")
     
     print(f"Loading PyTorch model from: {model_path}")
-    model = load_pytorch_model(model_path)
+    model = load_pytorch_model(model_path, args.grid_size, args.grid_size)
     
-    print(f"Creating dummy input with shape: (1, 1, {TARGET_HEIGHT}, {TARGET_WIDTH})")
-    dummy_input = create_dummy_input(batch_size=1)
+    print(f"Creating dummy input with shape: (1, 1, {args.target_height}, {args.target_width})")
+    dummy_input = create_dummy_input(batch_size=1, target_height=args.target_height, target_width=args.target_width)
     
     convert_to_onnx(model, dummy_input, onnx_output_path)
     
@@ -181,8 +194,8 @@ def main() -> None:
     print("\nConversion complete!")
     print(f"Original model: {model_path}")
     print(f"ONNX model: {onnx_output_path}")
-    print(f"Model input shape: (batch_size, 1, {TARGET_HEIGHT}, {TARGET_WIDTH})")
-    print("Model output shape: (batch_size, 20, 20)")
+    print(f"Model input shape: (batch_size, 1, {args.target_height}, {args.target_width})")
+    print(f"Model output shape: (batch_size, {args.grid_size}, {args.grid_size})")
 
 
 if __name__ == "__main__":

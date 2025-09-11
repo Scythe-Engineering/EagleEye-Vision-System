@@ -28,7 +28,9 @@ class CameraThreadManager:
         self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
         self.start_time_ms = time.time() * 1000.0
 
-    def camera_feed_worker(self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]) -> None:
+    def camera_feed_worker(
+        self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]
+    ) -> None:
         """
         Worker function that continuously captures frames and updates the web interface.
 
@@ -37,7 +39,7 @@ class CameraThreadManager:
             camera: The PhysicalCamera instance.
         """
         print(f"Starting camera feed worker for {camera_name}")
-        
+
         frame_count = 0
 
         while self.running_cameras.get(camera_name, False):
@@ -57,9 +59,13 @@ class CameraThreadManager:
                     success, encoded_frame = cv2.imencode(".jpg", frame)
                     if success:
                         frame_bytes = encoded_frame.tobytes()
-                        
-                        if frame_count % 10 == 0: # Update every 10 frames to reduce load on the web interface
-                            self.web_interface.update_camera_frame(camera_name, frame_bytes)
+
+                        if (
+                            frame_count % 5 == 0
+                        ):  # Update every 5 frames to reduce load on the web interface
+                            self.web_interface.update_camera_frame(
+                                camera_name, frame_bytes
+                            )
                     else:
                         print(f"Failed to encode frame for {camera_name}")
                 else:
@@ -76,7 +82,13 @@ class CameraThreadManager:
 
         print(f"Camera feed worker for {camera_name} stopped")
 
-    def start_camera_thread(self, camera_name: str, camera_calibration_folder: str | None, video_file_path: Optional[str] = None, camera_index: Optional[int] = None) -> bool:
+    def start_camera_thread(
+        self,
+        camera_name: str,
+        camera_calibration_folder: str | None,
+        video_file_path: Optional[str] = None,
+        camera_index: Optional[int] = None,
+    ) -> bool:
         """
         Start a thread for a specific camera.
 
@@ -90,11 +102,15 @@ class CameraThreadManager:
         """
         try:
             if video_file_path:
-                camera = VideoFileCamera(camera_name, camera_calibration_folder, video_file_path, print)
+                camera = VideoFileCamera(
+                    camera_name, camera_calibration_folder, video_file_path, print
+                )
             else:
                 if camera_index is None:
                     raise ValueError("Camera index is required for physical cameras")
-                camera = PhysicalCamera(camera_name, camera_index, camera_calibration_folder, print)
+                camera = PhysicalCamera(
+                    camera_name, camera_index, camera_calibration_folder, print
+                )
 
             self.camera_objects[camera_name] = camera
             self.running_cameras[camera_name] = True
@@ -178,7 +194,7 @@ class CameraThreadManager:
             Start time in milliseconds since epoch.
         """
         return self.start_time_ms
-    
+
     def get_all_camera_names(self) -> list[str]:
         """
         Get the names of all cameras.
@@ -187,7 +203,7 @@ class CameraThreadManager:
             List of camera names.
         """
         return list(self.running_cameras.keys())
-    
+
     def get_camera_ready(self, camera_name: str) -> bool:
         """
         Get the ready state of a specific camera.
@@ -196,3 +212,12 @@ class CameraThreadManager:
             camera_name: The name of the camera.
         """
         return self.camera_objects[camera_name].camera_ready
+
+    def get_video_camera_index(self) -> int:
+        """
+        Get the index of the video camera.
+        """
+        for _, camera in self.camera_objects.items():
+            if isinstance(camera, VideoFileCamera):
+                return camera.get_frame_index()
+        return -1

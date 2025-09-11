@@ -22,7 +22,9 @@ import {
     Group,
 } from "three";
 import { OrbitControls } from "OrbitControls";
+import { DRACOLoader } from "DRACOLoader";
 import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
+import { BACKEND_BASE_URL } from "./config.js";
 
 let renderer, scene, camera, directionalLight;
 let shadowsEnabled = true;
@@ -32,8 +34,9 @@ let frameCount = 0;
 let lastTime = performance.now();
 let robotObject = null;
 let robotAxes = null;
+let animationStarted = false;
 
-let maxFPS = 60;
+let maxFPS = 30;
 let interval = 1 / maxFPS;
 
 function updateStats() {
@@ -56,41 +59,55 @@ function updateStats() {
 }
 
 function createRobotAxes() {
-    // TODO: Create coordinate axes for robot visualization
     const axesGroup = new Group();
     const axisLength = 500; // Adjust length as needed
-    
+
     // Create geometry for axes lines
     const positions = new Float32Array([
         // X-axis (red)
-        0, 0, 0,  axisLength, 0, 0,
+        0,
+        0,
+        0,
+        axisLength,
+        0,
+        0,
         // Y-axis (green)
-        0, 0, 0,  0, axisLength, 0,
+        0,
+        0,
+        0,
+        0,
+        axisLength,
+        0,
         // Z-axis (blue)
-        0, 0, 0,  0, 0, axisLength
+        0,
+        0,
+        0,
+        0,
+        0,
+        axisLength,
     ]);
-    
+
     const colors = new Float32Array([
         // X-axis (red)
-        1, 0, 0,  1, 0, 0,
+        1, 0, 0, 1, 0, 0,
         // Y-axis (green)
-        0, 1, 0,  0, 1, 0,
+        0, 1, 0, 0, 1, 0,
         // Z-axis (blue)
-        0, 0, 1,  0, 0, 1
+        0, 0, 1, 0, 0, 1,
     ]);
-    
+
     const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new BufferAttribute(colors, 3));
-    
-    const material = new LineBasicMaterial({ 
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new BufferAttribute(colors, 3));
+
+    const material = new LineBasicMaterial({
         vertexColors: true,
-        linewidth: 3
+        linewidth: 3,
     });
-    
+
     const axes = new LineSegments(geometry, material);
     axesGroup.add(axes);
-    
+
     return axesGroup;
 }
 
@@ -114,26 +131,30 @@ export async function init3DView(modelUrl) {
         while (scene.children.length > 0) {
             const child = scene.children[0];
             scene.remove(child);
-            
+
             // Dispose of geometries and materials to free memory
             if (child.geometry) {
                 child.geometry.dispose();
             }
             if (child.material) {
                 if (Array.isArray(child.material)) {
-                    child.material.forEach(material => material.dispose());
+                    child.material.forEach((material) => material.dispose());
                 } else {
                     child.material.dispose();
                 }
             }
         }
-        
+
         // Clear the scene
         scene.clear();
         scene = null;
     }
 
     scene = new Scene();
+
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/`);
+
     scene.background = new Color(0x222222);
 
     function loadRobot(robotFile) {
@@ -142,42 +163,40 @@ export async function init3DView(modelUrl) {
             if (robotObject) {
                 scene.remove(robotObject);
             }
-            if (robotAxes) {
-                scene.remove(robotAxes);
-                robotAxes = null;
-            }
-            
-            const robotLoader = new GLTFLoader();
-            robotLoader.load("/get-robot-file/" + robotFile, (gltf) => {
-                robotObject = gltf.scene;
-                robotObject.scale.set(1000, 1000, 1000);
 
-                robotObject.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        child.geometry.computeVertexNormals();
-                        
-                        // Remove reflective properties from materials
-                        if (child.material) {
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(material => {
-                                    material.metalness = 0;
-                                    material.roughness = 1;
-                                });
-                            } else {
-                                child.material.metalness = 0;
-                                child.material.roughness = 1;
+            const robotLoader = new GLTFLoader();
+            robotLoader.setDRACOLoader(dracoLoader);
+
+            robotLoader.load(
+                `${BACKEND_BASE_URL}/get-robot-file/${robotFile}`,
+                (gltf) => {
+                    robotObject = gltf.scene;
+                    robotObject.scale.set(1000, 1000, 1000);
+
+                    robotObject.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            child.geometry.computeVertexNormals();
+
+                            // Remove reflective properties from materials
+                            if (child.material) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach((material) => {
+                                        material.metalness = 0;
+                                        material.roughness = 1;
+                                    });
+                                } else {
+                                    child.material.metalness = 0;
+                                    child.material.roughness = 1;
+                                }
                             }
                         }
-                    }
-                });
+                    });
 
-                scene.add(robotObject);
-                
-                robotAxes = createRobotAxes();
-                scene.add(robotAxes);
-            });
+                    scene.add(robotObject);
+                },
+            );
         } catch (error) {
             console.error("Error loading robot:", error);
         }
@@ -202,14 +221,26 @@ export async function init3DView(modelUrl) {
     );
     camera.position.set(100 * scale, 100 * scale, 100 * scale);
 
-    renderer = new WebGLRenderer({ antialias: true });
+    renderer = new WebGLRenderer({
+        antialias: true,
+        powerPreference: "high-performance",
+    });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = PCFSoftShadowMap;
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.display = "block";
-    renderer.domElement.classList.add('absolute', 'top-0', 'left-0', 'w-full', 'h-full', 'rounded-inherit', '-z-10', 'block');
+    renderer.domElement.classList.add(
+        "absolute",
+        "top-0",
+        "left-0",
+        "w-full",
+        "h-full",
+        "rounded-inherit",
+        "-z-10",
+        "block",
+    );
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -247,11 +278,12 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
-            animate();
+            startAnimationLoop();
         },
         undefined,
         (error) => {
             console.error("Error loading the model:", error);
+            startAnimationLoop();
         },
     );
 
@@ -280,7 +312,6 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
-            animate();
         },
         undefined,
         (error) => {
@@ -300,11 +331,17 @@ export async function init3DView(modelUrl) {
     let clock = new Clock();
     let delta = 0;
 
+    function startAnimationLoop() {
+        if (animationStarted) return;
+        animationStarted = true;
+        animate();
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         delta += clock.getDelta();
 
-        if (delta > interval) {
+        if (delta >= interval) {
             renderer.render(scene, camera);
             updateStats();
             delta = delta % interval;
@@ -316,6 +353,7 @@ export async function init3DView(modelUrl) {
         const height = container.clientHeight;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
     });
 
     document.getElementById("toggleShadowBtn").addEventListener("click", () => {
@@ -331,22 +369,25 @@ export async function init3DView(modelUrl) {
     });
 
     // Add AprilTag PNGs as planes at fiducial transforms
-    fetch("/frc2025r2.json")
+    fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
         .then((response) => response.json())
         .then((json) => {
             const textureLoader = new TextureLoader();
             json.fiducials.forEach((fiducial) => {
                 const tagId = fiducial.id;
                 const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
-                const pngPath = `/src/webui/assets/apriltags/${pngName}`;
+                const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
                 textureLoader.load(pngPath, (texture) => {
                     // Configure texture for crisp pixel art
                     texture.magFilter = NearestFilter;
                     texture.minFilter = NearestFilter;
                     texture.generateMipmaps = false;
-                    
-                    const planeGeometry = new PlaneGeometry(fiducial.size, fiducial.size);
-                    const planeMaterial = new MeshStandardMaterial({ 
+
+                    const planeGeometry = new PlaneGeometry(
+                        fiducial.size,
+                        fiducial.size,
+                    );
+                    const planeMaterial = new MeshStandardMaterial({
                         map: texture,
                     });
                     const plane = new Mesh(planeGeometry, planeMaterial);
@@ -355,10 +396,22 @@ export async function init3DView(modelUrl) {
                     // Three.js uses column-major, so set matrix directly
                     const matrix = new Matrix4();
                     matrix.set(
-                        t[0], t[1], t[2], t[3] * 1000,
-                        t[4], t[5], t[6], t[7] * 1000,
-                        t[8], t[9], t[10], t[11] * 1000,
-                        t[12], t[13], t[14], t[15]
+                        t[0],
+                        t[1],
+                        t[2],
+                        t[3] * 1000,
+                        t[4],
+                        t[5],
+                        t[6],
+                        t[7] * 1000,
+                        t[8],
+                        t[9],
+                        t[10],
+                        t[11] * 1000,
+                        t[12],
+                        t[13],
+                        t[14],
+                        t[15],
                     );
 
                     const rotationYMatrix = new Matrix4();
@@ -375,7 +428,7 @@ export async function init3DView(modelUrl) {
                     matrix.extractBasis(new Vector3(), new Vector3(), normal);
                     normal.normalize();
                     plane.position.add(normal);
-                    
+
                     plane.castShadow = true;
                     plane.receiveShadow = true;
                     scene.add(plane);
@@ -389,22 +442,15 @@ export function updateRobotTransform(transformMatrix) {
         // Create a scale matrix to preserve the robot's scale (1000)
         const scaleMatrix = new Matrix4();
         scaleMatrix.makeScale(1000, 1000, 1000);
-        
+
         // Combine the input transformation with the scale
         const finalMatrix = new Matrix4();
         finalMatrix.multiplyMatrices(transformMatrix, scaleMatrix);
-        
+
         robotObject.matrixAutoUpdate = false;
         robotObject.matrix.copy(finalMatrix);
         robotObject.matrixWorldNeedsUpdate = true;
 
-        // Update robot axes to match robot transformation
-        if (robotAxes) {
-            robotAxes.matrixAutoUpdate = false;
-            robotAxes.matrix.copy(finalMatrix);
-            robotAxes.matrixWorldNeedsUpdate = true;
-        }
-        
         // Force immediate re-render when transformation updates
         if (renderer && scene && camera) {
             renderer.render(scene, camera);

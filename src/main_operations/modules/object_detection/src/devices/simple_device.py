@@ -1,4 +1,3 @@
-from line_profiler import profile
 from numpy import ndarray
 from ultralytics import YOLO
 from networktables import NetworkTable
@@ -54,7 +53,6 @@ class SimpleDevice(Device):
         if table == self.eagle_eye_nt and key == expected_key:
             self.set_camera(value)
 
-    @profile
     def detect(self) -> tuple[None, None, None] | tuple[Results, tuple[int, int], ndarray]:
         """
         Captures a frame from the active camera and runs YOLO detection using the configured device.

@@ -50,6 +50,10 @@ export default defineConfig({
                 __dirname,
                 "./node_modules/three/examples/jsm/loaders/GLTFLoader.js",
             ),
+            DRACOLoader: path.resolve(
+                __dirname,
+                "./node_modules/three/examples/jsm/loaders/DRACOLoader.js",
+            ),
         },
         extensions: [".js"],
     },

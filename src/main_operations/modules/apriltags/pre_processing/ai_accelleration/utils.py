@@ -1,21 +1,7 @@
-import os
 from typing import Tuple, Union, overload
 
 import cv2
 import numpy as np
-
-# Shared constants
-TARGET_WIDTH = 320
-TARGET_HEIGHT = 320
-CONF_THRESHOLD = 0.15
-MIN_GROUP_SIZE = 2
-SRC_PATH = os.path.dirname(__file__)
-VIDEO_PATH = os.path.join(SRC_PATH, "test.mp4")
-MODEL_PATH = os.path.join(SRC_PATH, "model.pth")
-AI_EVAL_FRAME_INTERVAL = 5
-GRID_WIDTH = 20
-GRID_HEIGHT = 20
-
 
 @overload
 def letterbox_image(img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = False) -> np.ndarray:
@@ -38,6 +24,7 @@ def letterbox_image(
         target_size: Target (width, height) for the output image
         greyscale: Whether to convert the image to greyscale (default: True)
         return_resized_size: Whether to return the resized size (default: False)
+        
     Returns:
         Resized, letterboxed and greyscale image
     """        
@@ -78,7 +65,7 @@ class LetterboxTransform:
 
 
 def calculate_crop_regions_from_grid(
-    conf_grid_mask: np.ndarray, cell_w: int, cell_h: int
+    conf_grid_mask: np.ndarray, cell_w: int, cell_h: int, min_group_size: int = 2
 ) -> list:
     """
     Calculate the crop regions based on the connected components in the grid mask.
@@ -87,6 +74,7 @@ def calculate_crop_regions_from_grid(
         conf_grid_mask (np.ndarray): The binary mask of the grid.
         cell_w (int): Width of each cell in pixels.
         cell_h (int): Height of each cell in pixels.
+        min_group_size (int): Minimum size of a group of cells to be considered a crop region.
 
     Returns:
         list: A list of tuples representing the crop regions (x0, y0, x1, y1).
@@ -101,7 +89,7 @@ def calculate_crop_regions_from_grid(
     for i in range(1, num_labels):
         area = stats[i, cv2.CC_STAT_AREA]
 
-        if area >= MIN_GROUP_SIZE:
+        if area >= min_group_size:
             x_min_cell = stats[i, cv2.CC_STAT_LEFT]
             y_min_cell = stats[i, cv2.CC_STAT_TOP]
             width_cells = stats[i, cv2.CC_STAT_WIDTH]
