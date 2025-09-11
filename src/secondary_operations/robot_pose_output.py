@@ -1,5 +1,4 @@
 import numpy as np
-from line_profiler import profile
 
 from src.webui.web_server import EagleEyeInterface
 
@@ -15,7 +14,6 @@ class RobotPoseOutput:
         self.web_interface = web_interface
         self._last_sent_pose: np.ndarray | None = None
 
-    @profile
     def run(self, pose: np.ndarray) -> None:
         """Output the robot pose to the web interface."""
         if self._last_sent_pose is not None and np.array_equal(

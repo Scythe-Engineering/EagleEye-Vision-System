@@ -1,11 +1,9 @@
-from line_profiler import profile
 import numpy as np
 
 
 class FlattenPose:
     """Flatten a pose matrix to have no z position component and preserve only y-axis rotation."""
 
-    @profile
     def run(self, pose: np.ndarray) -> np.ndarray:
         """Flatten the pose matrix to 2D by removing z position and x/y rotations.
 

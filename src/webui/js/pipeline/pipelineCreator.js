@@ -13,6 +13,90 @@ import {
 } from "./dragDrop.js";
 import { BACKEND_BASE_URL } from "../config.js";
 
+// Enhanced drag handlers with console logging
+function handleDragStartWithLogging(
+    event,
+    item,
+    fromIndex = null,
+    collection = null,
+) {
+    console.log("[PIPELINE] Drag start initiated", {
+        draggedElement: event.target,
+        itemInstanceId: item?.instanceId || null,
+        fromIndex: fromIndex,
+        timestamp: new Date().toISOString(),
+    });
+    // Map to expected signature: (e, item, operations, fromIndex)
+    return handleDragStart(event, item, collection, fromIndex);
+}
+
+function handleDragEndWithLogging(
+    event,
+    pipelineContainer,
+    pipelinePlaceholder,
+    pipeline,
+) {
+    console.log("[PIPELINE] Drag end", {
+        draggedElement: event.target,
+        timestamp: new Date().toISOString(),
+    });
+    return handleDragEnd(
+        event,
+        pipelineContainer,
+        pipelinePlaceholder,
+        pipeline,
+    );
+}
+
+function handleDropOnPipelineWithLogging(
+    event,
+    pipeline,
+    operations,
+    pipelineContainer,
+    pipelinePlaceholder,
+    callbacks,
+) {
+    const pipelineOrderBefore = pipeline.map((item) => ({
+        id: item.id,
+        name: item.name,
+        instanceId: item.instanceId,
+    }));
+
+    console.log("[PIPELINE] Drop operation started", {
+        pipelineLengthBefore: pipeline.length,
+        pipelineOrderBefore,
+        dropTarget: event.target,
+        timestamp: new Date().toISOString(),
+    });
+
+    const result = handleDropOnPipeline(
+        event,
+        pipeline,
+        operations,
+        pipelineContainer,
+        pipelinePlaceholder,
+        callbacks,
+    );
+
+    const pipelineOrderAfter = pipeline.map((item) => ({
+        id: item.id,
+        name: item.name,
+        instanceId: item.instanceId,
+    }));
+
+    console.log("[PIPELINE] Drop operation completed", {
+        pipelineLengthAfter: pipeline.length,
+        pipelineOrderAfter,
+        orderChanged:
+            JSON.stringify(pipelineOrderBefore.map((p) => p.instanceId)) !==
+            JSON.stringify(pipelineOrderAfter.map((p) => p.instanceId)),
+        lengthChanged: pipelineOrderBefore.length !== pipelineOrderAfter.length,
+        timestamp: new Date().toISOString(),
+    });
+
+    return result;
+}
+
 // --- Operation definitions (populated from server)
 let operations = [];
 
@@ -329,16 +413,22 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         });
 
         // Re-render the pipeline
-        renderPipeline(
-            pipeline,
-            pipelineContainer,
-            pipelinePlaceholder,
+        console.log("[PIPELINE] Re-rendering pipeline after loading", {
+            operationCount: pipeline.length,
+            operations: pipeline.map((op) => ({
+                id: op.id,
+                name: op.name,
+                instanceId: op.instanceId,
+            })),
+            timestamp: new Date().toISOString(),
+        });
+        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
             updateRunButton,
             removeFromPipeline,
-            handleDragStart,
-            handleDragEnd,
-        );
+            handleDragStart: handleDragStartWithLogging,
+            handleDragEnd: handleDragEndWithLogging,
+        });
 
         // Update the run button state
         updateRunButton();
@@ -404,19 +494,39 @@ async function checkAndTriggerAutoFill() {
 // --- Pipeline actions
 
 async function removeFromPipeline(instanceId) {
-    pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
-    renderPipeline(
-        pipeline,
-        pipelineContainer,
-        pipelinePlaceholder,
-        {
-            openOperationSettings,
-            updateRunButton,
-            removeFromPipeline,
-            handleDragStart,
-            handleDragEnd,
-        },
+    const removedOperation = pipeline.find(
+        (item) => item.instanceId === instanceId,
     );
+    console.log("[PIPELINE] Removing operation from pipeline", {
+        removedOperation: removedOperation
+            ? {
+                  id: removedOperation.id,
+                  name: removedOperation.name,
+                  instanceId: removedOperation.instanceId,
+              }
+            : null,
+        pipelineLengthBefore: pipeline.length,
+        timestamp: new Date().toISOString(),
+    });
+
+    pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
+    console.log("[PIPELINE] Pipeline after removal", {
+        pipelineLengthAfter: pipeline.length,
+        remainingOperations: pipeline.map((op) => ({
+            id: op.id,
+            name: op.name,
+            instanceId: op.instanceId,
+        })),
+        timestamp: new Date().toISOString(),
+    });
+
+    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+        openOperationSettings,
+        updateRunButton,
+        removeFromPipeline,
+        handleDragStart: handleDragStartWithLogging,
+        handleDragEnd: handleDragEndWithLogging,
+    });
 
     // Auto-save when removing items
     autoSavePipeline();
@@ -516,6 +626,7 @@ function openOperationSettings(opOrItem) {
     }
 
     const s = document.createElement("script");
+    s.type = "module";
     s.src = scriptUrl;
     s.onload = () => {
         if (!window.SettingsPopup) {
@@ -569,9 +680,10 @@ async function autoSavePipeline() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(pipelineConfig),
-            }
+            },
         );
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.ok)
+            throw new Error(`HTTP error! status: ${response.status}`);
         await response.json();
     } catch (error) {
         console.error("Failed to auto-save pipeline:", error);
@@ -647,16 +759,20 @@ async function createNewPipeline() {
         }, 10);
 
         // Re-render the empty pipeline
-        renderPipeline(
-            pipeline,
-            pipelineContainer,
-            pipelinePlaceholder,
+        console.log(
+            "[PIPELINE] Re-rendering empty pipeline for new pipeline creation",
+            {
+                pipelineName: newPipelineName,
+                timestamp: new Date().toISOString(),
+            },
+        );
+        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
             updateRunButton,
             removeFromPipeline,
-            handleDragStart,
-            handleDragEnd,
-        );
+            handleDragStart: handleDragStartWithLogging,
+            handleDragEnd: handleDragEndWithLogging,
+        });
 
         // Update the run button state
         updateRunButton();
@@ -747,16 +863,17 @@ async function deleteCurrentPipeline() {
         populatePipelineDropdown();
 
         // Re-render the empty pipeline
-        renderPipeline(
-            pipeline,
-            pipelineContainer,
-            pipelinePlaceholder,
+        console.log("[PIPELINE] Re-rendering empty pipeline after deletion", {
+            deletedPipelineName: selectedPipeline.displayName,
+            timestamp: new Date().toISOString(),
+        });
+        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
             updateRunButton,
             removeFromPipeline,
-            handleDragStart,
-            handleDragEnd,
-        );
+            handleDragStart: handleDragStartWithLogging,
+            handleDragEnd: handleDragEndWithLogging,
+        });
 
         // Update the run button state
         updateRunButton();
@@ -768,7 +885,10 @@ async function deleteCurrentPipeline() {
         restartRequiredOperations.clear();
         await updateRestartIndicator(false);
 
-        console.log("Pipeline deleted successfully");
+        console.log("[PIPELINE] Pipeline deleted successfully", {
+            deletedPipeline: selectedPipeline.displayName,
+            timestamp: new Date().toISOString(),
+        });
     } catch (error) {
         console.error("Failed to delete pipeline:", error);
         alert(
@@ -796,9 +916,14 @@ async function updateRestartIndicator(show = false) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ required: show }),
         });
-        console.log(`Backend notified: restart ${show ? "required" : "not required"}`);
+        console.log(
+            `Backend notified: restart ${show ? "required" : "not required"}`,
+        );
     } catch (error) {
-        console.error("Failed to notify backend about restart requirement:", error);
+        console.error(
+            "Failed to notify backend about restart requirement:",
+            error,
+        );
     }
 
     if (!restartIndicator) return;
@@ -809,7 +934,8 @@ async function updateRestartIndicator(show = false) {
 
     if (show) {
         restartIndicator.classList.remove("hidden");
-        if (restartMessage) restartMessage.textContent = "Backend restart required";
+        if (restartMessage)
+            restartMessage.textContent = "Backend restart required";
         restartIndicator.classList.add("backend-state-warning");
     } else {
         restartIndicator.classList.add("hidden");
@@ -1061,7 +1187,15 @@ export async function initPipelineCreator() {
                 .map((item) => item.instanceId)
                 .join(",");
 
-            await handleDropOnPipeline(
+            console.log("[PIPELINE] Processing drop event", {
+                pipelineLengthBefore,
+                pipelineOrderBefore: pipelineOrderBefore.split(","),
+                elementType: element.tagName,
+                elementId: element.id,
+                timestamp: new Date().toISOString(),
+            });
+
+            await handleDropOnPipelineWithLogging(
                 e,
                 pipeline,
                 operations,
@@ -1073,11 +1207,13 @@ export async function initPipelineCreator() {
                             pipeline,
                             pipelineContainer,
                             pipelinePlaceholder,
-                            openOperationSettings,
-                            updateRunButton,
-                            removeFromPipeline,
-                            handleDragStart,
-                            handleDragEnd,
+                            {
+                                updateRunButton,
+                                handleDragStart: handleDragStartWithLogging,
+                                handleDragEnd: handleDragEndWithLogging,
+                                removeFromPipeline,
+                                openOperationSettings,
+                            },
                         ),
                     updateRunButton,
                     openOperationSettings,
@@ -1092,10 +1228,24 @@ export async function initPipelineCreator() {
                 pipeline.length !== pipelineLengthBefore ||
                 pipelineOrderBefore !== pipelineOrderAfter;
 
+            console.log("[PIPELINE] Structure change analysis", {
+                pipelineLengthAfter: pipeline.length,
+                pipelineOrderAfter: pipelineOrderAfter.split(","),
+                structureChanged,
+                operationType: structureChanged
+                    ? pipeline.length > pipelineLengthBefore
+                        ? "ADDED"
+                        : pipeline.length < pipelineLengthBefore
+                          ? "REMOVED"
+                          : "REORDERED"
+                    : "UNCHANGED",
+                timestamp: new Date().toISOString(),
+            });
+
             if (structureChanged) {
                 // Pipeline structure changed - always require restart
                 console.log(
-                    "Pipeline structure changed - requiring backend restart",
+                    "[PIPELINE] Pipeline structure changed - requiring backend restart",
                 );
                 await updateRestartIndicator(true);
                 // Clear any existing parameter-level restart tracking since structure change overrides it
@@ -1105,12 +1255,17 @@ export async function initPipelineCreator() {
                 autoSavePipeline();
             } else if (pipeline.length > pipelineLengthBefore) {
                 // If operations were added, check restart requirements for all operations
+                console.log(
+                    "[PIPELINE] New operations added, checking restart requirements",
+                );
                 pipeline.forEach((item) => {
                     checkPipelineRestartRequirements(item);
                 });
 
                 // Auto-save when operations are added
                 autoSavePipeline();
+            } else {
+                console.log("[PIPELINE] No structure changes detected");
             }
         });
     };
@@ -1143,24 +1298,24 @@ export async function initPipelineCreator() {
     }
 
     // Initial render
+    console.log("[PIPELINE] Initial render of operations and pipeline", {
+        operationsCount: operations.length,
+        pipelineLength: pipeline.length,
+        timestamp: new Date().toISOString(),
+    });
     renderOperations(
         operations,
         operationsList,
         openOperationSettings,
-        handleDragStart,
+        handleDragStartWithLogging,
     );
-    renderPipeline(
-        pipeline,
-        pipelineContainer,
-        pipelinePlaceholder,
-        {
-            openOperationSettings,
-            updateRunButton,
-            removeFromPipeline,
-            handleDragStart,
-            handleDragEnd,
-        },
-    );
+    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+        openOperationSettings,
+        updateRunButton,
+        removeFromPipeline,
+        handleDragStart: handleDragStartWithLogging,
+        handleDragEnd: handleDragEndWithLogging,
+    });
 
     // Check backend restart status on initialization
     await checkBackendRestartStatus();

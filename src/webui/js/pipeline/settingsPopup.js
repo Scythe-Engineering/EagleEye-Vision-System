@@ -251,13 +251,19 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         // Function to trigger auto-save
         const triggerAutoSave = () => {
-            console.log("triggerAutoSave called");
+            console.log("[SETTINGS] Auto-save triggered", {
+                operationName: config?.operationName || "unknown",
+                timestamp: new Date().toISOString(),
+            });
             // Get current form values and call onSave callback if provided
             const currentValues = {};
             fields.forEach((field) => {
                 currentValues[field.name] = field.getValue();
             });
-            console.log("Current form values:", currentValues);
+            console.log(
+                "[SETTINGS] Current form values during auto-save:",
+                currentValues,
+            );
 
             // Check if restart is required
             const requiresRestart = checkIfRestartRequired(
@@ -417,6 +423,14 @@ import { BACKEND_BASE_URL } from "../config.js";
         initialValues,
         onSave,
     }) {
+        console.log("[SETTINGS] Opening settings popup", {
+            operationName,
+            isSecondary,
+            title,
+            initialValuesKeys: Object.keys(initialValues || {}),
+            timestamp: new Date().toISOString(),
+        });
+
         const { overlay, modal } = findOverlayElements();
         if (!overlay || !modal) return;
 
@@ -456,8 +470,23 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         // Start visualization on backend if camera and pipeline are available
         const startVisIfReady = async () => {
-            if (!selectedCameraName || !selectedPipelineName) return;
+            if (!selectedCameraName || !selectedPipelineName) {
+                console.log(
+                    "[SETTINGS] Skipping visualization - missing camera or pipeline",
+                    {
+                        selectedCameraName,
+                        selectedPipelineName,
+                    },
+                );
+                return;
+            }
             try {
+                console.log("[SETTINGS] Starting visualization", {
+                    camera: selectedCameraName,
+                    pipeline: selectedPipelineName,
+                    action: actionNameForApi,
+                    timestamp: new Date().toISOString(),
+                });
                 await fetch(
                     `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}`,
                     { method: "POST" },
@@ -573,7 +602,20 @@ import { BACKEND_BASE_URL } from "../config.js";
                 if (saveBtn) {
                     saveBtn.onclick = () => {
                         const values = getValues();
+                        console.log("[SETTINGS] Saving operation settings", {
+                            operationName,
+                            isSecondary,
+                            savedValues: values,
+                            timestamp: new Date().toISOString(),
+                        });
                         if (typeof onSave === "function") onSave(values);
+                        console.log(
+                            "[SETTINGS] Settings saved, closing popup",
+                            {
+                                operationName,
+                                timestamp: new Date().toISOString(),
+                            },
+                        );
                         close();
                     };
                 }
@@ -594,7 +636,16 @@ import { BACKEND_BASE_URL } from "../config.js";
     }
 
     function stopVisualizationIfActive() {
-        if (!_currentVisCamera || !_currentVisPipeline) return;
+        if (!_currentVisCamera || !_currentVisPipeline) {
+            console.log("[SETTINGS] No active visualization to stop");
+            return;
+        }
+        console.log("[SETTINGS] Stopping active visualization", {
+            camera: _currentVisCamera,
+            pipeline: _currentVisPipeline,
+            action: _currentVisAction,
+            timestamp: new Date().toISOString(),
+        });
         try {
             fetch(
                 `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`,
@@ -606,10 +657,17 @@ import { BACKEND_BASE_URL } from "../config.js";
             _currentVisCamera = null;
             _currentVisPipeline = null;
             _currentVisAction = null;
+            console.log("[SETTINGS] Visualization state cleared");
         }
     }
 
     function close() {
+        console.log("[SETTINGS] Closing settings popup", {
+            wasVisualizing: !!_visInterval,
+            hadVisualization: !!_currentVisObjectUrl,
+            timestamp: new Date().toISOString(),
+        });
+
         const { overlay } = findOverlayElements();
         if (!overlay) return;
 
@@ -617,10 +675,12 @@ import { BACKEND_BASE_URL } from "../config.js";
         if (_visInterval) {
             clearInterval(_visInterval);
             _visInterval = null;
+            console.log("[SETTINGS] Stopped visualization polling");
         }
         if (_currentVisObjectUrl) {
             try {
                 URL.revokeObjectURL(_currentVisObjectUrl);
+                console.log("[SETTINGS] Revoked visualization object URL");
             } catch (e) {
                 console.warn("Failed to revoke object URL:", e);
             }

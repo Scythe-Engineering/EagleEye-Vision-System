@@ -154,6 +154,7 @@ webui/
 - Daemon thread execution
 - Error handling and logging
 - Static file optimization
+- Build process required for pipeline tab inclusion (`npm run build`)
 
 ## Integration Points
 

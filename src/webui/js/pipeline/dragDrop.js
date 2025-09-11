@@ -243,7 +243,20 @@ export function handleDropOnPipeline(
 
     if (localFromIndex !== null) {
         // Reordering existing item
+        // Adjust finalIndex if we're inserting after the original position
+        if (localFromIndex < finalIndex) {
+            finalIndex -= 1;
+        }
+
         if (localFromIndex !== finalIndex) {
+            console.log("[DRAGDROP] Reordering item", {
+                localFromIndex,
+                finalIndex,
+                k,
+                instanceId: localDraggedItem.instanceId,
+                timestamp: new Date().toISOString(),
+            });
+
             const removedItem = pipeline.splice(localFromIndex, 1)[0];
             const newPipeline = pipeline.slice();
             newPipeline.splice(finalIndex, 0, removedItem);
