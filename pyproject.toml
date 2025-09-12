@@ -25,7 +25,7 @@ dependencies = [
   "flask_socketio",
   "pupil-apriltags",
   "flask_cors",
-  "memryx",
+  "memryx; sys_platform != 'win32'",
 ]
 
 [tool.uv.sources]
