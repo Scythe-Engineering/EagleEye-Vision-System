@@ -3,27 +3,29 @@ import os
 from typing import Tuple, cast
 
 import torch
-import torch.optim.lr_scheduler as lr_scheduler
 import torch.onnx
+import torch.optim.lr_scheduler as lr_scheduler
 from cv2 import imread
+from grid_detectors.predictor import GridPredictor
 from torch import nn, optim
-from torch.amp.grad_scaler import GradScaler
 from torch.amp.autocast_mode import autocast
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.amp.grad_scaler import GradScaler
+from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
 from tqdm import tqdm
 
-from grid_detectors.predictor import GridPredictor
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import LetterboxTransform
+from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+    LetterboxTransform,
+)
 
 
 class GridDataset(Dataset):
     """Dataset of raw frames and occupancy grids of size GRID_HEIGHT×GRID_WIDTH saved as JSON."""
 
     def __init__(
-            self, data_dir: str, transform: transforms.Compose, cache: bool = False
+        self, data_dir: str, transform: transforms.Compose, cache: bool = False
     ):
-        """ Initialize the GridDataset.
+        """Initialize the GridDataset.
 
         Args:
             data_dir (str): The directory containing the training data.
@@ -64,7 +66,9 @@ class GridDataset(Dataset):
         base = self.bases[idx]
         img = imread(os.path.join(self.data_dir, base + ".png"))
         img_t = self.transform(img)
-        img_t = cast(torch.Tensor, img_t) # Explicitly cast to torch.Tensor to satisfy the type checker
+        img_t = cast(
+            torch.Tensor, img_t
+        )  # Explicitly cast to torch.Tensor to satisfy the type checker
         with open(os.path.join(self.data_dir, base + ".json"), "r") as jf:
             grid = json.load(jf)["grid"]
         label = torch.tensor(grid, dtype=torch.float32)
@@ -104,7 +108,7 @@ def train():
     train_ds, val_ds = random_split(dataset, [train_sz, val_sz])
     num_cpu_workers = os.cpu_count()
     if num_cpu_workers is None:
-        num_cpu_workers = 1 # Default to 1 worker if cpu_count is None
+        num_cpu_workers = 1  # Default to 1 worker if cpu_count is None
     num_workers_dataloader = max(1, num_cpu_workers - 1)
 
     train_loader = DataLoader(
@@ -164,8 +168,9 @@ def train():
         val_loss = 0.0
         with torch.no_grad():
             for imgs, grids in val_loader:
-                imgs, grids = imgs.to(device, non_blocking=True), grids.to(
-                    device, non_blocking=True
+                imgs, grids = (
+                    imgs.to(device, non_blocking=True),
+                    grids.to(device, non_blocking=True),
                 )
                 logits = model(imgs)
                 val_loss += criterion(logits, grids).item() * imgs.size(0)
@@ -187,8 +192,12 @@ def train():
     print(f"Model saved to {output}")
 
     # Export to ONNX
-    onnx_output_path = output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
-    dummy_input = torch.randn(1, 3, target_height, target_width).to(device) # Batch size 1, 3 channels, target_height, target_width
+    onnx_output_path = (
+        output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
+    )
+    dummy_input = torch.randn(1, 3, target_height, target_width).to(
+        device
+    )  # Batch size 1, 3 channels, target_height, target_width
     try:
         torch.onnx.export(
             model,
@@ -198,12 +207,13 @@ def train():
             input_names=["input"],
             output_names=["output"],
             dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
-            opset_version=11, # ONNX opset version
+            opset_version=11,  # ONNX opset version
             do_constant_folding=True,
         )
         print(f"Model successfully exported to ONNX format at {onnx_output_path}")
     except Exception as e:
         print(f"Error exporting model to ONNX: {e}")
+
 
 if __name__ == "__main__":
     train()
