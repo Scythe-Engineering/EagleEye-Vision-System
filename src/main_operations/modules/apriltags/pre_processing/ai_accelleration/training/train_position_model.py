@@ -220,7 +220,7 @@ def build_grid_targets(
 data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
 epochs = 500
 batch_size = 36
-lr = 1e-3
+lr = 5e-3
 output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
 
 target_width = 320
