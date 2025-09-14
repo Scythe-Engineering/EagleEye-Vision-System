@@ -219,7 +219,7 @@ def build_grid_targets(
 # ——— Config ———
 data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
 epochs = 500
-batch_size = 24
+batch_size = 36
 lr = 1e-3
 output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
 
@@ -227,8 +227,8 @@ target_width = 320
 target_height = 320
 max_detections = 12
 
-early_stopping_patience = 30
-early_stopping_min_delta = 4e-4
+early_stopping_patience = 10
+early_stopping_min_delta = 2e-3
 
 
 def train() -> None:
