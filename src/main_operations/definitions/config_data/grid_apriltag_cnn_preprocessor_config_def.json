@@ -1,6 +1,6 @@
 {
-    "class_name": "ApriltagCnnPreprocessorDefinition",
-    "description": "Enhances AprilTag detection speed by preprocessing camera images with a convolutional neural network to crop the input image to the area of interest",
+    "class_name": "GridApriltagCnnPreprocessorDefinition",
+    "description": "Enhances AprilTag detection speed by preprocessing camera images with a convolutional neural network to crop the input image to the area of interest (grid method)",
     "category": "prep",
     "parameters": {
         "model_path": {

@@ -2,11 +2,12 @@
     "basic_test": {
         "apriltag_pipeline": [
             {
-                "action_name": "apriltag_cnn_preprocessor",
+                "action_name": "position_apriltag_preprocessor",
                 "action_params": {
-                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/model.dfp",
+                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/positionv1.dfp",
                     "device_id": "MX3_001",
-                    "conf_threshold": 0.15
+                    "conf_threshold": 0.75,
+                    "padding_factor": 0.3
                 }
             },
             {

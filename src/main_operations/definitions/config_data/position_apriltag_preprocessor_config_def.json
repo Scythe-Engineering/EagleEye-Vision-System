@@ -1,0 +1,40 @@
+{
+    "class_name": "PositionApriltagPreprocessorDefinition",
+    "description": "Enhances AprilTag detection speed by preprocessing camera images with a position-based neural network to crop the input image to areas of interest (position and scale method)",
+    "category": "prep",
+    "parameters": {
+        "model_path": {
+            "type": "str",
+            "description": "Path to the trained position predictor model weights file",
+            "default": "{project_root}/models/position_predictor/model.pth",
+            "required": true,
+            "restart_for_change": true
+        },
+        "device_id": {
+            "type": "str",
+            "description": "The id of the computation device for processing",
+            "options": ["CPU", "CUDA", "MX3_001", "CORAL"],
+            "default": "MX3_001",
+            "required": true,
+            "restart_for_change": true
+        },
+        "conf_threshold": {
+            "type": "float",
+            "description": "Confidence threshold for position predictions (0.0 to 1.0)",
+            "default": 0.5,
+            "min": 0.0,
+            "max": 1.0,
+            "required": false,
+            "restart_for_change": false
+        },
+        "padding_factor": {
+            "type": "float",
+            "description": "Factor to pad around detected positions (0.0 = no padding, 0.5 = 50% padding)",
+            "default": 0.3,
+            "min": 0.0,
+            "max": 2.0,
+            "required": false,
+            "restart_for_change": false
+        }
+    }
+}

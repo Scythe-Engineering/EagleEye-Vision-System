@@ -2,34 +2,37 @@ import numpy as np
 from typing import Optional, Tuple
 from threading import Lock
 
-from ..modules.apriltags.pre_processing.ai_accelleration.apriltag_cnn_preprocessor import (
-    ApriltagCnnPreprocessor,
+from ..modules.apriltags.pre_processing.ai_accelleration.position_apriltag_preprocessor import (
+    PositionApriltagPreprocessor,
 )
 from src.utils.device_management_utils.compute_pool import ComputePool
 
 
-class ApriltagCnnPreprocessorDefinition:
-    """Definition for AprilTag CNN preprocessing operations."""
+class PositionApriltagPreprocessorDefinition:
+    """Definition for position-based AprilTag preprocessing operations."""
 
     def __init__(
         self,
         model_path: str,
         device_id: str,
         compute_pool: ComputePool,
-        conf_threshold: float = 0.15,
+        conf_threshold: float = 0.5,
+        padding_factor: float = 0.3,
     ) -> None:
-        """Initialize the AprilTag CNN preprocessor definition.
+        """Initialize the position-based AprilTag preprocessor definition.
 
         Args:
             model_path: Path to the trained model weights file.
             device_id: The id of the computation device (CPU/CUDA/MX3/CORAL).
             compute_pool: The compute pool to use for the pipelines.
-            conf_threshold: Confidence threshold for predictions.
+            conf_threshold: Confidence threshold for predictions (0-1).
+            padding_factor: Factor to pad around detected positions.
         """
-        self.preprocessor = ApriltagCnnPreprocessor(
+        self.preprocessor = PositionApriltagPreprocessor(
             model_path=model_path,
             device=compute_pool.get_compute_device(device_id),
             conf_threshold=conf_threshold,
+            padding_factor=padding_factor,
         )
 
         self.last_crop_regions: list[tuple[np.ndarray, np.ndarray]] = []
@@ -37,8 +40,8 @@ class ApriltagCnnPreprocessorDefinition:
 
     def run(
         self, frame: np.ndarray, output_size: Optional[Tuple[int, int]] = None
-    ) -> np.ndarray:
-        """Process a frame through the CNN preprocessor.
+    ) -> list[tuple[np.ndarray, tuple[int, int]]]:
+        """Process a frame through the position-based preprocessor.
 
         Args:
             frame: Input frame to process.
@@ -54,22 +57,24 @@ class ApriltagCnnPreprocessorDefinition:
         return outputs
 
     def update_config(self, json_config: dict) -> None:
-        """Update the configuration of the CNN preprocessor. Only conf threshold is updated (restart is required for other changes).
+        """Update the configuration of the position preprocessor.
 
         Args:
-            json_config: JSON configuration for the CNN preprocessor.
+            json_config: JSON configuration for the position preprocessor.
         """
         if "conf_threshold" in json_config:
             self.preprocessor.change_conf_threshold(json_config["conf_threshold"])
+        if "padding_factor" in json_config:
+            self.preprocessor.change_padding_factor(json_config["padding_factor"])
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Visualize the CNN preprocessor outputs by blacking out eliminated grid squares.
+        """Visualize the position preprocessor outputs by blacking out non-detected areas.
 
         Args:
             frame: Input frame to process.
 
         Returns:
-            Frame with eliminated grid squares blackened.
+            Frame with non-detected areas blackened.
         """
         with self.last_crop_regions_lock:
             crop_regions = self.last_crop_regions
@@ -77,7 +82,7 @@ class ApriltagCnnPreprocessorDefinition:
         # Start with a black frame
         visualization_frame = np.zeros_like(frame)
 
-        # Copy the crop regions (which are the non-eliminated areas) to the black frame
+        # Copy the crop regions (which are the detected areas) to the black frame
         for region in crop_regions:
             left, top, right, bottom = region
             # Ensure coordinates are within frame bounds

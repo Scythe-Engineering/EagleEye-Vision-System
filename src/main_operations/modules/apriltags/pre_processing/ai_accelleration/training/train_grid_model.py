@@ -195,9 +195,9 @@ def train():
     onnx_output_path = (
         output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
     )
-    dummy_input = torch.randn(1, 3, target_height, target_width).to(
+    dummy_input = torch.randn(1, 1, target_height, target_width).to(
         device
-    )  # Batch size 1, 3 channels, target_height, target_width
+    )  # Batch size 1, 1 channels, target_height, target_width
     try:
         torch.onnx.export(
             model,

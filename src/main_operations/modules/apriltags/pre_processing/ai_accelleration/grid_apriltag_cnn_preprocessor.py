@@ -11,7 +11,7 @@ from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils
 from src.utils.device_management_utils.compute_device import ComputeDevice
 
 
-class ApriltagCnnPreprocessor:
+class GridApriltagCnnPreprocessor:
     """A class to handle AprilTag CNN preprocessing and inference.
 
     This class loads a trained model and performs inference on video frames to detect
@@ -95,6 +95,11 @@ class ApriltagCnnPreprocessor:
             (self.target_height, self.target_width),
             self.stream_idx,
         )
+
+        logits = logits.reshape(logits.shape[1], logits.shape[2])
+
+        logits = np.rot90(logits, k=1)
+        logits = np.flip(logits, axis=0)
 
         return 1.0 / (1.0 + np.exp(-logits))
 
