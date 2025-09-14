@@ -51,6 +51,8 @@ class GridApriltagCnnPreprocessorDefinition:
             outputs, self.last_crop_regions = self.preprocessor.process_frame(
                 frame, output_size
             )
+        if outputs is None:
+            return None
         return outputs
 
     def update_config(self, json_config: dict) -> None:

@@ -3,6 +3,7 @@ import numpy as np
 from typing import Callable
 from src.utils.camera_utils.cameras.camera import Camera
 import imutils
+from tqdm import tqdm
 
 
 class VideoFileCamera(Camera):
@@ -33,7 +34,7 @@ class VideoFileCamera(Camera):
         print("Loading frames...")
         frames = []
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to the start of the video
-        while True:
+        for _ in tqdm(range(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)))):
             ret, frame = self.cap.read()
             if not ret:
                 break
@@ -57,7 +58,8 @@ class VideoFileCamera(Camera):
             self.current_frame_index = 0
 
         frame = self.frames[self.current_frame_index]
-        self.current_frame_index += 1
+        if not self.current_frame_index == 636:
+            self.current_frame_index += 1
         return frame
 
     def get_frame_index(self) -> int:

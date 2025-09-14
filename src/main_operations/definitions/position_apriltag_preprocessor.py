@@ -1,3 +1,4 @@
+from imutils.convenience import cv2
 import numpy as np
 from typing import Optional, Tuple
 from threading import Lock
@@ -54,6 +55,8 @@ class PositionApriltagPreprocessorDefinition:
             outputs, self.last_crop_regions = self.preprocessor.process_frame(
                 frame, output_size
             )
+        if outputs is None:
+            return None
         return outputs
 
     def update_config(self, json_config: dict) -> None:
@@ -79,8 +82,8 @@ class PositionApriltagPreprocessorDefinition:
         with self.last_crop_regions_lock:
             crop_regions = self.last_crop_regions
 
-        # Start with a black frame
-        visualization_frame = np.zeros_like(frame)
+        # Start with a copy of the frame at low brightness so that the detected areas are more visible
+        visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
 
         # Copy the crop regions (which are the detected areas) to the black frame
         for region in crop_regions:

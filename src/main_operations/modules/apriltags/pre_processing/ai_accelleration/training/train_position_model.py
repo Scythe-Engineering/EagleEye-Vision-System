@@ -178,11 +178,12 @@ def build_grid_targets(
 
     Returns:
         Tuple of (obj_map, dx_map, dy_map, ds_map), each of shape (B, Gh, Gw)
+        obj_map uses label smoothing: 0.95 for positives, 0.05 for negatives
     """
     batch_size = targets_batch.size(0)
-    obj_map = torch.zeros(
-        (batch_size, grid_h, grid_w), device=device, dtype=torch.float32
-    )
+    obj_map = torch.full(
+        (batch_size, grid_h, grid_w), 0.05, device=device, dtype=torch.float32
+    )  # Label smoothing: negative class
     dx_map = torch.zeros_like(obj_map)
     dy_map = torch.zeros_like(obj_map)
     ds_map = torch.zeros_like(obj_map)
@@ -207,7 +208,7 @@ def build_grid_targets(
         ds = torch.log(sc * grid_w)
 
         # In case of collisions, last one wins (acceptable for sparse tags)
-        obj_map[b, i, j] = 1.0
+        obj_map[b, i, j] = 0.95  # Label smoothing: positive class
         dx_map[b, i, j] = dx
         dy_map[b, i, j] = dy
         ds_map[b, i, j] = ds
@@ -276,7 +277,7 @@ def train() -> None:
     bce_logits = nn.BCEWithLogitsLoss()
     l1_loss = nn.SmoothL1Loss(reduction="none")
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=0)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
     train_losses = []
 
@@ -331,6 +332,7 @@ def train() -> None:
             loss = obj_loss + dx_l + dy_l + ds_l
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             running_loss += loss.item() * imgs.size(0)
 

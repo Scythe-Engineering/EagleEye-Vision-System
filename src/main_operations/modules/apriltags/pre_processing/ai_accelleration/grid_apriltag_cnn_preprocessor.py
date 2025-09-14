@@ -158,6 +158,9 @@ class GridApriltagCnnPreprocessor:
                 for region in crop_regions
             ]
 
+        if len(crop_regions) == 0:
+            return None, None
+
         return self.generate_cropped_images(frame, crop_regions), crop_regions
 
     def change_conf_threshold(self, conf_threshold: float) -> None:

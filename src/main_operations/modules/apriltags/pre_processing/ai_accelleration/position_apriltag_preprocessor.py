@@ -70,6 +70,13 @@ class PositionApriltagPreprocessor:
         self.stream_idx: int = self.device.register_thread_access()
         print(f"Assigned stream index: {self.stream_idx}")
 
+        # Keep track of letterbox mapping to original frame
+        self.resized_width: int = 0
+        self.resized_height: int = 0
+        self.offset_x: int = 0
+        self.offset_y: int = 0
+        self.scale_factor: float = 1.0
+
         self._load_model()
 
     def _load_model(self) -> None:
@@ -100,14 +107,32 @@ class PositionApriltagPreprocessor:
         Returns:
             Preprocessed tensor ready for model input.
         """
-        # Letterbox the frame
-        self.scaled_frame_buffer = letterbox_image(
-            frame, (self.target_width, self.target_height)
+        preprocessed_img, resized_size = letterbox_image(
+            frame,
+            (self.target_width, self.target_height),
+            greyscale=True,
+            return_resized_size=True,
         )
 
-        # Convert to tensor and normalize
+        self.resized_width, self.resized_height = (
+            int(resized_size[0]),
+            int(resized_size[1]),
+        )
+        self.offset_x = (self.target_width - self.resized_width) // 2
+        self.offset_y = (self.target_height - self.resized_height) // 2
+
+        original_h, original_w = frame.shape[0], frame.shape[1]
+        max_model_dim = max(self.resized_width, self.resized_height)
+        max_original_dim = max(original_w, original_h)
+        self.scale_factor = (
+            max_model_dim / float(max_original_dim) if max_original_dim > 0 else 1.0
+        )
+
+        self.grayscale_buffer = preprocessed_img
         self.grayscale_tensor_buffer = (
-            torch.from_numpy(self.scaled_frame_buffer.astype(np.float32)).unsqueeze(0)
+            torch.from_numpy(self.grayscale_buffer.astype(np.float32))
+            .unsqueeze(0)
+            .unsqueeze(0)
             / 255.0
         )
 
@@ -126,7 +151,6 @@ class PositionApriltagPreprocessor:
         """
         input_tensor = self._preprocess_frame(frame)
 
-        # Execute model on device
         logits = self.device.run(
             self.model_name,
             input_tensor,
@@ -134,7 +158,13 @@ class PositionApriltagPreprocessor:
             self.stream_idx,
         )
 
-        # Expected shapes: (Gh, Gw, 4) or (4, Gh, Gw)
+        # Normalize logits shape to (H, W, 4) or (4, H, W)
+        if logits.ndim == 4:
+            if logits.shape[0] == 1:
+                logits = logits[0]
+            elif logits.shape[-1] == 1:
+                logits = logits[..., 0]
+
         if logits.ndim != 3:
             return []
 
@@ -149,41 +179,65 @@ class PositionApriltagPreprocessor:
             dy_hat = logits[2, ...]
             ds_hat = logits[3, ...]
         else:
-            return []
+            # Move channel axis to the end if a dimension equals 4
+            channel_axes = [
+                axis_idx
+                for axis_idx, dim_size in enumerate(logits.shape)
+                if dim_size == 4
+            ]
+            if channel_axes:
+                logits = np.moveaxis(logits, channel_axes[0], -1)
+                obj_logits = logits[..., 0]
+                dx_hat = logits[..., 1]
+                dy_hat = logits[..., 2]
+                ds_hat = logits[..., 3]
+            else:
+                return []
 
         grid_h, grid_w = obj_logits.shape
 
-        # Convert to probabilities
         obj_probs = 1.0 / (1.0 + np.exp(-obj_logits))
-
-        # Thresholding
         valid_mask = obj_probs > self.conf_threshold
         if not np.any(valid_mask):
             return []
 
-        frame_h, frame_w = frame.shape[0], frame.shape[1]
-        cell_w = frame_w / float(grid_w)
-        cell_h = frame_h / float(grid_h)
+        cell_w = self.target_width / float(grid_w)
+        cell_h = self.target_height / float(grid_h)
 
-        detections: list[tuple[float, float, float, float]] = []
+        detections_input_space: list[tuple[float, float, float, float]] = []
         valid_indices = np.argwhere(valid_mask)
-        for i, j in valid_indices:
-            conf = float(obj_probs[i, j])
-            dx = 1.0 / (1.0 + np.exp(-float(dx_hat[i, j])))
-            dy = 1.0 / (1.0 + np.exp(-float(dy_hat[i, j])))
-            cx = (float(j) + dx) * cell_w
-            cy = (float(i) + dy) * cell_h
-            box_size = float(np.exp(float(ds_hat[i, j]))) * cell_w
-            detections.append((cx, cy, box_size, conf))
+        for grid_i, grid_j in valid_indices:
+            confidence = float(obj_probs[grid_i, grid_j])
+            dx = 1.0 / (1.0 + np.exp(-float(dx_hat[grid_i, grid_j])))
+            dy = 1.0 / (1.0 + np.exp(-float(dy_hat[grid_i, grid_j])))
+            cx_in = (float(grid_j) + dx) * cell_w
+            cy_in = (float(grid_i) + dy) * cell_h
+            size_in = float(np.exp(float(ds_hat[grid_i, grid_j]))) * cell_w
+            detections_input_space.append((cx_in, cy_in, size_in, confidence))
 
-        # Sort by confidence
-        detections.sort(key=lambda d: d[3], reverse=True)
+        # Map detections back to original frame coordinates
+        frame_h, frame_w = frame.shape[0], frame.shape[1]
+        detections_original: list[tuple[float, float, float, float]] = []
+        for cx_in, cy_in, size_in, confidence in detections_input_space:
+            x_resized = cx_in - float(self.offset_x)
+            y_resized = cy_in - float(self.offset_y)
+            if self.scale_factor <= 0.0:
+                continue
+            cx_orig = x_resized / self.scale_factor
+            cy_orig = y_resized / self.scale_factor
+            size_orig = size_in / self.scale_factor
 
-        # Optional simple NMS on square boxes
-        detections = self._nms_square_boxes(detections, iou_threshold=0.3)
+            cx_orig = float(max(0.0, min(float(frame_w - 1), cx_orig)))
+            cy_orig = float(max(0.0, min(float(frame_h - 1), cy_orig)))
+            size_orig = float(max(1.0, min(float(min(frame_w, frame_h)), size_orig)))
 
-        # Keep top-k
-        return detections[:12]
+            detections_original.append((cx_orig, cy_orig, size_orig, confidence))
+
+        detections_original.sort(key=lambda d: d[3], reverse=True)
+        detections_original = self._nms_square_boxes(
+            detections_original, iou_threshold=0.3
+        )
+        return detections_original[:12]
 
     def _nms_square_boxes(
         self, detections: list[tuple[float, float, float, float]], iou_threshold: float
@@ -263,7 +317,6 @@ class PositionApriltagPreprocessor:
         """
         half_size = (size_px * (1.0 + self.padding_factor)) / 2.0
 
-        # Create crop region
         left = max(0, int(center_x_px - half_size))
         top = max(0, int(center_y_px - half_size))
         right = min(frame_width, int(center_x_px + half_size))
@@ -291,7 +344,6 @@ class PositionApriltagPreprocessor:
                 center_x_px, center_y_px, size_px, frame.shape[1], frame.shape[0]
             )
 
-            # Skip invalid regions
             if region[2] <= region[0] or region[3] <= region[1]:
                 continue
 
@@ -315,11 +367,11 @@ class PositionApriltagPreprocessor:
         detections = self.get_positions_and_scales(frame)
 
         if not detections:
-            return [], []
+            print("No detections")
+            return None, None
 
         cropped_images, crop_regions = self.generate_cropped_images(frame, detections)
 
-        # Create list of (cropped_image, offset) tuples
         cropped_images_with_offsets = [
             (img, (region[0], region[1]))
             for img, region in zip(cropped_images, crop_regions)
