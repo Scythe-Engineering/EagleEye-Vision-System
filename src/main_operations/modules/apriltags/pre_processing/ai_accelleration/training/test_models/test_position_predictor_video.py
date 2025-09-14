@@ -120,9 +120,9 @@ def predict_detections(
     frame_tensor = frame_tensor.to(device)
 
     with torch.no_grad():
-        outputs = model(frame_tensor)  # (1, Gh, Gw, 4)
+        outputs = model(frame_tensor)  # (1, 4, Gh, Gw)
 
-    return outputs.squeeze(0).cpu()
+    return outputs.squeeze(0).permute(1, 2, 0).cpu()
 
 
 def decode_grid_predictions(

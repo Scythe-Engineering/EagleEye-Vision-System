@@ -168,29 +168,35 @@ class PositionApriltagPreprocessor:
         if logits.ndim != 3:
             return []
 
-        if logits.shape[-1] == 4:
-            obj_logits = logits[..., 0]
-            dx_hat = logits[..., 1]
-            dy_hat = logits[..., 2]
-            ds_hat = logits[..., 3]
-        elif logits.shape[0] == 4:
+        # Prefer channel-first (4, H, W) to avoid implicit transposes
+        if logits.shape[0] == 4:
             obj_logits = logits[0, ...]
             dx_hat = logits[1, ...]
             dy_hat = logits[2, ...]
             ds_hat = logits[3, ...]
+        elif logits.shape[-1] == 4:
+            obj_logits = logits[..., 0]
+            dx_hat = logits[..., 1]
+            dy_hat = logits[..., 2]
+            ds_hat = logits[..., 3]
         else:
-            # Move channel axis to the end if a dimension equals 4
             channel_axes = [
                 axis_idx
                 for axis_idx, dim_size in enumerate(logits.shape)
                 if dim_size == 4
             ]
             if channel_axes:
-                logits = np.moveaxis(logits, channel_axes[0], -1)
-                obj_logits = logits[..., 0]
-                dx_hat = logits[..., 1]
-                dy_hat = logits[..., 2]
-                ds_hat = logits[..., 3]
+                if channel_axes[0] == 0:
+                    obj_logits = logits[0, ...]
+                    dx_hat = logits[1, ...]
+                    dy_hat = logits[2, ...]
+                    ds_hat = logits[3, ...]
+                else:
+                    logits = np.moveaxis(logits, channel_axes[0], -1)
+                    obj_logits = logits[..., 0]
+                    dx_hat = logits[..., 1]
+                    dy_hat = logits[..., 2]
+                    ds_hat = logits[..., 3]
             else:
                 return []
 

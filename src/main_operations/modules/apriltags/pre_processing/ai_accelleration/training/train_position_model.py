@@ -295,11 +295,11 @@ def train() -> None:
             targets = targets.to(device)
             optimizer.zero_grad()
 
-            outputs = model(imgs)  # (B, Gh, Gw, 4)
-            obj_logits = outputs[..., 0]
-            dx_hat = outputs[..., 1]
-            dy_hat = outputs[..., 2]
-            ds_hat = outputs[..., 3]
+            outputs = model(imgs)  # (B, 4, Gh, Gw)
+            obj_logits = outputs[:, 0, ...]
+            dx_hat = outputs[:, 1, ...]
+            dy_hat = outputs[:, 2, ...]
+            ds_hat = outputs[:, 3, ...]
 
             _, grid_h, grid_w = obj_logits.shape
 

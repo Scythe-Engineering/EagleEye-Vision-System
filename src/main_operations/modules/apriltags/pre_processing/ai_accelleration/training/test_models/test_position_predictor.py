@@ -131,9 +131,8 @@ def predict_detections(
     img_tensor = img_tensor.to(device)
 
     with torch.no_grad():
-        outputs = model(img_tensor)  # (1, Gh, Gw, 4)
-
-    return outputs.squeeze(0).cpu()
+        outputs = model(img_tensor)  # (1, 4, Gh, Gw)
+    return outputs.squeeze(0).permute(1, 2, 0).cpu()
 
 
 def decode_grid_predictions(

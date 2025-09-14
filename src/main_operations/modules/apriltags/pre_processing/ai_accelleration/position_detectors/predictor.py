@@ -19,21 +19,21 @@ class PositionPredictor(nn.Module):
         # Lightweight backbone with progressive channel increase
         self.backbone = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # (B, 16, H/2, W/2)
-            nn.GroupNorm(8, 16),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
             nn.Dropout2d(0.1),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # (B, 32, H/4, W/4)
-            nn.GroupNorm(8, 32),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.Dropout2d(0.1),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # (B, 64, H/8, W/8)
-            nn.GroupNorm(8, 64),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Dropout2d(0.15),
             nn.Conv2d(
                 64, 128, kernel_size=3, stride=2, padding=1
             ),  # (B, 128, H/16, W/16)
-            nn.GroupNorm(8, 128),
+            nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
         )
 
@@ -48,11 +48,12 @@ class PositionPredictor(nn.Module):
             x: Input tensor of shape (B, 1, H, W)
 
         Returns:
-            Tensor of shape (B, grid_size, grid_size, 4) containing
-            [obj_logits, dx_hat, dy_hat, ds_hat] per grid cell
+            Tensor of shape (B, 4, grid_size, grid_size) containing
+            [obj_logits, dx_hat, dy_hat, ds_hat] in NCHW layout to avoid costly transposes
         """
         features = self.backbone(x)
         output = self.head(features)  # (B, 4, grid_size, grid_size)
 
-        # Permute to (B, grid_size, grid_size, 4) for easier processing
-        return output.permute(0, 2, 3, 1)
+        # previous code # return output.permute(0, 2, 3, 1)
+        # commensing code #
+        return output
