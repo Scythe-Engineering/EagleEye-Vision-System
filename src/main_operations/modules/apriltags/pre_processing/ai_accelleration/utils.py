@@ -3,18 +3,30 @@ from typing import Tuple, Union, overload
 import cv2
 import numpy as np
 
+
 @overload
-def letterbox_image(img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = False) -> np.ndarray:
-    ...
+def letterbox_image(
+    img: np.ndarray,
+    target_size: Tuple[int, int],
+    greyscale: bool = True,
+    return_resized_size: bool = False,
+) -> np.ndarray: ...
 
 
 @overload
-def letterbox_image(img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = True) -> tuple[np.ndarray, tuple[int, int]]:
-    ...
+def letterbox_image(
+    img: np.ndarray,
+    target_size: Tuple[int, int],
+    greyscale: bool = True,
+    return_resized_size: bool = True,
+) -> tuple[np.ndarray, tuple[int, int]]: ...
 
 
 def letterbox_image(
-    img: np.ndarray, target_size: Tuple[int, int], greyscale: bool = True, return_resized_size: bool = False
+    img: np.ndarray,
+    target_size: Tuple[int, int],
+    greyscale: bool = True,
+    return_resized_size: bool = False,
 ) -> Union[np.ndarray, tuple[np.ndarray, tuple[int, int]]]:
     """
     Resize and letterbox a color image to a target size while maintaining aspect ratio. Input can be color or greyscale, output is always greyscale.
@@ -24,30 +36,44 @@ def letterbox_image(
         target_size: Target (width, height) for the output image
         greyscale: Whether to convert the image to greyscale (default: True)
         return_resized_size: Whether to return the resized size (default: False)
-        
+
     Returns:
         Resized, letterboxed and greyscale image
-    """        
+    """
     ih, iw = img.shape[:2]
     w, h = target_size
-    scale = min(w/iw, h/ih)
+
+    if iw == w and ih == h:
+        if greyscale:
+            if len(img.shape) == 3 and img.shape[2] == 3:
+                return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            else:
+                return img
+        else:
+            return img
+
+    scale = min(w / iw, h / ih)
     nw = int(iw * scale)
     nh = int(ih * scale)
-    
+
     resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
-    
+
     if greyscale:
         if len(img.shape) == 3 and img.shape[2] == 3:
             img_grey = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
         else:
             img_grey = resized
-    
+
         new_img = np.zeros((h, w), dtype=np.uint8)
-        new_img[(h-nh)//2:(h-nh)//2 + nh, (w-nw)//2:(w-nw)//2 + nw] = img_grey
+        new_img[
+            (h - nh) // 2 : (h - nh) // 2 + nh, (w - nw) // 2 : (w - nw) // 2 + nw
+        ] = img_grey
     else:
         new_img = np.zeros((h, w, 3), dtype=np.uint8)
-        new_img[(h-nh)//2:(h-nh)//2 + nh, (w-nw)//2:(w-nw)//2 + nw, :] = resized
-        
+        new_img[
+            (h - nh) // 2 : (h - nh) // 2 + nh, (w - nw) // 2 : (w - nw) // 2 + nw, :
+        ] = resized
+
     if return_resized_size:
         return new_img, (nw, nh)
     else:
@@ -80,8 +106,10 @@ def calculate_crop_regions_from_grid(
         list: A list of tuples representing the crop regions (x0, y0, x1, y1).
     """
     # this works, it has been tested, ignore the type checker
-    num_labels, _, stats, _ = cv2.connectedComponentsWithStats( # type: ignore
-        conf_grid_mask.astype(np.uint8), 8, cv2.CV_32S # type: ignore
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(  # type: ignore
+        conf_grid_mask.astype(np.uint8),
+        8,
+        cv2.CV_32S,  # type: ignore
     )
 
     regions = []

@@ -9,7 +9,6 @@ The script uses hardcoded configuration variables instead of command line argume
 Results are automatically saved to a video file with OpenCV annotations.
 """
 
-import os
 import sys
 from pathlib import Path
 from typing import Tuple
@@ -18,6 +17,7 @@ import cv2
 import numpy as np
 import torch
 from torch import nn
+from tqdm import tqdm
 
 # Add the project root to the path to import modules
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -215,7 +215,7 @@ def annotate_frame(
     annotated_frame = frame.copy()
 
     # Draw detections only (in green)
-    for i, detection in enumerate(detections):
+    for detection in detections:
         x, y, scale, confidence = (
             detection["x"],
             detection["y"],
@@ -313,75 +313,75 @@ def process_video(
 
     print("Processing video frames...")
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    with tqdm(total=total_frames, desc="Processing frames") as pbar:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        frame_number += 1
+            frame_number += 1
 
-        try:
-            # Preprocess frame
-            original_frame, preprocessed_frame, resized_size = preprocess_frame(
-                frame, target_size=target_size
-            )
-
-            # Run inference
-            outputs = predict_detections(model, preprocessed_frame, device)
-
-            # Decode grid outputs in model input space (320x320)
-            detections_input = decode_grid_predictions(
-                outputs,
-                target_size=target_size,
-                confidence_threshold=confidence_threshold,
-                top_k=12,
-            )
-
-            # Map detections back to original frame coordinates accounting for letterbox
-            w_in, h_in = target_size
-            w_rs, h_rs = resized_size
-            offset_x = (w_in - w_rs) // 2
-            offset_y = (h_in - h_rs) // 2
-
-            detections = []
-            for det in detections_input:
-                x_resized = det["x"] - offset_x
-                y_resized = det["y"] - offset_y
-                scale_resized = det["scale"]
-
-                scale_factor = max(resized_size) / max(
-                    original_frame.shape[1], original_frame.shape[0]
-                )
-                x_original = x_resized / scale_factor
-                y_original = y_resized / scale_factor
-                scale_original = scale_resized / scale_factor
-
-                detections.append(
-                    {
-                        "x": x_original,
-                        "y": y_original,
-                        "scale": scale_original,
-                        "confidence": det["confidence"],
-                    }
+            try:
+                # Preprocess frame
+                original_frame, preprocessed_frame, resized_size = preprocess_frame(
+                    frame, target_size=target_size
                 )
 
-            total_detections += len(detections)
+                # Run inference
+                outputs = predict_detections(model, preprocessed_frame, device)
 
-            # Annotate and write frame
-            annotated_frame = annotate_frame(original_frame, detections, frame_number)
-            out.write(annotated_frame)
-
-            # Progress update
-            if frame_number % 100 == 0:
-                print(
-                    f"Processed {frame_number}/{total_frames} frames, "
-                    f"Total detections: {total_detections}"
+                # Decode grid outputs in model input space (320x320)
+                detections_input = decode_grid_predictions(
+                    outputs,
+                    target_size=target_size,
+                    confidence_threshold=confidence_threshold,
+                    top_k=12,
                 )
 
-        except Exception as e:
-            print(f"Error processing frame {frame_number}: {e}")
-            # Write original frame if processing fails
-            out.write(frame)
+                # Map detections back to original frame coordinates accounting for letterbox
+                w_in, h_in = target_size
+                w_rs, h_rs = resized_size
+                offset_x = (w_in - w_rs) // 2
+                offset_y = (h_in - h_rs) // 2
+
+                detections = []
+                for det in detections_input:
+                    x_resized = det["x"] - offset_x
+                    y_resized = det["y"] - offset_y
+                    scale_resized = det["scale"]
+
+                    scale_factor = max(resized_size) / max(
+                        original_frame.shape[1], original_frame.shape[0]
+                    )
+                    x_original = x_resized / scale_factor
+                    y_original = y_resized / scale_factor
+                    scale_original = scale_resized / scale_factor
+
+                    detections.append(
+                        {
+                            "x": x_original,
+                            "y": y_original,
+                            "scale": scale_original,
+                            "confidence": det["confidence"],
+                        }
+                    )
+
+                total_detections += len(detections)
+
+                # Annotate and write frame
+                annotated_frame = annotate_frame(
+                    original_frame, detections, frame_number
+                )
+                out.write(annotated_frame)
+
+                pbar.set_postfix(detections=total_detections)
+
+            except Exception as e:
+                print(f"Error processing frame {frame_number}: {e}")
+                # Write original frame if processing fails
+                out.write(frame)
+
+            pbar.update(1)
 
     # Cleanup
     cap.release()
@@ -396,21 +396,11 @@ def process_video(
 def main():
     """Main function to run the video testing script."""
     # Configuration variables
-    video_path = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/0001-0750.mp4"
-    model_path = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
-    confidence_threshold = 0.7
+    video_path = r"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/basic_test.mp4"
+    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
+    confidence_threshold = 0.5
     device = "auto"
-    output_path = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/detection_results_video.mp4"
-
-    # Set default video path if not provided
-    if video_path is None:
-        default_video = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_video.mp4"
-        if os.path.exists(default_video):
-            video_path = default_video
-        else:
-            print("No video path provided and default video not found.")
-            print("Please provide a path to a video file.")
-            return
+    output_path = f"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/{video_path.split('/')[-1].split('.')[0]}_detection_results.mp4"
 
     try:
         # Load model
