@@ -4,7 +4,7 @@
             {
                 "action_name": "position_apriltag_preprocessor",
                 "action_params": {
-                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/positionv1.dfp",
+                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/positionv2.dfp",
                     "device_id": "MX3_001",
                     "conf_threshold": 0.5,
                     "padding_factor": 1.0
