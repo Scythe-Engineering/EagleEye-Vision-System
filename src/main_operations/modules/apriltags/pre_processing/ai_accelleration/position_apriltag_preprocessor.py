@@ -1,7 +1,8 @@
 import json
-import numpy as np
-from typing import Optional
 import traceback
+from typing import Optional
+
+import numpy as np
 import torch
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
@@ -374,7 +375,9 @@ class PositionApriltagPreprocessor:
 
         if not detections:
             print("No detections")
-            return None, None
+            frame_height, frame_width = frame.shape[:2]
+            entire_frame_region = (0, 0, frame_width, frame_height)
+            return [(frame, (0, 0))], [entire_frame_region]
 
         cropped_images, crop_regions = self.generate_cropped_images(frame, detections)
 

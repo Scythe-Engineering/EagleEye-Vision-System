@@ -1,7 +1,8 @@
 import json
-import numpy as np
-from typing import Optional
 import traceback
+from typing import Optional
+
+import numpy as np
 import torch
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
@@ -159,7 +160,9 @@ class GridApriltagCnnPreprocessor:
             ]
 
         if len(crop_regions) == 0:
-            return None, None
+            frame_height, frame_width = frame.shape[:2]
+            entire_frame_region = (0, 0, frame_width, frame_height)
+            return [(frame, (0, 0))], [entire_frame_region]
 
         return self.generate_cropped_images(frame, crop_regions), crop_regions
 
