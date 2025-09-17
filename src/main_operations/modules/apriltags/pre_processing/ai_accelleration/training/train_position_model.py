@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.onnx
 from cv2 import imread
+from line_profiler import profile
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
@@ -168,6 +169,7 @@ class PositionDataset(Dataset):
         return img_tensor, label_tensor
 
 
+@profile
 def build_grid_targets(
     targets_batch: torch.Tensor,
     grid_h: int,
@@ -252,7 +254,7 @@ class ExponentialMovingAverage:
 # ——— Config ———
 data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/augmented_training_data"
 epochs = 500
-batch_size = 24
+batch_size = 36
 lr = 5e-3
 output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
 
@@ -261,9 +263,10 @@ target_height = 320
 max_detections = 12
 
 early_stopping_patience = 10
-early_stopping_min_delta = 2e-3
+early_stopping_min_delta = 5e-3
 
 
+@profile
 def train() -> None:
     """Train the position predictor with validation, EMA, and grid-based losses.
 

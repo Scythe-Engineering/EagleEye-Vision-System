@@ -364,27 +364,15 @@ def main():
     """Main function to run data augmentation."""
 
     # Configuration variables - modify these as needed
-    input_dir = "training_data"  # Set to None for auto-detection, or specify path
-    output_dir = (
-        "augmented_training_data"  # Set to None for auto-detection, or specify path
-    )
-    max_workers = 12  # Set to None for CPU count, or specify number of threads
+    input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\training_data"  # Set to None for auto-detection, or specify path
+    output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\augmented_training_data"
+    max_workers = 24  # Set to None for CPU count, or specify number of threads
     enabled_augmentations = (
         None  # Set to None for all, or list like ["rotation", "brightness"]
     )
     brightness_factors = [0.5, 0.7, 1.3, 1.5]  # Brightness adjustment factors
     scale_factors = [0.5, 0.7, 1.3, 1.5]  # Scale adjustment factors
     contrast_factors = [0.5, 0.7, 1.3, 1.5]  # Contrast adjustment factors
-
-    # Check if we're running from the augmentation directory
-    current_dir = Path.cwd()
-    if current_dir.name == "augmentation":
-        input_dir = "../training_data"
-        output_dir = "../augmented_training_data"
-    elif "augmentation" in str(current_dir):
-        # Try to find relative paths
-        input_dir = "../../training_data"
-        output_dir = "../../augmented_training_data"
 
     # Create full paths
     input_path = Path(input_dir)

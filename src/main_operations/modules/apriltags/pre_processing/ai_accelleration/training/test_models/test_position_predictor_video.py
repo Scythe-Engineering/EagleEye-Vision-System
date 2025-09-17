@@ -397,7 +397,7 @@ def main():
     """Main function to run the video testing script."""
     # Configuration variables
     video_path = r"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/basic_test.mp4"
-    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
+    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/positionv3.pth"
     confidence_threshold = 0.5
     device = "auto"
     output_path = f"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/{video_path.split('/')[-1].split('.')[0]}_detection_results.mp4"
