@@ -5,6 +5,7 @@ import traceback
 from collections import deque
 from typing import Any, Dict, List
 
+import cv2
 import numpy as np
 from networktables import NetworkTable
 
@@ -13,7 +14,7 @@ from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
-debug_mode = False
+debug_mode = True
 
 
 class Pipeline:
@@ -186,16 +187,15 @@ class Pipeline:
                     break
                 end_time = time.time()
                 elapsed = end_time - start_time
-                if debug_mode:
-                    self.operation_time_history[i].append(elapsed)
-                    time_elapsed += elapsed
+                self.operation_time_history[i].append(elapsed)
+                time_elapsed += elapsed
             except Exception as _:
                 raise RuntimeError(
                     f"Error in operation {i} ({type(operation).__name__}): {traceback.format_exc()}"
                 )
+        self.total_time_history.append(time_elapsed)
+        self.all_total_times.append(time_elapsed)
         if debug_mode:
-            self.total_time_history.append(time_elapsed)
-            self.all_total_times.append(time_elapsed)
             print_timing_summary(
                 self.operations, self.operation_time_history, self.total_time_history
             )
@@ -324,6 +324,21 @@ class Pipeline:
                 "definition", ""
             ) == action_name.lower().replace("_", ""):
                 break
+
+        # Add FPS display in top left corner
+        if self.total_time_history:
+            avg_time = sum(self.total_time_history) / len(self.total_time_history)
+            fps = 1.0 / avg_time if avg_time > 0 else 0.0
+            fps_text = f"FPS: {fps:.1f}"
+            cv2.putText(
+                current_frame,
+                fps_text,
+                (30, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (0, 255, 255),  # Yellow color in BGR
+                2,
+            )
 
         return current_frame
 

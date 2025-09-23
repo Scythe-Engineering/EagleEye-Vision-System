@@ -4,15 +4,22 @@
             {
                 "action_name": "position_apriltag_preprocessor",
                 "action_params": {
-                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/positionv2.dfp",
+                    "model_path": "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/positionv3.dfp",
                     "device_id": "MX3_001",
-                    "conf_threshold": 0.5,
-                    "padding_factor": 1.0
+                    "conf_threshold": 0.3,
+                    "padding_factor": 1.5
                 }
             },
             {
                 "action_name": "detect_apriltags",
-                "action_params": {}
+                "action_params": {
+                    "decode_sharpening": 0.25,
+                    "families": "tag36h11",
+                    "nthreads": 3,
+                    "quad_decimate": 2,
+                    "quad_sigma": 0,
+                    "refine_edges": "1"
+                }
             },
             {
                 "action_name": "pnp_camera_localization",
@@ -26,7 +33,7 @@
                 "action_params": {}
             },
             {
-                "action_name": "pose_outlier_filter",
+                "action_name": "pose_outlier_filter_rust",
                 "action_params": {
                     "angular_gate_threshold": 0.95,
                     "base_sigma": 0.1,
