@@ -1,8 +1,10 @@
 import json
+from line_profiler import profile
 import traceback
 from typing import Optional
 
 import numpy as np
+import cv2
 import torch
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
@@ -64,8 +66,11 @@ class PositionApriltagPreprocessor:
         self.grayscale_buffer: np.ndarray = np.zeros(
             (self.target_height, self.target_width), dtype=np.uint8
         )
-        self.grayscale_tensor_buffer: torch.Tensor = torch.zeros(
-            (1, 1, self.target_height, self.target_width), dtype=torch.float32
+        self.grayscale_float_buffer: np.ndarray = np.zeros(
+            (self.target_height, self.target_width), dtype=np.float32
+        )
+        self.grayscale_tensor_buffer: torch.Tensor = (
+            torch.from_numpy(self.grayscale_float_buffer).unsqueeze(0).unsqueeze(0)
         )
 
         self.stream_idx: int = self.device.register_thread_access()
@@ -99,6 +104,7 @@ class PositionApriltagPreprocessor:
         except Exception as _:
             raise RuntimeError(f"Error loading model: {traceback.format_exc()}")
 
+    @profile
     def _preprocess_frame(self, frame: np.ndarray) -> torch.Tensor:
         """Preprocess frame for the position predictor model.
 
@@ -130,15 +136,16 @@ class PositionApriltagPreprocessor:
         )
 
         self.grayscale_buffer = preprocessed_img
-        self.grayscale_tensor_buffer = (
-            torch.from_numpy(self.grayscale_buffer.astype(np.float32))
-            .unsqueeze(0)
-            .unsqueeze(0)
-            / 255.0
+        cv2.multiply(
+            self.grayscale_buffer,
+            1.0 / 255.0,
+            dst=self.grayscale_float_buffer,
+            dtype=cv2.CV_32F,
         )
 
         return self.grayscale_tensor_buffer
 
+    @profile
     def get_positions_and_scales(
         self, frame: np.ndarray
     ) -> list[tuple[float, float, float, float]]:
@@ -359,6 +366,7 @@ class PositionApriltagPreprocessor:
 
         return cropped_images, crop_regions
 
+    @profile
     def process_frame(
         self, frame: np.ndarray, output_size: Optional[tuple[int, int]] = None
     ) -> tuple[list[tuple[np.ndarray, np.ndarray]], list[tuple[int, int, int, int]]]:
@@ -371,10 +379,10 @@ class PositionApriltagPreprocessor:
         Returns:
             Tuple of (cropped_images_with_offsets, crop_regions).
         """
+
         detections = self.get_positions_and_scales(frame)
 
         if not detections:
-            print("No detections")
             frame_height, frame_width = frame.shape[:2]
             entire_frame_region = (0, 0, frame_width, frame_height)
             return [(frame, (0, 0))], [entire_frame_region]

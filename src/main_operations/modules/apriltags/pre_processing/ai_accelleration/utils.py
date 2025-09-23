@@ -2,6 +2,9 @@ from typing import Tuple, Union, overload
 
 import cv2
 import numpy as np
+import math
+
+from line_profiler import profile
 
 
 @overload
@@ -22,6 +25,7 @@ def letterbox_image(
 ) -> tuple[np.ndarray, tuple[int, int]]: ...
 
 
+@profile
 def letterbox_image(
     img: np.ndarray,
     target_size: Tuple[int, int],
@@ -29,55 +33,67 @@ def letterbox_image(
     return_resized_size: bool = False,
 ) -> Union[np.ndarray, tuple[np.ndarray, tuple[int, int]]]:
     """
-    Resize and letterbox a color image to a target size while maintaining aspect ratio. Input can be color or greyscale, output is always greyscale.
+    Resize by a single power-of-two factor to the largest size that fits within the target, then pad to exact target.
 
     Args:
-        img: A numpy array (OpenCV image), color (3 channels) or greyscale (1 channel)
-        target_size: Target (width, height) for the output image
-        greyscale: Whether to convert the image to greyscale (default: True)
-        return_resized_size: Whether to return the resized size (default: False)
+        img (np.ndarray): Input OpenCV image; greyscale (H, W) or BGR color (H, W, 3).
+        target_size (Tuple[int, int]): Target size as (width, height).
+        greyscale (bool): Whether to convert output to greyscale. Conversion happens after resizing for performance.
+        return_resized_size (bool): If True, also return the resized inner (width, height).
 
     Returns:
-        Resized, letterboxed and greyscale image
+        Union[np.ndarray, tuple[np.ndarray, tuple[int, int]]]: Letterboxed image and optionally the inner resized size.
     """
-    ih, iw = img.shape[:2]
-    w, h = target_size
+    input_height, input_width = img.shape[:2]
+    target_width, target_height = target_size
 
-    if iw == w and ih == h:
-        if greyscale:
-            if len(img.shape) == 3 and img.shape[2] == 3:
-                return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            else:
-                return img
-        else:
-            return img
+    if target_width == input_width and target_height == input_height:
+        base_img = img
+        if greyscale and (img.ndim == 3 and img.shape[2] == 3):
+            base_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if return_resized_size:
+            return base_img, (input_width, input_height)
+        return base_img
 
-    scale = min(w / iw, h / ih)
-    nw = int(iw * scale)
-    nh = int(ih * scale)
+    ratio_to_fit = min(target_width / input_width, target_height / input_height)
+    ratio_to_fit = max(ratio_to_fit, 1e-9)
 
-    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
+    exponent = int(math.floor(math.log2(ratio_to_fit)))
 
-    if greyscale:
-        if len(img.shape) == 3 and img.shape[2] == 3:
-            img_grey = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-        else:
-            img_grey = resized
-
-        new_img = np.zeros((h, w), dtype=np.uint8)
-        new_img[
-            (h - nh) // 2 : (h - nh) // 2 + nh, (w - nw) // 2 : (w - nw) // 2 + nw
-        ] = img_grey
+    if exponent >= 0:
+        new_width = input_width << exponent
+        new_height = input_height << exponent
     else:
-        new_img = np.zeros((h, w, 3), dtype=np.uint8)
-        new_img[
-            (h - nh) // 2 : (h - nh) // 2 + nh, (w - nw) // 2 : (w - nw) // 2 + nw, :
-        ] = resized
+        shift = -exponent
+        new_width = max(1, input_width >> shift)
+        new_height = max(1, input_height >> shift)
+
+    resized_img = cv2.resize(
+        img, (new_width, new_height), interpolation=cv2.INTER_NEAREST
+    )
+
+    if greyscale and resized_img.ndim == 3 and resized_img.shape[2] == 3:
+        resized_img = cv2.cvtColor(resized_img, cv2.COLOR_BGR2GRAY)
+
+    resized_height, resized_width = resized_img.shape[:2]
+
+    pad_x = (target_width - resized_width) // 2
+    pad_y = (target_height - resized_height) // 2
+
+    if greyscale or resized_img.ndim == 2:
+        output_img = np.zeros((target_height, target_width), dtype=np.uint8)
+        output_img[pad_y : pad_y + resized_height, pad_x : pad_x + resized_width] = (
+            resized_img
+        )
+    else:
+        output_img = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+        output_img[pad_y : pad_y + resized_height, pad_x : pad_x + resized_width, :] = (
+            resized_img
+        )
 
     if return_resized_size:
-        return new_img, (nw, nh)
-    else:
-        return new_img
+        return output_img, (resized_width, resized_height)
+    return output_img
 
 
 class LetterboxTransform:
