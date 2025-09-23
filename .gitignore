@@ -280,3 +280,4 @@ src/utils/camera_calibration/apriltag_test.png
 *temp_data/
 
 .cudavenv/
+.build_cache.json
