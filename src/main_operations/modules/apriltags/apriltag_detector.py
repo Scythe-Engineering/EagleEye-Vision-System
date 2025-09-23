@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from line_profiler import profile
 from typing import Optional
 
 import cv2
@@ -9,18 +10,19 @@ from pupil_apriltags import Detector, Detection
 @dataclass
 class CustomDetection:
     """A detection of an AprilTag.
-    
+
     Attributes:
         tag_id: The ID of the detected AprilTag.
         corners: The corners of the detected AprilTag.
     """
+
     tag_id: int
     corners: np.ndarray
 
 
 class AprilTagDetector:
     """A configurable AprilTag detector that exposes all detector parameters.
-    
+
     This class provides a clean interface for AprilTag detection with full control
     over all detector parameters. It can be used independently from pose estimation.
     """
@@ -32,7 +34,7 @@ class AprilTagDetector:
         quad_decimate: float = 2.0,
         quad_sigma: float = 0.0,
         refine_edges: int = 1,
-        decode_sharpening: float = 0.25
+        decode_sharpening: float = 0.25,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -63,7 +65,7 @@ class AprilTagDetector:
         self.quad_sigma = quad_sigma
         self.refine_edges = refine_edges
         self.decode_sharpening = decode_sharpening
-        
+
         self.detector = Detector(
             families=self.families,
             nthreads=self.nthreads,
@@ -72,7 +74,6 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
-
 
     def update_parameters(
         self,
@@ -115,6 +116,7 @@ class AprilTagDetector:
             decode_sharpening=self.decode_sharpening,
         )
 
+    @profile
     def detect(
         self,
         images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
@@ -130,30 +132,44 @@ class AprilTagDetector:
             List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
         """
         if isinstance(images, np.ndarray):
+            # Optimize image conversion with buffer reuse
             if len(images.shape) == 3:
-                gray_image = cv2.cvtColor(images, cv2.COLOR_BGR2GRAY)
+                # BGR to grayscale conversion
+                gray_image = np.empty(images.shape[:2], dtype=np.uint8)
+                cv2.cvtColor(images, cv2.COLOR_BGR2GRAY, dst=gray_image)
             else:
-                gray_image = images
+                # Check if already uint8 to avoid unnecessary conversion
+                if images.dtype != np.uint8:
+                    # Use cv2.convertScaleAbs for efficient uint8 conversion
+                    gray_image = np.empty(images.shape, dtype=np.uint8)
+                    cv2.convertScaleAbs(images, dst=gray_image)
+                else:
+                    gray_image = images
 
-            gray_image = gray_image.astype(np.uint8)
-
-            return self.detector.detect(
-                gray_image
-            )
+            return self.detector.detect(gray_image)
         else:
             detections = []
             for image, offset in images:
+                # Optimize image conversion with buffer reuse
                 if len(image.shape) == 3:
-                    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                    # BGR to grayscale conversion
+                    gray_image = np.empty(image.shape[:2], dtype=np.uint8)
+                    cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
                 else:
-                    gray_image = image
-
-                gray_image = gray_image.astype(np.uint8)
+                    # Check if already uint8 to avoid unnecessary conversion
+                    if image.dtype != np.uint8:
+                        # Use cv2.convertScaleAbs for efficient uint8 conversion
+                        gray_image = np.empty(image.shape, dtype=np.uint8)
+                        cv2.convertScaleAbs(image, dst=gray_image)
+                    else:
+                        gray_image = image
 
                 for detection in self.detector.detect(gray_image):
-                    detections.append(CustomDetection(
-                        tag_id=detection.tag_id,
-                        corners=(detection.corners + offset)
-                    ))
+                    detections.append(
+                        CustomDetection(
+                            tag_id=detection.tag_id,
+                            corners=(detection.corners + offset),
+                        )
+                    )
 
             return detections

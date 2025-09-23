@@ -61,8 +61,8 @@ class Apriltag:
         )
         self.local_corners = local_corners[[0, 3, 2, 1]]
 
-        self.global_corners = self._get_global_corner_positions()
-        self.global_center = self.global_corners.mean(axis=0)
+        self.global_corners = self._get_global_corner_positions().astype(np.float32)
+        self.global_center = self.global_corners.mean(axis=0).astype(np.float32)
 
     def _get_global_transform_matrix(self) -> np.ndarray:
         """Get the 4x4 global transform matrix for this Apriltag."""
