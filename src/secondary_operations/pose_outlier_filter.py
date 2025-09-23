@@ -59,6 +59,11 @@ class PoseOutlierFilter:
         # Covariance tracking for Mahalanobis gating
         self.pose_covariance = None
         self.covariance_samples = []
+        # Rolling window statistics for fast covariance computation
+        self._positions_window = deque(maxlen=history_size)
+        self._positions_sum = np.zeros(3, dtype=float)
+        self._positions_outer_sum = np.zeros((3, 3), dtype=float)
+        self._positions_count = 0
 
         # Internal state
         self._has_previous_pose = False
@@ -244,6 +249,11 @@ class PoseOutlierFilter:
         self.last_velocity = np.zeros(3, dtype=float)
         self.pose_covariance = None
         self.covariance_samples = []
+        # Reset rolling covariance state
+        self._positions_window.clear()
+        self._positions_sum[:] = 0.0
+        self._positions_outer_sum[:] = 0.0
+        self._positions_count = 0
 
         # Keep only the most recent pose if available
         if self.accepted_poses:
@@ -280,6 +290,11 @@ class PoseOutlierFilter:
         self.pos_uncertainty = self.base_sigma
         self.pose_covariance = None
         self.covariance_samples = []
+        # Reset rolling covariance state
+        self._positions_window.clear()
+        self._positions_sum[:] = 0.0
+        self._positions_outer_sum[:] = 0.0
+        self._positions_count = 0
 
         # If we have a pose to start with, initialize with it
         if pose is not None and timestamp is not None:
@@ -305,17 +320,25 @@ class PoseOutlierFilter:
         if len(self.accepted_poses) < self.min_samples_for_covariance:
             return
 
-        # For now, implement simple position covariance
-        # Could be extended to full 6DOF pose covariance
         position = pose[:3, 3]
-        self.covariance_samples.append(position)
+        # Maintain rolling window and running sums for O(1) covariance update
+        if len(self._positions_window) == self._positions_window.maxlen:
+            oldest = self._positions_window.popleft()
+            self._positions_sum -= oldest
+            self._positions_outer_sum -= np.outer(oldest, oldest)
+            self._positions_count -= 1
 
-        if len(self.covariance_samples) >= self.min_samples_for_covariance:
-            # Keep only recent samples for covariance
-            recent_samples = self.covariance_samples[-self.history_size :]
-            if len(recent_samples) >= 3:  # Need at least 3 samples for covariance
-                positions = np.array(recent_samples)
-                self.pose_covariance = np.cov(positions.T)
+        self._positions_window.append(position)
+        self._positions_sum += position
+        self._positions_outer_sum += np.outer(position, position)
+        self._positions_count += 1
+
+        if self._positions_count >= max(3, self.min_samples_for_covariance):
+            count = float(self._positions_count)
+            mean = self._positions_sum / count
+            centered_outer = self._positions_outer_sum / count - np.outer(mean, mean)
+            # Unbiased estimator (divide by n-1)
+            self.pose_covariance = centered_outer * (count / (count - 1.0))
 
     def update_config(self, json_config: dict) -> None:
         """Update the configuration of the pose outlier filter.
@@ -333,6 +356,18 @@ class PoseOutlierFilter:
             self.accepted_timestamps = deque(
                 old_timestamps[-new_size:], maxlen=new_size
             )
+            # Rebuild rolling covariance window to new size
+            old_positions = list(self._positions_window)[-new_size:]
+            self._positions_window = deque(old_positions, maxlen=new_size)
+            if old_positions:
+                stacked = np.stack(old_positions, axis=0)
+                self._positions_sum = stacked.sum(axis=0)
+                self._positions_outer_sum = stacked.T @ stacked
+                self._positions_count = len(old_positions)
+            else:
+                self._positions_sum = np.zeros(3, dtype=float)
+                self._positions_outer_sum = np.zeros((3, 3), dtype=float)
+                self._positions_count = 0
 
         if "base_sigma" in json_config:
             self.base_sigma = json_config["base_sigma"]
