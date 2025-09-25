@@ -292,8 +292,10 @@ def augment_training_data(
     else:
         print("No orphaned images found")
 
-    # Create output directory
-    os.makedirs(output_dir, exist_ok=True)
+    # Create output directory (delete if exists)
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
 
     # Find all JSON files in input directory
     json_pattern = os.path.join(input_dir, f"*{JSON_EXTENSION}")

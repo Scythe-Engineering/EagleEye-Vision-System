@@ -253,17 +253,17 @@ class ExponentialMovingAverage:
 
 # ——— Config ———
 data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/augmented_training_data"
-epochs = 500
-batch_size = 36
+epochs = 20
+batch_size = 12
 lr = 5e-3
 output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
 
-target_width = 320
-target_height = 320
+target_width = 640
+target_height = 640
 max_detections = 12
 
-early_stopping_patience = 10
-early_stopping_min_delta = 5e-3
+early_stopping_patience = 5
+early_stopping_min_delta = 1e-2
 
 
 @profile
@@ -328,7 +328,7 @@ def train() -> None:
     )
 
     # Instantiate model
-    model = PositionPredictor()
+    model = PositionPredictor(grid_size=40, max_detections=max_detections)
     model = model.to(device)
 
     # Loss functions
@@ -368,7 +368,19 @@ def train() -> None:
             targets = targets.to(device)
             optimizer.zero_grad()
 
-            outputs = model(imgs)  # (B, 4, Gh, Gw)
+            # Convert to NHWC uint8 RGB for the model, handling both 1- and 3-channel inputs
+            channels = imgs.shape[1]
+            if channels == 1:
+                imgs_rgb = imgs.repeat(1, 3, 1, 1)
+            elif channels == 3:
+                imgs_rgb = imgs[:, [2, 1, 0], ...]
+            else:
+                imgs_rgb = imgs[:, :3, ...]
+                imgs_rgb = imgs_rgb[:, [2, 1, 0], ...]
+            imgs_nhwc_uint8 = (
+                (imgs_rgb.clamp(0, 1) * 255.0).to(torch.uint8).permute(0, 2, 3, 1)
+            )
+            outputs = model(imgs_nhwc_uint8)  # (B, 4, Gh, Gw)
             obj_logits = outputs[:, 0, ...]
             dx_hat = outputs[:, 1, ...]
             dy_hat = outputs[:, 2, ...]
@@ -428,7 +440,18 @@ def train() -> None:
                 imgs = imgs.to(device)
                 targets = targets.to(device)
 
-                outputs = eval_model(imgs)
+                channels = imgs.shape[1]
+                if channels == 1:
+                    imgs_rgb = imgs.repeat(1, 3, 1, 1)
+                elif channels == 3:
+                    imgs_rgb = imgs[:, [2, 1, 0], ...]
+                else:
+                    imgs_rgb = imgs[:, :3, ...]
+                    imgs_rgb = imgs_rgb[:, [2, 1, 0], ...]
+                imgs_nhwc_uint8 = (
+                    (imgs_rgb.clamp(0, 1) * 255.0).to(torch.uint8).permute(0, 2, 3, 1)
+                )
+                outputs = eval_model(imgs_nhwc_uint8)
                 obj_logits = outputs[:, 0, ...]
                 dx_hat = outputs[:, 1, ...]
                 dy_hat = outputs[:, 2, ...]
@@ -490,7 +513,9 @@ def train() -> None:
     onnx_output_path = (
         output.replace(".pt", ".onnx") if output.endswith(".pt") else output + ".onnx"
     )
-    dummy_input = torch.randn(1, 1, target_height, target_width).to(device)
+    dummy_input = torch.randint(
+        0, 256, (1, target_height, target_width, 3), dtype=torch.uint8, device=device
+    )
     try:
         state_dict = torch.load(output, map_location=device)
         model.load_state_dict(state_dict)

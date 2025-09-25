@@ -1,11 +1,10 @@
 import json
-from line_profiler import profile
 import traceback
 from typing import Optional
 
 import numpy as np
-import cv2
 import torch
+from line_profiler import profile
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
     letterbox_image,
@@ -49,29 +48,20 @@ class PositionApriltagPreprocessor:
         self.grid_size: int = data.get(
             "grid_size", 40
         )  # Default grid size from predictor
+        self.max_detections: int = int(data.get("max_detections", 12))
         self.conf_threshold: float = conf_threshold
         self.padding_factor: float = padding_factor
         self.device: ComputeDevice = device
 
         self.model_name: str = model_path.split("/")[-1].split(".")[0]
 
-        self.scaled_frame_buffer: np.ndarray = np.zeros(
+        # Preallocate RGB buffer for NHWC uint8 input (0-255)
+        self.rgb_buffer: np.ndarray = np.zeros(
             (self.target_height, self.target_width, 3), dtype=np.uint8
         )
-        self.scaled_frame_tensor_buffer: torch.Tensor = torch.zeros(
-            (1, 3, self.target_height, self.target_width), dtype=torch.float32
-        )
-
-        # Convert to grayscale for position predictor
-        self.grayscale_buffer: np.ndarray = np.zeros(
-            (self.target_height, self.target_width), dtype=np.uint8
-        )
-        self.grayscale_float_buffer: np.ndarray = np.zeros(
-            (self.target_height, self.target_width), dtype=np.float32
-        )
-        self.grayscale_tensor_buffer: torch.Tensor = (
-            torch.from_numpy(self.grayscale_float_buffer).unsqueeze(0).unsqueeze(0)
-        )
+        self.rgb_tensor_buffer: torch.Tensor = torch.from_numpy(
+            self.rgb_buffer
+        ).unsqueeze(0)
 
         self.stream_idx: int = self.device.register_thread_access()
         print(f"Assigned stream index: {self.stream_idx}")
@@ -117,7 +107,7 @@ class PositionApriltagPreprocessor:
         preprocessed_img, resized_size = letterbox_image(
             frame,
             (self.target_width, self.target_height),
-            greyscale=True,
+            greyscale=False,
             return_resized_size=True,
         )
 
@@ -135,15 +125,10 @@ class PositionApriltagPreprocessor:
             max_model_dim / float(max_original_dim) if max_original_dim > 0 else 1.0
         )
 
-        self.grayscale_buffer = preprocessed_img
-        cv2.multiply(
-            self.grayscale_buffer,
-            1.0 / 255.0,
-            dst=self.grayscale_float_buffer,
-            dtype=cv2.CV_32F,
-        )
+        # Convert BGR to RGB via channel swap into preallocated buffer
+        self.rgb_buffer[:, :, :] = preprocessed_img[:, :, ::-1]
 
-        return self.grayscale_tensor_buffer
+        return self.rgb_tensor_buffer
 
     @profile
     def get_positions_and_scales(
@@ -251,7 +236,7 @@ class PositionApriltagPreprocessor:
         detections_original = self._nms_square_boxes(
             detections_original, iou_threshold=0.3
         )
-        return detections_original[:12]
+        return detections_original[: self.max_detections]
 
     def _nms_square_boxes(
         self, detections: list[tuple[float, float, float, float]], iou_threshold: float

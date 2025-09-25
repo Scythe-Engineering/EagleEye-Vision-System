@@ -78,7 +78,7 @@ def load_model(model_path: str, device: str = "auto") -> Tuple[nn.Module, torch.
 
 
 def preprocess_frame(
-    frame: np.ndarray, target_size: Tuple[int, int] = (320, 320)
+    frame: np.ndarray, target_size: Tuple[int, int] = (640, 640)
 ) -> Tuple[np.ndarray, np.ndarray, Tuple[int, int]]:
     """
     Preprocess a video frame for the model.
@@ -114,10 +114,10 @@ def predict_detections(
     Returns:
         Model outputs tensor of shape (Gh, Gw, 4)
     """
-    frame_tensor = torch.from_numpy(preprocessed_frame).float()
-    frame_tensor = frame_tensor.unsqueeze(0).unsqueeze(0)
-    frame_tensor = frame_tensor / 255.0
-    frame_tensor = frame_tensor.to(device)
+    # Convert grayscale letterboxed frame to 3-channel RGB NHWC uint8
+    frame_rgb = cv2.cvtColor(preprocessed_frame, cv2.COLOR_GRAY2RGB)
+    frame_tensor = torch.from_numpy(frame_rgb).to(torch.uint8)
+    frame_tensor = frame_tensor.unsqueeze(0).to(device)  # (1, H, W, 3)
 
     with torch.no_grad():
         outputs = model(frame_tensor)  # (1, 4, Gh, Gw)
@@ -126,19 +126,19 @@ def predict_detections(
 
 
 def decode_grid_predictions(
+    model: nn.Module,
     outputs: torch.Tensor,
-    target_size: Tuple[int, int] = (320, 320),
+    target_size: Tuple[int, int] = (640, 640),
     confidence_threshold: float = 0.5,
-    top_k: int = 12,
 ) -> list:
     """
-    Decode grid outputs into pixel-space detections.
+    Decode grid outputs into pixel-space detections using model.decode.
 
     Args:
+        model: The PositionPredictor model
         outputs: Tensor of shape (Gh, Gw, 4)
         target_size: Model input size (width, height)
         confidence_threshold: Minimum probability to keep a cell
-        top_k: Max detections to keep
 
     Returns:
         List of detection dicts with pixel coordinates
@@ -148,38 +148,16 @@ def decode_grid_predictions(
     cell_w = w / grid_w
     cell_h = h / grid_h
 
-    obj_logits = outputs[..., 0]
-    dx_hat = outputs[..., 1]
-    dy_hat = outputs[..., 2]
-    ds_hat = outputs[..., 3]
-
-    obj_probs = torch.sigmoid(obj_logits)
-
-    # Thresholding
-    mask = obj_probs > confidence_threshold
-    if not torch.any(mask):
-        return []
-
-    ys, xs = torch.nonzero(mask, as_tuple=True)
-    scores = obj_probs[ys, xs]
-
-    # Top-k selection
-    if scores.numel() > top_k:
-        topk_scores, topk_idx = torch.topk(scores, top_k)
-        ys = ys[topk_idx]
-        xs = xs[topk_idx]
-        scores = topk_scores
+    # Convert back to (4, Gh, Gw) for model.decode
+    logits_chw = outputs.permute(2, 0, 1)
+    decoded = model.decode(logits_chw, conf_threshold=confidence_threshold)
 
     detections = []
-    for y_idx, x_idx, score in zip(ys.tolist(), xs.tolist(), scores.tolist()):
-        dx = torch.sigmoid(dx_hat[y_idx, x_idx]).item()
-        dy = torch.sigmoid(dy_hat[y_idx, x_idx]).item()
-        size_px = (torch.exp(ds_hat[y_idx, x_idx]) * cell_w).item()
+    for i, j, dx, dy, ds, score in decoded:
+        size_px = float(torch.exp(torch.tensor(ds)) * cell_w)
+        cx = (float(j) + dx) * cell_w
+        cy = (float(i) + dy) * cell_h
 
-        cx = (x_idx + dx) * cell_w
-        cy = (y_idx + dy) * cell_h
-
-        # Clip to image bounds
         cx = float(max(0.0, min(w - 1.0, cx)))
         cy = float(max(0.0, min(h - 1.0, cy)))
         size_px = float(max(1.0, min(min(w, h), size_px)))
@@ -190,8 +168,8 @@ def decode_grid_predictions(
                 "y": cy,
                 "scale": size_px,
                 "confidence": float(score),
-                "grid_i": int(y_idx),
-                "grid_j": int(x_idx),
+                "grid_i": int(i),
+                "grid_j": int(j),
             }
         )
 
@@ -271,7 +249,7 @@ def process_video(
     device: torch.device,
     output_path: str,
     confidence_threshold: float = 0.7,
-    target_size: Tuple[int, int] = (320, 320),
+    target_size: Tuple[int, int] = (640, 640),
 ):
     """
     Process a video file frame by frame and save annotated video.
@@ -330,12 +308,12 @@ def process_video(
                 # Run inference
                 outputs = predict_detections(model, preprocessed_frame, device)
 
-                # Decode grid outputs in model input space (320x320)
+                # Decode grid outputs in model input space (640x640)
                 detections_input = decode_grid_predictions(
+                    model,
                     outputs,
                     target_size=target_size,
                     confidence_threshold=confidence_threshold,
-                    top_k=12,
                 )
 
                 # Map detections back to original frame coordinates accounting for letterbox
@@ -397,8 +375,8 @@ def main():
     """Main function to run the video testing script."""
     # Configuration variables
     video_path = r"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/basic_test.mp4"
-    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/positionv3.pth"
-    confidence_threshold = 0.5
+    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
+    confidence_threshold = 0.4
     device = "auto"
     output_path = f"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/{video_path.split('/')[-1].split('.')[0]}_detection_results.mp4"
 

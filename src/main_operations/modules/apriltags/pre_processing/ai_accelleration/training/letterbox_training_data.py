@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -20,8 +21,8 @@ from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils
     letterbox_image,
 )
 
-target_width = 320
-target_height = 320
+target_width = 640
+target_height = 640
 target_size = (target_width, target_height)
 
 
@@ -39,6 +40,47 @@ class ThreadSafeCounter:
     def get_value(self):
         with self.lock:
             return self.value
+
+
+def rename_files_to_frame_prefix(training_data_dir: str) -> int:
+    """Rename files from ####.xxx to frame_####.xxx if they don't already start with frame_.
+
+    Args:
+        training_data_dir: Path to the training data directory containing files.
+
+    Returns:
+        int: Number of files renamed.
+    """
+    if not os.path.exists(training_data_dir):
+        raise RuntimeError(
+            f"Training data directory does not exist: {training_data_dir}"
+        )
+
+    # Pattern to match files starting with digits followed by extension
+    pattern = re.compile(r"^(\d+)(\..*)$")
+
+    renamed_count = 0
+    for filename in os.listdir(training_data_dir):
+        # Skip if already starts with frame_
+        if filename.startswith("frame_"):
+            continue
+
+        # Check if filename matches the pattern ####.xxx
+        match = pattern.match(filename)
+        if match:
+            number_part, extension = match.groups()
+            new_filename = f"frame_{number_part}{extension}"
+
+            old_path = os.path.join(training_data_dir, filename)
+            new_path = os.path.join(training_data_dir, new_filename)
+
+            try:
+                os.rename(old_path, new_path)
+                renamed_count += 1
+            except Exception as e:
+                print(f"Error renaming {filename} to {new_filename}: {e}")
+
+    return renamed_count
 
 
 def is_image_greyscale(image: np.ndarray) -> bool:
@@ -461,8 +503,16 @@ def main() -> None:
     print("Starting combined letterboxing process...")
     print("=" * 50)
 
+    # Rename files to frame_ prefix if needed
+    print("\n0. Renaming files to frame_ prefix...")
+    try:
+        renamed_count = rename_files_to_frame_prefix(training_data_dir)
+        print(f"   Renamed {renamed_count} files to frame_ prefix")
+    except Exception as e:
+        print(f"   Error renaming files: {e}")
+
     # Process images first
-    print("\n1. Processing images...")
+    print("\n2. Processing images...")
     try:
         total_images, letterboxed_images, greyscaled_images = (
             process_training_data_images(training_data_dir)
@@ -473,7 +523,7 @@ def main() -> None:
         total_images = letterboxed_images = greyscaled_images = 0
 
     # Process JSON files
-    print("\n2. Processing JSON annotations...")
+    print("\n3. Processing JSON annotations...")
     try:
         total_json, processed_json, skipped_json = process_training_data_json(
             training_data_dir, target_width, target_height
