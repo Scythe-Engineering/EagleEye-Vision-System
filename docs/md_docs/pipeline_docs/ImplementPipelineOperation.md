@@ -22,6 +22,7 @@ This file contains the exact, essential rules and minimal examples needed to add
     - detections/features: input `np.ndarray`, output list or structured object.
     - pose estimation: output 4x4 `np.ndarray` transform.
 - Document the concrete input/output types in the class docstring.
+- **Optional**: Implement `back_propagate_input(self, input_data)` for operations that need to receive back-propagated data from BackPropagate operations.
 
 ### Thin-wrapper pattern (recommended)
 

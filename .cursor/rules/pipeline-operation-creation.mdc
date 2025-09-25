@@ -70,6 +70,12 @@ def run(self, input) -> Any:
 - Document concrete input/output types in class docstring
 - Include type hints for parameters and return values
 
+### Optional Methods
+
+Operations can optionally implement:
+
+- `back_propagate_input(self, input_data)` - Called by BackPropagate operations to notify this operation of back-propagated data
+
 ## Thin-Wrapper Pattern (Recommended for Main Operations)
 
 ### Structure
