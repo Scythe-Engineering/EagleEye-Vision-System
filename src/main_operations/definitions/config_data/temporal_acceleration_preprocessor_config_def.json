@@ -1,0 +1,52 @@
+{
+  "class_name": "TemporalAccelerationPreprocessorDefinition",
+  "description": "Temporal ROI preprocessor that uses back-propagated AprilTag detections to maintain and predict regions of interest over time.",
+  "category": "prep",
+  "parameters": {
+    "padding_factor": {
+      "type": "float",
+      "description": "Fractional padding around each ROI when cropping.",
+      "default": 0.3,
+      "required": false,
+      "min": 0.0,
+      "max": 2.0,
+      "restart_for_change": false
+    },
+    "max_missed_updates": {
+      "type": "int",
+      "description": "Number of consecutive updates without a match before a track is removed.",
+      "default": 2,
+      "required": false,
+      "min": 0,
+      "max": 10,
+      "restart_for_change": false
+    },
+    "velocity_smoothing": {
+      "type": "float",
+      "description": "Exponential smoothing factor for velocity updates.",
+      "default": 0.5,
+      "required": false,
+      "min": 0.0,
+      "max": 1.0,
+      "restart_for_change": false
+    },
+    "match_distance_px": {
+      "type": "float",
+      "description": "Maximum center distance in pixels to associate detections to existing tracks.",
+      "default": 80.0,
+      "required": false,
+      "min": 1.0,
+      "max": 1000.0,
+      "restart_for_change": false
+    },
+    "max_tracks": {
+      "type": "int",
+      "description": "Maximum number of simultaneous tracks to maintain.",
+      "default": 16,
+      "required": false,
+      "min": 1,
+      "max": 128,
+      "restart_for_change": false
+    }
+  }
+}

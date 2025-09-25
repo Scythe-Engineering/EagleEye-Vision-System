@@ -1,0 +1,12 @@
+[package]
+name = "temporal_acceleration"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "temporal_acceleration"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+# Add your dependencies here
