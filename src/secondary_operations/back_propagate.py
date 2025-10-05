@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -35,6 +35,8 @@ class BackPropagate:
         """
         self.pipeline = pipeline
         self.action_name = _snake_to_camel(action_name)
+        self._cached_target_operation: Optional[Any] = None
+        self._cache_valid: bool = False
 
     def run(self, input_data: Any) -> Any:
         """Back propagate the input data to the specified operation.
@@ -48,22 +50,28 @@ class BackPropagate:
         Returns:
             The original input_data (pass-through behavior).
         """
-        target_operation = self.pipeline.get_operation_by_class_name(self.action_name)
-        if target_operation is not None:
-            if hasattr(target_operation, "back_propagate_input"):
-                try:
-                    target_operation.back_propagate_input(input_data)
-                except Exception as e:
+        if not self._cache_valid:
+            target_operation = self.pipeline.get_operation_by_class_name(
+                self.action_name
+            )
+            if target_operation is not None:
+                if hasattr(target_operation, "back_propagate_input"):
+                    self._cached_target_operation = target_operation
+                    self._cache_valid = True
+                else:
                     raise ValueError(
-                        f"Error calling back_propagate_input on target operation {self.action_name}: {e}"
+                        f"Target operation {self.action_name} does not have a back_propagate_input method"
                     )
             else:
                 raise ValueError(
-                    f"Target operation {self.action_name} does not have a back_propagate_input method"
+                    f"Target operation {self.action_name} not found in pipeline"
                 )
-        else:
+
+        try:
+            self._cached_target_operation.back_propagate_input(input_data)
+        except Exception as e:
             raise ValueError(
-                f"Target operation {self.action_name} not found in pipeline"
+                f"Error calling back_propagate_input on target operation {self.action_name}: {e}"
             )
 
         return input_data
@@ -78,6 +86,8 @@ class BackPropagate:
         """
         if "action_name" in json_config:
             self.action_name = _snake_to_camel(json_config["action_name"])
+            self._cache_valid = False
+            self._cached_target_operation = None
 
     def visualize(self, frame: np.ndarray) -> None:
         """Visualize the back propagation operation outputs.
