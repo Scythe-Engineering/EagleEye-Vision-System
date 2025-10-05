@@ -6,12 +6,8 @@ import handlebars from "vite-plugin-handlebars";
 export default defineConfig({
     server: {
         watch: {
-            ignored: [
-                "**/node_modules/**",
-                "**/.venv/**",
-                "**/src/**",
-                "**/pyrightconfig.json",
-            ],
+            include: ["**/*"],
+            exclude: ["static/**", "web_server.py"],
         },
     },
     root: path.resolve(__dirname, "./src/webui"),

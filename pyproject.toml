@@ -9,7 +9,6 @@ dependencies = [
   "numpy",
   "pynetworktables",
   "ultralytics",
-  "Flask",
   "numba",
   "tensorflow",
   "customtkinter",
@@ -22,9 +21,10 @@ dependencies = [
   "pygrabber",
   "comtypes",
   "imutils",
-  "flask_socketio",
   "pupil-apriltags",
-  "flask_cors",
+  "flask",
+  "flask-cors",
+  "line_profiler",
   "memryx; sys_platform != 'win32'",
 ]
 
