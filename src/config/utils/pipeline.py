@@ -14,7 +14,7 @@ from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
-debug_mode = True
+debug_mode = False
 
 
 class Pipeline:

@@ -1,8 +1,11 @@
 import csv
+import faulthandler
 import os
 from pathlib import Path
 from time import sleep
 from typing import Callable, Dict, Set
+
+faulthandler.enable()
 
 from src.config.utils.generate_all_pipelines import generate_all_pipelines
 from src.config.utils.pipeline import Pipeline
