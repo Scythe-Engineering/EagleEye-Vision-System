@@ -1,52 +1,55 @@
 {
-  "class_name": "TemporalAccelerationPreprocessorDefinition",
-  "description": "Temporal ROI preprocessor that uses back-propagated AprilTag detections to maintain and predict regions of interest over time.",
-  "category": "prep",
-  "parameters": {
-    "padding_factor": {
-      "type": "float",
-      "description": "Fractional padding around each ROI when cropping.",
-      "default": 0.3,
-      "required": false,
-      "min": 0.0,
-      "max": 2.0,
-      "restart_for_change": false
-    },
-    "max_missed_updates": {
-      "type": "int",
-      "description": "Number of consecutive updates without a match before a track is removed.",
-      "default": 2,
-      "required": false,
-      "min": 0,
-      "max": 10,
-      "restart_for_change": false
-    },
-    "velocity_smoothing": {
-      "type": "float",
-      "description": "Exponential smoothing factor for velocity updates.",
-      "default": 0.5,
-      "required": false,
-      "min": 0.0,
-      "max": 1.0,
-      "restart_for_change": false
-    },
-    "match_distance_px": {
-      "type": "float",
-      "description": "Maximum center distance in pixels to associate detections to existing tracks.",
-      "default": 80.0,
-      "required": false,
-      "min": 1.0,
-      "max": 1000.0,
-      "restart_for_change": false
-    },
-    "max_tracks": {
-      "type": "int",
-      "description": "Maximum number of simultaneous tracks to maintain.",
-      "default": 16,
-      "required": false,
-      "min": 1,
-      "max": 128,
-      "restart_for_change": false
+    "class_name": "TemporalAccelerationPreprocessorDefinition",
+    "description": "Predict ROIs for AprilTag detection using extrapolated camera motion from previous run.",
+    "category": "prep",
+    "parameters": {
+        "camera_parameters_path": {
+            "type": "str",
+            "description": "Path to camera intrinsics JSON file.",
+            "required": true,
+            "restart_for_change": true
+        },
+        "apriltag_map_path": {
+            "type": "str",
+            "description": "Path to fmap AprilTag map file.",
+            "required": true,
+            "restart_for_change": true
+        },
+        "padding_factor": {
+            "type": "float",
+            "description": "Fractional padding to apply around projected tag bounds.",
+            "default": 0.35,
+            "required": false,
+            "min": 0.0,
+            "max": 2.0,
+            "restart_for_change": false
+        },
+        "max_regions": {
+            "type": "int",
+            "description": "Maximum number of ROI regions to return.",
+            "default": 20,
+            "required": false,
+            "min": 1,
+            "max": 256,
+            "restart_for_change": false
+        },
+        "min_region_size_px": {
+            "type": "int",
+            "description": "Minimum side length for ROI squares in pixels.",
+            "default": 16,
+            "required": false,
+            "min": 4,
+            "max": 2048,
+            "restart_for_change": false
+        },
+        "max_region_size_px": {
+            "type": "int",
+            "description": "Optional maximum side length for ROI squares in pixels.",
+            "default": null,
+            "required": false,
+            "min": 16,
+            "max": 4096,
+            "restart_for_change": false
+        }
     }
-  }
 }

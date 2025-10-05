@@ -1,316 +1,272 @@
-from __future__ import annotations
+from typing import Dict, List, Optional, Tuple
 
-from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
-
+import cv2
 import numpy as np
 
-
-@dataclass
-class RoiTrack:
-    center_x_px: float
-    center_y_px: float
-    size_px: float
-    velocity_x_px: float
-    velocity_y_px: float
-    velocity_size_px: float
-    missed_updates: int
+from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
 
 
-class TemporalAccelerationPreprocessor:
-    """Temporal ROI preprocessor driven by back-propagated AprilTag detections.
+class TemporalAcceleration:
+    """Predicts regions of interest based on last estimated camera pose.
 
-    This preprocessor maintains tracked regions of interest (ROIs) in camera space.
-    Tracks are updated from back-propagated detections, and between updates their
-    positions and sizes are predicted using a simple constant-velocity model.
-
-    If an ROI has no matching detection for ``max_missed_updates`` consecutive
-    updates, it is removed. If no ROIs remain when processing a frame, the full
-    frame is returned as a single ROI.
+    This class receives back-propagated camera poses (4x4 camera-to-world transforms)
+    and projects known AprilTag corners into the image using the last measured pose
+    to generate crop regions that accelerate subsequent detection.
     """
 
     def __init__(
         self,
-        padding_factor: float = 0.3,
-        max_missed_updates: int = 2,
-        velocity_smoothing: float = 0.5,
-        match_distance_px: float = 80.0,
-        max_tracks: int = 16,
+        camera_matrix: np.ndarray,
+        distortion_coefficients: np.ndarray,
+        apriltag_map: Dict[int, Apriltag],
+        padding_factor: float = 0.35,
+        max_regions: int = 20,
+        min_region_size_px: int = 16,
+        max_region_size_px: Optional[int] = None,
     ) -> None:
-        """Initialize the temporal preprocessor.
+        """Initialize the temporal acceleration preprocessor.
 
         Args:
-            padding_factor: Fractional padding around each ROI when cropping.
-            max_missed_updates: Number of consecutive updates without a match before a track is removed.
-            velocity_smoothing: Exponential smoothing factor in [0, 1] for velocity updates.
-            match_distance_px: Maximum center distance in pixels to associate detections to existing tracks.
-            max_tracks: Maximum number of simultaneous tracks to maintain.
+            camera_matrix: Camera intrinsic matrix.
+            distortion_coefficients: Distortion coefficients for the camera.
+            apriltag_map: Mapping of AprilTag id to Apriltag metadata.
+            padding_factor: Fractional padding applied to ROI size.
+            max_regions: Maximum number of ROIs to return.
+            min_region_size_px: Minimum side length for ROI squares.
+            max_region_size_px: Optional maximum side length for ROI squares.
         """
-        self.padding_factor: float = padding_factor
-        self.max_missed_updates: int = int(max_missed_updates)
-        self.velocity_smoothing: float = float(velocity_smoothing)
-        self.match_distance_px: float = float(match_distance_px)
-        self.max_tracks: int = int(max_tracks)
+        self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
+        self.distortion_coefficients = distortion_coefficients.astype(
+            np.float32, copy=False
+        )
+        self.apriltag_map = apriltag_map
 
-        self.tracks: List[RoiTrack] = []
+        self.padding_factor = float(padding_factor)
+        self.max_regions = int(max_regions)
+        self.min_region_size_px = int(min_region_size_px)
+        self.max_region_size_px = (
+            int(max_region_size_px) if max_region_size_px is not None else None
+        )
 
-    def change_padding_factor(self, padding_factor: float) -> None:
-        """Change the padding factor used for crop generation.
+        self._last_pose_world_from_camera: Optional[np.ndarray] = None
+
+    def back_propagate_input(self, input_transform: np.ndarray) -> None:
+        """Receive the latest camera-to-world transform at the end of a run.
 
         Args:
-            padding_factor: Fractional padding around each ROI when cropping.
+            input_transform: 4x4 transform mapping camera to world coordinates.
         """
-        self.padding_factor = padding_factor
+        if (
+            isinstance(input_transform, np.ndarray)
+            and input_transform.shape == (4, 4)
+            and np.isfinite(input_transform).all()
+        ):
+            self._last_pose_world_from_camera = input_transform.astype(
+                np.float32, copy=False
+            )
 
-    def _compute_center_and_size_from_corners(
-        self, corners: np.ndarray
-    ) -> Tuple[float, float, float]:
-        """Compute center and approximate square size from quadrilateral corners.
-
-        Args:
-            corners: Array of shape (4, 2) in pixel coordinates.
+    def _predict_pose_world_from_camera(self) -> Optional[np.ndarray]:
+        """Return the last measured camera-to-world pose.
 
         Returns:
-            Tuple of (center_x_px, center_y_px, size_px).
+            Last measured 4x4 camera-to-world transform, or None if no measurement available.
         """
-        center_x_px = float(np.mean(corners[:, 0]))
-        center_y_px = float(np.mean(corners[:, 1]))
-        dx = float(np.max(corners[:, 0]) - np.min(corners[:, 0]))
-        dy = float(np.max(corners[:, 1]) - np.min(corners[:, 1]))
-        size_px = float(max(dx, dy))
-        return center_x_px, center_y_px, max(1.0, size_px)
-
-    def _parse_detection(
-        self, detection: object
-    ) -> Optional[Tuple[float, float, float]]:
-        """Parse a single detection into (cx, cy, size) in pixels if possible.
-
-        Supports `pupil_apriltags.Detection` (via `.corners`) and tuple-like inputs
-        of the form (cx, cy, size) or (cx, cy, w, h).
-
-        Args:
-            detection: Detection object or tuple-like.
-
-        Returns:
-            Parsed (cx, cy, size) tuple, or None if unsupported.
-        """
-        if detection is None:
+        if self._last_pose_world_from_camera is None:
             return None
+        return self._last_pose_world_from_camera.copy()
 
-        if hasattr(detection, "corners"):
-            corners = np.asarray(getattr(detection, "corners"), dtype=np.float32)
-            if corners.shape == (4, 2):
-                return self._compute_center_and_size_from_corners(corners)
-
-        if isinstance(detection, (list, tuple)) and len(detection) >= 3:
-            cx = float(detection[0])
-            cy = float(detection[1])
-            if len(detection) >= 4:
-                w = float(detection[2])
-                h = float(detection[3])
-                return cx, cy, max(1.0, max(w, h))
-            else:
-                size = float(detection[2])
-                return cx, cy, max(1.0, size)
-
-        return None
-
-    def _associate_detections(
-        self,
-        detections: List[Tuple[float, float, float]],
-    ) -> Tuple[List[Optional[int]], List[bool]]:
-        """Associate detections to existing tracks by nearest-neighbor matching.
+    def _invert_se3(self, transform: np.ndarray) -> np.ndarray:
+        """Compute inverse of a 4x4 SE3 transform.
 
         Args:
-            detections: List of (cx, cy, size) tuples.
+            transform: 4x4 transform matrix.
 
         Returns:
-            Tuple of (assigned_track_index_per_detection, track_matched_flags).
+            4x4 inverse transform matrix.
         """
-        if not self.tracks or not detections:
-            return [None] * len(detections), [False] * len(self.tracks)
+        R = transform[:3, :3]
+        t = transform[:3, 3]
+        R_inv = R.T
+        t_inv = -R_inv @ t
+        T_inv = np.eye(4, dtype=transform.dtype)
+        T_inv[:3, :3] = R_inv
+        T_inv[:3, 3] = t_inv
+        return T_inv
 
-        assigned_track_indices: List[Optional[int]] = [None] * len(detections)
-        track_matched: List[bool] = [False] * len(self.tracks)
-
-        for det_idx, (cx, cy, _) in enumerate(detections):
-            best_track_index: Optional[int] = None
-            best_distance: float = float("inf")
-            for track_index, track in enumerate(self.tracks):
-                if track_matched[track_index]:
-                    continue
-                dx = cx - track.center_x_px
-                dy = cy - track.center_y_px
-                distance = float(np.hypot(dx, dy))
-                if distance < best_distance and distance <= self.match_distance_px:
-                    best_distance = distance
-                    best_track_index = track_index
-            assigned_track_indices[det_idx] = best_track_index
-            if best_track_index is not None:
-                track_matched[best_track_index] = True
-
-        return assigned_track_indices, track_matched
-
-    def back_propagate_input(self, input_data: object) -> None:
-        """Update tracks using back-propagated detections in camera space.
+    def _frustum_cull(
+        self,
+        world_to_camera: np.ndarray,
+        corners_world: np.ndarray,
+        width: int,
+        height: int,
+    ) -> bool:
+        """Check if tag corners are within camera frustum.
 
         Args:
-            input_data: Iterable of detection objects or tuples in pixel units.
+            world_to_camera: 4x4 transform mapping world to camera coordinates.
+            corners_world: Array of shape (4, 3) with tag corner positions.
+            width: Frame width in pixels.
+            height: Frame height in pixels.
+
+        Returns:
+            True if tag should be kept (at least one corner in frustum), False otherwise.
         """
-        if input_data is None:
-            return
+        R_wc = world_to_camera[:3, :3]
+        t_wc = world_to_camera[:3, 3]
+        corners_camera = (R_wc @ corners_world.T).T + t_wc
 
-        parsed_detections: List[Tuple[float, float, float]] = []
-        if isinstance(input_data, np.ndarray):
-            input_iterable: Iterable = list(input_data)
-        elif isinstance(input_data, (list, tuple)):
-            input_iterable = input_data
-        else:
-            input_iterable = [input_data]
+        z_values = corners_camera[:, 2]
+        min_depth = 0.01
+        if np.all(z_values < min_depth):
+            return False
 
-        for det in input_iterable:
-            parsed = self._parse_detection(det)
-            if parsed is not None:
-                parsed_detections.append(parsed)
+        fx = float(self.camera_matrix[0, 0])
+        fy = float(self.camera_matrix[1, 1])
 
-        if not parsed_detections and not self.tracks:
-            return
+        margin_factor = 0.5
+        fov_x_half = np.arctan(((width * 0.5) * (1.0 + margin_factor)) / fx)
+        fov_y_half = np.arctan(((height * 0.5) * (1.0 + margin_factor)) / fy)
 
-        assigned, track_matched = self._associate_detections(parsed_detections)
+        valid_corners = corners_camera[z_values > min_depth]
+        if len(valid_corners) == 0:
+            return False
 
-        new_tracks: List[RoiTrack] = []
+        angles_x = np.arctan2(np.abs(valid_corners[:, 0]), valid_corners[:, 2])
+        angles_y = np.arctan2(np.abs(valid_corners[:, 1]), valid_corners[:, 2])
 
-        for track_index, track in enumerate(self.tracks):
-            if track_index < len(track_matched) and track_matched[track_index]:
-                matched_det_index = None
-                for det_idx, assigned_index in enumerate(assigned):
-                    if assigned_index == track_index:
-                        matched_det_index = det_idx
-                        break
-                if matched_det_index is None:
-                    track.missed_updates += 1
-                    new_tracks.append(track)
-                    continue
+        in_fov_x = angles_x < fov_x_half
+        in_fov_y = angles_y < fov_y_half
 
-                det_cx, det_cy, det_size = parsed_detections[matched_det_index]
-                new_velocity_x = det_cx - track.center_x_px
-                new_velocity_y = det_cy - track.center_y_px
-                new_velocity_size = det_size - track.size_px
+        return bool(np.any(in_fov_x & in_fov_y))
 
-                alpha = self.velocity_smoothing
-                track.velocity_x_px = (
-                    1.0 - alpha
-                ) * track.velocity_x_px + alpha * new_velocity_x
-                track.velocity_y_px = (
-                    1.0 - alpha
-                ) * track.velocity_y_px + alpha * new_velocity_y
-                track.velocity_size_px = (
-                    1.0 - alpha
-                ) * track.velocity_size_px + alpha * new_velocity_size
+    def _project_tag_corners(
+        self, world_to_camera: np.ndarray, corners_world: np.ndarray
+    ) -> Optional[np.ndarray]:
+        """Project 4x3 world-space corners into image space.
 
-                track.center_x_px = det_cx
-                track.center_y_px = det_cy
-                track.size_px = det_size
-                track.missed_updates = 0
-                new_tracks.append(track)
-            else:
-                track.missed_updates += 1
-                if track.missed_updates <= self.max_missed_updates:
-                    new_tracks.append(track)
+        Args:
+            world_to_camera: 4x4 transform mapping world to camera coordinates.
+            corners_world: Array of shape (4, 3) with tag corner positions.
 
-        for det_idx, assigned_index in enumerate(assigned):
-            if assigned_index is None and len(new_tracks) < self.max_tracks:
-                det_cx, det_cy, det_size = parsed_detections[det_idx]
-                new_tracks.append(
-                    RoiTrack(
-                        center_x_px=det_cx,
-                        center_y_px=det_cy,
-                        size_px=det_size,
-                        velocity_x_px=0.0,
-                        velocity_y_px=0.0,
-                        velocity_size_px=0.0,
-                        missed_updates=0,
-                    )
-                )
+        Returns:
+            Array of shape (4, 2) with image pixel coordinates, or None if invalid.
+        """
+        R_wc = world_to_camera[:3, :3].astype(np.float32, copy=False)
+        t_wc = world_to_camera[:3, 3].reshape(3, 1).astype(np.float32, copy=False)
+        rvec, _ = cv2.Rodrigues(R_wc)
+        img_pts, _ = cv2.projectPoints(
+            corners_world.astype(np.float32, copy=False),
+            rvec,
+            t_wc,
+            self.camera_matrix,
+            self.distortion_coefficients,
+        )
+        img_pts = img_pts.reshape(-1, 2)
+        return img_pts
 
-        self.tracks = new_tracks
-
-    def _predict_tracks(self) -> None:
-        """Predict track state forward by one step using current velocities."""
-        for track in self.tracks:
-            track.center_x_px += track.velocity_x_px
-            track.center_y_px += track.velocity_y_px
-            track.size_px = max(1.0, track.size_px + track.velocity_size_px)
-
-    def _create_crop_region(
-        self,
-        center_x_px: float,
-        center_y_px: float,
-        size_px: float,
-        frame_width: int,
-        frame_height: int,
+    def _bbox_from_points(
+        self, points: np.ndarray, width: int, height: int
     ) -> Tuple[int, int, int, int]:
-        """Create an integer crop region with padding and clamped to frame bounds.
+        """Compute padded square ROI bounding box from 2D points.
 
         Args:
-            center_x_px: Center x coordinate of the ROI in pixels.
-            center_y_px: Center y coordinate of the ROI in pixels.
-            size_px: Side length of the ROI square in pixels.
-            frame_width: Frame width in pixels.
-            frame_height: Frame height in pixels.
+            points: Array of shape (N, 2) with pixel coordinates.
+            width: Image width.
+            height: Image height.
 
         Returns:
-            Crop region as (left, top, right, bottom) in pixels.
+            Tuple describing (left, top, right, bottom) within image bounds.
         """
-        half_size = (size_px * (1.0 + self.padding_factor)) * 0.5
-        left = max(0, int(center_x_px - half_size))
-        top = max(0, int(center_y_px - half_size))
-        right = min(frame_width, int(center_x_px + half_size))
-        bottom = min(frame_height, int(center_y_px + half_size))
+        min_xy = points.min(axis=0)
+        max_xy = points.max(axis=0)
+        cx = float((min_xy[0] + max_xy[0]) * 0.5)
+        cy = float((min_xy[1] + max_xy[1]) * 0.5)
+        size = float(max(max_xy[0] - min_xy[0], max_xy[1] - min_xy[1]))
+        size *= 1.0 + self.padding_factor
+        size = max(size, float(self.min_region_size_px))
+        if self.max_region_size_px is not None:
+            size = min(size, float(self.max_region_size_px))
+        half = size * 0.5
+        left = max(0, int(cx - half))
+        top = max(0, int(cy - half))
+        right = min(width, int(cx + half))
+        bottom = min(height, int(cy + half))
         return left, top, right, bottom
 
-    def process_frame(
-        self, frame: np.ndarray, _: Optional[Tuple[int, int]] = None
-    ) -> Tuple[
-        List[Tuple[np.ndarray, Tuple[int, int]]], List[Tuple[int, int, int, int]]
-    ]:
-        """Produce cropped ROIs for the current frame using tracked predictions.
+    def _generate_crops_from_boxes(
+        self, frame: np.ndarray, boxes: List[Tuple[int, int, int, int]]
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], List[Tuple[int, int, int, int]]]:
+        """Crop image regions and attach offsets.
 
         Args:
-            frame: Current camera frame in BGR format.
-            output_size: Unused placeholder for interface consistency.
+            frame: Input frame BGR.
+            boxes: List of ROI boxes (l, t, r, b).
 
         Returns:
             Tuple of (cropped_images_with_offsets, crop_regions).
         """
-        if not self.tracks:
-            frame_height, frame_width = frame.shape[:2]
-            entire_region = (0, 0, frame_width, frame_height)
-            return [(frame, (0, 0))], [entire_region]
-
-        self._predict_tracks()
-
-        frame_height, frame_width = frame.shape[:2]
+        cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
         crop_regions: List[Tuple[int, int, int, int]] = []
-        cropped_images_with_offsets: List[Tuple[np.ndarray, Tuple[int, int]]] = []
-
-        for track in self.tracks:
-            left, top, right, bottom = self._create_crop_region(
-                track.center_x_px,
-                track.center_y_px,
-                track.size_px,
-                frame_width,
-                frame_height,
-            )
-            if right <= left or bottom <= top:
+        for l, t, r, b in boxes:
+            if r <= l or b <= t:
                 continue
-            cropped = frame[top:bottom, left:right]
-            crop_regions.append((left, top, right, bottom))
-            cropped_images_with_offsets.append((cropped, (left, top)))
+            cropped_images.append((frame[t:b, l:r], (l, t)))
+            crop_regions.append((l, t, r, b))
+        return cropped_images, crop_regions
 
-        if not crop_regions:
-            frame_height, frame_width = frame.shape[:2]
-            entire_region = (0, 0, frame_width, frame_height)
-            return [(frame, (0, 0))], [entire_region]
+    def process_frame(
+        self, frame: np.ndarray
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], List[Tuple[int, int, int, int]]]:
+        """Generate ROIs and cropped images based on last pose projection only.
 
-        return cropped_images_with_offsets, crop_regions
+        Args:
+            frame: Current frame for which to generate ROIs.
+
+        Returns:
+            Tuple of (cropped_images_with_offsets, crop_regions). If no pose
+            measurement is available, returns the entire frame as a single crop.
+        """
+        height, width = frame.shape[:2]
+
+        T_pred_world_from_camera = self._predict_pose_world_from_camera()
+        if T_pred_world_from_camera is None:
+            full_region = (0, 0, width, height)
+            return [(frame, (0, 0))], [full_region]
+
+        T_world_to_camera = self._invert_se3(T_pred_world_from_camera)
+
+        boxes: List[Tuple[int, int, int, int]] = []
+        R_wc = T_world_to_camera[:3, :3]
+        t_wc = T_world_to_camera[:3, 3]
+        for apriltag in self.apriltag_map.values():
+            corners_world = apriltag.global_corners
+
+            # Compute corners in camera coordinates and cull tags facing away
+            corners_camera = (R_wc @ corners_world.T).T + t_wc
+            if not np.isfinite(corners_camera).all():
+                continue
+            edge_one = corners_camera[1] - corners_camera[0]
+            edge_two = corners_camera[2] - corners_camera[0]
+            normal_camera = np.cross(edge_one, edge_two)
+            if not np.isfinite(normal_camera).all():
+                continue
+            if float(normal_camera[2]) >= 0.0:
+                continue
+
+            img_pts = self._project_tag_corners(T_world_to_camera, corners_world)
+            if img_pts is None:
+                continue
+            if not np.isfinite(img_pts).all():
+                continue
+
+            box = self._bbox_from_points(img_pts, width, height)
+            boxes.append(box)
+
+        boxes = boxes[: self.max_regions]
+
+        if not boxes:
+            full_region = (0, 0, width, height)
+            return [(frame, (0, 0))], [full_region]
+
+        cropped_images, crop_regions = self._generate_crops_from_boxes(frame, boxes)
+        return cropped_images, crop_regions
