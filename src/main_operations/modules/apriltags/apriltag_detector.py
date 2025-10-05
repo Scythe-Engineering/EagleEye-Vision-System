@@ -5,6 +5,7 @@ from typing import Optional
 import cv2
 import numpy as np
 from pupil_apriltags import Detector, Detection
+from threading import Lock
 
 
 @dataclass
@@ -74,6 +75,7 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
+        self._detect_lock: Lock = Lock()
 
     def update_parameters(
         self,
@@ -132,6 +134,8 @@ class AprilTagDetector:
             List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
         """
         if isinstance(images, np.ndarray):
+            if images is None or images.size == 0:
+                return None
             # Optimize image conversion with buffer reuse
             if len(images.shape) == 3:
                 # BGR to grayscale conversion
@@ -145,11 +149,26 @@ class AprilTagDetector:
                     cv2.convertScaleAbs(images, dst=gray_image)
                 else:
                     gray_image = images
-
-            return self.detector.detect(gray_image)
+            if gray_image is None or gray_image.size == 0:
+                return None
+            if gray_image.ndim != 2:
+                return None
+            if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
+                return None
+            # Ensure writable C-contiguous uint8 buffer
+            gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"])
+            if (
+                gray_image.shape[0] / max(self.quad_decimate, 1e-6) < 4
+                or gray_image.shape[1] / max(self.quad_decimate, 1e-6) < 4
+            ):
+                return None
+            with self._detect_lock:
+                return self.detector.detect(gray_image)
         else:
             detections = []
             for image, offset in images:
+                if image is None or image.size == 0:
+                    continue
                 # Optimize image conversion with buffer reuse
                 if len(image.shape) == 3:
                     # BGR to grayscale conversion
@@ -163,8 +182,23 @@ class AprilTagDetector:
                         cv2.convertScaleAbs(image, dst=gray_image)
                     else:
                         gray_image = image
-
-                for detection in self.detector.detect(gray_image):
+                if gray_image is None or gray_image.size == 0:
+                    continue
+                if gray_image.ndim != 2:
+                    continue
+                if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
+                    continue
+                gray_image = np.require(
+                    gray_image, dtype=np.uint8, requirements=["C", "W"]
+                )
+                if (
+                    gray_image.shape[0] / max(self.quad_decimate, 1e-6) < 4
+                    or gray_image.shape[1] / max(self.quad_decimate, 1e-6) < 4
+                ):
+                    continue
+                with self._detect_lock:
+                    detected_tags = self.detector.detect(gray_image)
+                for detection in detected_tags:
                     detections.append(
                         CustomDetection(
                             tag_id=detection.tag_id,

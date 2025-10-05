@@ -120,7 +120,6 @@ class PnpLocalization:
         if valid_tags_found == 0:
             return None
 
-        # Avoid extra copies for single-tag case
         if valid_tags_found == 1:
             image_points = image_points_list[0]
             object_points = object_points_list[0]
@@ -128,86 +127,45 @@ class PnpLocalization:
             image_points = np.vstack(image_points_list).astype(np.float32, copy=False)
             object_points = np.vstack(object_points_list).astype(np.float32, copy=False)
 
-        camera_space_transform = None
-
-        if valid_tags_found == 1:
-            # Single tag: Use IPPE_SQUARE with solvePnPGeneric for multiple solutions
-            retval, rotation_vectors, translation_vectors, reprojection_error = (
-                cv2.solvePnPGeneric(
-                    object_points,
-                    image_points,
-                    self.camera_matrix,
-                    self.distortion_coefficients,
-                    flags=cv2.SOLVEPNP_IPPE_SQUARE,
-                )
+        # Use multiple tags process for all cases
+        if self._last_camera_space_pose is not None and self._last_rvec is not None:
+            last_t = self._last_camera_space_pose[:3, 3]
+            success, rotation_vector, translation_vector = cv2.solvePnP(
+                object_points,
+                image_points,
+                self.camera_matrix,
+                self.distortion_coefficients,
+                rvec=self._last_rvec,
+                tvec=last_t.reshape(3, 1).astype(np.float32, copy=False),
+                useExtrinsicGuess=True,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+        else:
+            success, rotation_vector, translation_vector = cv2.solvePnP(
+                object_points,
+                image_points,
+                self.camera_matrix,
+                self.distortion_coefficients,
+                flags=cv2.SOLVEPNP_SQPNP,
             )
 
-            if retval and len(rotation_vectors) > 0:
-                # Choose the solution closest to the last camera-space pose using translation only.
-                last_cam_pose = self._last_camera_space_pose
-                if last_cam_pose is not None:
-                    last_translation = last_cam_pose[:3, 3]
-                    best_index = 0
-                    best_distance = float("inf")
-                    for i in range(len(translation_vectors)):
-                        t_vec = translation_vectors[i].reshape(3)
-                        distance = float(np.linalg.norm(t_vec - last_translation))
-                        if distance < best_distance:
-                            best_distance = distance
-                            best_index = i
-                else:
-                    best_index = 0
-
-                # Compute rotation matrix only once for the selected candidate
-                rotation_matrix = self._fast_rodrigues(rotation_vectors[best_index])
-                camera_space_transform = np.eye(4, dtype=np.float32)
-                camera_space_transform[:3, :3] = rotation_matrix
-                camera_space_transform[:3, 3] = (
-                    translation_vectors[best_index]
-                    .flatten()
-                    .astype(np.float32, copy=False)
-                )
-                # Cache rvec from solver directly
-                self._last_rvec = rotation_vectors[best_index].astype(
-                    np.float32, copy=False
-                )
-        else:
-            # Multiple tags: Prefer iterative with extrinsic guess if available for speed/stability
-            if self._last_camera_space_pose is not None and self._last_rvec is not None:
-                last_t = self._last_camera_space_pose[:3, 3]
-                success, rotation_vector, translation_vector = cv2.solvePnP(
-                    object_points,
-                    image_points,
-                    self.camera_matrix,
-                    self.distortion_coefficients,
-                    rvec=self._last_rvec,
-                    tvec=last_t.reshape(3, 1).astype(np.float32, copy=False),
-                    useExtrinsicGuess=True,
-                    flags=cv2.SOLVEPNP_ITERATIVE,
-                )
-            else:
-                success, rotation_vector, translation_vector = cv2.solvePnP(
-                    object_points,
-                    image_points,
-                    self.camera_matrix,
-                    self.distortion_coefficients,
-                    flags=cv2.SOLVEPNP_SQPNP,
-                )
-
-            if success:
-                rotation_matrix = self._fast_rodrigues(rotation_vector)
-                camera_space_transform = np.eye(4, dtype=np.float32)
-                camera_space_transform[:3, :3] = rotation_matrix
-                camera_space_transform[:3, 3] = translation_vector.flatten().astype(
-                    np.float32, copy=False
-                )
-                # Cache rvec from solver directly
-                self._last_rvec = rotation_vector.astype(np.float32, copy=False)
+        camera_space_transform = None
+        if success:
+            rotation_matrix = self._fast_rodrigues(rotation_vector)
+            camera_space_transform = np.eye(4, dtype=np.float32)
+            camera_space_transform[:3, :3] = rotation_matrix
+            camera_space_transform[:3, 3] = translation_vector.flatten().astype(
+                np.float32, copy=False
+            )
+            # Cache rvec from solver directly
+            self._last_rvec = rotation_vector.astype(np.float32, copy=False)
 
         if camera_space_transform is None:
             return None
 
+        # Use simple inverse since all tags now use global coordinates
         global_camera_transform = self.fast_se3_inverse(camera_space_transform)
+
         # Cache both spaces for future calls to avoid extra inversions
         self._last_camera_space_pose = camera_space_transform
         self.last_pose = global_camera_transform

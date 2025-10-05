@@ -51,21 +51,22 @@ class Apriltag:
         self.transform = transform_matrix.flatten().tolist()
 
         half_size = self.size / 2
-        local_corners = np.array(
+        self.single_solve_local_corners = np.array(
             [
-                [-half_size, -half_size, 0],
-                [half_size, -half_size, 0],
-                [half_size, half_size, 0],
                 [-half_size, half_size, 0],
+                [half_size, half_size, 0],
+                [half_size, -half_size, 0],
+                [-half_size, -half_size, 0],
             ]
         )
-        self.local_corners = local_corners[[0, 3, 2, 1]]
 
         self.global_corners = self._get_global_corner_positions().astype(np.float32)
         self.global_center = self.global_corners.mean(axis=0).astype(np.float32)
 
+        self.tag_to_global_transform_matrix = self._get_global_transform_matrix()
+
     def _get_global_transform_matrix(self) -> np.ndarray:
-        """Get the 4x4 global transform matrix for this Apriltag."""
+        """Get the 4x4 global transform matrix for this Apriltag. (transforms local tag corners to global field space)"""
         return np.array(self.transform, dtype=np.float64).reshape((4, 4))
 
     def _get_global_corner_positions(self) -> np.ndarray:
