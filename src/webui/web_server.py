@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
-from flask_socketio import SocketIO
+import queue
 
 from src.main_operations.modules.object_detection.src.constants.constants import (
     Constants,
@@ -64,18 +64,14 @@ class EagleEyeInterface:
         )
         CORS(
             self.app,
-            resources={r"/*": {"origins": ["http://localhost:5173"]}},
+            resources={
+                r"/*": {"origins": ["http://localhost:5173", "http://localhost:5001"]}
+            },
             supports_credentials=True,
         )
-        self.socketio = SocketIO(
-            self.app,
-            cors_allowed_origins="*",
-            async_mode="threading",
-            ping_timeout=60,
-            ping_interval=25,
-            logger=False,
-            engineio_logger=False,
-        )
+        # Simplified single-client SSE: one queue and a lock to guard it.
+        self._sse_queue: queue.Queue | None = None
+        self._sse_queue_lock = threading.Lock()
 
         self.cameras = {}
         self.log(f"Initialized with cameras: {self.cameras}")
@@ -94,13 +90,18 @@ class EagleEyeInterface:
         if dev_mode:
             self.run()
         else:
+            # Run Flask normally; SSE streams are served from a route
             self.app_thread = Thread(
-                target=self.socketio.run,
-                args=(self.app,),
-                kwargs={"host": "0.0.0.0", "port": 5001, "allow_unsafe_werkzeug": True},
+                target=self.app.run,
+                args=("0.0.0.0", 5001),
+                kwargs={"debug": False, "use_reloader": False},
                 daemon=True,
             )
             self.app_thread.start()
+
+        # Start heartbeat publisher thread for connection tracking
+        self._heartbeat_interval = 5.0
+        Thread(target=self._sse_heartbeat_loop, daemon=True).start()
 
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
@@ -256,6 +257,13 @@ class EagleEyeInterface:
             "get_restart_required",
             self.get_restart_required,
             methods=["GET"],
+        )
+
+        # SSE stream for frontend (named events)
+        self.app.add_url_rule(
+            "/sse/stream",
+            "sse_stream",
+            lambda: Response(self._sse_stream(), mimetype="text/event-stream"),
         )
 
     def shutdown(self) -> tuple[dict, int]:
@@ -434,6 +442,59 @@ class EagleEyeInterface:
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + no_image + b"\r\n"
             time.sleep(1 / 30)
 
+    def _format_sse(self, event: str, data: str) -> bytes:
+        """
+        Format an SSE message with a named event and JSON data payload.
+        """
+        return f"event: {event}\ndata: {data}\n\n".encode()
+
+    def _sse_stream(self) -> Generator[bytes, Any, Any]:
+        """
+        Generator that yields SSE messages for a single client using a queue.
+        """
+        import queue
+
+        q: queue.Queue = queue.Queue()
+        # assume single client: set queue, replacing any existing queue
+        with self._sse_queue_lock:
+            self._sse_queue = q
+
+        try:
+            while True:
+                msg = q.get()
+                yield msg
+        finally:
+            # clear the single-client queue on disconnect
+            with self._sse_queue_lock:
+                if self._sse_queue is q:
+                    self._sse_queue = None
+
+    def _publish_event(self, event_name: str, data: object) -> None:
+        """
+        Publish a named SSE event (JSON-serialized) to all connected subscribers.
+        """
+        payload = json.dumps(data)
+        msg = self._format_sse(event_name, payload)
+        # publish only to the single client's queue if present
+        with self._sse_queue_lock:
+            q = self._sse_queue
+        if q is not None:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                pass
+
+    def _sse_heartbeat_loop(self) -> None:
+        """
+        Periodically publish a heartbeat event for connection tracking.
+        """
+        while True:
+            try:
+                self._publish_event("heartbeat", {"ts": time.time()})
+            except Exception:
+                pass
+            time.sleep(self._heartbeat_interval)
+
     def serve_camera_feed_route(self, camera_name: str) -> Response:
         """
         Serve the camera feed.
@@ -476,9 +537,15 @@ class EagleEyeInterface:
         if transformation_matrix.shape != (4, 4):
             raise ValueError("Transformation matrix must be a 4x4 numpy array.")
 
-        # Convert matrix to list for JSON serialization
+        # Convert matrix to list for JSON serialization and publish via SSE
         matrix_list = transformation_matrix.tolist()
-        self.socketio.emit("update_robot_transform", {"transform_matrix": matrix_list})
+        try:
+            self._publish_event(
+                "update_robot_transform", {"transform_matrix": matrix_list}
+            )
+        except Exception:
+            # fallback: log if publish fails
+            self.log("Failed to publish update_robot_transform via SSE")
 
     def get_available_robots(self) -> dict:
         """
@@ -523,7 +590,9 @@ class EagleEyeInterface:
                 try:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
-                    description = config_data.get("description", "No description available")
+                    description = config_data.get(
+                        "description", "No description available"
+                    )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = "No description available"
@@ -555,7 +624,9 @@ class EagleEyeInterface:
                 try:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
-                    description = config_data.get("description", "No description available")
+                    description = config_data.get(
+                        "description", "No description available"
+                    )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = "No description available"
