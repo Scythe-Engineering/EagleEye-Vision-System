@@ -17,7 +17,7 @@ change, change, change, change, etc
 Each change should be:
 - Short but descriptive
 - In current tense (add, update, remove, etc.)
-- Focus on what was changed, not how
+- Focus on what was changed, not an overarching "update file.py" or "update implementation in file.py" but you should include what was actually changed in the file.
 
 ## Batching Strategy
 
@@ -41,6 +41,12 @@ Group files by logical functionality:
 ## Example Workflow
 
 ```bash
+# Get size of changes in each file
+git diff --stat
+
+# Get detailed diff for every changed file
+git diff
+
 # Stage related files
 git add file1.py file2.py config.json
 
