@@ -7,13 +7,17 @@ from typing import Callable, Dict, Set
 
 faulthandler.enable()
 
-from src.config.utils.generate_all_pipelines import generate_all_pipelines
-from src.config.utils.pipeline import Pipeline
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
-from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras
-from src.utils.device_management_utils.compute_pool import ComputePool
-from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
-from src.webui.web_server import EagleEyeInterface
+from src.config.utils.generate_all_pipelines import generate_all_pipelines  # noqa: E402
+from src.config.utils.pipeline import Pipeline  # noqa: E402
+from src.utils.camera_utils.camera_thread_manager import CameraThreadManager  # noqa: E402
+from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras  # noqa: E402
+from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
+from src.utils.device_management_utils.cpu import CPU  # noqa: E402
+from src.webui.web_server import EagleEyeInterface  # noqa: E402
+from src.utils.get_available_devices import get_available_devices  # noqa: E402
+
+available_devices = get_available_devices()
+print("Detected Available Devices:", available_devices)
 
 current_dir = Path(__file__).parent
 
@@ -85,7 +89,26 @@ class MainBackend:
             self.known_cameras: Set[str] = set()
 
             self.compute_pool = ComputePool()
-            self.compute_pool.add_compute_device(MX3Accelerator())
+
+            # Add CPU device if available
+            if available_devices.get("CPU"):
+                cpu_device = CPU()
+                self.compute_pool.add_compute_device(cpu_device)
+                print(f"Added CPU device: {available_devices['CPU'][0]}")
+
+            # Add TPU devices if available
+            for tpu_device in available_devices.get("TPU", []):
+                if tpu_device.startswith("memx:"):
+                    from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator  # noqa: E402
+                    
+                    # Extract device index from memx:X
+                    device_index = tpu_device.split(":")[1]
+                    mx3_device = MX3Accelerator(device_id=f"MX3_{device_index}")
+                    self.compute_pool.add_compute_device(mx3_device)
+                    
+                    print(f"Added Memryx TPU device: {tpu_device}")
+
+            # TODO: GPU support not yet implemented - would need a GPU device class
 
             self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
                 self.web_interface,
