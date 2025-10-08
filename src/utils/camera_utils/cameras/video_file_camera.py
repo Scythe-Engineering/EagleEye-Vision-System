@@ -58,7 +58,7 @@ class VideoFileCamera(Camera):
             self.current_frame_index = 0
 
         frame = self.frames[self.current_frame_index]
-        if not self.current_frame_index == 636:
+        if self.current_frame_index != 636:
             self.current_frame_index += 1
         return frame
 

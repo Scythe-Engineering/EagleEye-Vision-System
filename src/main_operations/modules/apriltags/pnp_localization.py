@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-
+from time import sleep
 import cv2
 import numpy as np
 from line_profiler import profile
@@ -29,17 +29,18 @@ class PnpLocalization:
             apriltag_map (Dict[int, Apriltag]): Mapping of tag IDs to AprilTag objects.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
-        self.distortion_coefficients = distortion_coefficients.astype(
-            np.float32, copy=False
-        )
+        dist = distortion_coefficients.astype(np.float32, copy=False)
+        if dist.ndim == 1 or (dist.ndim == 2 and dist.shape[0] == 1):
+            dist = dist.reshape((-1, 1))
+        self.distortion_coefficients = dist
+        
         self.apriltag_map = apriltag_map
         self.last_pose = None
         self._last_camera_space_pose = None
-        # Cache last rvec to avoid computing it from R for iterative guesses
         self._last_rvec = None
 
-    @profile
-    def fast_se3_inverse(self, t: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
         """Fast analytical inverse for SE(3) transformation matrix.
 
         Args:
@@ -74,7 +75,7 @@ class PnpLocalization:
         """
         v = rvec.reshape(3).astype(np.float32, copy=False)
         theta = float(np.linalg.norm(v))
-        if theta == 0.0:
+        if np.isclose(theta, 0.0, rtol=1e-09, atol=1e-09):
             return np.eye(3, dtype=np.float32)
         n = v / theta
         nx, ny, nz = float(n[0]), float(n[1]), float(n[2])
@@ -85,6 +86,7 @@ class PnpLocalization:
         R = np.eye(3, dtype=np.float32)
         R += s * K + (1.0 - c) * K2
         return R
+
 
     @profile
     def estimate_pose_from_detections(
@@ -109,26 +111,37 @@ class PnpLocalization:
             if tag_id not in self.apriltag_map:
                 continue
 
-            # Ensure float32 for OpenCV performance
-            image_points_list.append(detection.corners.astype(np.float32, copy=False))
+            corners = detection.corners.astype(np.float32, copy=False)
+            if not np.all(np.isfinite(corners)):
+                continue
+            image_points_list.append(corners)
             apriltag_obj = self.apriltag_map[tag_id]
-            object_points_list.append(
-                apriltag_obj.global_corners.astype(np.float32, copy=False)
-            )
+            global_corners = apriltag_obj.global_corners.astype(np.float32, copy=False)
+            if not np.all(np.isfinite(global_corners)):
+                continue
+            object_points_list.append(global_corners)
+
             valid_tags_found += 1
 
         if valid_tags_found == 0:
             return None
 
-        if valid_tags_found == 1:
-            image_points = image_points_list[0]
-            object_points = object_points_list[0]
-        else:
-            image_points = np.vstack(image_points_list).astype(np.float32, copy=False)
-            object_points = np.vstack(object_points_list).astype(np.float32, copy=False)
+        image_points = np.vstack(image_points_list).astype(np.float32, copy=False)
+        object_points = np.vstack(object_points_list).astype(np.float32, copy=False)
 
-        # Use multiple tags process for all cases
-        if self._last_camera_space_pose is not None and self._last_rvec is not None:
+        if not (np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))):
+            return None
+
+        success = False
+        rotation_vector = None
+        translation_vector = None
+
+        if (
+            self._last_camera_space_pose is not None
+            and self._last_rvec is not None
+            and np.all(np.isfinite(self._last_camera_space_pose))
+            and np.all(np.isfinite(self._last_rvec))
+        ):
             last_t = self._last_camera_space_pose[:3, 3]
             success, rotation_vector, translation_vector = cv2.solvePnP(
                 object_points,
@@ -137,7 +150,7 @@ class PnpLocalization:
                 self.distortion_coefficients,
                 rvec=self._last_rvec,
                 tvec=last_t.reshape(3, 1).astype(np.float32, copy=False),
-                useExtrinsicGuess=True,
+                useExtrinsicGuess=False,
                 flags=cv2.SOLVEPNP_ITERATIVE,
             )
         else:
@@ -146,27 +159,33 @@ class PnpLocalization:
                 image_points,
                 self.camera_matrix,
                 self.distortion_coefficients,
-                flags=cv2.SOLVEPNP_SQPNP,
+                flags=cv2.SOLVEPNP_ITERATIVE,
             )
 
         camera_space_transform = None
-        if success:
+        if success and rotation_vector is not None and translation_vector is not None:
+            if not (np.all(np.isfinite(rotation_vector)) and np.all(np.isfinite(translation_vector))):
+                return None
             rotation_matrix = self._fast_rodrigues(rotation_vector)
             camera_space_transform = np.eye(4, dtype=np.float32)
             camera_space_transform[:3, :3] = rotation_matrix
             camera_space_transform[:3, 3] = translation_vector.flatten().astype(
                 np.float32, copy=False
             )
-            # Cache rvec from solver directly
-            self._last_rvec = rotation_vector.astype(np.float32, copy=False)
+            if np.all(np.isfinite(rotation_vector)):
+                self._last_rvec = rotation_vector.astype(np.float32, copy=False)
 
         if camera_space_transform is None:
             return None
 
-        # Use simple inverse since all tags now use global coordinates
-        global_camera_transform = self.fast_se3_inverse(camera_space_transform)
+        global_camera_transform = PnpLocalization.fast_se3_inverse(camera_space_transform)
 
-        # Cache both spaces for future calls to avoid extra inversions
-        self._last_camera_space_pose = camera_space_transform
+        if np.all(np.isfinite(camera_space_transform)):
+            self._last_camera_space_pose = camera_space_transform
         self.last_pose = global_camera_transform
+
+        if not np.all(np.isfinite(global_camera_transform)):
+            print("Operation - Skipping publish of robot transform due to non-finite values")
+            return None
+
         return global_camera_transform

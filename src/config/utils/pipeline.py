@@ -181,9 +181,6 @@ class Pipeline:
                         print(
                             f"Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline"
                         )
-                    self.web_interface.update_robot_position(
-                        np.zeros((4, 4), dtype=np.float32)
-                    )
                     break
                 end_time = time.time()
                 elapsed = end_time - start_time

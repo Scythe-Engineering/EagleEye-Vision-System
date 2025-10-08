@@ -263,7 +263,16 @@ class EagleEyeInterface:
         self.app.add_url_rule(
             "/sse/stream",
             "sse_stream",
-            lambda: Response(self._sse_stream(), mimetype="text/event-stream"),
+            lambda: Response(
+                self._sse_stream(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Cache-Control",
+                }
+            ),
         )
 
     def shutdown(self) -> tuple[dict, int]:
@@ -459,30 +468,46 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
+        self.log("SSE client connected")
         try:
             while True:
-                msg = q.get()
-                yield msg
+                try:
+                    # Use timeout to allow checking for disconnection
+                    msg = q.get(timeout=1.0)
+                    yield msg
+                except queue.Empty:
+                    # Check if client is still connected by yielding a comment
+                    yield b": keepalive\n\n"
+                    continue
+        except GeneratorExit:
+            # Client disconnected
+            pass
         finally:
             # clear the single-client queue on disconnect
             with self._sse_queue_lock:
                 if self._sse_queue is q:
                     self._sse_queue = None
+            self.log("SSE client disconnected")
 
     def _publish_event(self, event_name: str, data: object) -> None:
         """
         Publish a named SSE event (JSON-serialized) to all connected subscribers.
         """
-        payload = json.dumps(data)
+        payload = json.dumps(data, allow_nan=False)
         msg = self._format_sse(event_name, payload)
         # publish only to the single client's queue if present
         with self._sse_queue_lock:
             q = self._sse_queue
         if q is not None:
             try:
+                # Use put_nowait to avoid blocking, and catch Full exception
                 q.put_nowait(msg)
-            except Exception:
-                pass
+            except queue.Full:
+                # Queue is full, client might be slow or disconnected
+                self.log(f"SSE queue full, dropping {event_name} event")
+            except Exception as e:
+                # Other error, client likely disconnected
+                self.log(f"SSE publish error for {event_name}: {e}")
 
     def _sse_heartbeat_loop(self) -> None:
         """
@@ -491,8 +516,10 @@ class EagleEyeInterface:
         while True:
             try:
                 self._publish_event("heartbeat", {"ts": time.time()})
-            except Exception:
-                pass
+                # Optional: Uncomment for verbose heartbeat logging
+                # self.log(f"Heartbeat sent at {time.time()}")
+            except Exception as e:
+                self.log(f"Error sending heartbeat: {e}")
             time.sleep(self._heartbeat_interval)
 
     def serve_camera_feed_route(self, camera_name: str) -> Response:
@@ -536,6 +563,11 @@ class EagleEyeInterface:
         """
         if transformation_matrix.shape != (4, 4):
             raise ValueError("Transformation matrix must be a 4x4 numpy array.")
+
+        # Skip publishing if any value is non-finite to avoid invalid JSON or bad transforms
+        if not np.all(np.isfinite(transformation_matrix)):
+            self.log("Skipping publish of robot transform due to non-finite values")
+            return
 
         # Convert matrix to list for JSON serialization and publish via SSE
         matrix_list = transformation_matrix.tolist()

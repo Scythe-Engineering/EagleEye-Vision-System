@@ -72,7 +72,7 @@ class CameraThreadManager:
                     print(f"Failed to get frame from {camera_name}")
                     time.sleep(0.1)
 
-                time_to_sleep = 1 / 120 - (time.time() - start_time)
+                time_to_sleep = 1 / 60 - (time.time() - start_time)
                 if time_to_sleep > 0:
                     time.sleep(time_to_sleep)
 

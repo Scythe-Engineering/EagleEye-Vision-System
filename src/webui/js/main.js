@@ -62,20 +62,21 @@ window.onload = async () => {
     const HEARTBEAT_TIMEOUT_MS = 15000; // consider connection lost if no heartbeat
 
     es.addEventListener("open", () => {
-        console.log("SSE open");
+        console.log(`SSE connection established at ${new Date().toISOString()}`);
         hideConnectionLostOverlay();
-        if (wasDisconnected) setTimeout(() => window.location.reload(), 1000);
+        if (wasDisconnected) {
+            console.log("SSE reconnected after disconnection");
+            // Brief delay to allow connection to stabilize before any actions
+            setTimeout(() => {
+                wasDisconnected = false;
+            }, 500);
+        }
         wasDisconnected = false;
     });
 
     es.addEventListener("heartbeat", (e) => {
         lastHeartbeat = Date.now();
         hideConnectionLostOverlay();
-
-        // Reload page after reconnection to refresh state
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
     });
 
     es.addEventListener("update_robot_transform", (e) => {
@@ -114,7 +115,7 @@ window.onload = async () => {
     });
 
     es.onerror = () => {
-        console.warn("SSE error");
+        console.warn("SSE connection error or lost");
         showConnectionLostOverlay();
         wasDisconnected = true;
     };
@@ -122,6 +123,7 @@ window.onload = async () => {
     // watchdog to detect missed heartbeats
     setInterval(() => {
         if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+            console.warn("SSE connection lost - heartbeat timeout");
             showConnectionLostOverlay();
         }
     }, 2000);

@@ -7,7 +7,7 @@ export default defineConfig({
     server: {
         watch: {
             include: ["**/*"],
-            exclude: ["static/**", "web_server.py"],
+            exclude: ["static/**", "**/web_server.py"],
         },
     },
     root: path.resolve(__dirname, "./src/webui"),

@@ -37,48 +37,58 @@ def _get_v4l2_device_output() -> str | None:
         return None
 
 
+def _is_device_name_line(line: str) -> bool:
+    """Check if line contains a device name."""
+    return line and not line.startswith(" ") and not line.startswith("\t")
+
+
+def _should_skip_device(device_name: str) -> bool:
+    """Check if device should be skipped."""
+    return "pispbe" in device_name or "rpi-hevc-dec" in device_name
+
+
+def _extract_camera_info(device_name: str, device_path: str) -> tuple[str, dict[str, str]] | None:
+    """Extract camera index and info from device name and path."""
+    if not device_path.startswith("/dev/video"):
+        return None
+
+    camera_index = device_path.split("/dev/video")[1]
+    clean_name = device_name.split(":")[0]
+    bus_value = device_name.split(".")[-1][:-1]
+
+    return camera_index, {
+        "name": clean_name,
+        "bus_value": bus_value
+    }
+
+
 def _parse_v4l2_output(output: str) -> dict[str, dict[str, str]]:
     """
     Parses v4l2-ctl output to extract camera device information.
-    
+
     Args:
         output: The output string from v4l2-ctl --list-devices command.
-        
+
     Returns:
         Dictionary mapping camera indices to dictionaries with camera names and bus values.
     """
     mapping = {}
     current_device_name = None
-    current_camera_bus_value = 0
     device_name_line_index = 0
-    
+
     for line_index, line in enumerate(output.splitlines()):
-        is_device_name_line = line and not line.startswith(" ") and not line.startswith("\t")
-        
-        if is_device_name_line:
+        if _is_device_name_line(line):
             current_device_name = line.rstrip(":").strip()
             device_name_line_index = line_index
-            current_camera_bus_value = current_device_name.split(".")[-1][:-1]
-            
-            should_skip_device = "pispbe" in current_device_name or "rpi-hevc-dec" in current_device_name
-            if should_skip_device:
-                device_name_line_index = -1
-        else:
-            if current_device_name:
-                is_device_path_line = line_index == device_name_line_index + 1
-                
-                if is_device_path_line:
-                    device_path = line.strip()
-                    if device_path.startswith("/dev/video"):
-                        camera_index = device_path.split("/dev/video")[1]
-                        
-                        current_device_name = current_device_name.split(":")[0]
-                        
-                        mapping[camera_index] = {
-                            "name": current_device_name,
-                            "bus_value": current_camera_bus_value
-                        }
-    
+
+            if _should_skip_device(current_device_name):
+                current_device_name = None
+        elif current_device_name and line_index == device_name_line_index + 1:
+            camera_info = _extract_camera_info(current_device_name, line.strip())
+            if camera_info:
+                camera_index, info = camera_info
+                mapping[camera_index] = info
+
     return mapping
 
 
@@ -171,7 +181,7 @@ def detect_macos_cameras() -> dict[str, dict[str, str]] | None:
     return mapping
 
 
-def detect_cameras_with_names(max_tested: int = 10) -> dict[str, dict[str, str]] | None:
+def detect_cameras_with_names() -> dict[str, dict[str, str]] | None:
     """
     Detect available cameras with their names and indices.
 

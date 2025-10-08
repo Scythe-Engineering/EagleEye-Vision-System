@@ -4,8 +4,8 @@
             {
                 "action_name": "temporal_acceleration_preprocessor",
                 "action_params": {
-                    "camera_parameters_path": "/home/eagle/EagleEye-Object-Detection/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
-                    "apriltag_map_path": "/home/eagle/EagleEye-Object-Detection/src/utils/field_data/frc2025r2.json"
+                    "camera_parameters_path": "{project_root}/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/src/utils/field_data/frc2025r2.json"
                 }
             },
             {
@@ -22,8 +22,8 @@
             {
                 "action_name": "pnp_camera_localization",
                 "action_params": {
-                    "camera_parameters_path": "/home/eagle/EagleEye-Object-Detection/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
-                    "apriltag_map_path": "/home/eagle/EagleEye-Object-Detection/src/utils/field_data/frc2025r2.json"
+                    "camera_parameters_path": "{project_root}/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/src/utils/field_data/frc2025r2.json"
                 }
             },
             {
