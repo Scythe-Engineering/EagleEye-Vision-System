@@ -11,6 +11,7 @@ from networktables import NetworkTable
 
 from src.config.utils.print_timing_summary import print_timing_summary
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
@@ -179,7 +180,7 @@ class Pipeline:
                 if current_data is None and i != len(self.operations) - 1:
                     if debug_mode:
                         print(
-                            f"Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline"
+                            f"{Colors.YELLOW}Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline{Colors.RESET}"
                         )
                     break
                 end_time = time.time()
@@ -243,15 +244,23 @@ class Pipeline:
                 try:
                     operation.update_config(action_params)
                     if debug_mode:
-                        print(f"Updated config for {action_name}: {action_params}")
+                        print(
+                            f"{Colors.GREEN}Updated config for {action_name}: {action_params}{Colors.RESET}"
+                        )
                 except Exception as e:
-                    print(f"Error updating config for {action_name}: {e}")
+                    print(
+                        f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
+                    )
             elif operation is not None:
                 if debug_mode:
-                    print(f"Operation {action_name} does not support config updates")
+                    print(
+                        f"{Colors.YELLOW}Operation {action_name} does not support config updates{Colors.RESET}"
+                    )
             else:
                 if debug_mode:
-                    print(f"Operation {action_name} not found in pipeline")
+                    print(
+                        f"{Colors.RED}Operation {action_name} not found in pipeline{Colors.RESET}"
+                    )
 
     def thread_run(
         self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
@@ -279,13 +288,17 @@ class Pipeline:
         """
         if not camera_thread_manager.get_camera_ready(camera_bus_id):
             print(
-                f"Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready"
+                f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
             )
             while not camera_thread_manager.get_camera_ready(camera_bus_id):
                 time.sleep(0.01)
-            print(f"Camera bus id: {camera_bus_id} is ready")
+            print(
+                f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
+            )
 
-        print(f"Starting pipeline for camera bus id: {camera_bus_id}")
+        print(
+            f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
+        )
         time.sleep(0.1)
         while self.thread_running:
             camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
@@ -297,7 +310,9 @@ class Pipeline:
                             self.current_frame = frame.copy()
                     self.run(frame)
                 except Exception as _:
-                    print(f"Error in pipeline itself: {traceback.format_exc()}")
+                    print(
+                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                    )
             else:
                 time.sleep(0.01)
 

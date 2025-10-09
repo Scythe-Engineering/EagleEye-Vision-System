@@ -20,6 +20,7 @@ from src.webui.web_server_utils.serve_static_files import (
     serve_index,
     serve_js,
 )
+from src.utils.colors import Colors
 
 current_path = os.path.dirname(__file__)
 src_path = current_path.split("/src")[0] + "/src"
@@ -48,7 +49,39 @@ class EagleEyeInterface:
             log (Callable | None): Optional logging function.
         """
         if log is None:
-            self.log = print
+
+            def colored_log(message: str) -> None:
+                """Log function with automatic color coding based on message content."""
+                message = str(message)
+                if any(
+                    word in message.lower() for word in ["error", "failed", "exception"]
+                ):
+                    print(f"{Colors.RED}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in ["success", "added", "updated", "started"]
+                ):
+                    print(f"{Colors.GREEN}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in ["warning", "skipping", "queue full"]
+                ):
+                    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in [
+                        "connected",
+                        "disconnected",
+                        "initialized",
+                        "set",
+                        "removed",
+                    ]
+                ):
+                    print(f"{Colors.CYAN}{message}{Colors.RESET}")
+                else:
+                    print(message)
+
+            self.log = colored_log
         else:
             self.log = log
 
@@ -271,7 +304,7 @@ class EagleEyeInterface:
                     "Connection": "keep-alive",
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Headers": "Cache-Control",
-                }
+                },
             ),
         )
 
@@ -872,4 +905,4 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Program terminated.")
+        print(f"{Colors.CYAN}Program terminated.{Colors.RESET}")

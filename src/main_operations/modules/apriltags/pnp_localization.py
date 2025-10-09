@@ -1,11 +1,11 @@
 from typing import Dict, List, Optional
-from time import sleep
 import cv2
 import numpy as np
 from line_profiler import profile
 from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
+from src.utils.colors import Colors
 
 
 class PnpLocalization:
@@ -33,11 +33,19 @@ class PnpLocalization:
         if dist.ndim == 1 or (dist.ndim == 2 and dist.shape[0] == 1):
             dist = dist.reshape((-1, 1))
         self.distortion_coefficients = dist
-        
+
         self.apriltag_map = apriltag_map
         self.last_pose = None
         self._last_camera_space_pose = None
         self._last_rvec = None
+        self.non_finite_count = 0
+
+    def clear_position_cache(self) -> None:
+        """Clear the position cache and reset non-finite counter."""
+        self.last_pose = None
+        self._last_camera_space_pose = None
+        self._last_rvec = None
+        self.non_finite_count = 0
 
     @staticmethod
     def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
@@ -87,7 +95,6 @@ class PnpLocalization:
         R += s * K + (1.0 - c) * K2
         return R
 
-
     @profile
     def estimate_pose_from_detections(
         self,
@@ -129,19 +136,24 @@ class PnpLocalization:
         image_points = np.vstack(image_points_list).astype(np.float32, copy=False)
         object_points = np.vstack(object_points_list).astype(np.float32, copy=False)
 
-        if not (np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))):
+        if not (
+            np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))
+        ):
             return None
 
         success = False
         rotation_vector = None
         translation_vector = None
 
-        if (
+        # First attempt with extrinsic guess if available
+        use_guess = (
             self._last_camera_space_pose is not None
             and self._last_rvec is not None
             and np.all(np.isfinite(self._last_camera_space_pose))
             and np.all(np.isfinite(self._last_rvec))
-        ):
+        )
+
+        if use_guess:
             last_t = self._last_camera_space_pose[:3, 3]
             success, rotation_vector, translation_vector = cv2.solvePnP(
                 object_points,
@@ -150,7 +162,7 @@ class PnpLocalization:
                 self.distortion_coefficients,
                 rvec=self._last_rvec,
                 tvec=last_t.reshape(3, 1).astype(np.float32, copy=False),
-                useExtrinsicGuess=False,
+                useExtrinsicGuess=True,
                 flags=cv2.SOLVEPNP_ITERATIVE,
             )
         else:
@@ -164,7 +176,10 @@ class PnpLocalization:
 
         camera_space_transform = None
         if success and rotation_vector is not None and translation_vector is not None:
-            if not (np.all(np.isfinite(rotation_vector)) and np.all(np.isfinite(translation_vector))):
+            if not (
+                np.all(np.isfinite(rotation_vector))
+                and np.all(np.isfinite(translation_vector))
+            ):
                 return None
             rotation_matrix = self._fast_rodrigues(rotation_vector)
             camera_space_transform = np.eye(4, dtype=np.float32)
@@ -178,14 +193,70 @@ class PnpLocalization:
         if camera_space_transform is None:
             return None
 
-        global_camera_transform = PnpLocalization.fast_se3_inverse(camera_space_transform)
+        global_camera_transform = PnpLocalization.fast_se3_inverse(
+            camera_space_transform
+        )
+
+        # Check if pose is far from previous pose (> 2m)
+        if (
+            self.last_pose is not None
+            and np.all(np.isfinite(global_camera_transform))
+            and use_guess
+        ):
+            distance = np.linalg.norm(
+                global_camera_transform[:3, 3] - self.last_pose[:3, 3]
+            )
+            if distance > 2.0:
+                # Clear cache and recompute without extrinsic guess
+                self.clear_position_cache()
+
+                success, rotation_vector, translation_vector = cv2.solvePnP(
+                    object_points,
+                    image_points,
+                    self.camera_matrix,
+                    self.distortion_coefficients,
+                    flags=cv2.SOLVEPNP_ITERATIVE,
+                )
+
+                if (
+                    success
+                    and rotation_vector is not None
+                    and translation_vector is not None
+                ):
+                    if not (
+                        np.all(np.isfinite(rotation_vector))
+                        and np.all(np.isfinite(translation_vector))
+                    ):
+                        return None
+                    rotation_matrix = self._fast_rodrigues(rotation_vector)
+                    camera_space_transform = np.eye(4, dtype=np.float32)
+                    camera_space_transform[:3, :3] = rotation_matrix
+                    camera_space_transform[:3, 3] = translation_vector.flatten().astype(
+                        np.float32, copy=False
+                    )
+                    if np.all(np.isfinite(rotation_vector)):
+                        self._last_rvec = rotation_vector.astype(np.float32, copy=False)
+
+                    global_camera_transform = PnpLocalization.fast_se3_inverse(
+                        camera_space_transform
+                    )
 
         if np.all(np.isfinite(camera_space_transform)):
             self._last_camera_space_pose = camera_space_transform
         self.last_pose = global_camera_transform
 
         if not np.all(np.isfinite(global_camera_transform)):
-            print("Operation - Skipping publish of robot transform due to non-finite values")
+            print(
+                f"{Colors.YELLOW}Operation - Skipping publish of robot transform due to non-finite values{Colors.RESET}"
+            )
+            self.non_finite_count += 1
+            if self.non_finite_count >= 3:
+                self.clear_position_cache()
+                print(
+                    f"{Colors.CYAN}Position cache cleared due to 3 consecutive non-finite values{Colors.RESET}"
+                )
             return None
 
+        # Reset counter on successful finite result
+        self.non_finite_count = 0
         return global_camera_transform

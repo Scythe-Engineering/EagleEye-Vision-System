@@ -118,21 +118,10 @@ class AprilTagDetector:
             decode_sharpening=self.decode_sharpening,
         )
 
-    @profile
-    def detect(
-        self,
-        images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
+    def run_detection(
+        self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
     ) -> list[Detection] | list[CustomDetection]:
-        """Detect AprilTags in an image.
-        Note:
-        - Input image is always converted to grayscale.
-
-        Args:
-            images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
-
-        Returns:
-            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
-        """
+        """Run detection on a single image."""
         if isinstance(images, np.ndarray):
             if images is None or images.size == 0:
                 return None
@@ -205,5 +194,25 @@ class AprilTagDetector:
                             corners=(detection.corners + offset),
                         )
                     )
-
             return detections
+
+    @profile
+    def detect(
+        self,
+        images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
+        full_frame: Optional[np.ndarray] = None,
+    ) -> list[Detection] | list[CustomDetection]:
+        """Detect AprilTags in an image.
+        Note:
+        - Input image is always converted to grayscale.
+
+        Args:
+            images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
+            full_frame: Optional full frame image for if no tags are detected.
+        Returns:
+            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
+        """
+        detections = self.run_detection(images)
+        if (detections is None or len(detections) == 0) and full_frame is not None:
+            return self.run_detection(full_frame)
+        return detections

@@ -5,7 +5,11 @@
                 "action_name": "temporal_acceleration_preprocessor",
                 "action_params": {
                     "camera_parameters_path": "{project_root}/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
-                    "apriltag_map_path": "{project_root}/src/utils/field_data/frc2025r2.json"
+                    "apriltag_map_path": "{project_root}/src/utils/field_data/frc2025r2.json",
+                    "max_region_size_px": null,
+                    "max_regions": 20,
+                    "min_region_size_px": 16,
+                    "padding_factor": 0.36
                 }
             },
             {

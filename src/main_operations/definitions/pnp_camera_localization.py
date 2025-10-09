@@ -18,7 +18,6 @@ class PnpCameraLocalizationDefinition:
             camera_parameters_path: Path to the camera parameters file.
             apriltag_map_path: Path to the apriltag map file.
         """
-        print(f"Camera Params Path: {camera_parameters_path}")
         camera_matrix, distortion_coefficients = load_camera_parameters(
             camera_parameters_path
         )

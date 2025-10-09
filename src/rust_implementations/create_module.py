@@ -9,6 +9,8 @@ import sys
 import shutil
 from pathlib import Path
 
+from src.utils.colors import Colors
+
 
 def create_module(module_name: str, description: str) -> None:
     """Create a new module from the template."""
@@ -18,11 +20,13 @@ def create_module(module_name: str, description: str) -> None:
     new_module_dir = modules_dir / module_name
 
     if not template_dir.exists():
-        print(f"Error: Template directory not found at {template_dir}")
+        print(
+            f"{Colors.RED}Error: Template directory not found at {template_dir}{Colors.RESET}"
+        )
         return False
 
     if new_module_dir.exists():
-        print(f"Error: Module '{module_name}' already exists")
+        print(f"{Colors.RED}Error: Module '{module_name}' already exists{Colors.RESET}")
         return False
 
     # Copy template to new module directory
@@ -49,14 +53,20 @@ def create_module(module_name: str, description: str) -> None:
                 # Skip binary files
                 pass
 
-    print(f"✓ Created new module: {module_name}")
-    print(f"  Location: {new_module_dir}")
-    print(f"  Description: {description}")
+    print(f"{Colors.GREEN}✓ Created new module: {module_name}{Colors.RESET}")
+    print(f"{Colors.CYAN}  Location: {new_module_dir}{Colors.RESET}")
+    print(f"{Colors.CYAN}  Description: {description}{Colors.RESET}")
     print()
-    print("Next steps:")
-    print(f"  1. Edit {new_module_dir}/src/lib.rs to implement your functionality")
-    print(f"  2. Update {new_module_dir}/Cargo.toml with any additional dependencies")
-    print(f"  3. Build the module: uv run python build.py {module_name}")
+    print(f"{Colors.CYAN}Next steps:{Colors.RESET}")
+    print(
+        f"{Colors.CYAN}  1. Edit {new_module_dir}/src/lib.rs to implement your functionality{Colors.RESET}"
+    )
+    print(
+        f"{Colors.CYAN}  2. Update {new_module_dir}/Cargo.toml with any additional dependencies{Colors.RESET}"
+    )
+    print(
+        f"{Colors.CYAN}  3. Build the module: uv run python build.py {module_name}{Colors.RESET}"
+    )
 
     return True
 
@@ -64,9 +74,11 @@ def create_module(module_name: str, description: str) -> None:
 def main():
     """Main entry point."""
     if len(sys.argv) != 3:
-        print('Usage: uv run python create_module.py module_name "Module description"')
         print(
-            'Example: uv run python create_module.py image_processor "High-performance image processing"'
+            f'{Colors.RED}Usage: uv run python create_module.py module_name "Module description"{Colors.RESET}'
+        )
+        print(
+            f'{Colors.YELLOW}Example: uv run python create_module.py image_processor "High-performance image processing"{Colors.RESET}'
         )
         sys.exit(1)
 
@@ -76,7 +88,7 @@ def main():
     # Validate module name (should be valid Python/Rust identifier)
     if not module_name.replace("_", "").isalnum() or not module_name[0].isalpha():
         print(
-            "Error: Module name must be a valid identifier (letters, numbers, underscores only, starting with a letter)"
+            f"{Colors.RED}Error: Module name must be a valid identifier (letters, numbers, underscores only, starting with a letter){Colors.RESET}"
         )
         sys.exit(1)
 

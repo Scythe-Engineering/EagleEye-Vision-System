@@ -77,8 +77,7 @@ class TemporalAccelerationPreprocessorDefinition:
         cropped, crop_regions = self.impl.process_frame(frame)
         with self._last_regions_lock:
             self._last_regions = crop_regions
-        # return cropped
-        return frame
+        return (cropped, frame)
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update live configuration for the temporal acceleration.

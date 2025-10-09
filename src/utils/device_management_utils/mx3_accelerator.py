@@ -1,12 +1,13 @@
 from src.utils.device_management_utils.compute_device import ComputeDevice
+from src.utils.colors import Colors
 import numpy as np
 from torch import Tensor
 import time
 
-print("Initializing MX3 Library")
+print(f"{Colors.YELLOW}Initializing MX3 Library{Colors.RESET}")
 from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
 
-print("MX3 Library initialized")
+print(f"{Colors.GREEN}MX3 Library initialized{Colors.RESET}")
 
 
 class MX3ModelIO:
@@ -66,7 +67,9 @@ class MX3ModelIO:
         self.model_object.connect_streams(
             self.model_input_generator, self.model_output_processor, stream_count
         )
-        print(f"Connected {stream_count} streams to the model.")
+        print(
+            f"{Colors.GREEN}Connected {stream_count} streams to the model.{Colors.RESET}"
+        )
 
     def sequential_run(self, stream_idx: int, data_array: np.ndarray) -> np.ndarray:
         """
@@ -121,7 +124,9 @@ class MX3Accelerator(ComputeDevice):
 
         model_name = model_path.split("/")[-1].split(".")[0]
         if model_name in self.models:
-            print(f"Model {model_name} already loaded, skipping...")
+            print(
+                f"{Colors.YELLOW}Model {model_name} already loaded, skipping...{Colors.RESET}"
+            )
             return
 
         try:
@@ -130,7 +135,7 @@ class MX3Accelerator(ComputeDevice):
                 model_object=self.models[model_name], input_data_shape=input_data_shape
             )
         except Exception as e:
-            print(f"Error loading model {model_path}: {e}")
+            print(f"{Colors.RED}Error loading model {model_path}: {e}{Colors.RESET}")
             raise e
 
     def run(
@@ -184,4 +189,4 @@ class MX3Accelerator(ComputeDevice):
             model_io_object.stop()
         for model_object in self.models.values():
             model_object.stop()
-        print("MX3 accelerator stopped")
+        print(f"{Colors.CYAN}MX3 accelerator stopped{Colors.RESET}")

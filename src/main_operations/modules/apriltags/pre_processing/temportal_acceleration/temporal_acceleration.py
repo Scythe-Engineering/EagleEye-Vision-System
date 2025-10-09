@@ -1,3 +1,4 @@
+from time import sleep
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -36,9 +37,10 @@ class TemporalAcceleration:
             max_region_size_px: Optional maximum side length for ROI squares.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
-        self.distortion_coefficients = distortion_coefficients.astype(
-            np.float32, copy=False
-        )
+        dist = distortion_coefficients.astype(np.float32, copy=False)
+        if dist.ndim == 1 or (dist.ndim == 2 and dist.shape[0] == 1):
+            dist = dist.reshape((-1, 1))
+        self.distortion_coefficients = dist
         self.apriltag_map = apriltag_map
 
         self.padding_factor = float(padding_factor)
@@ -241,16 +243,24 @@ class TemporalAcceleration:
         for apriltag in self.apriltag_map.values():
             corners_world = apriltag.global_corners
 
-            # Compute corners in camera coordinates and cull tags facing away
-            corners_camera = (R_wc @ corners_world.T).T + t_wc
-            if not np.isfinite(corners_camera).all():
+            # Compute tag facing using world-space corner winding, then rotate to camera space
+            edge_one_world = corners_world[1] - corners_world[0]
+            edge_two_world = corners_world[2] - corners_world[0]
+            normal_world = np.cross(edge_one_world, edge_two_world)
+            if not np.isfinite(normal_world).all():
                 continue
-            edge_one = corners_camera[1] - corners_camera[0]
-            edge_two = corners_camera[2] - corners_camera[0]
-            normal_camera = np.cross(edge_one, edge_two)
-            if not np.isfinite(normal_camera).all():
-                continue
+            normal_camera = R_wc @ normal_world
             if float(normal_camera[2]) >= 0.0:
+                continue
+
+            # Depth and frustum sanity checks using tag center and corners
+            center_world = apriltag.global_center
+            if not np.isfinite(center_world).all():
+                continue
+            center_camera = R_wc @ center_world + t_wc
+            if float(center_camera[2]) <= 0.01:
+                continue
+            if not self._frustum_cull(T_world_to_camera, corners_world, width, height):
                 continue
 
             img_pts = self._project_tag_corners(T_world_to_camera, corners_world)
