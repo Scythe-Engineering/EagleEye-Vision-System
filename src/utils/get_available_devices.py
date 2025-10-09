@@ -1,8 +1,11 @@
+import glob
 import os
 import platform
 import subprocess
 
 import torch
+
+from src.utils.colors import Colors
 
 
 def get_cpu_name():
@@ -52,16 +55,13 @@ def get_memryx_tpu_devices() -> list[str]:
     """Get available Memryx TPU devices."""
     memryx_devices = []
     try:
-        result = subprocess.run(
-            ["ls /dev/memx*", "-h"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for line in result.stdout.splitlines():
-            if "Memx" in line:
-                memryx_devices.append("memx:" + line.split("/dev/memx")[1].strip())
-    except FileNotFoundError:
+        memryx_device_paths = glob.glob("/dev/memx*")
+        for device_path in memryx_device_paths:
+            device_name = device_path.split("/dev/memx")[1]
+            # Only include main devices (exclude feature devices)
+            if "_" not in device_name and "feature" not in device_name:
+                memryx_devices.append(f"memx:{device_name}")
+    except Exception:
         pass
     return memryx_devices
 
@@ -70,7 +70,7 @@ def get_tpu_devices() -> list[str]:
     """Get available TPU devices (Linux only)."""
     if os.name != "posix":
         return []
-    
+
     tpu_devices = []
     tpu_devices.extend(get_coral_tpu_devices())
     tpu_devices.extend(get_memryx_tpu_devices())
@@ -80,13 +80,13 @@ def get_tpu_devices() -> list[str]:
 def get_available_devices():
     """Get all available compute devices."""
     devices = {
-        "CPU": [get_cpu_name()], 
-        "GPU": get_gpu_devices(), 
-        "TPU": get_tpu_devices()
+        "CPU": [get_cpu_name()],
+        "GPU": get_gpu_devices(),
+        "TPU": get_tpu_devices(),
     }
     return devices
 
 
 if __name__ == "__main__":
     available_devices = get_available_devices()
-    print("Available Devices:", available_devices)
+    print(f"{Colors.CYAN}Available Devices:{Colors.RESET}", available_devices)
