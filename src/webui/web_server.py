@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import threading
 import time
@@ -26,7 +27,9 @@ current_path = os.path.dirname(__file__)
 src_path = current_path.split("/src")[0] + "/src"
 
 with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
-    no_image = f.read()
+    no_image_bytes = f.read()
+
+no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
 class EagleEyeInterface:
@@ -102,6 +105,9 @@ class EagleEyeInterface:
             },
             supports_credentials=True,
         )
+
+        # Disable Werkzeug access logging (HTTP request logs)
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
@@ -130,6 +136,9 @@ class EagleEyeInterface:
                 kwargs={"debug": False, "use_reloader": False},
                 daemon=True,
             )
+            time.sleep(
+                5
+            )  # might prevent an error, idk bruh, whent away when I added this
             self.app_thread.start()
 
         # Start heartbeat publisher thread for connection tracking
@@ -138,7 +147,7 @@ class EagleEyeInterface:
 
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
-            self.log("Error:", traceback.format_exc())
+            self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
 
     def _register_routes(self) -> None:
@@ -428,13 +437,13 @@ class EagleEyeInterface:
             self.log("Error updating settings:", e)
             return {"message": "Failed to update settings"}, 500
 
-    def update_camera_frame(self, camera_name: str, frame: bytes) -> None:
+    def update_camera_frame(self, camera_name: str, frame: np.ndarray) -> None:
         """
         Update the camera frame.
 
         Args:
             camera_name (str): The ID of the camera.
-            frame: The frame to update.
+            frame: The frame to update as a numpy array.
         """
         with self.frame_list_lock:
             self.frame_list[camera_name] = frame
@@ -455,19 +464,18 @@ class EagleEyeInterface:
                 frame = self.frame_list[camera_name]
 
             if frame is not None:
-                frame_array = np.frombuffer(frame, dtype=np.uint8)
-                decoded_frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-                if decoded_frame is not None:
-                    resized_frame = cv2.resize(
-                        decoded_frame,
-                        None,
-                        fx=0.5,
-                        fy=0.5,
-                        interpolation=cv2.INTER_AREA,
-                    )
-                    success, encoded_frame = cv2.imencode(".jpg", resized_frame)
-                    if success:
-                        frame = encoded_frame.tobytes()
+                resized_frame = cv2.resize(
+                    frame,
+                    None,
+                    fx=0.5,
+                    fy=0.5,
+                    interpolation=cv2.INTER_AREA,
+                )
+                success, encoded_frame = cv2.imencode(".jpg", resized_frame)
+                if success:
+                    frame = encoded_frame.tobytes()
+                else:
+                    frame = no_image
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
@@ -480,8 +488,18 @@ class EagleEyeInterface:
         Yields:
             Generator: The no image feed.
         """
+        success, encoded_no_image = cv2.imencode(".jpg", no_image)
+        if success:
+            no_image_bytes = encoded_no_image.tobytes()
+        else:
+            no_image_bytes = b""
+
         while True:
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + no_image + b"\r\n"
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                + no_image_bytes
+                + b"\r\n"
+            )
             time.sleep(1 / 30)
 
     def _format_sse(self, event: str, data: str) -> bytes:
