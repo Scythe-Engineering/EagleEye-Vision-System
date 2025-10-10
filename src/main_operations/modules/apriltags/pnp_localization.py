@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional
 import cv2
 import numpy as np
-from line_profiler import profile
 from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
@@ -71,7 +70,6 @@ class PnpLocalization:
 
         return t_inv_matrix
 
-    @profile
     def _fast_rodrigues(self, rvec: np.ndarray) -> np.ndarray:
         """Compute rotation matrix from rotation vector using Rodrigues formula in NumPy.
 
@@ -95,7 +93,6 @@ class PnpLocalization:
         R += s * K + (1.0 - c) * K2
         return R
 
-    @profile
     def estimate_pose_from_detections(
         self,
         detections: List[Detection],

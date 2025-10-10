@@ -23,7 +23,6 @@ class TemporalAcceleration:
         padding_factor: float = 0.35,
         max_regions: int = 20,
         min_region_size_px: int = 16,
-        max_region_size_px: Optional[int] = None,
     ) -> None:
         """Initialize the temporal acceleration preprocessor.
 
@@ -34,7 +33,6 @@ class TemporalAcceleration:
             padding_factor: Fractional padding applied to ROI size.
             max_regions: Maximum number of ROIs to return.
             min_region_size_px: Minimum side length for ROI squares.
-            max_region_size_px: Optional maximum side length for ROI squares.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
         dist = distortion_coefficients.astype(np.float32, copy=False)
@@ -46,9 +44,6 @@ class TemporalAcceleration:
         self.padding_factor = float(padding_factor)
         self.max_regions = int(max_regions)
         self.min_region_size_px = int(min_region_size_px)
-        self.max_region_size_px = (
-            int(max_region_size_px) if max_region_size_px is not None else None
-        )
 
         self._last_pose_world_from_camera: Optional[np.ndarray] = None
 
@@ -168,7 +163,7 @@ class TemporalAcceleration:
 
     def _bbox_from_points(
         self, points: np.ndarray, width: int, height: int
-    ) -> Tuple[int, int, int, int]:
+    ) -> Optional[Tuple[int, int, int, int]]:
         """Compute padded square ROI bounding box from 2D points.
 
         Args:
@@ -177,7 +172,8 @@ class TemporalAcceleration:
             height: Image height.
 
         Returns:
-            Tuple describing (left, top, right, bottom) within image bounds.
+            Tuple describing (left, top, right, bottom) within image bounds,
+            or None if the ROI would be smaller than min_region_size_px.
         """
         min_xy = points.min(axis=0)
         max_xy = points.max(axis=0)
@@ -185,9 +181,8 @@ class TemporalAcceleration:
         cy = float((min_xy[1] + max_xy[1]) * 0.5)
         size = float(max(max_xy[0] - min_xy[0], max_xy[1] - min_xy[1]))
         size *= 1.0 + self.padding_factor
-        size = max(size, float(self.min_region_size_px))
-        if self.max_region_size_px is not None:
-            size = min(size, float(self.max_region_size_px))
+        if size < float(self.min_region_size_px):
+            return None
         half = size * 0.5
         left = max(0, int(cx - half))
         top = max(0, int(cy - half))
@@ -209,11 +204,11 @@ class TemporalAcceleration:
         """
         cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
         crop_regions: List[Tuple[int, int, int, int]] = []
-        for l, t, r, b in boxes:
-            if r <= l or b <= t:
+        for left, top, right, bottom in boxes:
+            if right <= left or bottom <= top:
                 continue
-            cropped_images.append((frame[t:b, l:r], (l, t)))
-            crop_regions.append((l, t, r, b))
+            cropped_images.append((frame[top:bottom, left:right], (left, top)))
+            crop_regions.append((left, top, right, bottom))
         return cropped_images, crop_regions
 
     def process_frame(
@@ -237,7 +232,7 @@ class TemporalAcceleration:
 
         T_world_to_camera = self._invert_se3(T_pred_world_from_camera)
 
-        boxes: List[Tuple[int, int, int, int]] = []
+        box_distances: List[Tuple[float, Tuple[int, int, int, int]]] = []
         R_wc = T_world_to_camera[:3, :3]
         t_wc = T_world_to_camera[:3, 3]
         for apriltag in self.apriltag_map.values():
@@ -270,9 +265,15 @@ class TemporalAcceleration:
                 continue
 
             box = self._bbox_from_points(img_pts, width, height)
-            boxes.append(box)
+            if box is None:
+                continue
+            # Store distance (z-coordinate in camera space) with box
+            distance = float(center_camera[2])
+            box_distances.append((distance, box))
 
-        boxes = boxes[: self.max_regions]
+        # Sort by distance (closest first) and limit to max_regions
+        box_distances.sort(key=lambda x: x[0])
+        boxes = [box for _, box in box_distances[: self.max_regions]]
 
         if not boxes:
             full_region = (0, 0, width, height)

@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from line_profiler import profile
 from typing import Optional
 
 import cv2
@@ -67,6 +66,8 @@ class AprilTagDetector:
         self.refine_edges = refine_edges
         self.decode_sharpening = decode_sharpening
 
+        self.ready = False
+
         self.detector = Detector(
             families=self.families,
             nthreads=self.nthreads,
@@ -76,6 +77,7 @@ class AprilTagDetector:
             decode_sharpening=self.decode_sharpening,
         )
         self._detect_lock: Lock = Lock()
+        self.ready = True
 
     def update_parameters(
         self,
@@ -109,6 +111,7 @@ class AprilTagDetector:
         if decode_sharpening is not None:
             self.decode_sharpening = decode_sharpening
 
+        self.ready = False
         self.detector = Detector(
             families=self.families,
             nthreads=self.nthreads,
@@ -117,11 +120,16 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
+        self.ready = True
 
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
     ) -> list[Detection] | list[CustomDetection]:
         """Run detection on a single image."""
+        # prevents issues with detector settings being changed mid-frame / mid-run
+        if not self.ready:
+            return None
+
         if isinstance(images, np.ndarray):
             if images is None or images.size == 0:
                 return None
@@ -196,7 +204,6 @@ class AprilTagDetector:
                     )
             return detections
 
-    @profile
     def detect(
         self,
         images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
