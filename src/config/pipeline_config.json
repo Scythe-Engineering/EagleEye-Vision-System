@@ -2,14 +2,13 @@
     "basic_test": {
         "apriltag_pipeline": [
             {
-                "action_name": "temporal_acceleration_preprocessor",
+                "action_name": "temporal_acceleration_preprocessor_rust",
                 "action_params": {
                     "camera_parameters_path": "{project_root}/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",
                     "apriltag_map_path": "{project_root}/src/utils/field_data/frc2025r2.json",
-                    "max_region_size_px": null,
-                    "max_regions": 20,
-                    "min_region_size_px": 16,
-                    "padding_factor": 0.36
+                    "max_regions": 6,
+                    "min_region_size_px": 20,
+                    "padding_factor": 0.5
                 }
             },
             {
@@ -33,7 +32,7 @@
             {
                 "action_name": "back_propagate",
                 "action_params": {
-                    "action_name": "temporal_acceleration_preprocessor"
+                    "action_name": "temporal_acceleration_preprocessor_rust"
                 }
             },
             {

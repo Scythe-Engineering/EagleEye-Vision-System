@@ -35,20 +35,11 @@
         },
         "min_region_size_px": {
             "type": "int",
-            "description": "Minimum side length for ROI squares in pixels.",
+            "description": "Minimum side length for ROI squares in pixels. ROIs smaller than this are rejected.",
             "default": 16,
             "required": false,
             "min": 4,
             "max": 2048,
-            "restart_for_change": false
-        },
-        "max_region_size_px": {
-            "type": "int",
-            "description": "Optional maximum side length for ROI squares in pixels.",
-            "default": null,
-            "required": false,
-            "min": 16,
-            "max": 4096,
             "restart_for_change": false
         }
     }
