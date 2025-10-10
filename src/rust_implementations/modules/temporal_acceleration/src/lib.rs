@@ -1,212 +1,369 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::PyDict;
 
-#[derive(Clone)]
-struct RoiTrack {
-    center_x_px: f64,
-    center_y_px: f64,
-    size_px: f64,
-    velocity_x_px: f64,
-    velocity_y_px: f64,
-    velocity_size_px: f64,
-    missed_updates: u32,
+/// A simple temporal acceleration module
+#[pymodule]
+fn temporal_acceleration(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<TemporalAcceleration>()?;
+    Ok(())
 }
 
-impl RoiTrack {
-    fn new(cx: f64, cy: f64, size: f64) -> Self {
-        Self {
-            center_x_px: cx,
-            center_y_px: cy,
-            size_px: size.max(1.0),
-            velocity_x_px: 0.0,
-            velocity_y_px: 0.0,
-            velocity_size_px: 0.0,
-            missed_updates: 0,
-        }
-    }
-}
-
+/// Main class for temporal acceleration functionality
 #[pyclass]
 pub struct TemporalAcceleration {
-    padding_factor: f64,
-    max_missed_updates: u32,
-    velocity_smoothing: f64,
-    match_distance_px: f64,
-    max_tracks: usize,
-    tracks: Vec<RoiTrack>,
+    camera_matrix: [f32; 9],
+    distortion_coefficients: Vec<f32>,
+    apriltag_ids: Vec<i32>,
+    apriltag_corners: Vec<[f32; 12]>, // 4 corners * 3 coords
+    apriltag_centers: Vec<[f32; 3]>,
+    padding_factor: f32,
+    max_regions: usize,
+    min_region_size_px: i32,
+    last_pose_world_from_camera: Option<[f32; 16]>,
 }
 
 #[pymethods]
 impl TemporalAcceleration {
     #[new]
-    #[pyo3(signature = (padding_factor=0.3, max_missed_updates=2, velocity_smoothing=0.5, match_distance_px=80.0, max_tracks=16))]
+    #[pyo3(signature = (
+        camera_matrix,
+        distortion_coefficients,
+        apriltag_ids,
+        apriltag_corners,
+        apriltag_centers,
+        padding_factor=0.35,
+        max_regions=20,
+        min_region_size_px=16
+    ))]
     fn new(
-        padding_factor: f64,
-        max_missed_updates: u32,
-        velocity_smoothing: f64,
-        match_distance_px: f64,
-        max_tracks: usize,
-    ) -> Self {
-        Self {
-            padding_factor,
-            max_missed_updates,
-            velocity_smoothing,
-            match_distance_px,
-            max_tracks,
-            tracks: Vec::new(),
+        _py: Python,
+        camera_matrix: Vec<f32>,
+        distortion_coefficients: Vec<f32>,
+        apriltag_ids: Vec<i32>,
+        apriltag_corners: Vec<f32>,
+        apriltag_centers: Vec<f32>,
+        padding_factor: f32,
+        max_regions: usize,
+        min_region_size_px: i32,
+    ) -> PyResult<Self> {
+        if camera_matrix.len() != 9 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "camera_matrix must have 9 elements (row-major 3x3)",
+            ));
         }
+        if apriltag_ids.len() * 12 != apriltag_corners.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "apriltag_corners must have 12 floats per tag (4x3)",
+            ));
+        }
+        if apriltag_ids.len() * 3 != apriltag_centers.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "apriltag_centers must have 3 floats per tag",
+            ));
+        }
+
+        let mut cm: [f32; 9] = [0.0; 9];
+        cm.copy_from_slice(&camera_matrix[..9]);
+
+        let mut corners: Vec<[f32; 12]> = Vec::with_capacity(apriltag_ids.len());
+        for i in 0..apriltag_ids.len() {
+            let start = i * 12;
+            let mut arr: [f32; 12] = [0.0; 12];
+            arr.copy_from_slice(&apriltag_corners[start..start + 12]);
+            corners.push(arr);
+        }
+
+        let mut centers: Vec<[f32; 3]> = Vec::with_capacity(apriltag_ids.len());
+        for i in 0..apriltag_ids.len() {
+            let start = i * 3;
+            let mut arr: [f32; 3] = [0.0; 3];
+            arr.copy_from_slice(&apriltag_centers[start..start + 3]);
+            centers.push(arr);
+        }
+
+        Ok(Self {
+            camera_matrix: cm,
+            distortion_coefficients,
+            apriltag_ids,
+            apriltag_corners: corners,
+            apriltag_centers: centers,
+            padding_factor,
+            max_regions,
+            min_region_size_px,
+            last_pose_world_from_camera: None,
+        })
     }
 
-    fn update_config(&mut self, json_config: &PyAny) -> PyResult<()> {
-        if let Ok(pf) = json_config.get_item("padding_factor")?.extract::<f64>() {
-            self.padding_factor = pf;
+    fn back_propagate_input(&mut self, input_transform: Vec<f32>) -> PyResult<()> {
+        if input_transform.len() != 16 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Transform must be 4x4 (16 elements)",
+            ));
         }
+        if !input_transform.iter().all(|&x| x.is_finite()) {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Transform contains non-finite values",
+            ));
+        }
+        let mut mat: [f32; 16] = [0.0; 16];
+        mat.copy_from_slice(&input_transform[..16]);
+        self.last_pose_world_from_camera = Some(mat);
         Ok(())
     }
 
-    fn back_propagate_input(&mut self, detections: &PyAny) -> PyResult<()> {
-        // Expect an iterable of (cx, cy, size)
-        let mut parsed: Vec<(f64, f64, f64)> = Vec::new();
-        if detections.is_none() {
-            return Ok(());
-        }
+    fn process_frame(
+        &self,
+        width: usize,
+        height: usize,
+    ) -> PyResult<(Vec<Vec<f32>>, Vec<Vec<i32>>)> {
+        let mut region_distances: Vec<(f32, [i32; 4])> = Vec::new();
 
-        if let Ok(seq) = detections.downcast::<PyList>() {
-            for item in seq.iter() {
-                if let Ok(t) = item.downcast::<PyTuple>() {
-                    let len = t.len();
-                    if len >= 3 {
-                        let cx: f64 = t.get_item(0)?.extract()?;
-                        let cy: f64 = t.get_item(1)?.extract()?;
-                        let size: f64 = t.get_item(2)?.extract()?;
-                        parsed.push((cx, cy, size));
-                    }
-                }
+        // If no pose, return full frame region
+        let Some(world_from_camera) = self.last_pose_world_from_camera else {
+            let regions = vec![[0, 0, width as i32, height as i32]];
+            return Ok((vec![], regions.iter().map(|r| r.to_vec()).collect()));
+        };
+
+        let world_to_camera = invert_se3(&world_from_camera);
+        let (r_wc, t_wc) = decompose_rt(&world_to_camera);
+
+        let fx = self.camera_matrix[0];
+        let fy = self.camera_matrix[4];
+        let cx = self.camera_matrix[2];
+        let cy = self.camera_matrix[5];
+
+        for i in 0..self.apriltag_ids.len() {
+            let corners_world = &self.apriltag_corners[i];
+            let center_world = &self.apriltag_centers[i];
+
+            // Compute normal in world
+            let e1 = [
+                corners_world[3] - corners_world[0],
+                corners_world[4] - corners_world[1],
+                corners_world[5] - corners_world[2],
+            ];
+            let e2 = [
+                corners_world[6] - corners_world[0],
+                corners_world[7] - corners_world[1],
+                corners_world[8] - corners_world[2],
+            ];
+            let normal_world = cross(e1, e2);
+            if !is_finite3(&normal_world) {
+                continue;
             }
-        } else if let Ok(t) = detections.downcast::<PyTuple>() {
-            if t.len() >= 3 {
-                let cx: f64 = t.get_item(0)?.extract()?;
-                let cy: f64 = t.get_item(1)?.extract()?;
-                let size: f64 = t.get_item(2)?.extract()?;
-                parsed.push((cx, cy, size));
+            let normal_camera = mat3_mul_vec3(&r_wc, normal_world);
+            if normal_camera[2] >= 0.0 {
+                continue;
             }
-        }
 
-        if parsed.is_empty() && self.tracks.is_empty() {
-            return Ok(());
-        }
+            // Depth and frustum checks
+            let center_camera = vec3_add(mat3_mul_vec3(&r_wc, *center_world), t_wc);
+            if center_camera[2] <= 0.01 {
+                continue;
+            }
 
-        // Associate detections to tracks by nearest neighbor
-        let mut assigned: Vec<Option<usize>> = vec![None; parsed.len()];
-        let mut track_matched: Vec<bool> = vec![false; self.tracks.len()];
+            // Frustum cull using corners
+            if !frustum_cull(&r_wc, t_wc, corners_world, width as i32, height as i32, fx, fy) {
+                continue;
+            }
 
-        for (det_idx, (cx, cy, _)) in parsed.iter().enumerate() {
-            let mut best_idx: Option<usize> = None;
-            let mut best_dist: f64 = f64::INFINITY;
-            for (ti, tr) in self.tracks.iter().enumerate() {
-                if track_matched[ti] {
+            // Project corners (no distortion applied here)
+            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
+            for c in 0..4 {
+                let p = [
+                    corners_world[c * 3 + 0],
+                    corners_world[c * 3 + 1],
+                    corners_world[c * 3 + 2],
+                ];
+                let pc = vec3_add(mat3_mul_vec3(&r_wc, p), t_wc);
+                if !pc[2].is_finite() || pc[2] <= 0.0 {
                     continue;
                 }
-                let dx = cx - tr.center_x_px;
-                let dy = cy - tr.center_y_px;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < best_dist && dist <= self.match_distance_px {
-                    best_dist = dist;
-                    best_idx = Some(ti);
-                }
+                let x = fx * (pc[0] / pc[2]) + cx;
+                let y = fy * (pc[1] / pc[2]) + cy;
+                img_pts[c] = [x, y];
             }
-            if let Some(ti) = best_idx {
-                assigned[det_idx] = Some(ti);
-                track_matched[ti] = true;
-            }
-        }
 
-        // Update matched tracks and age unmatched
-        let mut new_tracks: Vec<RoiTrack> = Vec::new();
-        for (ti, mut tr) in self.tracks.clone().into_iter().enumerate() {
-            if ti < track_matched.len() && track_matched[ti] {
-                // find matching detection index
-                let mut det_idx_opt: Option<usize> = None;
-                for (di, a) in assigned.iter().enumerate() {
-                    if let Some(at) = a {
-                        if *at == ti { det_idx_opt = Some(di); break; }
-                    }
-                }
-                if let Some(di) = det_idx_opt {
-                    let (det_cx, det_cy, det_size) = parsed[di];
-                    let new_vx = det_cx - tr.center_x_px;
-                    let new_vy = det_cy - tr.center_y_px;
-                    let new_vs = det_size - tr.size_px;
-                    let alpha = self.velocity_smoothing.clamp(0.0, 1.0);
-                    tr.velocity_x_px = (1.0 - alpha) * tr.velocity_x_px + alpha * new_vx;
-                    tr.velocity_y_px = (1.0 - alpha) * tr.velocity_y_px + alpha * new_vy;
-                    tr.velocity_size_px = (1.0 - alpha) * tr.velocity_size_px + alpha * new_vs;
-                    tr.center_x_px = det_cx;
-                    tr.center_y_px = det_cy;
-                    tr.size_px = det_size.max(1.0);
-                    tr.missed_updates = 0;
-                    new_tracks.push(tr);
-                } else {
-                    tr.missed_updates = tr.missed_updates.saturating_add(1);
-                    new_tracks.push(tr);
-                }
-            } else {
-                tr.missed_updates = tr.missed_updates.saturating_add(1);
-                if tr.missed_updates <= self.max_missed_updates { new_tracks.push(tr); }
+            if !img_pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()) {
+                continue;
+            }
+
+            // Compute padded square bbox
+            if let Some(bbox) = bbox_from_points(
+                &img_pts,
+                width as i32,
+                height as i32,
+                self.padding_factor,
+                self.min_region_size_px,
+            ) {
+                // Store distance (z-coordinate in camera space) with bbox
+                let distance = center_camera[2];
+                region_distances.push((distance, bbox));
             }
         }
 
-        // Add unmatched detections as new tracks
-        for (di, a) in assigned.iter().enumerate() {
-            if a.is_none() && new_tracks.len() < self.max_tracks {
-                let (cx, cy, size) = parsed[di];
-                new_tracks.push(RoiTrack::new(cx, cy, size));
-            }
-        }
-
-        self.tracks = new_tracks;
-        Ok(())
-    }
-
-    fn process(&mut self, frame_width: i32, frame_height: i32) -> PyResult<Vec<(i32, i32, i32, i32)>> {
-        if self.tracks.is_empty() {
-            return Ok(vec![(0, 0, frame_width.max(0), frame_height.max(0))]);
-        }
-
-        // Predict forward
-        for tr in self.tracks.iter_mut() {
-            tr.center_x_px += tr.velocity_x_px;
-            tr.center_y_px += tr.velocity_y_px;
-            tr.size_px = (tr.size_px + tr.velocity_size_px).max(1.0);
-        }
-
-        let mut regions: Vec<(i32, i32, i32, i32)> = Vec::new();
-        for tr in self.tracks.iter() {
-            let half = 0.5 * tr.size_px * (1.0 + self.padding_factor);
-            let left = (tr.center_x_px - half).floor() as i32;
-            let top = (tr.center_y_px - half).floor() as i32;
-            let right = (tr.center_x_px + half).ceil() as i32;
-            let bottom = (tr.center_y_px + half).ceil() as i32;
-
-            let l = left.max(0).min(frame_width);
-            let t = top.max(0).min(frame_height);
-            let r = right.max(0).min(frame_width);
-            let b = bottom.max(0).min(frame_height);
-            if r > l && b > t {
-                regions.push((l, t, r, b));
-            }
-        }
+        // Sort by distance (closest first) and limit to max_regions
+        region_distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let mut regions: Vec<[i32; 4]> = region_distances
+            .into_iter()
+            .take(self.max_regions)
+            .map(|(_, bbox)| bbox)
+            .collect();
 
         if regions.is_empty() {
-            Ok(vec![(0, 0, frame_width.max(0), frame_height.max(0))])
-        } else {
-            Ok(regions)
+            regions.push([0, 0, width as i32, height as i32]);
         }
+
+        let crop_regions: Vec<Vec<i32>> = regions.iter().map(|r| r.to_vec()).collect();
+
+        // We return empty crops data; Python reconstructs crops from regions
+        Ok((vec![], crop_regions))
+    }
+
+    fn update_config(&mut self, py: Python, config: &PyDict) -> PyResult<()> {
+        if let Ok(Some(val)) = config.get_item("padding_factor") {
+            self.padding_factor = val.extract::<f32>()?;
+        }
+        if let Ok(Some(val)) = config.get_item("max_regions") {
+            self.max_regions = val.extract::<usize>()?;
+        }
+        if let Ok(Some(val)) = config.get_item("min_region_size_px") {
+            self.min_region_size_px = val.extract::<i32>()?;
+        }
+        Ok(())
     }
 }
 
-#[pymodule]
-fn temporal_acceleration(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<TemporalAcceleration>()?;
-    Ok(())
+fn invert_se3(t: &[f32; 16]) -> [f32; 16] {
+    // R is top-left 3x3, t is top-right 3x1
+    let r = [
+        [t[0], t[1], t[2]],
+        [t[4], t[5], t[6]],
+        [t[8], t[9], t[10]],
+    ];
+    let r_t = transpose3(r);
+    let trans = [t[3], t[7], t[11]];
+    let t_inv = mat3_mul_vec3(&r_t, [-trans[0], -trans[1], -trans[2]]);
+    let mut out = [0.0f32; 16];
+    out[0] = r_t[0][0]; out[1] = r_t[0][1]; out[2] = r_t[0][2]; out[3] = t_inv[0];
+    out[4] = r_t[1][0]; out[5] = r_t[1][1]; out[6] = r_t[1][2]; out[7] = t_inv[1];
+    out[8] = r_t[2][0]; out[9] = r_t[2][1]; out[10] = r_t[2][2]; out[11] = t_inv[2];
+    out[12] = 0.0; out[13] = 0.0; out[14] = 0.0; out[15] = 1.0;
+    out
+}
+
+fn decompose_rt(t: &[f32; 16]) -> ([[f32; 3]; 3], [f32; 3]) {
+    let r = [
+        [t[0], t[1], t[2]],
+        [t[4], t[5], t[6]],
+        [t[8], t[9], t[10]],
+    ];
+    let trans = [t[3], t[7], t[11]];
+    (r, trans)
+}
+
+fn transpose3(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
+    [
+        [m[0][0], m[1][0], m[2][0]],
+        [m[0][1], m[1][1], m[2][1]],
+        [m[0][2], m[1][2], m[2][2]],
+    ]
+}
+
+fn mat3_mul_vec3(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
+    [
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    ]
+}
+
+fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn is_finite3(v: &[f32; 3]) -> bool { v[0].is_finite() && v[1].is_finite() && v[2].is_finite() }
+
+fn frustum_cull(
+    r_wc: &[[f32; 3]; 3],
+    t_wc: [f32; 3],
+    corners_world: &[f32; 12],
+    width: i32,
+    height: i32,
+    fx: f32,
+    fy: f32,
+) -> bool {
+    let mut corners_cam: [[f32; 3]; 4] = [[0.0; 3]; 4];
+    for i in 0..4 {
+        let p = [
+            corners_world[i * 3 + 0],
+            corners_world[i * 3 + 1],
+            corners_world[i * 3 + 2],
+        ];
+        let pc = vec3_add(mat3_mul_vec3(r_wc, p), t_wc);
+        corners_cam[i] = pc;
+    }
+
+    let min_depth = 0.01f32;
+    if corners_cam.iter().all(|c| c[2] < min_depth) {
+        return false;
+    }
+
+    let margin_factor = 0.5f32;
+    let fov_x_half = ((width as f32 * 0.5) * (1.0 + margin_factor) / fx).atan();
+    let fov_y_half = ((height as f32 * 0.5) * (1.0 + margin_factor) / fy).atan();
+
+    let mut any_in = false;
+    for c in corners_cam.iter().filter(|c| c[2] > min_depth) {
+        let angle_x = (c[0].abs() / c[2]).atan();
+        let angle_y = (c[1].abs() / c[2]).atan();
+        if angle_x < fov_x_half && angle_y < fov_y_half {
+            any_in = true;
+            break;
+        }
+    }
+    any_in
+}
+
+fn bbox_from_points(
+    points: &[[f32; 2]; 4],
+    width: i32,
+    height: i32,
+    padding_factor: f32,
+    min_region_size_px: i32,
+) -> Option<[i32; 4]> {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for p in points.iter() {
+        if p[0] < min_x { min_x = p[0]; }
+        if p[1] < min_y { min_y = p[1]; }
+        if p[0] > max_x { max_x = p[0]; }
+        if p[1] > max_y { max_y = p[1]; }
+    }
+    let cx = (min_x + max_x) * 0.5;
+    let cy = (min_y + max_y) * 0.5;
+    let mut size = (max_x - min_x).abs().max((max_y - min_y).abs());
+    size *= 1.0 + padding_factor;
+    if size < min_region_size_px as f32 {
+        return None;
+    }
+    let half = size * 0.5;
+    let mut left = (cx - half).floor() as i32;
+    let mut top = (cy - half).floor() as i32;
+    let mut right = (cx + half).ceil() as i32;
+    let mut bottom = (cy + half).ceil() as i32;
+
+    if left < 0 { left = 0; }
+    if top < 0 { top = 0; }
+    if right > width { right = width; }
+    if bottom > height { bottom = height; }
+    Some([left, top, right, bottom])
 }
