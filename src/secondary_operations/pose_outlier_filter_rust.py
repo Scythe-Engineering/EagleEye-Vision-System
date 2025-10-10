@@ -1,7 +1,11 @@
 import numpy as np
 from typing import Optional
 
-from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter
+# Import the Rust module (built automatically)
+try:
+    from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter
+except ImportError:
+    RustPoseOutlierFilter = None
 
 
 class PoseOutlierFilterRust:
