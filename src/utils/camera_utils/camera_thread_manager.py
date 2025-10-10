@@ -10,6 +10,7 @@ from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
 from src.webui.web_server import EagleEyeInterface
+from line_profiler import profile
 
 
 class CameraThreadManager:
@@ -29,6 +30,7 @@ class CameraThreadManager:
         self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
         self.start_time_ms = time.time() * 1000.0
 
+    @profile
     def camera_feed_worker(
         self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]
     ) -> None:
@@ -59,27 +61,17 @@ class CameraThreadManager:
                         timestamp_from_start,
                     )
 
-                    success, encoded_frame = cv2.imencode(".jpg", frame)
-                    if success:
-                        frame_bytes = encoded_frame.tobytes()
-
-                        if (
-                            frame_count % 5 == 0
-                        ):  # Update every 5 frames to reduce load on the web interface
-                            self.web_interface.update_camera_frame(
-                                camera_name, frame_bytes
-                            )
-                    else:
-                        print(
-                            f"{Colors.RED}Failed to encode frame for {camera_name}{Colors.RESET}"
-                        )
+                    if (
+                        frame_count % 5 == 0
+                    ):  # Update every 5 frames to reduce load on the web interface
+                        self.web_interface.update_camera_frame(camera_name, frame)
                 else:
                     print(
                         f"{Colors.YELLOW}Failed to get frame from {camera_name}{Colors.RESET}"
                     )
                     time.sleep(0.1)
 
-                time_to_sleep = 1 / 120 - (time.time() - start_time)
+                time_to_sleep = 1 / 24 - (time.time() - start_time)
                 if time_to_sleep > 0:
                     time.sleep(time_to_sleep)
 
