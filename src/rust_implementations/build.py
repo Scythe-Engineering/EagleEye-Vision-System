@@ -20,6 +20,15 @@ import hashlib
 import json
 
 
+# ANSI color codes for colored console output
+class Colors:
+    RESET = "\033[0m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
+
+
 class RustModuleBuilder:
     """Manages building of Rust extension modules."""
 
@@ -77,7 +86,9 @@ class RustModuleBuilder:
             if module_name in existing_modules:
                 cleaned_cache[module_name] = data
             else:
-                print(f"Removed cache entry for deleted module: {module_name}")
+                print(
+                    f"{Colors.YELLOW}Removed cache entry for deleted module: {module_name}{Colors.RESET}"
+                )
 
         return cleaned_cache
 
@@ -87,7 +98,9 @@ class RustModuleBuilder:
             with open(self.build_cache_file, "w") as f:
                 json.dump(cache, f, indent=2)
         except IOError:
-            print(f"Warning: Could not save build cache to {self.build_cache_file}")
+            print(
+                f"{Colors.YELLOW}Warning: Could not save build cache to {self.build_cache_file}{Colors.RESET}"
+            )
 
     def needs_rebuild(self, module_dir: Path, cache: dict) -> bool:
         """Check if a module needs rebuilding."""
@@ -99,7 +112,7 @@ class RustModuleBuilder:
 
     def test_module_import(self, module_name: str) -> bool:
         """Test that a module can be imported in Python."""
-        print(f"Testing import of {module_name}...")
+        print(f"{Colors.CYAN}Testing import of {module_name}...{Colors.RESET}")
 
         try:
             result = subprocess.run(
@@ -110,26 +123,32 @@ class RustModuleBuilder:
             )
 
             if result.returncode == 0:
-                print(f"✓ Successfully imported {module_name}")
+                print(
+                    f"{Colors.GREEN}✓ Successfully imported {module_name}{Colors.RESET}"
+                )
                 return True
             else:
-                print(f"✗ Failed to import {module_name}")
+                print(f"{Colors.RED}✗ Failed to import {module_name}{Colors.RESET}")
                 if result.stderr:
-                    print("Import error:")
+                    print(f"{Colors.RED}Import error:{Colors.RESET}")
                     print(result.stderr)
                 return False
 
         except subprocess.CalledProcessError as e:
-            print(f"✗ Import test failed for {module_name}: {e}")
+            print(
+                f"{Colors.RED}✗ Import test failed for {module_name}: {e}{Colors.RESET}"
+            )
             return False
         except FileNotFoundError as e:
-            print(f"✗ Import test failed for {module_name}: {e}")
+            print(
+                f"{Colors.RED}✗ Import test failed for {module_name}: {e}{Colors.RESET}"
+            )
             return False
 
     def build_module(self, module_dir: Path) -> bool:
         """Build a single module."""
         module_name = module_dir.name
-        print(f"Building module: {module_name}")
+        print(f"{Colors.CYAN}Building module: {module_name}{Colors.RESET}")
 
         try:
             # Check if module has its own build.py
@@ -155,28 +174,30 @@ class RustModuleBuilder:
                 )
 
             if result.returncode == 0:
-                print(f"✓ Successfully built {module_name}")
+                print(f"{Colors.GREEN}✓ Successfully built {module_name}{Colors.RESET}")
                 if result.stdout:
                     print(result.stdout)
 
                 # Test that the module can be imported
                 if not self.test_module_import(module_name):
-                    print(f"✗ Build verification failed for {module_name}")
+                    print(
+                        f"{Colors.RED}✗ Build verification failed for {module_name}{Colors.RESET}"
+                    )
                     return False
 
                 return True
             else:
-                print(f"✗ Failed to build {module_name}")
+                print(f"{Colors.RED}✗ Failed to build {module_name}{Colors.RESET}")
                 if result.stderr:
-                    print("Error output:")
+                    print(f"{Colors.RED}Error output:{Colors.RESET}")
                     print(result.stderr)
                 return False
 
         except subprocess.CalledProcessError as e:
-            print(f"✗ Build failed for {module_name}: {e}")
+            print(f"{Colors.RED}✗ Build failed for {module_name}: {e}{Colors.RESET}")
             return False
         except FileNotFoundError as e:
-            print(f"✗ Build failed for {module_name}: {e}")
+            print(f"{Colors.RED}✗ Build failed for {module_name}: {e}{Colors.RESET}")
             return False
 
     def check_dependencies(self) -> bool:
@@ -188,19 +209,23 @@ class RustModuleBuilder:
             # Check maturin
             result = subprocess.run(["maturin", "--version"], capture_output=True)
             if result.returncode != 0:
-                print("Installing maturin...")
+                print(f"{Colors.YELLOW}Installing maturin...{Colors.RESET}")
                 subprocess.run(["uv", "pip", "install", "maturin"], check=True)
 
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print("Error: Rust and maturin are required for building.")
-            print("Please install Rust from https://rustup.rs/")
+            print(
+                f"{Colors.RED}Error: Rust and maturin are required for building.{Colors.RESET}"
+            )
+            print(
+                f"{Colors.RED}Please install Rust from https://rustup.rs/{Colors.RESET}"
+            )
             return False
 
     def clean_module(self, module_dir: Path) -> None:
         """Clean build artifacts for a module."""
         module_name = module_dir.name
-        print(f"Cleaning {module_name}...")
+        print(f"{Colors.CYAN}Cleaning {module_name}...{Colors.RESET}")
 
         # Remove target directory
         target_dir = module_dir / "target"
@@ -208,18 +233,20 @@ class RustModuleBuilder:
             import shutil
 
             shutil.rmtree(target_dir)
-            print(f"Removed {target_dir}")
+            print(f"{Colors.CYAN}Removed {target_dir}{Colors.RESET}")
 
         # Remove any .so files in the module directory
         for so_file in module_dir.glob("*.so"):
             so_file.unlink()
-            print(f"Removed {so_file}")
+            print(f"{Colors.CYAN}Removed {so_file}{Colors.RESET}")
 
     def build_all(self, force: bool = False) -> bool:
         """Build all modules that need rebuilding."""
         modules = self.get_modules()
         if not modules:
-            print("No modules found in modules/ directory")
+            print(
+                f"{Colors.YELLOW}No modules found in modules/ directory{Colors.RESET}"
+            )
             return True
 
         cache = self.load_build_cache()
@@ -238,7 +265,7 @@ class RustModuleBuilder:
                         "last_built": str(Path(module_dir).stat().st_mtime),
                     }
             else:
-                print(f"✓ {module_name} is up to date")
+                print(f"{Colors.GREEN}✓ {module_name} is up to date{Colors.RESET}")
 
         # Clean cache of non-existent modules and save
         cleaned_cache = self.clean_build_cache(cache)
@@ -249,11 +276,13 @@ class RustModuleBuilder:
         """Build a specific module."""
         module_dir = self.modules_dir / module_name
         if not module_dir.exists():
-            print(f"Module '{module_name}' not found")
+            print(f"{Colors.RED}Module '{module_name}' not found{Colors.RESET}")
             return False
 
         if not (module_dir / "Cargo.toml").exists():
-            print(f"'{module_name}' is not a valid Rust module")
+            print(
+                f"{Colors.RED}'{module_name}' is not a valid Rust module{Colors.RESET}"
+            )
             return False
 
         cache = self.load_build_cache()
@@ -280,7 +309,7 @@ class RustModuleBuilder:
         # Remove build cache
         if self.build_cache_file.exists():
             self.build_cache_file.unlink()
-            print("Removed build cache")
+            print(f"{Colors.CYAN}Removed build cache{Colors.RESET}")
 
 
 def main(ran_directly=False):
@@ -303,11 +332,11 @@ def main(ran_directly=False):
     if args.list:
         modules = builder.get_modules()
         if modules:
-            print("Available modules:")
+            print(f"{Colors.CYAN}Available modules:{Colors.RESET}")
             for module in modules:
                 print(f"  - {module.name}")
         else:
-            print("No modules found")
+            print(f"{Colors.YELLOW}No modules found{Colors.RESET}")
         return
 
     if args.clean:
