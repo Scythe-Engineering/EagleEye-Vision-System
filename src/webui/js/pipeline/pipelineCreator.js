@@ -1109,6 +1109,56 @@ async function checkOperationRestartRequirements(operationItem) {
     }
 }
 
+// Function to refresh pipeline creator data and UI after reconnection
+async function refreshPipelineCreator() {
+    try {
+        console.log(
+            "[PIPELINE] Refreshing pipeline creator after reconnection",
+        );
+
+        // Re-fetch operations
+        await fetchAvailableOperations();
+
+        // Re-render operations list if it's already initialized
+        if (operationsList && operations.length > 0) {
+            renderOperations(
+                operations,
+                operationsList,
+                openOperationSettings,
+                handleDragStartWithLogging,
+            );
+        }
+
+        // Re-fetch cameras
+        await fetchAvailableCameras();
+        populateCameraDropdown();
+
+        // If we have a selected camera, re-fetch its pipelines
+        if (selectedCamera) {
+            await fetchPipelinesForCamera(selectedCamera.name);
+            populatePipelineDropdown();
+
+            // If we have a selected pipeline, reload it
+            if (selectedPipeline) {
+                await loadPipelineIntoBuilder(
+                    selectedCamera.name,
+                    selectedPipeline.name,
+                );
+            }
+        }
+
+        // Update delete button visibility
+        updateDeleteButtonVisibility();
+
+        // Check backend restart status
+        await checkBackendRestartStatus();
+
+        console.log("[PIPELINE] Pipeline creator refreshed successfully");
+    } catch (error) {
+        console.error("[PIPELINE] Error refreshing pipeline creator:", error);
+    }
+}
+
 export async function initPipelineCreator() {
     if (isInitialized) return;
 
@@ -1334,5 +1384,6 @@ export async function initPipelineCreator() {
         checkPipelineRestartRequirements: checkPipelineRestartRequirements,
         checkBackendRestartStatus: checkBackendRestartStatus,
         restartIndicator: restartIndicator,
+        refreshPipelineCreator: refreshPipelineCreator,
     };
 }

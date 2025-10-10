@@ -9,6 +9,35 @@ import { Matrix4 } from "three";
 
 const mmToM = 1000;
 
+// Function to refresh views when connection is re-established
+async function refreshViewsOnReconnection() {
+    console.log("Refreshing views after reconnection");
+
+    try {
+        if (currentViewId === "view-pipeline") {
+            console.log("Refreshing pipeline builder");
+            await refreshPipelineCreator();
+        }
+
+        console.log("Views refreshed successfully after reconnection");
+    } catch (error) {
+        console.error("Error refreshing views after reconnection:", error);
+    }
+}
+
+// Function to refresh pipeline creator specifically
+async function refreshPipelineCreator() {
+    // Use the refresh function from the pipeline creator module if available
+    if (
+        window.pipelineCreator &&
+        window.pipelineCreator.refreshPipelineCreator
+    ) {
+        await window.pipelineCreator.refreshPipelineCreator();
+    } else {
+        console.warn("Pipeline creator refresh function not available");
+    }
+}
+
 const convertDataToFieldSpace = (data) => {
     const transform = data.transform_matrix;
     const resultMatrix = new Matrix4();
@@ -62,13 +91,16 @@ window.onload = async () => {
     const HEARTBEAT_TIMEOUT_MS = 15000; // consider connection lost if no heartbeat
 
     es.addEventListener("open", () => {
-        console.log(`SSE connection established at ${new Date().toISOString()}`);
+        console.log(
+            `SSE connection established at ${new Date().toISOString()}`,
+        );
         hideConnectionLostOverlay();
         if (wasDisconnected) {
             console.log("SSE reconnected after disconnection");
-            // Brief delay to allow connection to stabilize before any actions
-            setTimeout(() => {
+            // Brief delay to allow connection to stabilize before refreshing views
+            setTimeout(async () => {
                 wasDisconnected = false;
+                await refreshViewsOnReconnection();
             }, 500);
         }
         wasDisconnected = false;

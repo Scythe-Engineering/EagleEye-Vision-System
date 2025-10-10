@@ -77,7 +77,15 @@ class ViewManager {
                 loadSettings();
                 break;
             case VIEWS.PIPELINE:
-                initPipelineCreator();
+                // If pipeline creator is already initialized, refresh it; otherwise initialize it
+                if (
+                    window.pipelineCreator &&
+                    window.pipelineCreator.refreshPipelineCreator
+                ) {
+                    window.pipelineCreator.refreshPipelineCreator();
+                } else {
+                    initPipelineCreator();
+                }
                 break;
             default:
                 pauseCameraFeeds();
