@@ -97,6 +97,35 @@ class RustModuleBuilder:
 
         return current_hash != cached_hash
 
+    def test_module_import(self, module_name: str) -> bool:
+        """Test that a module can be imported in Python."""
+        print(f"Testing import of {module_name}...")
+
+        try:
+            result = subprocess.run(
+                ["uv", "run", "python", "-c", f"import {module_name}"],
+                cwd=self.root_dir.parent,  # Run from workspace root
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode == 0:
+                print(f"✓ Successfully imported {module_name}")
+                return True
+            else:
+                print(f"✗ Failed to import {module_name}")
+                if result.stderr:
+                    print("Import error:")
+                    print(result.stderr)
+                return False
+
+        except subprocess.CalledProcessError as e:
+            print(f"✗ Import test failed for {module_name}: {e}")
+            return False
+        except FileNotFoundError as e:
+            print(f"✗ Import test failed for {module_name}: {e}")
+            return False
+
     def build_module(self, module_dir: Path) -> bool:
         """Build a single module."""
         module_name = module_dir.name
@@ -129,6 +158,12 @@ class RustModuleBuilder:
                 print(f"✓ Successfully built {module_name}")
                 if result.stdout:
                     print(result.stdout)
+
+                # Test that the module can be imported
+                if not self.test_module_import(module_name):
+                    print(f"✗ Build verification failed for {module_name}")
+                    return False
+
                 return True
             else:
                 print(f"✗ Failed to build {module_name}")
@@ -248,7 +283,7 @@ class RustModuleBuilder:
             print("Removed build cache")
 
 
-def main():
+def main(ran_directly=False):
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Build Rust extension modules")
     parser.add_argument("module", nargs="?", help="Specific module to build")
@@ -284,8 +319,9 @@ def main():
     else:
         success = builder.build_all(force=args.all)
 
-    sys.exit(0 if success else 1)
+    if ran_directly:
+        sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
-    main()
+    main(ran_directly=True)
