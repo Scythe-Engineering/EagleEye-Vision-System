@@ -1,138 +1,164 @@
+from typing import Any, Dict, List, Optional, Tuple
 from threading import Lock
-from typing import List, Optional, Tuple
 
+import cv2
 import numpy as np
-from imutils.convenience import cv2
-from temporal_acceleration import TemporalAcceleration as RustTemporalAcceleration
 
-from src.utils.device_management_utils.compute_pool import ComputePool
+# Import the Rust module (built automatically)
+try:
+    from temporal_acceleration import TemporalAcceleration
+except ImportError:
+    TemporalAcceleration = None
+
+from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
+from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 
 
 class TemporalAccelerationPreprocessorRustDefinition:
-    """Rust-backed temporal ROI acceleration using back-propagated detections.
+    """Definition for temporal acceleration-based ROI generation using Rust implementation.
 
-    Input: np.ndarray frame (BGR)
-    Output: list of (cropped_image, (offset_x, offset_y)) tuples
+    This operation consumes back-propagated poses and predicts ROIs for
+    accelerating the AprilTag detector in the next run using a high-performance
+    Rust implementation. The ROI outputs follow the same format as
+    `PositionApriltagPreprocessor.process_frame`.
     """
 
     def __init__(
         self,
-        compute_pool: ComputePool,
-        padding_factor: float = 0.3,
-        max_missed_updates: int = 2,
-        velocity_smoothing: float = 0.5,
-        match_distance_px: float = 80.0,
-        max_tracks: int = 16,
+        camera_parameters_path: str,
+        apriltag_map_path: str,
+        padding_factor: float = 0.65,
+        max_regions: int = 10,
+        min_region_size_px: int = 16,
     ) -> None:
-        """Initialize the Rust-based temporal acceleration definition.
+        """Initialize the temporal acceleration definition with Rust backend.
 
         Args:
-            compute_pool: Injected compute pool (unused, kept for consistency).
-            padding_factor: Fractional padding around each ROI when cropping.
-            max_missed_updates: Number of consecutive updates without a match before a track is removed.
-            velocity_smoothing: Exponential smoothing factor in [0, 1] for velocity updates.
-            match_distance_px: Maximum center distance in pixels to associate detections to existing tracks.
-            max_tracks: Maximum number of simultaneous tracks to maintain.
+            camera_parameters_path: Path to camera intrinsics JSON.
+            apriltag_map_path: Path to fmap apriltag map JSON.
+            padding_factor: Fractional padding applied to ROI size.
+            max_regions: Maximum number of ROIs to return.
+            min_region_size_px: Minimum side length for ROI squares.
         """
-        if RustTemporalAcceleration is None:
+        if TemporalAcceleration is None:
             raise ImportError(
-                "Rust temporal_acceleration module not available. Please build the Rust extension first."
+                "Rust temporal_acceleration module not available. "
+                "Please build the Rust extension first."
             )
 
-        self.preprocessor = RustTemporalAcceleration(
-            padding_factor=float(padding_factor),
-            max_missed_updates=int(max_missed_updates),
-            velocity_smoothing=float(velocity_smoothing),
-            match_distance_px=float(match_distance_px),
-            max_tracks=int(max_tracks),
+        camera_matrix, distortion_coefficients = load_camera_parameters(
+            camera_parameters_path
         )
-        self.last_crop_regions: list[tuple[int, int, int, int]] = []
-        self.last_crop_regions_lock: Lock = Lock()
+        apriltag_map = load_fmap_file(apriltag_map_path)
 
-    def run(
-        self, frame: np.ndarray, output_size: Optional[Tuple[int, int]] = None
-    ) -> List[tuple[np.ndarray, tuple[int, int]]]:
-        """Process a frame to generate temporal ROIs using the Rust backend.
+        # Convert data for Rust consumption
+        camera_matrix_flat: List[float] = (
+            camera_matrix.astype(np.float32).flatten().tolist()
+        )
+        distortion_coefficients_flat: List[float] = (
+            distortion_coefficients.astype(np.float32).flatten().tolist()
+        )
+
+        # Build AprilTag geometry buffers
+        apriltag_ids: List[int] = []
+        apriltag_corners_flat: List[
+            float
+        ] = []  # 12 floats per tag (4 corners x 3 coords)
+        apriltag_centers_flat: List[float] = []  # 3 floats per tag
+        for tag_id, tag in apriltag_map.items():
+            apriltag_ids.append(int(tag_id))
+            # Ensure float32 and correct shape
+            corners: np.ndarray = np.asarray(
+                tag.global_corners, dtype=np.float32
+            ).reshape(4, 3)
+            centers: np.ndarray = np.asarray(
+                tag.global_center, dtype=np.float32
+            ).reshape(3)
+            apriltag_corners_flat.extend(corners.flatten().tolist())
+            apriltag_centers_flat.extend(centers.flatten().tolist())
+
+        self._rust_impl = TemporalAcceleration(
+            camera_matrix=camera_matrix_flat,
+            distortion_coefficients=distortion_coefficients_flat,
+            apriltag_ids=apriltag_ids,
+            apriltag_corners=apriltag_corners_flat,
+            apriltag_centers=apriltag_centers_flat,
+            padding_factor=padding_factor,
+            max_regions=max_regions,
+            min_region_size_px=min_region_size_px,
+        )
+
+        self._last_regions: List[Tuple[int, int, int, int]] = []
+        self._last_regions_lock: Lock = Lock()
+
+    def back_propagate_input(self, input_data: Any) -> None:
+        """Receive back-propagated input (camera pose) from the pipeline.
+
+        Args:
+            input_data: Expected to be a 4x4 camera-to-world transform (np.ndarray).
+        """
+        if isinstance(input_data, np.ndarray) and input_data.shape == (4, 4):
+            transform_flat: List[float] = (
+                input_data.astype(np.float32).flatten().tolist()
+            )
+            self._rust_impl.back_propagate_input(transform_flat)
+
+    def run(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Generate predicted ROIs for the current frame using Rust implementation.
+
+        Args:
+            frame: Input frame (BGR) for which to generate ROIs.
+
+        Returns:
+            List of (cropped_image, (offset_x, offset_y)) tuples for detector input.
+        """
+        height, width = frame.shape[:2]
+        _crops_data, crop_regions = self._rust_impl.process_frame(width, height)
+
+        cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
+        regions: List[Tuple[int, int, int, int]] = []
+        for region in crop_regions:
+            left, top, right, bottom = region
+            left = max(0, int(left))
+            top = max(0, int(top))
+            right = min(int(width), int(right))
+            bottom = min(int(height), int(bottom))
+            if right > left and bottom > top:
+                cropped = frame[top:bottom, left:right]
+                cropped_images.append((cropped, (left, top)))
+                regions.append((left, top, right, bottom))
+
+        with self._last_regions_lock:
+            self._last_regions = regions
+
+        return (cropped_images, frame)
+
+    def update_config(self, json_config: Dict[str, Any]) -> None:
+        """Update live configuration for the temporal acceleration.
+
+        Args:
+            json_config: Parameters to update. Supported keys:
+                - padding_factor
+                - max_regions
+                - min_region_size_px
+        """
+        self._rust_impl.update_config(json_config)
+
+    def visualize(self, frame: np.ndarray) -> np.ndarray:
+        """Visualize the temporal acceleration outputs by darkening non-predicted areas.
 
         Args:
             frame: Input frame to process.
-            output_size: Optional output size for scaling the regions.
 
         Returns:
-            List of (cropped_image, (offset_x, offset_y)) tuples.
+            Frame with non-predicted areas darkened.
         """
-        height, width = frame.shape[:2]
-        regions = self.preprocessor.process(int(width), int(height))
-
-        crop_regions: list[tuple[int, int, int, int]] = []
-        cropped_images_with_offsets: list[tuple[np.ndarray, tuple[int, int]]] = []
-
-        for left, top, right, bottom in regions:
-            if right <= left or bottom <= top:
-                continue
-            left_i = max(0, int(left))
-            top_i = max(0, int(top))
-            right_i = min(width, int(right))
-            bottom_i = min(height, int(bottom))
-            cropped = frame[top_i:bottom_i, left_i:right_i]
-            crop_regions.append((left_i, top_i, right_i, bottom_i))
-            cropped_images_with_offsets.append((cropped, (left_i, top_i)))
-
-        if not crop_regions:
-            crop_regions = [(0, 0, width, height)]
-            cropped_images_with_offsets = [(frame, (0, 0))]
-
-        with self.last_crop_regions_lock:
-            self.last_crop_regions = crop_regions
-
-        return cropped_images_with_offsets
-
-    def update_config(self, json_config: dict) -> None:
-        """Update live configuration values for the Rust backend.
-
-        Args:
-            json_config: JSON configuration for the temporal preprocessor.
-        """
-        self.preprocessor.update_config(json_config)
-
-    def back_propagate_input(self, input_data) -> None:
-        """Receive back-propagated detections to update ROI tracks in Rust backend.
-
-        Args:
-            input_data: Detections in camera space.
-        """
-        detections: list[tuple[float, float, float]] = []
-        if input_data is None:
-            self.preprocessor.back_propagate_input(None)
-            return
-        if isinstance(input_data, (list, tuple)):
-            for det in input_data:
-                if isinstance(det, (list, tuple)) and len(det) >= 3:
-                    detections.append((float(det[0]), float(det[1]), float(det[2])))
-        else:
-            detections.append(
-                (
-                    float(getattr(input_data, 0, 0.0)),
-                    float(getattr(input_data, 1, 0.0)),
-                    float(getattr(input_data, 2, 1.0)),
-                )
-            )
-        self.preprocessor.back_propagate_input(detections)
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Visualize the current ROIs by highlighting predicted regions.
-
-        Args:
-            frame: Input frame to visualize over.
-
-        Returns:
-            Visualization frame with predicted ROIs overlaid.
-        """
-        with self.last_crop_regions_lock:
-            crop_regions = list(self.last_crop_regions)
+        with self._last_regions_lock:
+            crop_regions = self._last_regions
 
         visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
-        for left, top, right, bottom in crop_regions:
+        for region in crop_regions:
+            left, top, right, bottom = region
             left = max(0, left)
             top = max(0, top)
             right = min(frame.shape[1], right)
@@ -141,4 +167,5 @@ class TemporalAccelerationPreprocessorRustDefinition:
                 visualization_frame[top:bottom, left:right] = frame[
                     top:bottom, left:right
                 ]
+
         return visualization_frame

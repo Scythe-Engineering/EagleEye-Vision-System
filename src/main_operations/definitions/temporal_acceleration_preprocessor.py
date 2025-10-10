@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from threading import Lock
 
 import cv2
@@ -26,7 +26,6 @@ class TemporalAccelerationPreprocessorDefinition:
         padding_factor: float = 0.65,
         max_regions: int = 10,
         min_region_size_px: int = 16,
-        max_region_size_px: Optional[int] = None,
     ) -> None:
         """Initialize the temporal acceleration definition.
 
@@ -36,7 +35,6 @@ class TemporalAccelerationPreprocessorDefinition:
             padding_factor: Fractional padding applied to ROI size.
             max_regions: Maximum number of ROIs to return.
             min_region_size_px: Minimum side length for ROI squares.
-            max_region_size_px: Optional maximum side length for ROI squares.
         """
         camera_matrix, distortion_coefficients = load_camera_parameters(
             camera_parameters_path
@@ -50,7 +48,6 @@ class TemporalAccelerationPreprocessorDefinition:
             padding_factor=padding_factor,
             max_regions=max_regions,
             min_region_size_px=min_region_size_px,
-            max_region_size_px=max_region_size_px,
         )
 
         self._last_regions: List[Tuple[int, int, int, int]] = []
@@ -87,7 +84,6 @@ class TemporalAccelerationPreprocessorDefinition:
                 - padding_factor
                 - max_regions
                 - min_region_size_px
-                - max_region_size_px
         """
         if "padding_factor" in json_config:
             self.impl.padding_factor = float(json_config["padding_factor"])
@@ -95,9 +91,6 @@ class TemporalAccelerationPreprocessorDefinition:
             self.impl.max_regions = int(json_config["max_regions"])
         if "min_region_size_px" in json_config:
             self.impl.min_region_size_px = int(json_config["min_region_size_px"])
-        if "max_region_size_px" in json_config:
-            value = json_config["max_region_size_px"]
-            self.impl.max_region_size_px = int(value) if value is not None else None
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Visualize the temporal acceleration outputs by darkening non-predicted areas.
