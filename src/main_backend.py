@@ -16,6 +16,12 @@ from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: 
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
+from src.rust_implementations.build import main as rust_build  # noqa: E402
+
+# Build the Rust implementations
+print(f"{Colors.CYAN}Building Rust implementations...{Colors.RESET}")
+rust_build()
+print(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
 available_devices = get_available_devices()
 print(f"{Colors.CYAN}Detected Available Devices:{Colors.RESET}", available_devices)
