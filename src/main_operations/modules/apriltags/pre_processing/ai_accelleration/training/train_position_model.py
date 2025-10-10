@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.onnx
 from cv2 import imread
-from line_profiler import profile
+
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
@@ -169,7 +169,6 @@ class PositionDataset(Dataset):
         return img_tensor, label_tensor
 
 
-@profile
 def build_grid_targets(
     targets_batch: torch.Tensor,
     grid_h: int,
@@ -266,7 +265,6 @@ early_stopping_patience = 5
 early_stopping_min_delta = 1e-2
 
 
-@profile
 def train() -> None:
     """Train the position predictor with validation, EMA, and grid-based losses.
 

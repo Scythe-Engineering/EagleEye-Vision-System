@@ -4,8 +4,6 @@ import cv2
 import numpy as np
 import math
 
-from line_profiler import profile
-
 
 @overload
 def letterbox_image(
@@ -25,7 +23,6 @@ def letterbox_image(
 ) -> tuple[np.ndarray, tuple[int, int]]: ...
 
 
-@profile
 def letterbox_image(
     img: np.ndarray,
     target_size: Tuple[int, int],

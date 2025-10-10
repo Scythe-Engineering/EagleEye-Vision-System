@@ -4,7 +4,7 @@ from typing import Optional
 
 import numpy as np
 import torch
-from line_profiler import profile
+
 
 from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
     letterbox_image,
@@ -94,7 +94,6 @@ class PositionApriltagPreprocessor:
         except Exception as _:
             raise RuntimeError(f"Error loading model: {traceback.format_exc()}")
 
-    @profile
     def _preprocess_frame(self, frame: np.ndarray) -> torch.Tensor:
         """Preprocess frame for the position predictor model.
 
@@ -130,7 +129,6 @@ class PositionApriltagPreprocessor:
 
         return self.rgb_tensor_buffer
 
-    @profile
     def get_positions_and_scales(
         self, frame: np.ndarray
     ) -> list[tuple[float, float, float, float]]:
@@ -351,7 +349,6 @@ class PositionApriltagPreprocessor:
 
         return cropped_images, crop_regions
 
-    @profile
     def process_frame(
         self, frame: np.ndarray, output_size: Optional[tuple[int, int]] = None
     ) -> tuple[list[tuple[np.ndarray, np.ndarray]], list[tuple[int, int, int, int]]]:
