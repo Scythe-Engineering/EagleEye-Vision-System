@@ -175,8 +175,9 @@ export async function init3DView(modelUrl) {
 
                     robotObject.traverse((child) => {
                         if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
+                            child.castShadow = false;
+                            child.receiveShadow = false;
+                            child.excludeFromShadowToggle = true;
                             child.geometry.computeVertexNormals();
 
                             // Remove reflective properties from materials
@@ -252,8 +253,8 @@ export async function init3DView(modelUrl) {
     directionalLight.castShadow = true;
     directionalLight.shadow.bias = -0.0005;
     directionalLight.shadow.normalBias = -0.0005;
-    directionalLight.shadow.mapSize.width = 1024 * 5;
-    directionalLight.shadow.mapSize.height = 1024 * 5;
+    directionalLight.shadow.mapSize.width = 1024 * 3;
+    directionalLight.shadow.mapSize.height = 1024 * 3;
     directionalLight.shadow.camera.left = -300 * scale;
     directionalLight.shadow.camera.right = 300 * scale;
     directionalLight.shadow.camera.top = 150 * scale;
@@ -278,6 +279,12 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
+
+            // Disable shadow map auto updates after initial generation for performance
+            renderer.shadowMap.autoUpdate = false;
+            // Force initial shadow map generation
+            renderer.shadowMap.needsUpdate = true;
+
             startAnimationLoop();
         },
         undefined,
@@ -359,13 +366,18 @@ export async function init3DView(modelUrl) {
     document.getElementById("toggleShadowBtn").addEventListener("click", () => {
         shadowsEnabled = !shadowsEnabled;
         scene.traverse((object) => {
-            if (object.isMesh) {
+            if (object.isMesh && !object.excludeFromShadowToggle) {
                 object.castShadow = shadowsEnabled;
                 object.receiveShadow = shadowsEnabled;
             }
         });
         directionalLight.castShadow = shadowsEnabled;
         renderer.shadowMap.enabled = shadowsEnabled;
+
+        // Force shadow map update when shadows are re-enabled
+        if (shadowsEnabled) {
+            renderer.shadowMap.needsUpdate = true;
+        }
     });
 
     // Add AprilTag PNGs as planes at fiducial transforms
@@ -429,8 +441,9 @@ export async function init3DView(modelUrl) {
                     normal.normalize();
                     plane.position.add(normal);
 
-                    plane.castShadow = true;
-                    plane.receiveShadow = true;
+                    plane.castShadow = false;
+                    plane.receiveShadow = false;
+                    plane.excludeFromShadowToggle = true;
                     scene.add(plane);
                 });
             });
