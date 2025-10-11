@@ -35,19 +35,19 @@ class ViewManager {
     }
 
     updateActiveSidebarItem(targetViewId) {
-        this.sidebarItems.forEach((sidebarItem) => {
+        for (const sidebarItem of this.sidebarItems) {
             sidebarItem.classList.toggle(
                 "active",
-                sidebarItem.getAttribute("data-view") === targetViewId,
+                sidebarItem.dataset.view === targetViewId,
             );
-        });
+        }
     }
 
     showTargetView(targetViewId) {
         // Hide all views using only Tailwind classes
-        this.views.forEach((view) => {
+        for (const view of this.views) {
             view.classList.add("hidden");
-        });
+        }
 
         const targetView = document.getElementById(targetViewId);
         if (!targetView) {
@@ -59,9 +59,9 @@ class ViewManager {
     }
 
     toggleControlsVisibility(targetViewId) {
-        this.controls.forEach((element) => {
+        for (const element of this.controls) {
             element.classList.toggle("hidden", targetViewId !== VIEWS.THREE_D);
-        });
+        }
     }
 
     handleViewSpecificBehavior(viewId) {
@@ -79,10 +79,10 @@ class ViewManager {
             case VIEWS.PIPELINE:
                 // If pipeline creator is already initialized, refresh it; otherwise initialize it
                 if (
-                    window.pipelineCreator &&
-                    window.pipelineCreator.refreshPipelineCreator
+                    globalThis.pipelineCreator &&
+                    globalThis.pipelineCreator.refreshPipelineCreator
                 ) {
-                    window.pipelineCreator.refreshPipelineCreator();
+                    globalThis.pipelineCreator.refreshPipelineCreator();
                 } else {
                     initPipelineCreator();
                 }
@@ -95,13 +95,13 @@ class ViewManager {
 
 class URLManager {
     updateTab(viewId) {
-        const url = new URL(window.location.href);
+        const url = new URL(globalThis.location.href);
         url.searchParams.set("tab", viewId);
-        window.history.replaceState({}, "", url.toString());
+        globalThis.history.replaceState({}, "", url.toString());
     }
 
     getInitialTab() {
-        const url = new URL(window.location.href);
+        const url = new URL(globalThis.location.href);
         return url.searchParams.get("tab");
     }
 }
@@ -119,12 +119,12 @@ export function setupSidebar() {
         urlManager.updateTab(targetViewId);
     }
 
-    sidebarItems.forEach((item) => {
+    for (const item of sidebarItems) {
         item.addEventListener("click", () => {
-            const targetViewId = item.getAttribute("data-view");
+            const targetViewId = item.dataset.view;
             handleSidebarItemClick(targetViewId);
         });
-    });
+    }
 
     const initialTab = urlManager.getInitialTab();
     if (initialTab && document.getElementById(initialTab)) {
@@ -135,7 +135,7 @@ export function setupSidebar() {
 
     const firstItem = sidebarItems[0];
     if (firstItem) {
-        const defaultViewId = firstItem.getAttribute("data-view");
+        const defaultViewId = firstItem.dataset.view;
         if (defaultViewId) {
             viewManager.activateView(defaultViewId);
             urlManager.updateTab(defaultViewId);

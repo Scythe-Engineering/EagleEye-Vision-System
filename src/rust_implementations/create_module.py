@@ -19,7 +19,7 @@ class Colors:
     CYAN = "\033[96m"
 
 
-def create_module(module_name: str, description: str) -> None:
+def create_module(module_name: str, description: str) -> bool:
     """Create a new module from the template."""
     root_dir = Path(__file__).parent
     template_dir = root_dir / "module_template"
@@ -36,7 +36,6 @@ def create_module(module_name: str, description: str) -> None:
         print(f"{Colors.RED}Error: Module '{module_name}' already exists{Colors.RESET}")
         return False
 
-    # Copy template to new module directory
     shutil.copytree(template_dir, new_module_dir)
 
     # Update template files

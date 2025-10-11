@@ -29,10 +29,10 @@ async function refreshViewsOnReconnection() {
 async function refreshPipelineCreator() {
     // Use the refresh function from the pipeline creator module if available
     if (
-        window.pipelineCreator &&
-        window.pipelineCreator.refreshPipelineCreator
+        globalThis.pipelineCreator &&
+        globalThis.pipelineCreator.refreshPipelineCreator
     ) {
-        await window.pipelineCreator.refreshPipelineCreator();
+        await globalThis.pipelineCreator.refreshPipelineCreator();
     } else {
         console.warn("Pipeline creator refresh function not available");
     }

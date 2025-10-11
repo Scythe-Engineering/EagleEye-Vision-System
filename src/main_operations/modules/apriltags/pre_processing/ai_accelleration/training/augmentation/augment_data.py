@@ -368,7 +368,7 @@ def main():
     # Configuration variables - modify these as needed
     input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\training_data"  # Set to None for auto-detection, or specify path
     output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\augmented_training_data"
-    max_workers = 24  # Set to None for CPU count, or specify number of threads
+    max_workers = None  # Set to None for CPU count, or specify number of threads
     enabled_augmentations = (
         None  # Set to None for all, or list like ["rotation", "brightness"]
     )

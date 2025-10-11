@@ -138,7 +138,9 @@ export async function init3DView(modelUrl) {
             }
             if (child.material) {
                 if (Array.isArray(child.material)) {
-                    child.material.forEach((material) => material.dispose());
+                    for (const material of child.material) {
+                        material.dispose();
+                    }
                 } else {
                     child.material.dispose();
                 }
@@ -183,10 +185,10 @@ export async function init3DView(modelUrl) {
                             // Remove reflective properties from materials
                             if (child.material) {
                                 if (Array.isArray(child.material)) {
-                                    child.material.forEach((material) => {
+                                    for (const material of child.material) {
                                         material.metalness = 0;
                                         material.roughness = 1;
-                                    });
+                                    }
                                 } else {
                                     child.material.metalness = 0;
                                     child.material.roughness = 1;
@@ -330,9 +332,9 @@ export async function init3DView(modelUrl) {
         .getElementById("toggleGamePiecesBtn")
         .addEventListener("click", () => {
             gamePiecesVisible = !gamePiecesVisible;
-            gamePieces.forEach((gp) => {
+            for (const gp of gamePieces) {
                 gp.visible = gamePiecesVisible;
-            });
+            }
         });
 
     let clock = new Clock();
@@ -355,7 +357,7 @@ export async function init3DView(modelUrl) {
         }
     }
 
-    window.addEventListener("resize", () => {
+    globalThis.addEventListener("resize", () => {
         const width = container.clientWidth;
         const height = container.clientHeight;
         camera.aspect = width / height;
@@ -385,7 +387,7 @@ export async function init3DView(modelUrl) {
         .then((response) => response.json())
         .then((json) => {
             const textureLoader = new TextureLoader();
-            json.fiducials.forEach((fiducial) => {
+            for (const fiducial of json.fiducials) {
                 const tagId = fiducial.id;
                 const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
                 const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
@@ -446,7 +448,7 @@ export async function init3DView(modelUrl) {
                     plane.excludeFromShadowToggle = true;
                     scene.add(plane);
                 });
-            });
+            }
         });
 }
 

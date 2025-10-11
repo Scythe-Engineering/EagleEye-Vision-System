@@ -145,8 +145,8 @@ async function fetchAvailableOperations() {
         operations = data.operations.map((op) => ({
             id: op.name, // Use filename as unique ID
             name: op.name
-                .replace(".py", "")
-                .replace(/_/g, " ")
+                .replaceAll(".py", "")
+                .replaceAll("_", " ")
                 .replace(/\b\w/g, (l) => l.toUpperCase()), // Convert filename to readable name
             type: op.category.toUpperCase(), // Use category as type, convert to uppercase for consistency
             description: op.description,
@@ -200,7 +200,8 @@ function populateCameraDropdown() {
         return;
     }
 
-    cameras.forEach((camera, index) => {
+    for (let index = 0; index < cameras.length; index++) {
+        const camera = cameras[index];
         const option = document.createElement("option");
         option.value = camera.urlSafeName;
         option.textContent = camera.name;
@@ -209,7 +210,7 @@ function populateCameraDropdown() {
             selectedCamera = camera; // Set the first camera as selected
         }
         cameraSelect.appendChild(option);
-    });
+    }
 }
 
 async function fetchPipelinesForCamera(cameraName) {
@@ -226,7 +227,7 @@ async function fetchPipelinesForCamera(cameraName) {
         pipelines = pipelineNames.map((name) => ({
             name: name,
             displayName: name
-                .replace(/_/g, " ")
+                .replaceAll("_", " ")
                 .replace(/\b\w/g, (l) => l.toUpperCase()), // Convert to readable name
         }));
 
@@ -268,7 +269,8 @@ function populatePipelineDropdown(selectedPipelineName = null) {
     let foundSelectedPipeline = false;
 
     // Add pipeline options
-    pipelines.forEach((pipeline, index) => {
+    for (let index = 0; index < pipelines.length; index++) {
+        const pipeline = pipelines[index];
         const option = document.createElement("option");
         option.value = pipeline.name;
         option.textContent = pipeline.displayName;
@@ -284,7 +286,7 @@ function populatePipelineDropdown(selectedPipelineName = null) {
         }
 
         pipelineSelect.appendChild(option);
-    });
+    }
 
     // If we were looking for a specific pipeline but didn't find it, select the first one
     if (
@@ -370,7 +372,8 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         );
 
         // Transform config into pipeline operations
-        pipelineConfig.forEach((configItem, index) => {
+        for (let index = 0; index < pipelineConfig.length; index++) {
+            const configItem = pipelineConfig[index];
             // Find the corresponding operation from available operations
             // Try different matching strategies
             let operation = operations.find(
@@ -388,7 +391,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             if (!operation) {
                 operation = operations.find(
                     (op) =>
-                        op.name.toLowerCase().replace(/\s+/g, "_") ===
+                        op.name.toLowerCase().replaceAll(/\s+/g, "_") ===
                         configItem.action_name,
                 );
             }
@@ -410,7 +413,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
                     operations.map((op) => op.id),
                 );
             }
-        });
+        }
 
         // Re-render the pipeline
         console.log("[PIPELINE] Re-rendering pipeline after loading", {
@@ -590,9 +593,9 @@ function openOperationSettings(opOrItem) {
 
         // Check restart requirements for each changed parameter
         if (changedParams.length > 0) {
-            changedParams.forEach(({ paramName, value }) => {
+            for (const { paramName, value } of changedParams) {
                 checkPipelineRestartRequirements(opOrItem, paramName, value);
-            });
+            }
         } else {
             // If no parameters changed but function was called, still update indicator
             checkPipelineRestartRequirements();
@@ -601,7 +604,7 @@ function openOperationSettings(opOrItem) {
 
     const doOpen = () => {
         try {
-            window.SettingsPopup.open({
+            globalThis.SettingsPopup.open({
                 title,
                 operationName,
                 isSecondary,
@@ -613,7 +616,7 @@ function openOperationSettings(opOrItem) {
         }
     };
 
-    if (window.SettingsPopup) {
+    if (globalThis.SettingsPopup) {
         doOpen();
         return;
     }
@@ -629,7 +632,7 @@ function openOperationSettings(opOrItem) {
     s.type = "module";
     s.src = scriptUrl;
     s.onload = () => {
-        if (!window.SettingsPopup) {
+        if (!globalThis.SettingsPopup) {
             console.warn("SettingsPopup loaded but did not register on window");
             return;
         }
@@ -661,15 +664,15 @@ async function autoSavePipeline() {
         const pipelineConfig = pipeline.map((item) => {
             const configParams = {};
             if (item.config) {
-                Object.keys(item.config).forEach((key) => {
+                for (const key of Object.keys(item.config)) {
                     const value = item.config[key];
                     if (value !== undefined && value !== null) {
                         configParams[key] = value;
                     }
-                });
+                }
             }
             return {
-                action_name: item.id.replace(".py", ""),
+                action_name: item.id.replaceAll(".py", ""),
                 action_params: configParams,
             };
         });
@@ -709,7 +712,7 @@ async function createNewPipeline() {
         return; // User cancelled or entered empty name
     }
 
-    const pipelineFileName = newPipelineName.trim().replace(/\s+/g, "_");
+    const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
 
     // Check if pipeline already exists
     const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
@@ -971,7 +974,7 @@ async function handleRestartBackend() {
         restartRequiredOperations.clear();
 
         // Reload page to refresh all state
-        window.location.reload();
+        globalThis.location.reload();
     } catch (error) {
         console.error("Failed to restart backend:", error);
     }
@@ -1308,9 +1311,9 @@ export async function initPipelineCreator() {
                 console.log(
                     "[PIPELINE] New operations added, checking restart requirements",
                 );
-                pipeline.forEach((item) => {
+                for (const item of pipeline) {
                     checkPipelineRestartRequirements(item);
-                });
+                }
 
                 // Auto-save when operations are added
                 autoSavePipeline();
@@ -1373,12 +1376,12 @@ export async function initPipelineCreator() {
     isInitialized = true;
 
     // Check if backend restart indicator should be shown (legacy support)
-    if (window.showBackendRestartIndicator) {
-        window.showBackendRestartIndicator();
+    if (globalThis.showBackendRestartIndicator) {
+        globalThis.showBackendRestartIndicator();
     }
 
     // Expose functions for external modules (like dragDrop.js)
-    window.pipelineCreator = {
+    globalThis.pipelineCreator = {
         autoSavePipeline: autoSavePipeline,
         updateRestartIndicator: updateRestartIndicator,
         checkPipelineRestartRequirements: checkPipelineRestartRequirements,

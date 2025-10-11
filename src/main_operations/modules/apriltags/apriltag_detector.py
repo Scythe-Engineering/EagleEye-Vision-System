@@ -124,7 +124,7 @@ class AprilTagDetector:
 
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
-    ) -> list[Detection] | list[CustomDetection]:
+    ) -> Optional[list[Detection] | list[CustomDetection]]:
         """Run detection on a single image."""
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:

@@ -350,13 +350,13 @@ class PositionApriltagPreprocessor:
         return cropped_images, crop_regions
 
     def process_frame(
-        self, frame: np.ndarray, output_size: Optional[tuple[int, int]] = None
+        self, frame: np.ndarray, _output_size: Optional[tuple[int, int]] = None
     ) -> tuple[list[tuple[np.ndarray, np.ndarray]], list[tuple[int, int, int, int]]]:
         """Process a single frame through the position predictor.
 
         Args:
             frame: Input frame to process.
-            output_size: Optional output size for scaling (not used in this implementation).
+            _output_size: Optional output size for scaling (not used in this implementation).
 
         Returns:
             Tuple of (cropped_images_with_offsets, crop_regions).
