@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import path from "path";
+import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import handlebars from "vite-plugin-handlebars";
 

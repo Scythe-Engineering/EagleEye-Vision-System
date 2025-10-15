@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Dict, List, Tuple, Union
+import multiprocessing
 
 import cv2
 import numpy as np
@@ -368,10 +369,16 @@ def main():
     # Configuration variables - modify these as needed
     input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\training_data"  # Set to None for auto-detection, or specify path
     output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\augmented_training_data"
-    max_workers = None  # Set to None for CPU count, or specify number of threads
-    enabled_augmentations = (
-        None  # Set to None for all, or list like ["rotation", "brightness"]
-    )
+    # Configuration variables - modify these as needed
+    max_workers = (
+        multiprocessing.cpu_count()
+    )  # Default to CPU count, override by changing this line (e.g., max_workers = 4)
+    enabled_augmentations = [
+        "rotation",
+        "brightness",
+        "scale",
+        "contrast",
+    ]  # Default augmentations, override by changing this line (e.g., enabled_augmentations = ["rotation", "brightness"])
     brightness_factors = [0.5, 0.7, 1.3, 1.5]  # Brightness adjustment factors
     scale_factors = [0.5, 0.7, 1.3, 1.5]  # Scale adjustment factors
     contrast_factors = [0.5, 0.7, 1.3, 1.5]  # Contrast adjustment factors
@@ -382,19 +389,7 @@ def main():
 
     print(f"Input directory: {input_path.absolute()}")
     print(f"Output directory: {output_path.absolute()}")
-
-    # Default augmentations if not specified
-    if enabled_augmentations is None:
-        enabled_augmentations = ["rotation", "brightness", "scale", "contrast"]
-
     print(f"Enabled augmentations: {enabled_augmentations}")
-
-    # Set default max_workers to CPU count if not specified
-    if max_workers is None:
-        import multiprocessing
-
-        max_workers = multiprocessing.cpu_count()
-
     print(f"Using {max_workers} worker threads")
 
     augment_training_data(

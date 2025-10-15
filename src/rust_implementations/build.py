@@ -37,6 +37,7 @@ class RustModuleBuilder:
         self.root_dir = root_dir
         self.modules_dir = root_dir / "modules"
         self.build_cache_file = root_dir / ".build_cache.json"
+        self.CARGO_TOML_FILENAME = "Cargo.toml"
 
     def get_modules(self) -> list[Path]:
         """Get all module directories."""
@@ -46,7 +47,7 @@ class RustModuleBuilder:
         return [
             d
             for d in self.modules_dir.iterdir()
-            if d.is_dir() and (d / "Cargo.toml").exists()
+            if d.is_dir() and (d / self.CARGO_TOML_FILENAME).exists()
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
@@ -54,7 +55,7 @@ class RustModuleBuilder:
         hasher = hashlib.md5()
 
         # Include Cargo.toml
-        cargo_toml = module_dir / "Cargo.toml"
+        cargo_toml = module_dir / self.CARGO_TOML_FILENAME
         if cargo_toml.exists():
             hasher.update(cargo_toml.read_bytes())
 
@@ -279,7 +280,7 @@ class RustModuleBuilder:
             print(f"{Colors.RED}Module '{module_name}' not found{Colors.RESET}")
             return False
 
-        if not (module_dir / "Cargo.toml").exists():
+        if not (module_dir / self.CARGO_TOML_FILENAME).exists():
             print(
                 f"{Colors.RED}'{module_name}' is not a valid Rust module{Colors.RESET}"
             )

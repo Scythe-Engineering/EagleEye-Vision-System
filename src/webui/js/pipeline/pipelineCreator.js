@@ -402,7 +402,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
                     ...operation,
                     instanceId: `${operation.id}_${Date.now()}_${index}`,
                     config: configItem.action_params || {},
-                    originalConfig: { ...(configItem.action_params || {}) }, // Store original config for restart comparison
+                    originalConfig: configItem.action_params || {}, // Store original config for restart comparison
                     name: operation.name,
                     requiresRestart: false, // Initialize restart flag (will be updated if needed)
                 };

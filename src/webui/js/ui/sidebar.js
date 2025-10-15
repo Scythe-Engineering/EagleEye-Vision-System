@@ -78,10 +78,7 @@ class ViewManager {
                 break;
             case VIEWS.PIPELINE:
                 // If pipeline creator is already initialized, refresh it; otherwise initialize it
-                if (
-                    globalThis.pipelineCreator &&
-                    globalThis.pipelineCreator.refreshPipelineCreator
-                ) {
+                if (globalThis.pipelineCreator?.refreshPipelineCreator) {
                     globalThis.pipelineCreator.refreshPipelineCreator();
                 } else {
                     initPipelineCreator();

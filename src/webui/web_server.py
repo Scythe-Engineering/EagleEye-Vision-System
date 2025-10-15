@@ -657,6 +657,7 @@ class EagleEyeInterface:
             dict:
                 operations: list of dicts with the name and path of the operation file.
         """
+        NO_DESCRIPTION_AVAILABLE_MESSAGE = "No description available"
         main_operations = []
 
         for file in os.listdir(
@@ -674,11 +675,11 @@ class EagleEyeInterface:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
                     description = config_data.get(
-                        "description", "No description available"
+                        "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    description = "No description available"
+                    description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
 
                 main_operations.append(
@@ -708,11 +709,11 @@ class EagleEyeInterface:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
                     description = config_data.get(
-                        "description", "No description available"
+                        "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    description = "No description available"
+                    description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
 
                 secondary_operations.append(
