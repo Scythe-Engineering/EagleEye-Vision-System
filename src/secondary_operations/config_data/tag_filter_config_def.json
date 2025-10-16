@@ -5,7 +5,7 @@
     "parameters": {
         "filter_mode": {
             "type": "str",
-            "description": "Filter mode: 'whitelist' keeps only specified tag IDs, 'blacklist' removes specified tag IDs",
+            "description": "Filter mode: 'whitelist' keeps only specified tag IDs (or all tags if empty), 'blacklist' removes specified tag IDs",
             "default": "whitelist",
             "required": false,
             "restart_for_change": false

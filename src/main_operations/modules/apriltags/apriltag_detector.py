@@ -79,6 +79,49 @@ class AprilTagDetector:
         self._detect_lock: Lock = Lock()
         self.ready = True
 
+    def _preprocess_image(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """Preprocess image to grayscale uint8 format.
+
+        Args:
+            image: Input image (grayscale or BGR).
+
+        Returns:
+            Preprocessed grayscale image or None if invalid.
+        """
+        if image is None or image.size == 0:
+            return None
+
+        # Convert to grayscale if needed
+        if len(image.shape) == 3:
+            gray_image = np.empty(image.shape[:2], dtype=np.uint8)
+            cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
+        else:
+            if image.dtype != np.uint8:
+                gray_image = np.empty(image.shape, dtype=np.uint8)
+                cv2.convertScaleAbs(image, dst=gray_image)
+            else:
+                gray_image = image
+
+        # Validate dimensions
+        if gray_image is None or gray_image.size == 0:
+            return None
+        if gray_image.ndim != 2:
+            return None
+        if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
+            return None
+
+        # Ensure writable C-contiguous uint8 buffer
+        gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"])
+
+        # Check decimated size
+        if (
+            gray_image.shape[0] / max(self.quad_decimate, 1.0) < 4
+            or gray_image.shape[1] / max(self.quad_decimate, 1.0) < 4
+        ):
+            return None
+
+        return gray_image
+
     def update_parameters(
         self,
         families: Optional[str] = None,
@@ -131,67 +174,16 @@ class AprilTagDetector:
             return None
 
         if isinstance(images, np.ndarray):
-            if images is None or images.size == 0:
-                return None
-            # Optimize image conversion with buffer reuse
-            if len(images.shape) == 3:
-                # BGR to grayscale conversion
-                gray_image = np.empty(images.shape[:2], dtype=np.uint8)
-                cv2.cvtColor(images, cv2.COLOR_BGR2GRAY, dst=gray_image)
-            else:
-                # Check if already uint8 to avoid unnecessary conversion
-                if images.dtype != np.uint8:
-                    # Use cv2.convertScaleAbs for efficient uint8 conversion
-                    gray_image = np.empty(images.shape, dtype=np.uint8)
-                    cv2.convertScaleAbs(images, dst=gray_image)
-                else:
-                    gray_image = images
-            if gray_image is None or gray_image.size == 0:
-                return None
-            if gray_image.ndim != 2:
-                return None
-            if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
-                return None
-            # Ensure writable C-contiguous uint8 buffer
-            gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"])
-            if (
-                gray_image.shape[0] / max(self.quad_decimate, 1e-6) < 4
-                or gray_image.shape[1] / max(self.quad_decimate, 1e-6) < 4
-            ):
+            gray_image = self._preprocess_image(images)
+            if gray_image is None:
                 return None
             with self._detect_lock:
                 return self.detector.detect(gray_image)
         else:
             detections = []
             for image, offset in images:
-                if image is None or image.size == 0:
-                    continue
-                # Optimize image conversion with buffer reuse
-                if len(image.shape) == 3:
-                    # BGR to grayscale conversion
-                    gray_image = np.empty(image.shape[:2], dtype=np.uint8)
-                    cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
-                else:
-                    # Check if already uint8 to avoid unnecessary conversion
-                    if image.dtype != np.uint8:
-                        # Use cv2.convertScaleAbs for efficient uint8 conversion
-                        gray_image = np.empty(image.shape, dtype=np.uint8)
-                        cv2.convertScaleAbs(image, dst=gray_image)
-                    else:
-                        gray_image = image
-                if gray_image is None or gray_image.size == 0:
-                    continue
-                if gray_image.ndim != 2:
-                    continue
-                if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
-                    continue
-                gray_image = np.require(
-                    gray_image, dtype=np.uint8, requirements=["C", "W"]
-                )
-                if (
-                    gray_image.shape[0] / max(self.quad_decimate, 1e-6) < 4
-                    or gray_image.shape[1] / max(self.quad_decimate, 1e-6) < 4
-                ):
+                gray_image = self._preprocess_image(image)
+                if gray_image is None:
                     continue
                 with self._detect_lock:
                     detected_tags = self.detector.detect(gray_image)
@@ -208,7 +200,7 @@ class AprilTagDetector:
         self,
         images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
         full_frame: Optional[np.ndarray] = None,
-    ) -> list[Detection] | list[CustomDetection]:
+    ) -> Optional[list[Detection] | list[CustomDetection]]:
         """Detect AprilTags in an image.
         Note:
         - Input image is always converted to grayscale.
@@ -217,9 +209,11 @@ class AprilTagDetector:
             images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
             full_frame: Optional full frame image for if no tags are detected.
         Returns:
-            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
+            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
         """
         detections = self.run_detection(images)
         if (detections is None or len(detections) == 0) and full_frame is not None:
-            return self.run_detection(full_frame)
+            full_frame_detections = self.run_detection(full_frame)
+            if full_frame_detections is not None and len(full_frame_detections) > 0:
+                return full_frame_detections
         return detections

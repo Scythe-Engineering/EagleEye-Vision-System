@@ -116,15 +116,16 @@ class PnpLocalization:
                 continue
 
             corners = detection.corners.astype(np.float32, copy=False)
-            if not np.all(np.isfinite(corners)):
-                continue
-            image_points_list.append(corners)
             apriltag_obj = self.apriltag_map[tag_id]
             global_corners = apriltag_obj.global_corners.astype(np.float32, copy=False)
-            if not np.all(np.isfinite(global_corners)):
-                continue
-            object_points_list.append(global_corners)
 
+            if not np.all(np.isfinite(corners)) or not np.all(
+                np.isfinite(global_corners)
+            ):
+                continue
+
+            image_points_list.append(corners)
+            object_points_list.append(global_corners)
             valid_tags_found += 1
 
         if valid_tags_found == 0:
@@ -198,6 +199,7 @@ class PnpLocalization:
         if (
             self.last_pose is not None
             and np.all(np.isfinite(global_camera_transform))
+            and np.all(np.isfinite(self.last_pose))
             and use_guess
         ):
             distance = np.linalg.norm(
@@ -240,7 +242,6 @@ class PnpLocalization:
 
         if np.all(np.isfinite(camera_space_transform)):
             self._last_camera_space_pose = camera_space_transform
-        self.last_pose = global_camera_transform
 
         if not np.all(np.isfinite(global_camera_transform)):
             print(
@@ -253,6 +254,8 @@ class PnpLocalization:
                     f"{Colors.CYAN}Position cache cleared due to 3 consecutive non-finite values{Colors.RESET}"
                 )
             return None
+
+        self.last_pose = global_camera_transform
 
         # Reset counter on successful finite result
         self.non_finite_count = 0

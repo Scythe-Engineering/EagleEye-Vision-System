@@ -27,7 +27,6 @@ class PoseOutlierFilterRust:
         gate_k: float = 3.0,
         max_consecutive_rejections: int = 10,
         relax_factor: float = 2.0,
-        min_samples_for_covariance: int = 15,
         angular_gate_threshold: float = 0.5,
         velocity_smoothing_alpha: float = 0.3,
         full_reset_threshold: int = 10,
@@ -41,7 +40,6 @@ class PoseOutlierFilterRust:
             gate_k (float): Multiplier for uncertainty to create gating threshold.
             max_consecutive_rejections (int): Max rejections before gate relaxation.
             relax_factor (float): Factor by which to relax gate when max rejections reached.
-            min_samples_for_covariance (int): Min samples needed for Mahalanobis gating.
             angular_gate_threshold (float): Max angular difference in radians for acceptance.
             velocity_smoothing_alpha (float): Smoothing factor for velocity estimates (0-1).
             full_reset_threshold (int): Number of consecutive rejections to trigger full filter reset.
@@ -59,7 +57,6 @@ class PoseOutlierFilterRust:
             gate_k=float(gate_k),
             max_consecutive_rejections=int(max_consecutive_rejections),
             relax_factor=float(relax_factor),
-            min_samples_for_covariance=int(min_samples_for_covariance),
             angular_gate_threshold=float(angular_gate_threshold),
             velocity_smoothing_alpha=float(velocity_smoothing_alpha),
             full_reset_threshold=int(full_reset_threshold),
@@ -72,7 +69,6 @@ class PoseOutlierFilterRust:
         self.gate_k = gate_k
         self.max_consecutive_rejections = max_consecutive_rejections
         self.relax_factor = relax_factor
-        self.min_samples_for_covariance = min_samples_for_covariance
         self.angular_gate_threshold = angular_gate_threshold
         self.velocity_smoothing_alpha = velocity_smoothing_alpha
         self.full_reset_threshold = full_reset_threshold
@@ -119,8 +115,6 @@ class PoseOutlierFilterRust:
             self.max_consecutive_rejections = json_config["max_consecutive_rejections"]
         if "relax_factor" in json_config:
             self.relax_factor = json_config["relax_factor"]
-        if "min_samples_for_covariance" in json_config:
-            self.min_samples_for_covariance = json_config["min_samples_for_covariance"]
         if "angular_gate_threshold" in json_config:
             self.angular_gate_threshold = json_config["angular_gate_threshold"]
         if "velocity_smoothing_alpha" in json_config:

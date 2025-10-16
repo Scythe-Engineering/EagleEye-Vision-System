@@ -19,23 +19,31 @@ class TagFilter:
 
         Args:
             filter_mode: Either "whitelist" or "blacklist". In whitelist mode,
-                        only tags with IDs in the tag_ids list are kept. In blacklist mode,
-                        tags with IDs in the tag_ids list are removed.
+                        only tags with IDs in the tag_ids list are kept (if tag_ids is empty,
+                        all tags are kept). In blacklist mode, tags with IDs in the tag_ids
+                        list are removed.
             tag_ids: List of tag IDs to filter by. Behavior depends on filter_mode.
+                    An empty list means no filtering (all tags pass) for whitelist mode.
         """
         if tag_ids is None:
             tag_ids = []
 
+        if filter_mode not in ["whitelist", "blacklist"]:
+            raise ValueError(
+                f"filter_mode must be 'whitelist' or 'blacklist', got '{filter_mode}'"
+            )
+
         self.filter_mode = filter_mode
         self.tag_ids = set(tag_ids)  # Use set for O(1) lookup
 
-        if self.filter_mode not in ["whitelist", "blacklist"]:
-            raise ValueError(f"filter_mode must be 'whitelist' or 'blacklist', got '{filter_mode}'")
-
-        self.last_input_detections: Optional[Union[List[Detection], List[CustomDetection]]] = None
+        self.last_input_detections: Optional[
+            Union[List[Detection], List[CustomDetection]]
+        ] = None
         self.last_input_detections_lock: Lock = Lock()
 
-    def run(self, detections: Union[List[Detection], List[CustomDetection], None]) -> Union[List[Detection], List[CustomDetection], None]:
+    def run(
+        self, detections: Union[List[Detection], List[CustomDetection], None]
+    ) -> Union[List[Detection], List[CustomDetection], None]:
         """Filter the detections based on the configured whitelist/blacklist.
 
         Args:
@@ -57,16 +65,13 @@ class TagFilter:
             tag_id = detection.tag_id
 
             if self.filter_mode == "whitelist":
-                # Keep only tags in the whitelist
-                if tag_id in self.tag_ids:
+                # Keep tags in the whitelist, or all tags if whitelist is empty
+                if not self.tag_ids or tag_id in self.tag_ids:
                     filtered_detections.append(detection)
             elif self.filter_mode == "blacklist":
                 # Remove tags in the blacklist
                 if tag_id not in self.tag_ids:
                     filtered_detections.append(detection)
-            else:
-                # If no tag_ids provided, all IDs pass
-                filtered_detections.append(detection)
 
         return filtered_detections
 
@@ -79,7 +84,9 @@ class TagFilter:
         if "filter_mode" in json_config:
             new_mode = json_config["filter_mode"]
             if new_mode not in ["whitelist", "blacklist"]:
-                raise ValueError(f"filter_mode must be 'whitelist' or 'blacklist', got '{new_mode}'")
+                raise ValueError(
+                    f"filter_mode must be 'whitelist' or 'blacklist', got '{new_mode}'"
+                )
             self.filter_mode = new_mode
 
         if "tag_ids" in json_config:
@@ -112,12 +119,11 @@ class TagFilter:
                     is_kept = tag_id in self.tag_ids
                 elif self.filter_mode == "blacklist":
                     is_kept = tag_id not in self.tag_ids
-                else:
-                    # If no tag_ids provided, all IDs are kept
-                    is_kept = True
 
                 # Choose color based on whether the tag is kept or excluded
-                color = (0, 255, 0) if is_kept else (0, 0, 255)  # Green for kept, Red for excluded
+                color = (
+                    (0, 255, 0) if is_kept else (0, 0, 255)
+                )  # Green for kept, Red for excluded
 
                 # Draw the bounding box
                 corners = detection.corners.astype(int)

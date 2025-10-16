@@ -30,6 +30,7 @@ uv run python src/rust_implementations/create_module.py module_name "Module desc
 ```
 
 This creates the following structure:
+
 ```
 src/rust_implementations/modules/module_name/
 ├── Cargo.toml
@@ -66,7 +67,7 @@ name = "module_name"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
 # Add your dependencies here
 ```
 
@@ -136,8 +137,9 @@ use ndarray::Array2;
 use pyo3::prelude::*;
 
 // Convert flat Python list to 4x4 ndarray
-fn list_to_pose(pose_flat: Vec<f64>) -> Array2<f64> {
-    Array2::from_shape_vec((4, 4), pose_flat).unwrap()
+fn list_to_pose(pose_flat: Vec<f64>) -> PyResult<Array2<f64>> {
+    Array2::from_shape_vec((4, 4), pose_flat)
+        .map_err(|e| PyErr::new_err(format!("invalid shape for pose: {}", e)))
 }
 
 // Convert ndarray back to flat Python list
@@ -174,11 +176,18 @@ impl RustClassName {
 #### Main Operation Wrapper
 
 ```python
+import json
 import numpy as np
 from typing import Optional, Any
 
 # Import the Rust module (built automatically)
-from module_name import RustClassName
+try:
+    from module_name import RustClassName
+except ImportError as e:
+    raise ImportError(
+        "Rust module_name module not available. "
+        "Please build the Rust extension first by running: uv run python src/rust_implementations/build.py"
+    ) from e
 
 
 class OperationNameDefinition:
@@ -207,12 +216,6 @@ class OperationNameDefinition:
             param1: Description of parameter.
             param2: Description of parameter.
         """
-        if RustClassName is None:
-            raise ImportError(
-                "Rust module_name module not available. "
-                "Please build the Rust extension first."
-            )
-
         self._rust_impl = RustClassName(
             param1=param1,
             param2=param2,
@@ -249,7 +252,7 @@ class OperationNameDefinition:
         Args:
             json_config: Configuration dictionary.
         """
-        self._rust_impl.update_config(json_config)
+        self._rust_impl.update_config(json.dumps(json_config))
 
         # Update stored parameters
         if "param1" in json_config:

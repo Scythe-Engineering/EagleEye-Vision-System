@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Tuple
 from threading import Lock
 
-from ..modules.apriltags.pre_processing.ai_accelleration.position_apriltag_preprocessor import (
+from ..modules.apriltags.pre_processing.ai_acceleration.position_apriltag_preprocessor import (
     PositionApriltagPreprocessor,
 )
 from src.utils.device_management_utils.compute_pool import ComputePool
@@ -36,7 +36,7 @@ class PositionApriltagPreprocessorDefinition:
             padding_factor=padding_factor,
         )
 
-        self.last_crop_regions: list[tuple[np.ndarray, np.ndarray]] = []
+        self.last_crop_regions: list[tuple[int, int, int, int]] = []
         self.last_crop_regions_lock: Lock = Lock()
 
     def run(
@@ -49,7 +49,7 @@ class PositionApriltagPreprocessorDefinition:
             output_size: Optional output size for scaling the regions.
 
         Returns:
-            Processed frame with non-ROI regions replaced with black pixels.
+            List of tuples containing processed regions and their coordinates, or None if no outputs.
         """
         with self.last_crop_regions_lock:
             outputs, self.last_crop_regions = self.preprocessor.process_frame(

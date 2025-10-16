@@ -5,7 +5,6 @@ from src.utils.camera_utils.cameras.camera import Camera
 from src.utils.colors import Colors
 import imutils
 from tqdm import tqdm
-from line_profiler import profile
 
 
 class VideoFileCamera(Camera):
@@ -51,7 +50,6 @@ class VideoFileCamera(Camera):
         if not self.cap.isOpened():
             raise RuntimeError(f"Error opening video file {self.video_path}")
 
-    @profile
     def get_frame(self) -> np.ndarray | None:
         """
         Read the next frame, rotate it, and return.

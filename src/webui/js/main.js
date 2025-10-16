@@ -9,8 +9,29 @@ import { Matrix4 } from "three";
 
 const mmToM = 1000;
 
+// Function to get the currently active view ID
+function getCurrentViewId() {
+    // First check URL parameter
+    const url = new URL(globalThis.location.href);
+    const tabParam = url.searchParams.get("tab");
+    if (tabParam && document.getElementById(tabParam)) {
+        return tabParam;
+    }
+
+    // Fallback: find the view that doesn't have the 'hidden' class
+    const views = document.querySelectorAll("[id^='view-']");
+    for (const view of views) {
+        if (!view.classList.contains("hidden")) {
+            return view.id;
+        }
+    }
+
+    // Default fallback
+    return "view-views";
+}
+
 // Function to refresh views when connection is re-established
-async function refreshViewsOnReconnection() {
+async function refreshViewsOnReconnection(currentViewId) {
     console.log("Refreshing views after reconnection");
 
     try {
@@ -97,10 +118,10 @@ window.onload = async () => {
             // Brief delay to allow connection to stabilize before refreshing views
             setTimeout(async () => {
                 wasDisconnected = false;
-                await refreshViewsOnReconnection();
+                const currentViewId = getCurrentViewId();
+                await refreshViewsOnReconnection(currentViewId);
             }, 500);
         }
-        wasDisconnected = false;
     });
 
     es.addEventListener("heartbeat", (e) => {
@@ -153,6 +174,7 @@ window.onload = async () => {
     setInterval(() => {
         if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
             console.warn("SSE connection lost - heartbeat timeout");
+            wasDisconnected = true;
             showConnectionLostOverlay();
         }
     }, 2000);

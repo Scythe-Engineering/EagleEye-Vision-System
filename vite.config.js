@@ -6,7 +6,7 @@ import handlebars from "vite-plugin-handlebars";
 export default defineConfig({
     server: {
         watch: {
-            include: ["**/*"],
+            include: ["src/**/*"],
             exclude: ["static/**", "**/web_server.py"],
         },
     },

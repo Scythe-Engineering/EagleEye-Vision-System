@@ -102,15 +102,22 @@ class TemporalAccelerationPreprocessorRustDefinition:
                 input_data.astype(np.float32).flatten().tolist()
             )
             self._rust_impl.back_propagate_input(transform_flat)
+        else:
+            raise ValueError(
+                f"Expected 4x4 numpy array for input_data, got {type(input_data)} "
+                f"with shape {getattr(input_data, 'shape', 'N/A')}"
+            )
 
-    def run(self, frame: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
+    def run(
+        self, frame: np.ndarray
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
         """Generate predicted ROIs for the current frame using Rust implementation.
 
         Args:
             frame: Input frame (BGR) for which to generate ROIs.
 
         Returns:
-            List of (cropped_image, (offset_x, offset_y)) tuples for detector input.
+            Tuple of (list of (cropped_image, (offset_x, offset_y)) tuples, original frame).
         """
         height, width = frame.shape[:2]
         _crops_data, crop_regions = self._rust_impl.process_frame(width, height)

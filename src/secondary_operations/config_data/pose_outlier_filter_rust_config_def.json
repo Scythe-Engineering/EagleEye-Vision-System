@@ -57,15 +57,6 @@
             "max": 10.0,
             "restart_for_change": false
         },
-        "min_samples_for_covariance": {
-            "type": "int",
-            "description": "Minimum samples needed before computing pose covariance for advanced gating",
-            "default": 15,
-            "required": false,
-            "min": 5,
-            "max": 50,
-            "restart_for_change": false
-        },
         "angular_gate_threshold": {
             "type": "float",
             "description": "Maximum angular difference in radians for pose acceptance",

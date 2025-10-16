@@ -2,10 +2,12 @@ import numpy as np
 from typing import Optional, Tuple
 from threading import Lock
 
-from ..modules.apriltags.pre_processing.ai_accelleration.grid_apriltag_cnn_preprocessor import (
+from ..modules.apriltags.pre_processing.ai_acceleration.grid_apriltag_cnn_preprocessor import (
     GridApriltagCnnPreprocessor,
 )
 from src.utils.device_management_utils.compute_pool import ComputePool
+
+BoundingBox = tuple[int, int, int, int]
 
 
 class GridApriltagCnnPreprocessorDefinition:
@@ -32,12 +34,12 @@ class GridApriltagCnnPreprocessorDefinition:
             conf_threshold=conf_threshold,
         )
 
-        self.last_crop_regions: list[tuple[np.ndarray, np.ndarray]] = []
+        self.last_crop_regions: list[BoundingBox] = []
         self.last_crop_regions_lock: Lock = Lock()
 
     def run(
         self, frame: np.ndarray, output_size: Optional[Tuple[int, int]] = None
-    ) -> np.ndarray:
+    ) -> Optional[np.ndarray]:
         """Process a frame through the CNN preprocessor.
 
         Args:
@@ -45,7 +47,8 @@ class GridApriltagCnnPreprocessorDefinition:
             output_size: Optional output size for scaling the regions.
 
         Returns:
-            Processed frame with non-ROI regions replaced with black pixels.
+            Processed frame with non-ROI regions replaced with black pixels,
+            or None when processing fails.
         """
         with self.last_crop_regions_lock:
             outputs, self.last_crop_regions = self.preprocessor.process_frame(

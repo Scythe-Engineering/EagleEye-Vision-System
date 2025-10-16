@@ -14,7 +14,11 @@ def get_cpu_name():
             return platform.processor()
         elif os.name == "posix":
             result = subprocess.run(
-                ["lscpu"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                ["lscpu"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5,
             )
             for line in result.stdout.splitlines():
                 if "Model name" in line:
@@ -27,10 +31,14 @@ def get_cpu_name():
 def get_gpu_devices() -> list[str]:
     """Get available GPU devices using PyTorch."""
     gpu_devices = []
-    if torch.cuda.is_available():
-        gpu_count = torch.cuda.device_count()
-        for i in range(gpu_count):
-            gpu_devices.append(torch.cuda.get_device_name(i))
+    try:
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            for i in range(gpu_count):
+                gpu_devices.append(torch.cuda.get_device_name(i))
+    except Exception as e:
+        print(f"{Colors.RED}Error detecting CUDA devices: {e}{Colors.RESET}")
+        return []
     return gpu_devices
 
 
@@ -39,14 +47,18 @@ def get_coral_tpu_devices() -> list[str]:
     coral_devices = []
     try:
         result = subprocess.run(
-            ["lsusb"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            ["lsusb"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
         )
         coral_count = 0
         for line in result.stdout.splitlines():
             if "Global Unichip Corp." in line:
                 coral_devices.append(f"coral:{coral_count}")
                 coral_count += 1
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return coral_devices
 
@@ -68,7 +80,7 @@ def get_memryx_tpu_devices() -> list[str]:
 
 def get_tpu_devices() -> list[str]:
     """Get available TPU devices (Linux only)."""
-    if os.name != "posix":
+    if platform.system() != "Linux":
         return []
 
     tpu_devices = []

@@ -3,14 +3,12 @@ import time
 import traceback
 from typing import Dict, Optional, Tuple, Union
 
-import cv2
 import numpy as np
 
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
 from src.webui.web_server import EagleEyeInterface
-from line_profiler import profile
 
 
 class CameraThreadManager:
@@ -30,7 +28,6 @@ class CameraThreadManager:
         self.current_frames: Dict[str, Tuple[np.ndarray, float]] = {}
         self.start_time_ms = time.time() * 1000.0
 
-    @profile
     def camera_feed_worker(
         self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]
     ) -> None:

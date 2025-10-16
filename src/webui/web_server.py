@@ -475,7 +475,13 @@ class EagleEyeInterface:
                 if success:
                     frame = encoded_frame.tobytes()
                 else:
-                    frame = no_image
+                    success_no_image, encoded_no_image = cv2.imencode(".jpg", no_image)
+                    if success_no_image:
+                        frame = encoded_no_image.tobytes()
+                    else:
+                        raise RuntimeError(
+                            "Failed to encode both frame and no_image fallback"
+                        )
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 

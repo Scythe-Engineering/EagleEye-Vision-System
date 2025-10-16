@@ -10,31 +10,35 @@ When committing multiple related changes, group files by functionality and commi
 ## Commit Message Format
 
 Use current tense with comma-separated changes:
+
 ```
 change, change, change, change, etc
 ```
 
 Each change should be:
+
 - Short but descriptive
 - In current tense (add, update, remove, etc.)
-- Focus on what was changed, not an overarching "update file.py" or "update implementation in file.py" but you should include what was actually changed in the file.
+- Focus on what was changed, not generic descriptions like "update file.py" or "update implementation in file.py"
 
 ## Batching Strategy
 
 Group files by logical functionality:
 
 1. **New Features/Operations**: All files related to a single new feature or operation
-   - Implementation files
-   - Configuration files
-   - Documentation
-   - Tests (if applicable)
+
+    - Implementation files
+    - Configuration files
+    - Documentation
+    - Tests (if applicable)
 
 2. **Secondary Operations**: Related secondary pipeline operations and their configs
 
 3. **Core Module Updates**: Changes to existing modules that work together
-   - Core logic updates
-   - Training/model files
-   - Test data updates
+
+    - Core logic updates
+    - Training/model files
+    - Test data updates
 
 4. **Documentation**: Documentation updates separate from code changes
 
@@ -60,7 +64,8 @@ git commit -m "update operation documentation, update implementation guide"
 
 ## Best Practices
 
-- Keep commits focused on single logical units of work
+Verify commits don't break builds before pushing
+
 - Use descriptive action verbs (add, update, remove, refactor, etc.)
 - Avoid generic messages like "fix bugs" or "update code"
 - Group by feature/functionality, not by file type
