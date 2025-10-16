@@ -30,6 +30,8 @@ with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
     no_image_bytes = f.read()
 
 no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
+no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
 
 
 class EagleEyeInterface:
@@ -53,9 +55,9 @@ class EagleEyeInterface:
         """
         if log is None:
 
-            def colored_log(message: str) -> None:
+            def colored_log(*messages: object) -> None:
                 """Log function with automatic color coding based on message content."""
-                message = str(message)
+                message = " ".join(str(m) for m in messages)
                 if any(
                     word in message.lower() for word in ["error", "failed", "exception"]
                 ):
@@ -472,16 +474,7 @@ class EagleEyeInterface:
                     interpolation=cv2.INTER_AREA,
                 )
                 success, encoded_frame = cv2.imencode(".jpg", resized_frame)
-                if success:
-                    frame = encoded_frame.tobytes()
-                else:
-                    success_no_image, encoded_no_image = cv2.imencode(".jpg", no_image)
-                    if success_no_image:
-                        frame = encoded_no_image.tobytes()
-                    else:
-                        raise RuntimeError(
-                            "Failed to encode both frame and no_image fallback"
-                        )
+                frame = encoded_frame.tobytes() if success else no_image_jpeg_bytes
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
@@ -520,7 +513,7 @@ class EagleEyeInterface:
         """
         import queue
 
-        q: queue.Queue = queue.Queue()
+        q: queue.Queue = queue.Queue(maxsize=100)
         # assume single client: set queue, replacing any existing queue
         with self._sse_queue_lock:
             self._sse_queue = q
@@ -560,8 +553,23 @@ class EagleEyeInterface:
                 # Use put_nowait to avoid blocking, and catch Full exception
                 q.put_nowait(msg)
             except queue.Full:
-                # Queue is full, client might be slow or disconnected
-                self.log(f"SSE queue full, dropping {event_name} event")
+                # Queue is full, drop the oldest item and retry
+                try:
+                    q.get_nowait()  # Remove oldest item
+                    q.put_nowait(msg)  # Try again with new message
+                    self.log(
+                        f"SSE queue full, dropped oldest event to add {event_name}"
+                    )
+                except queue.Empty:
+                    # Shouldn't happen, but log if queue became empty
+                    self.log(
+                        f"SSE queue unexpectedly empty when trying to drop oldest for {event_name}"
+                    )
+                except queue.Full:
+                    # Still full after dropping oldest, skip this event
+                    self.log(
+                        f"SSE queue still full after dropping oldest, dropping {event_name} event"
+                    )
             except Exception as e:
                 # Other error, client likely disconnected
                 self.log(f"SSE publish error for {event_name}: {e}")
