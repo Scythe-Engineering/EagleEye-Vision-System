@@ -13,7 +13,7 @@ class TagFilter:
     def __init__(
         self,
         filter_mode: str = "whitelist",
-        tag_ids: List[int] = None,
+        tag_ids: Optional[List[int]] = None,
     ) -> None:
         """Initialize the tag filter.
 
@@ -116,7 +116,7 @@ class TagFilter:
                 is_kept = False
 
                 if self.filter_mode == "whitelist":
-                    is_kept = tag_id in self.tag_ids
+                    is_kept = not self.tag_ids or tag_id in self.tag_ids
                 elif self.filter_mode == "blacklist":
                     is_kept = tag_id not in self.tag_ids
 
