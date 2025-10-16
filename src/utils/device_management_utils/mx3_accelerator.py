@@ -9,6 +9,8 @@ from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
 
 print(f"{Colors.GREEN}MX3 Library initialized{Colors.RESET}")
 
+POLL_INTERVAL_S = 0.001
+
 
 class MX3ModelIO:
     def __init__(
@@ -71,9 +73,19 @@ class MX3ModelIO:
             f"{Colors.GREEN}Connected {stream_count} streams to the model.{Colors.RESET}"
         )
 
-    def sequential_run(self, stream_idx: int, data_array: np.ndarray) -> np.ndarray:
+    def sequential_run(
+        self, stream_idx: int, data_array: np.ndarray, timeout_s: float = 5.0
+    ) -> np.ndarray:
         """
         Run a model on the MX3 accelerator. (sequential)
+
+        Args:
+            stream_idx (int): Index of the stream to be run.
+            data_array (np.ndarray): Input data array.
+            timeout_s (float): Timeout in seconds for waiting for output.
+
+        Returns:
+            np.ndarray: Processed output data.
         """
         start_output_time = self.model_most_recent_outputs.get(stream_idx, None)
 
@@ -84,11 +96,20 @@ class MX3ModelIO:
 
         self.model_most_recent_inputs[stream_idx] = data_array
 
+        deadline = time.time() + timeout_s
         while stream_idx not in self.model_most_recent_outputs:
-            time.sleep(0.001)
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"Timed out waiting for first output on stream {stream_idx}"
+                )
+            time.sleep(POLL_INTERVAL_S)
 
         while start_output_time == self.model_most_recent_outputs[stream_idx][1]:
-            time.sleep(0.001)
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"Timed out waiting for updated output on stream {stream_idx}"
+                )
+            time.sleep(POLL_INTERVAL_S)
 
         return self.model_most_recent_outputs[stream_idx][0][0]
 

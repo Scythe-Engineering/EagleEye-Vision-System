@@ -41,7 +41,7 @@ def _get_v4l2_device_output() -> str | None:
 
 def _is_device_name_line(line: str) -> bool:
     """Check if line contains a device name."""
-    return line and not line.startswith(" ") and not line.startswith("\t")
+    return bool(line) and not line.startswith((" ", "\t"))
 
 
 def _should_skip_device(device_name: str) -> bool:
