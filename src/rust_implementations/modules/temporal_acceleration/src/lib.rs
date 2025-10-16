@@ -169,6 +169,7 @@ impl TemporalAcceleration {
 
             // Project corners (no distortion applied here)
 	            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
+	            let mut valid_count = 0usize;
 	            let (k1, k2, p1, p2, k3) = extract_brown_conrady_coefficients(&self.distortion_coefficients);
             for c in 0..4 {
                 let p = [
@@ -186,9 +187,10 @@ impl TemporalAcceleration {
 	                let x = fx * xd + cx;
 	                let y = fy * yd + cy;
 	                img_pts[c] = [x, y];
+	                valid_count += 1;
             }
 
-            if !img_pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()) {
+            if valid_count < 4 || !img_pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()) {
                 continue;
             }
 

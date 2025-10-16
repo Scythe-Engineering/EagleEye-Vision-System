@@ -341,8 +341,8 @@ impl PoseOutlierFilter {
                 let last_position = last_pose.slice(s![..3, 3]);
                 let velocity = (position - &last_position) / dt;
                 // Exponential smoothing of velocity
-                self.last_velocity = self.velocity_smoothing_alpha * &velocity
-                    + (1.0 - self.velocity_smoothing_alpha) * &self.last_velocity;
+                self.last_velocity = &velocity * self.velocity_smoothing_alpha
+                    + &self.last_velocity * (1.0 - self.velocity_smoothing_alpha);
             }
         }
 

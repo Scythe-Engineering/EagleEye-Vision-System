@@ -109,10 +109,6 @@ class RustModuleBuilder:
         module_name = module_dir.name
 
         # Check if the compiled artifact exists
-        artifact_path = module_dir / f"{module_name}.so"
-        if not artifact_path.exists():
-            return True
-
         current_hash = self.get_module_hash(module_dir)
         cached_hash = cache.get(module_name, {}).get("hash")
 
