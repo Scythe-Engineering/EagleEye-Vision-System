@@ -51,6 +51,7 @@ class Pipeline:
             deque(maxlen=50) for _ in range(len(self.operations))
         ]
         self.total_time_history: deque[float] = deque(maxlen=50)
+        self.total_time_history_lock = threading.Lock()
         self.all_total_times: List[float] = []
 
         self.set_visualize = False
@@ -191,7 +192,8 @@ class Pipeline:
                 raise RuntimeError(
                     f"Error in operation {i} ({type(operation).__name__}): {traceback.format_exc()}"
                 )
-        self.total_time_history.append(time_elapsed)
+        with self.total_time_history_lock:
+            self.total_time_history.append(time_elapsed)
         self.all_total_times.append(time_elapsed)
         if debug_mode:
             print_timing_summary(
@@ -338,19 +340,22 @@ class Pipeline:
                 break
 
         # Add FPS display in top left corner
-        if self.total_time_history:
-            avg_time = sum(self.total_time_history) / len(self.total_time_history)
-            fps = 1.0 / avg_time if avg_time > 0 else 0.0
-            fps_text = f"FPS: {fps:.1f}"
-            cv2.putText(
-                current_frame,
-                fps_text,
-                (30, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 255, 255),  # Yellow color in BGR
-                2,
-            )
+        with self.total_time_history_lock:
+            if self.total_time_history:
+                avg_time = sum(self.total_time_history) / len(self.total_time_history)
+            else:
+                avg_time = 0.0
+        fps = 1.0 / avg_time if avg_time > 0 else 0.0
+        fps_text = f"FPS: {fps:.1f}"
+        cv2.putText(
+            current_frame,
+            fps_text,
+            (30, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 255),  # Yellow color in BGR
+            2,
+        )
 
         return current_frame
 
