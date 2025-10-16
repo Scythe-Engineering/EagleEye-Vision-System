@@ -131,20 +131,27 @@ export async function init3DView(modelUrl) {
         while (scene.children.length > 0) {
             const child = scene.children[0];
             scene.remove(child);
-
-            // Dispose of geometries and materials to free memory
-            if (child.geometry) {
-                child.geometry.dispose();
-            }
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    for (const material of child.material) {
-                        material.dispose();
-                    }
-                } else {
-                    child.material.dispose();
+            child.traverse((node) => {
+                // dispose geometry
+                if (node.geometry) {
+                    node.geometry.dispose();
                 }
-            }
+                // dispose material(s) and any bound textures
+                if (node.material) {
+                    const materials = Array.isArray(node.material)
+                        ? node.material
+                        : [node.material];
+                    for (const m of materials) {
+                        for (const key in m) {
+                            const val = m[key];
+                            if (val && val.isTexture) {
+                                val.dispose();
+                            }
+                        }
+                        m.dispose();
+                    }
+                }
+            });
         }
 
         // Clear the scene
@@ -328,14 +335,17 @@ export async function init3DView(modelUrl) {
         },
     );
 
-    document
-        .getElementById("toggleGamePiecesBtn")
-        .addEventListener("click", () => {
-            gamePiecesVisible = !gamePiecesVisible;
-            for (const gp of gamePieces) {
-                gp.visible = gamePiecesVisible;
-            }
-        });
+    if (!globalThis.__eev_gamePiecesToggleAttached) {
+        document
+            .getElementById("toggleGamePiecesBtn")
+            .addEventListener("click", () => {
+                gamePiecesVisible = !gamePiecesVisible;
+                for (const gp of gamePieces) {
+                    gp.visible = gamePiecesVisible;
+                }
+            });
+        globalThis.__eev_gamePiecesToggleAttached = true;
+    }
 
     let clock = new Clock();
     let delta = 0;
@@ -357,30 +367,39 @@ export async function init3DView(modelUrl) {
         }
     }
 
-    globalThis.addEventListener("resize", () => {
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-    });
+    if (!globalThis.__eev_resizeAttached) {
+        const onResize = () => {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        };
+        globalThis.addEventListener("resize", onResize);
+        globalThis.__eev_resizeAttached = true;
+    }
 
-    document.getElementById("toggleShadowBtn").addEventListener("click", () => {
-        shadowsEnabled = !shadowsEnabled;
-        scene.traverse((object) => {
-            if (object.isMesh && !object.excludeFromShadowToggle) {
-                object.castShadow = shadowsEnabled;
-                object.receiveShadow = shadowsEnabled;
-            }
-        });
-        directionalLight.castShadow = shadowsEnabled;
-        renderer.shadowMap.enabled = shadowsEnabled;
+    if (!globalThis.__eev_shadowToggleAttached) {
+        document
+            .getElementById("toggleShadowBtn")
+            .addEventListener("click", () => {
+                shadowsEnabled = !shadowsEnabled;
+                scene.traverse((object) => {
+                    if (object.isMesh && !object.excludeFromShadowToggle) {
+                        object.castShadow = shadowsEnabled;
+                        object.receiveShadow = shadowsEnabled;
+                    }
+                });
+                directionalLight.castShadow = shadowsEnabled;
+                renderer.shadowMap.enabled = shadowsEnabled;
 
-        // Force shadow map update when shadows are re-enabled
-        if (shadowsEnabled) {
-            renderer.shadowMap.needsUpdate = true;
-        }
-    });
+                // Force shadow map update when shadows are re-enabled
+                if (shadowsEnabled) {
+                    renderer.shadowMap.needsUpdate = true;
+                }
+            });
+        globalThis.__eev_shadowToggleAttached = true;
+    }
 
     // Add AprilTag PNGs as planes at fiducial transforms
     fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
