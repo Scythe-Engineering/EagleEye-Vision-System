@@ -19,6 +19,7 @@ class PnpLocalization:
         camera_matrix: np.ndarray,
         distortion_coefficients: np.ndarray,
         apriltag_map: Dict[int, Apriltag],
+        jump_threshold: float = 2.0,
     ) -> None:
         """Initialize the AprilTag pose estimator.
 
@@ -26,6 +27,8 @@ class PnpLocalization:
             camera_matrix (np.ndarray): Camera intrinsic matrix.
             distortion_coefficients (np.ndarray): Camera distortion coefficients.
             apriltag_map (Dict[int, Apriltag]): Mapping of tag IDs to AprilTag objects.
+            jump_threshold (float): Maximum distance threshold in meters for pose jumps.
+                                   Poses beyond this threshold trigger cache clearing.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
         dist = distortion_coefficients.astype(np.float32, copy=False)
@@ -34,6 +37,7 @@ class PnpLocalization:
         self.distortion_coefficients = dist
 
         self.apriltag_map = apriltag_map
+        self.jump_threshold = jump_threshold
         self.last_pose = None
         self._last_camera_space_pose = None
         self._last_rvec = None
@@ -205,7 +209,7 @@ class PnpLocalization:
             distance = np.linalg.norm(
                 global_camera_transform[:3, 3] - self.last_pose[:3, 3]
             )
-            if distance > 2.0:
+            if distance > self.jump_threshold:
                 # Clear cache and recompute without extrinsic guess
                 self.clear_position_cache()
 
