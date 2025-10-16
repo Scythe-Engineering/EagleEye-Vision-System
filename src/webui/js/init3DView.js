@@ -39,6 +39,9 @@ let animationStarted = false;
 let maxFPS = 30;
 let interval = 1 / maxFPS;
 
+const robotScaleMatrix = new Matrix4().makeScale(1000, 1000, 1000);
+const robotFinalMatrix = new Matrix4();
+
 function updateStats() {
     const currentTime = performance.now();
     frameCount++;
@@ -493,22 +496,11 @@ export async function init3DView(modelUrl) {
 
 export function updateRobotTransform(transformMatrix) {
     if (robotObject) {
-        // Create a scale matrix to preserve the robot's scale (1000)
-        const scaleMatrix = new Matrix4();
-        scaleMatrix.makeScale(1000, 1000, 1000);
-
-        // Combine the input transformation with the scale
-        const finalMatrix = new Matrix4();
-        finalMatrix.multiplyMatrices(transformMatrix, scaleMatrix);
+        robotFinalMatrix.multiplyMatrices(transformMatrix, robotScaleMatrix);
 
         robotObject.matrixAutoUpdate = false;
-        robotObject.matrix.copy(finalMatrix);
+        robotObject.matrix.copy(robotFinalMatrix);
         robotObject.matrixWorldNeedsUpdate = true;
-
-        // Force immediate re-render when transformation updates
-        if (renderer && scene && camera) {
-            renderer.render(scene, camera);
-        }
     } else {
         console.warn("Robot not initialized yet");
     }
