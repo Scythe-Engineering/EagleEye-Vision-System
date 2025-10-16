@@ -1,4 +1,4 @@
-from imutils.convenience import cv2
+import cv2
 import numpy as np
 from typing import Optional, Tuple
 from threading import Lock
