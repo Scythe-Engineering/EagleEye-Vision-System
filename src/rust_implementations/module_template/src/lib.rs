@@ -27,6 +27,6 @@ impl {{MODULE_CLASS_NAME}} {
     /// Example method - replace with your actual functionality
     fn process(&self, _input: &PyAny) -> PyResult<PyObject> {
         // Implement your logic here
-        Ok(_input.py().None())
+        Ok(_input.py().None().into())
     }
 }

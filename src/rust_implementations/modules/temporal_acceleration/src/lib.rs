@@ -168,7 +168,8 @@ impl TemporalAcceleration {
             }
 
             // Project corners (no distortion applied here)
-            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
+	            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
+	            let (k1, k2, p1, p2, k3) = extract_brown_conrady_coefficients(&self.distortion_coefficients);
             for c in 0..4 {
                 let p = [
                     corners_world[c * 3 + 0],
@@ -179,9 +180,12 @@ impl TemporalAcceleration {
                 if !pc[2].is_finite() || pc[2] <= 0.0 {
                     continue;
                 }
-                let x = fx * (pc[0] / pc[2]) + cx;
-                let y = fy * (pc[1] / pc[2]) + cy;
-                img_pts[c] = [x, y];
+	                let xn = pc[0] / pc[2];
+	                let yn = pc[1] / pc[2];
+	                let (xd, yd) = distort_brown_conrady(xn, yn, k1, k2, p1, p2, k3);
+	                let x = fx * xd + cx;
+	                let y = fy * yd + cy;
+	                img_pts[c] = [x, y];
             }
 
             if !img_pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()) {
@@ -366,4 +370,51 @@ fn bbox_from_points(
     if right > width { right = width; }
     if bottom > height { bottom = height; }
     Some([left, top, right, bottom])
+}
+
+fn extract_brown_conrady_coefficients(coefficients: &Vec<f32>) -> (f32, f32, f32, f32, f32) {
+	let k1 = *coefficients.get(0).unwrap_or(&0.0);
+	let k2 = *coefficients.get(1).unwrap_or(&0.0);
+	let p1 = *coefficients.get(2).unwrap_or(&0.0);
+	let p2 = *coefficients.get(3).unwrap_or(&0.0);
+	let k3 = *coefficients.get(4).unwrap_or(&0.0);
+	(k1, k2, p1, p2, k3)
+}
+
+fn distort_brown_conrady(x: f32, y: f32, k1: f32, k2: f32, p1: f32, p2: f32, k3: f32) -> (f32, f32) {
+	let r2 = x * x + y * y;
+	let r4 = r2 * r2;
+	let r6 = r4 * r2;
+	let radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
+	let x_tangential = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+	let y_tangential = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
+	(x * radial + x_tangential, y * radial + y_tangential)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn distort_identity_when_zero_coefficients() {
+		let (xd, yd) = distort_brown_conrady(0.1, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0);
+		assert!((xd - 0.1).abs() < 1e-6);
+		assert!((yd + 0.2).abs() < 1e-6);
+	}
+
+	#[test]
+	fn distort_radial_only_positive_k1() {
+		let x = 0.2f32;
+		let y = 0.1f32;
+		let k1 = 0.5f32;
+		let k2 = 0.0f32;
+		let k3 = 0.0f32;
+		let p1 = 0.0f32;
+		let p2 = 0.0f32;
+		let r2 = x * x + y * y;
+		let radial = 1.0 + k1 * r2;
+		let (xd, yd) = distort_brown_conrady(x, y, k1, k2, p1, p2, k3);
+		assert!((xd - x * radial).abs() < 1e-6);
+		assert!((yd - y * radial).abs() < 1e-6);
+	}
 }

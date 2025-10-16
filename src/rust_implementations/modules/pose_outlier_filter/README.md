@@ -4,7 +4,7 @@ A high-performance Rust implementation of a pose outlier filter for pose estimat
 
 ## Overview
 
-The Pose Outlier Filter implements a constant velocity prediction model with adaptive uncertainty growth. It maintains a sliding window of accepted poses and uses Mahalanobis gating to determine whether new pose measurements are consistent with expected motion.
+The Pose Outlier Filter implements a constant velocity prediction model with adaptive uncertainty growth. It maintains a sliding window of accepted poses and uses Euclidean distance with adaptive thresholds to determine whether new pose measurements are consistent with expected motion.
 
 ## Key Features
 
@@ -67,7 +67,8 @@ else:
 
 1. Computes Euclidean distance between predicted and measured positions
 2. Calculates angular error using rotation matrix comparison
-3. Applies gating thresholds with adaptive relaxation
+3. Applies adaptive gating threshold: gate_k × (base_sigma × (1 + growth_rate × consecutive_rejections))
+4. Accepts pose if both position and angular errors are below their respective thresholds
 
 ### Update Step
 

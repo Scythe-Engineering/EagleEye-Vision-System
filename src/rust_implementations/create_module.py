@@ -36,28 +36,39 @@ def create_module(module_name: str, description: str) -> bool:
         print(f"{Colors.RED}Error: Module '{module_name}' already exists{Colors.RESET}")
         return False
 
-    shutil.copytree(template_dir, new_module_dir)
+    try:
+        shutil.copytree(template_dir, new_module_dir)
 
-    # Update template files
-    replacements = {
-        "{{MODULE_NAME}}": module_name,
-        "{{MODULE_CLASS_NAME}}": "".join(
-            word.capitalize() for word in module_name.split("_")
-        ),
-        "{{MODULE_DESCRIPTION}}": description,
-    }
+        # Update template files
+        replacements = {
+            "{{MODULE_NAME}}": module_name,
+            "{{MODULE_CLASS_NAME}}": "".join(
+                word.capitalize() for word in module_name.split("_")
+            ),
+            "{{MODULE_DESCRIPTION}}": description,
+        }
 
-    # Update files with replacements
-    for file_path in new_module_dir.rglob("*"):
-        if file_path.is_file():
-            try:
-                content = file_path.read_text()
-                for old, new in replacements.items():
-                    content = content.replace(old, new)
-                file_path.write_text(content)
-            except UnicodeDecodeError:
-                # Skip binary files
-                pass
+        # Update files with replacements
+        for file_path in new_module_dir.rglob("*"):
+            if file_path.is_file():
+                try:
+                    content = file_path.read_text()
+                    for old, new in replacements.items():
+                        content = content.replace(old, new)
+                    file_path.write_text(content)
+                except UnicodeDecodeError:
+                    # Skip binary files
+                    pass
+    except (OSError, PermissionError, IOError) as e:
+        # Clean up partially created module directory
+        try:
+            if new_module_dir.exists():
+                shutil.rmtree(new_module_dir)
+        except (OSError, PermissionError, IOError):
+            # Don't mask the original error if cleanup fails
+            pass
+        # Re-raise the original exception with additional context
+        raise RuntimeError(f"Failed to create module '{module_name}': {e}") from e
 
     print(f"{Colors.GREEN}✓ Created new module: {module_name}{Colors.RESET}")
     print(f"{Colors.CYAN}  Location: {new_module_dir}{Colors.RESET}")

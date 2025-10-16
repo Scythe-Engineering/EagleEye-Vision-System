@@ -1,4 +1,4 @@
-use ndarray::{Array2, Array1, Axis, s};
+use ndarray::{Array2, Array1, s};
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::collections::VecDeque;
@@ -35,9 +35,6 @@ pub struct PoseOutlierFilter {
     #[pyo3(get, set)]
     relax_factor: f64,
 
-    /// Min samples needed for Mahalanobis gating
-    #[pyo3(get, set)]
-    min_samples_for_covariance: usize,
 
     /// Max angular difference in radians for acceptance
     #[pyo3(get, set)]
@@ -58,14 +55,7 @@ pub struct PoseOutlierFilter {
     consecutive_rejections: usize,
     pos_uncertainty: f64,
 
-    // Covariance tracking
-    pose_covariance: Option<Array2<f64>>,
 
-    // Rolling window statistics for covariance
-    positions_window: VecDeque<Array1<f64>>,
-    positions_sum: Array1<f64>,
-    positions_outer_sum: Array2<f64>,
-    positions_count: usize,
 
     // State flags
     has_previous_pose: bool,
@@ -83,7 +73,6 @@ impl PoseOutlierFilter {
         gate_k=3.0,
         max_consecutive_rejections=10,
         relax_factor=2.0,
-        min_samples_for_covariance=15,
         angular_gate_threshold=0.5,
         velocity_smoothing_alpha=0.3,
         full_reset_threshold=10
@@ -95,11 +84,27 @@ impl PoseOutlierFilter {
         gate_k: f64,
         max_consecutive_rejections: usize,
         relax_factor: f64,
-        min_samples_for_covariance: usize,
         angular_gate_threshold: f64,
         velocity_smoothing_alpha: f64,
         full_reset_threshold: usize,
     ) -> Self {
+        assert!(
+            velocity_smoothing_alpha >= 0.0 && velocity_smoothing_alpha <= 1.0,
+            "velocity_smoothing_alpha must be in [0, 1]"
+        );
+        assert!(base_sigma > 0.0, "base_sigma must be positive");
+        assert!(gate_k > 0.0, "gate_k must be positive");
+        assert!(relax_factor > 0.0, "relax_factor must be positive");
+        assert!(history_size > 0, "history_size must be positive");
+        assert!(
+            max_consecutive_rejections > 0,
+            "max_consecutive_rejections must be positive"
+        );
+        assert!(
+            full_reset_threshold > 0,
+            "full_reset_threshold must be positive"
+        );
+
         PoseOutlierFilter {
             history_size,
             base_sigma,
@@ -107,7 +112,6 @@ impl PoseOutlierFilter {
             gate_k,
             max_consecutive_rejections,
             relax_factor,
-            min_samples_for_covariance,
             angular_gate_threshold,
             velocity_smoothing_alpha,
             full_reset_threshold,
@@ -117,13 +121,6 @@ impl PoseOutlierFilter {
             last_velocity: Array1::zeros(3),
             consecutive_rejections: 0,
             pos_uncertainty: base_sigma,
-
-            pose_covariance: None,
-
-            positions_window: VecDeque::with_capacity(history_size),
-            positions_sum: Array1::zeros(3),
-            positions_outer_sum: Array2::zeros((3, 3)),
-            positions_count: 0,
 
             has_previous_pose: false,
             last_accepted_pose: None,
@@ -149,7 +146,7 @@ impl PoseOutlierFilter {
 
         let current_timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| PyValueError::new_err(format!("System time error: {}", e)))?
             .as_secs_f64();
 
         let current_position = pose_array.slice(s![..3, 3]).to_owned();
@@ -163,12 +160,12 @@ impl PoseOutlierFilter {
             return Ok(Some(pose_array.iter().cloned().collect()));
         }
 
-        // Predict next pose using constant velocity model
-        let predicted_position = self.predict_next_position(current_timestamp);
-
         // Calculate dynamic uncertainty
         let current_sigma = self.base_sigma * (1.0 + self.growth_rate * self.consecutive_rejections as f64);
         self.pos_uncertainty = current_sigma;
+
+        // Predict next position based on velocity
+        let predicted_position = self.predict_next_position(current_timestamp);
 
         // Calculate Euclidean distance to predicted position
         let position_error = (&current_position - &predicted_position).mapv(|x| x * x).sum().sqrt();
@@ -207,44 +204,83 @@ impl PoseOutlierFilter {
     /// Update configuration parameters
     #[pyo3(signature = (config))]
     fn update_config(&mut self, config: std::collections::HashMap<String, PyObject>, py: Python) -> PyResult<()> {
-        use pyo3::FromPyObject;
 
         if let Some(val) = config.get("history_size") {
-            self.history_size = val.extract(py)?;
+            let history_size_candidate: usize = val.extract(py)?;
+            if history_size_candidate == 0 || history_size_candidate > 1000 {
+                return Err(PyValueError::new_err("history_size must be between 1 and 1000"));
+            }
+            self.history_size = history_size_candidate;
             // Resize deques
             let old_poses: Vec<_> = self.accepted_poses.iter().cloned().collect();
             let old_timestamps: Vec<_> = self.accepted_timestamps.iter().cloned().collect();
             self.accepted_poses = old_poses.into_iter().rev().take(self.history_size).rev().collect();
             self.accepted_timestamps = old_timestamps.into_iter().rev().take(self.history_size).rev().collect();
-
-            // Rebuild rolling covariance window
-            let old_positions: Vec<_> = self.positions_window.iter().cloned().collect();
-            self.positions_window = old_positions.into_iter().rev().take(self.history_size).rev().collect();
-
-            if !self.positions_window.is_empty() {
-                let stacked: Array2<f64> = Array2::from_shape_vec(
-                    (self.positions_window.len(), 3),
-                    self.positions_window.iter().flatten().cloned().collect::<Vec<_>>()
-                ).unwrap();
-                self.positions_sum = stacked.sum_axis(Axis(0));
-                self.positions_outer_sum = stacked.t().dot(&stacked);
-                self.positions_count = self.positions_window.len();
-            } else {
-                self.positions_sum = Array1::zeros(3);
-                self.positions_outer_sum = Array2::zeros((3, 3));
-                self.positions_count = 0;
-            }
         }
 
-        if let Some(val) = config.get("base_sigma") { self.base_sigma = val.extract(py)?; }
-        if let Some(val) = config.get("growth_rate") { self.growth_rate = val.extract(py)?; }
-        if let Some(val) = config.get("gate_k") { self.gate_k = val.extract(py)?; }
-        if let Some(val) = config.get("max_consecutive_rejections") { self.max_consecutive_rejections = val.extract(py)?; }
-        if let Some(val) = config.get("relax_factor") { self.relax_factor = val.extract(py)?; }
-        if let Some(val) = config.get("min_samples_for_covariance") { self.min_samples_for_covariance = val.extract(py)?; }
-        if let Some(val) = config.get("angular_gate_threshold") { self.angular_gate_threshold = val.extract(py)?; }
-        if let Some(val) = config.get("velocity_smoothing_alpha") { self.velocity_smoothing_alpha = val.extract(py)?; }
-        if let Some(val) = config.get("full_reset_threshold") { self.full_reset_threshold = val.extract(py)?; }
+        if let Some(val) = config.get("base_sigma") {
+            let base_sigma_candidate: f64 = val.extract(py)?;
+            if base_sigma_candidate <= 0.0 {
+                return Err(PyValueError::new_err("base_sigma must be greater than 0"));
+            }
+            self.base_sigma = base_sigma_candidate;
+        }
+
+        if let Some(val) = config.get("growth_rate") {
+            let growth_rate_candidate: f64 = val.extract(py)?;
+            if growth_rate_candidate < 0.0 {
+                return Err(PyValueError::new_err("growth_rate must be non-negative"));
+            }
+            self.growth_rate = growth_rate_candidate;
+        }
+
+        if let Some(val) = config.get("gate_k") {
+            let gate_k_candidate: f64 = val.extract(py)?;
+            if gate_k_candidate <= 0.0 {
+                return Err(PyValueError::new_err("gate_k must be greater than 0"));
+            }
+            self.gate_k = gate_k_candidate;
+        }
+
+        if let Some(val) = config.get("max_consecutive_rejections") {
+            let max_consecutive_rejections_candidate: usize = val.extract(py)?;
+            if max_consecutive_rejections_candidate == 0 {
+                return Err(PyValueError::new_err("max_consecutive_rejections must be greater than 0"));
+            }
+            self.max_consecutive_rejections = max_consecutive_rejections_candidate;
+        }
+
+        if let Some(val) = config.get("relax_factor") {
+            let relax_factor_candidate: f64 = val.extract(py)?;
+            if relax_factor_candidate <= 0.0 {
+                return Err(PyValueError::new_err("relax_factor must be greater than 0"));
+            }
+            self.relax_factor = relax_factor_candidate;
+        }
+
+        if let Some(val) = config.get("angular_gate_threshold") {
+            let angular_gate_threshold_candidate: f64 = val.extract(py)?;
+            if angular_gate_threshold_candidate < 0.0 || angular_gate_threshold_candidate > std::f64::consts::PI {
+                return Err(PyValueError::new_err("angular_gate_threshold must be between 0 and π radians"));
+            }
+            self.angular_gate_threshold = angular_gate_threshold_candidate;
+        }
+
+        if let Some(val) = config.get("velocity_smoothing_alpha") {
+            let velocity_smoothing_alpha_candidate: f64 = val.extract(py)?;
+            if velocity_smoothing_alpha_candidate < 0.0 || velocity_smoothing_alpha_candidate > 1.0 {
+                return Err(PyValueError::new_err("velocity_smoothing_alpha must be between 0 and 1"));
+            }
+            self.velocity_smoothing_alpha = velocity_smoothing_alpha_candidate;
+        }
+
+        if let Some(val) = config.get("full_reset_threshold") {
+            let full_reset_threshold_candidate: usize = val.extract(py)?;
+            if full_reset_threshold_candidate == 0 {
+                return Err(PyValueError::new_err("full_reset_threshold must be greater than 0"));
+            }
+            self.full_reset_threshold = full_reset_threshold_candidate;
+        }
 
         Ok(())
     }
@@ -325,9 +361,6 @@ impl PoseOutlierFilter {
         // Reset rejection counter and uncertainty
         self.consecutive_rejections = 0;
         self.pos_uncertainty = self.base_sigma;
-
-        // Update covariance (window accumulates from first sample)
-        self.update_covariance(pose);
     }
 
     fn reject_pose(&mut self) {
@@ -346,13 +379,6 @@ impl PoseOutlierFilter {
         self.last_velocity = Array1::zeros(3);
         self.consecutive_rejections = 0;
         self.pos_uncertainty = self.base_sigma;
-        self.pose_covariance = None;
-
-        // Reset rolling covariance state
-        self.positions_window.clear();
-        self.positions_sum = Array1::zeros(3);
-        self.positions_outer_sum = Array2::zeros((3, 3));
-        self.positions_count = 0;
 
         // If we have a pose to start with, initialize with it
         if let (Some(p), Some(t)) = (pose, timestamp) {
@@ -371,30 +397,6 @@ impl PoseOutlierFilter {
         }
     }
 
-    fn update_covariance(&mut self, pose: &Array2<f64>) {
-        let position = pose.slice(s![..3, 3]).to_owned();
-
-        // Maintain rolling window and running sums for O(1) covariance update
-        if self.positions_window.len() == self.history_size {
-            let oldest = self.positions_window.pop_front().unwrap();
-            self.positions_sum -= &oldest;
-            self.positions_outer_sum -= &oldest.clone().insert_axis(Axis(1)).dot(&oldest.insert_axis(Axis(0)));
-            self.positions_count -= 1;
-        }
-
-        self.positions_window.push_back(position.clone());
-        self.positions_sum += &position;
-        self.positions_outer_sum += &position.clone().insert_axis(Axis(1)).dot(&position.insert_axis(Axis(0)));
-        self.positions_count += 1;
-
-        if self.positions_count >= self.min_samples_for_covariance.max(3) {
-            let count = self.positions_count as f64;
-            let mean = &self.positions_sum / count;
-            let centered_outer = &self.positions_outer_sum / count - mean.clone().insert_axis(Axis(1)).dot(&mean.insert_axis(Axis(0)));
-            // Unbiased estimator (divide by n-1)
-            self.pose_covariance = Some(centered_outer * (count / (count - 1.0)));
-        }
-    }
 }
 
 /// Python module initialization

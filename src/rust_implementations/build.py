@@ -18,6 +18,7 @@ import argparse
 from pathlib import Path
 import hashlib
 import json
+import time
 
 
 # ANSI color codes for colored console output
@@ -106,6 +107,12 @@ class RustModuleBuilder:
     def needs_rebuild(self, module_dir: Path, cache: dict) -> bool:
         """Check if a module needs rebuilding."""
         module_name = module_dir.name
+
+        # Check if the compiled artifact exists
+        artifact_path = module_dir / f"{module_name}.so"
+        if not artifact_path.exists():
+            return True
+
         current_hash = self.get_module_hash(module_dir)
         cached_hash = cache.get(module_name, {}).get("hash")
 
@@ -135,11 +142,6 @@ class RustModuleBuilder:
                     print(result.stderr)
                 return False
 
-        except subprocess.CalledProcessError as e:
-            print(
-                f"{Colors.RED}✗ Import test failed for {module_name}: {e}{Colors.RESET}"
-            )
-            return False
         except FileNotFoundError as e:
             print(
                 f"{Colors.RED}✗ Import test failed for {module_name}: {e}{Colors.RESET}"
@@ -151,54 +153,46 @@ class RustModuleBuilder:
         module_name = module_dir.name
         print(f"{Colors.CYAN}Building module: {module_name}{Colors.RESET}")
 
-        try:
-            # Check if module has its own build.py
-            build_script = module_dir / "build.py"
-            if build_script.exists():
-                # Run module-specific build script
-                result = subprocess.run(
-                    ["uv", "run", "python", str(build_script)],
-                    cwd=module_dir,
-                    capture_output=True,
-                    text=True,
-                )
-            else:
-                # Fallback to direct maturin build
-                if not self.check_dependencies():
-                    return False
-
-                result = subprocess.run(
-                    ["maturin", "develop"],
-                    cwd=module_dir,
-                    capture_output=True,
-                    text=True,
-                )
-
-            if result.returncode == 0:
-                print(f"{Colors.GREEN}✓ Successfully built {module_name}{Colors.RESET}")
-                if result.stdout:
-                    print(result.stdout)
-
-                # Test that the module can be imported
-                if not self.test_module_import(module_name):
-                    print(
-                        f"{Colors.RED}✗ Build verification failed for {module_name}{Colors.RESET}"
-                    )
-                    return False
-
-                return True
-            else:
-                print(f"{Colors.RED}✗ Failed to build {module_name}{Colors.RESET}")
-                if result.stderr:
-                    print(f"{Colors.RED}Error output:{Colors.RESET}")
-                    print(result.stderr)
+        # Check if module has its own build.py
+        build_script = module_dir / "build.py"
+        if build_script.exists():
+            # Run module-specific build script
+            result = subprocess.run(
+                ["uv", "run", "python", str(build_script)],
+                cwd=module_dir,
+                capture_output=True,
+                text=True,
+            )
+        else:
+            # Fallback to direct maturin build
+            if not self.check_dependencies():
                 return False
 
-        except subprocess.CalledProcessError as e:
-            print(f"{Colors.RED}✗ Build failed for {module_name}: {e}{Colors.RESET}")
-            return False
-        except FileNotFoundError as e:
-            print(f"{Colors.RED}✗ Build failed for {module_name}: {e}{Colors.RESET}")
+            result = subprocess.run(
+                ["maturin", "develop"],
+                cwd=module_dir,
+                capture_output=True,
+                text=True,
+            )
+
+        if result.returncode == 0:
+            print(f"{Colors.GREEN}✓ Successfully built {module_name}{Colors.RESET}")
+            if result.stdout:
+                print(result.stdout)
+
+            # Test that the module can be imported
+            if not self.test_module_import(module_name):
+                print(
+                    f"{Colors.RED}✗ Build verification failed for {module_name}{Colors.RESET}"
+                )
+                return False
+
+            return True
+        else:
+            print(f"{Colors.RED}✗ Failed to build {module_name}{Colors.RESET}")
+            if result.stderr:
+                print(f"{Colors.RED}Error output:{Colors.RESET}")
+                print(result.stderr)
             return False
 
     def check_dependencies(self) -> bool:
@@ -263,14 +257,15 @@ class RustModuleBuilder:
                     # Update cache with new hash
                     cache[module_name] = {
                         "hash": self.get_module_hash(module_dir),
-                        "last_built": str(Path(module_dir).stat().st_mtime),
+                        "last_built": str(time.time()),
                     }
             else:
                 print(f"{Colors.GREEN}✓ {module_name} is up to date{Colors.RESET}")
 
-        # Clean cache of non-existent modules and save
-        cleaned_cache = self.clean_build_cache(cache)
-        self.save_build_cache(cleaned_cache)
+        if success:
+            # Clean cache of non-existent modules and save
+            cleaned_cache = self.clean_build_cache(cache)
+            self.save_build_cache(cleaned_cache)
         return success
 
     def build_specific(self, module_name: str) -> bool:
@@ -292,7 +287,7 @@ class RustModuleBuilder:
             # Update cache
             cache[module_name] = {
                 "hash": self.get_module_hash(module_dir),
-                "last_built": str(module_dir.stat().st_mtime),
+                "last_built": str(time.time()),
             }
             # Clean cache of non-existent modules and save
             cleaned_cache = self.clean_build_cache(cache)
