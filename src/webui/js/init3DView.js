@@ -157,6 +157,25 @@ export async function init3DView(modelUrl) {
         // Clear the scene
         scene.clear();
         scene = null;
+
+        // Dispose and cleanup existing WebGLRenderer to prevent context leaks
+        if (renderer) {
+            // Force WebGL context loss if method exists
+            if (renderer.forceContextLoss) {
+                renderer.forceContextLoss();
+            }
+
+            // Dispose of the renderer
+            renderer.dispose();
+
+            // Remove canvas element from DOM
+            if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
+            }
+
+            // Null out renderer reference
+            renderer = null;
+        }
     }
 
     scene = new Scene();
@@ -324,6 +343,7 @@ export async function init3DView(modelUrl) {
                     child.castShadow = true;
                     child.receiveShadow = true;
                     child.geometry.computeVertexNormals();
+                    child.visible = gamePiecesVisible;
                     gamePieces.push(child);
                 }
             });
