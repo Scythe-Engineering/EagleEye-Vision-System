@@ -190,8 +190,8 @@ class Pipeline:
                 time_elapsed += elapsed
             except Exception as _:
                 raise RuntimeError(
-                    f"Error in operation {i} ({type(operation).__name__}): {traceback.format_exc()}"
-                )
+                    f"Error in operation {i} ({type(operation).__name__})"
+                ) from _
         with self.total_time_history_lock:
             self.total_time_history.append(time_elapsed)
         self.all_total_times.append(time_elapsed)
