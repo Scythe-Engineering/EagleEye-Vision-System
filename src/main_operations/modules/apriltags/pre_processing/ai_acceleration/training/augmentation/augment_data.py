@@ -22,7 +22,6 @@ try:
 except ImportError:
     # Fall back to absolute imports (when run as standalone script)
     import sys
-    from pathlib import Path
 
     current_dir = Path(__file__).parent
     sys.path.insert(0, str(current_dir))
@@ -31,7 +30,6 @@ except ImportError:
     from operations.contrast import apply_contrast_augmentations
     from operations.rotate import apply_rotation_augmentations
     from operations.scale import apply_scale_augmentations
-
 # File extensions
 JSON_EXTENSION = ".json"
 PNG_EXTENSION = ".png"
@@ -271,8 +269,6 @@ def augment_training_data(
 
     # Set default max_workers to CPU count if not specified
     if max_workers is None:
-        import multiprocessing
-
         max_workers = multiprocessing.cpu_count()
 
     # Set default factor values if not specified
@@ -367,8 +363,8 @@ def main():
     """Main function to run data augmentation."""
 
     # Configuration variables - modify these as needed
-    input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\training_data"  # Set to None for auto-detection, or specify path
-    output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\augmented_training_data"
+    input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_acceleration\training\training_data"  # Set to None for auto-detection, or specify path
+    output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_acceleration\training\augmented_training_data"
     # Configuration variables - modify these as needed
     max_workers = (
         multiprocessing.cpu_count()

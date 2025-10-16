@@ -17,13 +17,16 @@ project_root = os.path.abspath(
 )
 sys.path.insert(0, project_root)
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     letterbox_image,
 )
 
 target_width = 640
 target_height = 640
 target_size = (target_width, target_height)
+
+# Thread lock for protecting shared result lists from concurrent access
+results_lock = threading.Lock()
 
 
 class ThreadSafeCounter:
@@ -151,10 +154,11 @@ def process_single_image(
     """
     try:
         was_letterboxed, was_greyscaled = verify_and_letterbox_image(image_path)
-        if was_letterboxed:
-            results["letterboxed"].append(True)
-        if was_greyscaled:
-            results["greyscaled"].append(True)
+        with results_lock:
+            if was_letterboxed:
+                results["letterboxed"].append(True)
+            if was_greyscaled:
+                results["greyscaled"].append(True)
     except Exception as e:
         print(f"Error processing {os.path.basename(image_path)}: {e}")
     finally:
@@ -399,12 +403,14 @@ def process_single_json(
     json_file = os.path.basename(json_path)
     try:
         was_processed = process_json_file(json_path, target_width, target_height)
-        if was_processed:
-            results["processed"].append(True)
-        else:
-            results["skipped"].append(True)
+        with results_lock:
+            if was_processed:
+                results["processed"].append(True)
+            else:
+                results["skipped"].append(True)
     except Exception as e:
-        failed_files.append((json_file, str(e)))
+        with results_lock:
+            failed_files.append((json_file, str(e)))
     finally:
         counter.increment()
 
@@ -498,13 +504,13 @@ def process_training_data_json(
 
 def main() -> None:
     """Main function to process both images and JSON annotations."""
-    training_data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
+    training_data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/training_data"
 
     print("Starting combined letterboxing process...")
     print("=" * 50)
 
     # Rename files to frame_ prefix if needed
-    print("\n0. Renaming files to frame_ prefix...")
+    print("\n1. Renaming files to frame_ prefix...")
     try:
         renamed_count = rename_files_to_frame_prefix(training_data_dir)
         print(f"   Renamed {renamed_count} files to frame_ prefix")

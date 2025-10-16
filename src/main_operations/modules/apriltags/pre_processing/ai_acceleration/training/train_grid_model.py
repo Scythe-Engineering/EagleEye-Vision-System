@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import transforms
 from tqdm import tqdm
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     LetterboxTransform,
 )
 
@@ -76,11 +76,11 @@ class GridDataset(Dataset):
 
 
 # ——— Config ———
-data_dir = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
+data_dir = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/training_data"
 epochs = 400
 batch_size = 64
 lr = 1e-3
-output = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/model.pth"
+output = "/home/eagle/EagleEye-Object-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/model.pth"
 patience = 10  # early stopping
 
 target_width = 320

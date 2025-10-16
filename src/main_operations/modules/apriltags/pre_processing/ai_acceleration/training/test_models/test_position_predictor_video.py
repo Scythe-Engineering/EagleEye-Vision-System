@@ -18,17 +18,16 @@ import numpy as np
 import torch
 from torch import nn
 from tqdm import tqdm
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.position_detectors.predictor import (
+    PositionPredictor,
+)
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
+    letterbox_image,
+)
 
 # Add the project root to the path to import modules
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
 sys.path.append(str(project_root))
-
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.position_detectors.predictor import (
-    PositionPredictor,
-)
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
-    letterbox_image,
-)
 
 
 def load_model(model_path: str, device: str = "auto") -> Tuple[nn.Module, torch.device]:
@@ -63,16 +62,21 @@ def load_model(model_path: str, device: str = "auto") -> Tuple[nn.Module, torch.
         for k, v in state_dict.items():
             new_key = k.replace("module.", "", 1) if k.startswith("module.") else k
             cleaned_state_dict[new_key] = v
-        model.load_state_dict(cleaned_state_dict, strict=False)
+        missing_keys, unexpected_keys = model.load_state_dict(
+            cleaned_state_dict, strict=False
+        )
+        if missing_keys:
+            print(f"Warning: Missing keys in checkpoint: {missing_keys}")
+        if unexpected_keys:
+            print(f"Warning: Unexpected keys in checkpoint: {unexpected_keys}")
         model.eval()
         print("Model loaded successfully!")
     except FileNotFoundError:
-        print(f"Warning: Model file not found at {model_path}")
-        print("Using untrained model for demonstration purposes.")
-        print("To use a trained model, train it first using train_position_model.py")
+        print(f"Error: Model file not found at {model_path}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"Error loading model: {e}")
-        print("Using untrained model for demonstration purposes.")
+        print(f"Error loading model: {e}", file=sys.stderr)
+        sys.exit(1)
 
     return model, device
 
@@ -328,12 +332,13 @@ def process_video(
                     y_resized = det["y"] - offset_y
                     scale_resized = det["scale"]
 
-                    scale_factor = max(resized_size) / max(
-                        original_frame.shape[1], original_frame.shape[0]
-                    )
-                    x_original = x_resized / scale_factor
-                    y_original = y_resized / scale_factor
-                    scale_original = scale_resized / scale_factor
+                    # Compute scale factors per axis
+                    scale_x = resized_size[0] / original_frame.shape[1]
+                    scale_y = resized_size[1] / original_frame.shape[0]
+
+                    x_original = x_resized / scale_x
+                    y_original = y_resized / scale_y
+                    scale_original = scale_resized / scale_x
 
                     detections.append(
                         {
@@ -374,11 +379,13 @@ def process_video(
 def main():
     """Main function to run the video testing script."""
     # Configuration variables
-    video_path = r"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/basic_test.mp4"
-    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
+    video_path = r"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/test_models/basic_test.mp4"
+    model_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/position_model.pth"
     confidence_threshold = 0.4
     device = "auto"
-    output_path = f"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/test_models/{video_path.split('/')[-1].split('.')[0]}_detection_results.mp4"
+    video_path_obj = Path(video_path)
+    stem = video_path_obj.stem
+    output_path = f"E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/test_models/{stem}_detection_results.mp4"
 
     try:
         # Load model

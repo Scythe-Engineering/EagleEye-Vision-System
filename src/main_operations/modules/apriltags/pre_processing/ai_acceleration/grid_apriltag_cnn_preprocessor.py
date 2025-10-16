@@ -1,11 +1,13 @@
 import json
 import traceback
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from scipy.special import expit
 import torch
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     calculate_crop_regions_from_grid,
     letterbox_image,
 )
@@ -31,7 +33,7 @@ class GridApriltagCnnPreprocessor:
         """
         self.model_path: str = model_path
 
-        data_path: str = model_path.split(".")[0] + ".json"
+        data_path: str = str(Path(model_path).with_suffix(".json"))
         try:
             with open(data_path, "r") as f:
                 data = json.load(f)
@@ -43,7 +45,7 @@ class GridApriltagCnnPreprocessor:
         self.grid_width: int = data["grid_width"]
         self.grid_height: int = data["grid_height"]
 
-        self.model_name: str = model_path.split("/")[-1].split(".")[0]
+        self.model_name: str = Path(model_path).stem
         self.conf_threshold: float = conf_threshold
         self.device: ComputeDevice = device
 
@@ -102,7 +104,7 @@ class GridApriltagCnnPreprocessor:
         logits = np.rot90(logits, k=1)
         logits = np.flip(logits, axis=0)
 
-        return 1.0 / (1.0 + np.exp(-logits))
+        return expit(logits)
 
     def generate_cropped_images(
         self, frame: np.ndarray, crop_regions: list[tuple[int, int, int, int]]
@@ -125,7 +127,7 @@ class GridApriltagCnnPreprocessor:
 
     def process_frame(
         self, frame: np.ndarray, output_size: Optional[tuple[int, int]] = None
-    ) -> tuple[list[tuple[int, int, int, int]], list[tuple[np.ndarray, np.ndarray]]]:
+    ) -> tuple[list[tuple[np.ndarray, np.ndarray]], list[tuple[int, int, int, int]]]:
         """Process a single frame through the model.
 
         Args:
@@ -133,7 +135,7 @@ class GridApriltagCnnPreprocessor:
             output_size: Optional output size for the regions.
 
         Returns:
-            Tuple of crop regions and list of cropped images and their offsets from the top-left corner.
+            Tuple of cropped images and their offsets from the top-left corner, and crop regions.
         """
         probs = self.get_grid_probs(frame)
 

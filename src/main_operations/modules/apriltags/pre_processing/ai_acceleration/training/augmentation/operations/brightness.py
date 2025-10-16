@@ -1,3 +1,4 @@
+import copy
 import json
 from typing import Dict, List, Tuple
 
@@ -8,7 +9,11 @@ import numpy as np
 def adjust_brightness(
     image: np.ndarray, annotations: Dict, brightness_factor: float
 ) -> Tuple[np.ndarray, Dict]:
-    """Adjust image brightness and keep annotations unchanged.
+    """Adjust image brightness and record adjustment factor in annotations.
+
+    Adjusts the brightness of the input image by multiplying pixel values by the brightness_factor.
+    Tag data in annotations remains unchanged, but a 'brightness_factor' field is added to track
+    the brightness adjustment applied.
 
     Args:
         image: Input image as numpy array
@@ -25,7 +30,7 @@ def adjust_brightness(
     adjusted_image = np.clip(adjusted_image, 0, 255).astype(np.uint8)
 
     # Update annotations with brightness info
-    updated_annotations = annotations.copy()
+    updated_annotations = copy.deepcopy(annotations)
     updated_annotations["brightness_factor"] = brightness_factor
 
     return adjusted_image, updated_annotations
@@ -69,7 +74,9 @@ def apply_brightness_augmentations(
         json_path = f"{output_dir}/{json_filename}"
 
         # Save adjusted image
-        cv2.imwrite(image_path, adjusted_image)
+        image_write_success = cv2.imwrite(image_path, adjusted_image)
+        if not image_write_success:
+            raise IOError(f"Failed to write image to {image_path}")
 
         # Save adjusted annotations
         with open(json_path, "w") as f:

@@ -3,7 +3,7 @@ import os
 import cv2
 from tqdm import tqdm
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     letterbox_image,
 )
 
@@ -52,8 +52,8 @@ def extract_frames_from_video(video_path: str, output_dir: str) -> None:
 
 
 def main() -> None:
-    video_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/0001-0750.mp4"  # Update this path as needed
-    output_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/training_data"
+    video_path = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/0001-0750.mp4"  # Update this path as needed
+    output_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/training_data"
     extract_frames_from_video(video_path, output_dir)
 
 

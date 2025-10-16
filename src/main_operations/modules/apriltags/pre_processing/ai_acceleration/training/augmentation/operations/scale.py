@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from typing import Dict, List, Tuple
 
 import cv2
@@ -35,7 +36,7 @@ def scale_image_and_annotations(
             scaled_image, (width, height), interpolation=cv2.INTER_LINEAR
         )
 
-        updated_annotations = annotations.copy()
+        updated_annotations = deepcopy(annotations)
         updated_annotations["scale_factor"] = scale_factor
         updated_annotations["scale_operation"] = "crop"
 
@@ -58,7 +59,7 @@ def scale_image_and_annotations(
                 0 <= c["x"] < width and 0 <= c["y"] < height for c in scaled_corners
             )
             if all_inside:
-                kept_tag = tag.copy()
+                kept_tag = deepcopy(tag)
                 kept_tag["corners"] = scaled_corners
                 filtered_tags.append(kept_tag)
 
@@ -72,7 +73,8 @@ def scale_image_and_annotations(
             image, (down_width, down_height), interpolation=cv2.INTER_LINEAR
         )
 
-        scaled_image = np.zeros((height, width, 3), dtype=np.uint8)
+        channels = 1 if image.ndim == 2 else image.shape[2]
+        scaled_image = np.zeros((height, width, channels), dtype=image.dtype)
 
         x_offset = (width - down_width) // 2
         y_offset = (height - down_height) // 2
@@ -80,7 +82,7 @@ def scale_image_and_annotations(
             y_offset : y_offset + down_height, x_offset : x_offset + down_width
         ] = resized_image
 
-        updated_annotations = annotations.copy()
+        updated_annotations = deepcopy(annotations)
         updated_annotations["scale_factor"] = scale_factor
         updated_annotations["scale_operation"] = "pad"
 
@@ -100,7 +102,7 @@ def scale_image_and_annotations(
                 0 <= c["x"] < width and 0 <= c["y"] < height for c in scaled_corners
             )
             if all_inside:
-                kept_tag = tag.copy()
+                kept_tag = deepcopy(tag)
                 kept_tag["corners"] = scaled_corners
                 filtered_tags.append(kept_tag)
 

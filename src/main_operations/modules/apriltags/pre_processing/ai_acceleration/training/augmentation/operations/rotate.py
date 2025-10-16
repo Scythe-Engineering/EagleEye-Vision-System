@@ -23,7 +23,24 @@ def rotate_image_and_annotations(
 
     rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
 
-    rotated_image = cv2.warpAffine(image, rotation_matrix, (width, height))
+    # Compute output dimensions based on rotation
+    if angle in [90, 270]:
+        # For 90° and 270° rotations, swap width and height
+        output_width, output_height = height, width
+    else:
+        # For other rotations, compute bounds from rotation matrix
+        corners = np.array(
+            [[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32
+        )
+        rotated_corners = cv2.transform(corners.reshape(1, -1, 2), rotation_matrix)[0]
+        min_x, min_y = np.min(rotated_corners, axis=0)
+        max_x, max_y = np.max(rotated_corners, axis=0)
+        output_width = int(np.ceil(max_x - min_x))
+        output_height = int(np.ceil(max_y - min_y))
+
+    rotated_image = cv2.warpAffine(
+        image, rotation_matrix, (output_width, output_height)
+    )
 
     updated_annotations = annotations.copy()
     updated_annotations["rotation_applied"] = angle
@@ -44,7 +61,8 @@ def rotate_image_and_annotations(
             )
 
         all_inside = all(
-            0 <= c["x"] < width and 0 <= c["y"] < height for c in rotated_corners
+            0 <= c["x"] < output_width and 0 <= c["y"] < output_height
+            for c in rotated_corners
         )
         if all_inside:
             kept_tag = tag.copy()

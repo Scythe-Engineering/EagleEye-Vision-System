@@ -20,7 +20,7 @@ def letterbox_image(
     target_size: Tuple[int, int],
     greyscale: bool = True,
     return_resized_size: bool = True,
-) -> tuple[np.ndarray, tuple[int, int]]: ...
+) -> Tuple[np.ndarray, Tuple[int, int]]: ...
 
 
 def letterbox_image(
@@ -28,7 +28,7 @@ def letterbox_image(
     target_size: Tuple[int, int],
     greyscale: bool = True,
     return_resized_size: bool = False,
-) -> Union[np.ndarray, tuple[np.ndarray, tuple[int, int]]]:
+) -> Union[np.ndarray, Tuple[np.ndarray, Tuple[int, int]]]:
     """
     Resize by a single power-of-two factor to the largest size that fits within the target, then pad to exact target.
 

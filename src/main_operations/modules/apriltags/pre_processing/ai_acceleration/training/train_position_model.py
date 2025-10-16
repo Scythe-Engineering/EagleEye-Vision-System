@@ -14,10 +14,10 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.position_detectors.predictor import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.position_detectors.predictor import (
     PositionPredictor,
 )
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     LetterboxTransform,
 )
 
@@ -251,11 +251,11 @@ class ExponentialMovingAverage:
 
 
 # ——— Config ———
-data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/augmented_training_data"
+data_dir = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/augmented_training_data"
 epochs = 20
 batch_size = 12
 lr = 5e-3
-output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_accelleration/training/position_model.pth"
+output = "E:/Ceph-Mirror/Python-Files/Projects/FIRST-Note-Detection/src/main_operations/modules/apriltags/pre_processing/ai_acceleration/training/position_model.pth"
 
 target_width = 640
 target_height = 640
@@ -318,13 +318,12 @@ def train() -> None:
     val_loader = DataLoader(
         val_subset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=4,
         pin_memory=torch.cuda.is_available(),
         persistent_workers=False,
         worker_init_fn=dataloader_worker_init,
     )
-
     # Instantiate model
     model = PositionPredictor(grid_size=40, max_detections=max_detections)
     model = model.to(device)

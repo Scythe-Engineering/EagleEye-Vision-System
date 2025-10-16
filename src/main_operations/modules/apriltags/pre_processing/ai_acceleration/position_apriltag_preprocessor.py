@@ -1,12 +1,13 @@
 import json
 import traceback
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import torch
 
 
-from src.main_operations.modules.apriltags.pre_processing.ai_accelleration.utils import (
+from src.main_operations.modules.apriltags.pre_processing.ai_acceleration.utils import (
     letterbox_image,
 )
 from src.utils.device_management_utils.compute_device import ComputeDevice
@@ -31,17 +32,31 @@ class PositionApriltagPreprocessor:
         Args:
             model_path: Path to the trained model weights file.
             device: The computation device (CPU/CUDA/MX3/CORAL).
-            conf_threshold: Confidence threshold for predictions (0-1).
-            padding_factor: Factor to pad around detected positions (0.3 = 30% padding).
+            conf_threshold: Confidence threshold for predictions (valid range: 0.0 to 1.0 inclusive).
+            padding_factor: Factor to pad around detected positions (valid range: >= 0.0).
         """
+        if not (0.0 <= conf_threshold <= 1.0):
+            raise ValueError(
+                f"conf_threshold must be between 0.0 and 1.0 inclusive, got {conf_threshold}"
+            )
+
+        if padding_factor < 0.0:
+            raise ValueError(
+                f"padding_factor must be non-negative, got {padding_factor}"
+            )
+
         self.model_path: str = model_path
 
-        data_path: str = model_path.split(".")[0] + ".json"
+        data_path: str = str(Path(model_path).with_suffix(".json"))
         try:
             with open(data_path, "r") as f:
                 data = json.load(f)
         except FileNotFoundError:
             raise FileNotFoundError(f"Data file not found: {data_path}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format in data file '{data_path}': {e}")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid data structure in JSON file '{data_path}': {e}")
 
         self.target_width: int = data["target_width"]
         self.target_height: int = data["target_height"]
@@ -49,11 +64,30 @@ class PositionApriltagPreprocessor:
             "grid_size", 40
         )  # Default grid size from predictor
         self.max_detections: int = int(data.get("max_detections", 12))
+
+        # Validate config values
+        if not isinstance(self.target_width, int) or self.target_width <= 0:
+            raise ValueError(
+                f"target_width must be a positive integer, got {self.target_width}"
+            )
+        if not isinstance(self.target_height, int) or self.target_height <= 0:
+            raise ValueError(
+                f"target_height must be a positive integer, got {self.target_height}"
+            )
+        if not isinstance(self.grid_size, int) or self.grid_size <= 0:
+            raise ValueError(
+                f"grid_size must be a positive integer, got {self.grid_size}"
+            )
+        if not isinstance(self.max_detections, int) or self.max_detections <= 0:
+            raise ValueError(
+                f"max_detections must be a positive integer, got {self.max_detections}"
+            )
+
         self.conf_threshold: float = conf_threshold
         self.padding_factor: float = padding_factor
         self.device: ComputeDevice = device
 
-        self.model_name: str = model_path.split("/")[-1].split(".")[0]
+        self.model_name: str = Path(model_path).stem
 
         # Preallocate RGB buffer for NHWC uint8 input (0-255)
         self.rgb_buffer: np.ndarray = np.zeros(
@@ -384,6 +418,10 @@ class PositionApriltagPreprocessor:
         Args:
             conf_threshold: Confidence threshold for predictions (0-1).
         """
+        if not 0.0 <= conf_threshold <= 1.0:
+            raise ValueError(
+                f"conf_threshold must be between 0 and 1, got {conf_threshold}"
+            )
         self.conf_threshold = conf_threshold
 
     def change_padding_factor(self, padding_factor: float) -> None:
@@ -392,4 +430,8 @@ class PositionApriltagPreprocessor:
         Args:
             padding_factor: Factor to pad around detected positions.
         """
+        if padding_factor < 0.0:
+            raise ValueError(
+                f"padding_factor must be non-negative, got {padding_factor}"
+            )
         self.padding_factor = padding_factor

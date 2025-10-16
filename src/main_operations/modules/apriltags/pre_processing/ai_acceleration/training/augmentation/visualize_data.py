@@ -85,5 +85,5 @@ def visualize_apriltag_corners(image_path: str) -> None:
 
 if __name__ == "__main__":
     # Example usage - you can modify this path as needed
-    example_image_path = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_accelleration\training\training_data\frame_0647.png"
+    example_image_path = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_acceleration\training\training_data\frame_0647.png"
     visualize_apriltag_corners(example_image_path)
