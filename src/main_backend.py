@@ -1,6 +1,7 @@
 import csv
 import faulthandler
 import os
+import subprocess
 from pathlib import Path
 from time import sleep
 from typing import Callable, Dict, Set
@@ -106,20 +107,34 @@ class MainBackend:
                 )
 
             # Add TPU devices if available
-            for tpu_device in available_devices.get("TPU", []):
-                if tpu_device.startswith("memx:"):
-                    from src.utils.device_management_utils.mx3_accelerator import (
-                        MX3Accelerator,
-                    )  # noqa: E402
+            tpu_devices = available_devices.get("TPU", [])
+            if tpu_devices:
+                from src.utils.device_management_utils.mx3_accelerator import (
+                    MX3Accelerator,
+                )  # noqa: E402
 
-                    # Extract device index from memx:X
-                    device_index = tpu_device.split(":")[1]
-                    mx3_device = MX3Accelerator(device_id=f"MX3_{device_index}")
-                    self.compute_pool.add_compute_device(mx3_device)
+                for tpu_device in tpu_devices:
+                    if tpu_device.startswith("memx:"):
+                        try:
+                            # Extract device index from memx:X
+                            device_parts = tpu_device.split(":", 1)
+                            if len(device_parts) != 2:
+                                print(
+                                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                                )
+                                continue
 
-                    print(
-                        f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
-                    )
+                            device_index = device_parts[1]
+                            mx3_device = MX3Accelerator(device_id=f"MX3_{device_index}")
+                            self.compute_pool.add_compute_device(mx3_device)
+
+                            print(
+                                f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
+                            )
+                        except Exception as e:
+                            print(
+                                f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
+                            )
 
             # TODO: GPU support not yet implemented - would need a GPU device class
 
@@ -179,19 +194,23 @@ class MainBackend:
             try:
                 # Get the service name from environment or use a default
                 service_name = os.environ.get("SERVICE_NAME", "eagleeye")
-                result = os.system(f"sudo systemctl restart {service_name}")
-                if result == 0:
-                    print(
-                        f"{Colors.GREEN}Successfully restarted systemctl service: {service_name}{Colors.RESET}"
-                    )
-                else:
-                    print(
-                        f"{Colors.RED}Failed to restart systemctl service: {service_name}{Colors.RESET}"
-                    )
-            except Exception as e:
-                print(
-                    f"{Colors.RED}Error restarting systemctl service: {e}{Colors.RESET}"
+                subprocess.run(
+                    ["sudo", "systemctl", "restart", service_name],
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
+                print(
+                    f"{Colors.GREEN}Successfully restarted systemctl service: {service_name}{Colors.RESET}"
+                )
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Failed to restart systemctl service: {service_name}, return code: {e.returncode}"
+                if e.stdout:
+                    error_msg += f", stdout: {e.stdout}"
+                if e.stderr:
+                    error_msg += f", stderr: {e.stderr}"
+                print(f"{Colors.RED}{error_msg}{Colors.RESET}")
+                raise RuntimeError(error_msg) from e
 
     def restart(self) -> None:
         """
