@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import sys
@@ -283,8 +284,11 @@ def letterbox_coordinates(
     Returns:
         List of transformed corner coordinates.
     """
-    # Calculate scale factor (same as in letterbox_image function)
-    scale = min(target_width / original_width, target_height / original_height)
+    # Calculate scale factor using nearest-power-of-two logic (same as in letterbox_image function)
+    ratio_to_fit = min(target_width / original_width, target_height / original_height)
+    ratio_to_fit = max(ratio_to_fit, 1e-9)
+    exponent = int(math.floor(math.log2(ratio_to_fit)))
+    scale = 2**exponent
 
     # Calculate new dimensions after scaling
     new_width = int(original_width * scale)

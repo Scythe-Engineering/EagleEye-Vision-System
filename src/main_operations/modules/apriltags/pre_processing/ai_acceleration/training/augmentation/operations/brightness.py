@@ -23,11 +23,25 @@ def adjust_brightness(
     Returns:
         Tuple of (adjusted_image, updated_annotations)
     """
-    # Convert to float for brightness adjustment
+    # Record original dtype to preserve precision
+    original_dtype = image.dtype
+
+    # Convert to float32 for safe brightness adjustment
     adjusted_image = image.astype(np.float32) * brightness_factor
 
-    # Clip values to valid range
-    adjusted_image = np.clip(adjusted_image, 0, 255).astype(np.uint8)
+    # Determine appropriate clipping range based on original dtype
+    if np.issubdtype(original_dtype, np.integer):
+        # For integer types, use the full range of the dtype
+        min_val, max_val = np.iinfo(original_dtype).min, np.iinfo(original_dtype).max
+    else:
+        # For float types, use [0.0, 1.0] as logical range
+        min_val, max_val = 0.0, 1.0
+
+    # Clip values to dtype-appropriate range
+    adjusted_image = np.clip(adjusted_image, min_val, max_val)
+
+    # Cast back to original dtype to preserve precision
+    adjusted_image = adjusted_image.astype(original_dtype)
 
     # Update annotations with brightness info
     updated_annotations = copy.deepcopy(annotations)

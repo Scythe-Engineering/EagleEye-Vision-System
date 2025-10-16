@@ -146,10 +146,9 @@ def process_sample_worker(
     json_file: str,
     augmentations_to_apply: Dict[str, Callable],
     output_dir: str,
-    progress_bar_position: int = 0,
-    brightness_factors: List[float] = None,
-    scale_factors: List[float] = None,
-    contrast_factors: List[float] = None,
+    brightness_factors: Union[List[float], None] = None,
+    scale_factors: Union[List[float], None] = None,
+    contrast_factors: Union[List[float], None] = None,
 ) -> Tuple[str, int]:
     """Worker function to process a single sample with all augmentations.
 
@@ -157,7 +156,6 @@ def process_sample_worker(
         json_file: Path to JSON file to process
         augmentations_to_apply: Dictionary of augmentation functions
         output_dir: Output directory for augmented files
-        progress_bar_position: Position for this thread's progress bar
         brightness_factors: List of brightness adjustment factors
         scale_factors: List of scale adjustment factors
         contrast_factors: List of contrast adjustment factors
@@ -327,7 +325,6 @@ def augment_training_data(
                 json_file,
                 augmentations_to_apply,
                 output_dir,
-                i % max_workers,  # Position for progress bar (if needed)
                 brightness_factors,
                 scale_factors,
                 contrast_factors,
@@ -363,8 +360,10 @@ def main():
     """Main function to run data augmentation."""
 
     # Configuration variables - modify these as needed
-    input_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_acceleration\training\training_data"  # Set to None for auto-detection, or specify path
-    output_dir = r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\apriltags\pre_processing\ai_acceleration\training\augmented_training_data"
+    # Use paths relative to this file
+    current_dir = Path(__file__).parent.parent
+    input_dir = current_dir / "training_data"
+    output_dir = current_dir / "augmented_training_data"
     # Configuration variables - modify these as needed
     max_workers = (
         multiprocessing.cpu_count()
