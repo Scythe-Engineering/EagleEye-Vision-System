@@ -81,6 +81,8 @@ class Camera(abc.ABC):
         """
         self.name: str = camera_name
         self.is_calibrated: bool = False
+        
+        self.log = log
 
         if camera_calibration_folder is not None:
             self.is_calibrated = True
@@ -105,10 +107,10 @@ class Camera(abc.ABC):
             self.frame_rotation: int = extrinsics["frame_rotation"]
         except FileNotFoundError:
             self.log(f"Camera: {self.name} created without extrinsics calibration")
+            raise RuntimeError(f"Camera: {self.name} created without extrinsics calibration, must have extrinsics before creation")
             
         self.camera_ready: bool = False
 
-        self.log = log
         self.cap = None
 
         self._start_camera()

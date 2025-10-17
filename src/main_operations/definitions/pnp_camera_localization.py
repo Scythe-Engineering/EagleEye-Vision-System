@@ -11,12 +11,18 @@ from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 class PnpCameraLocalizationDefinition:
     """Definition for camera localization operations using AprilTags."""
 
-    def __init__(self, camera_parameters_path: str, apriltag_map_path: str) -> None:
+    def __init__(
+        self,
+        camera_parameters_path: str,
+        apriltag_map_path: str,
+        jump_threshold: float = 2.0,
+    ) -> None:
         """Initialize the camera localization definition.
 
         Args:
             camera_parameters_path: Path to the camera parameters file.
             apriltag_map_path: Path to the apriltag map file.
+            jump_threshold: Maximum distance threshold in meters for pose jumps.
         """
         camera_matrix, distortion_coefficients = load_camera_parameters(
             camera_parameters_path
@@ -27,6 +33,7 @@ class PnpCameraLocalizationDefinition:
             camera_matrix=camera_matrix,
             distortion_coefficients=distortion_coefficients,
             apriltag_map=apriltag_map,
+            jump_threshold=jump_threshold,
         )
 
     def run(self, detections: List[Detection]) -> Optional[np.ndarray]:

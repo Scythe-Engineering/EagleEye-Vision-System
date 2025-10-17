@@ -3,11 +3,11 @@ import time
 import traceback
 from typing import Dict, Optional, Tuple, Union
 
-import cv2
 import numpy as np
 
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
+from src.utils.colors import Colors
 from src.webui.web_server import EagleEyeInterface
 
 
@@ -38,7 +38,9 @@ class CameraThreadManager:
             camera_name: The name of the camera.
             camera: The PhysicalCamera instance.
         """
-        print(f"Starting camera feed worker for {camera_name}")
+        print(
+            f"{Colors.CYAN}Starting camera feed worker for {camera_name}{Colors.RESET}"
+        )
 
         frame_count = 0
 
@@ -56,31 +58,29 @@ class CameraThreadManager:
                         timestamp_from_start,
                     )
 
-                    success, encoded_frame = cv2.imencode(".jpg", frame)
-                    if success:
-                        frame_bytes = encoded_frame.tobytes()
-
-                        if (
-                            frame_count % 5 == 0
-                        ):  # Update every 5 frames to reduce load on the web interface
-                            self.web_interface.update_camera_frame(
-                                camera_name, frame_bytes
-                            )
-                    else:
-                        print(f"Failed to encode frame for {camera_name}")
+                    if (
+                        frame_count % 5 == 0
+                    ):  # Update every 5 frames to reduce load on the web interface
+                        self.web_interface.update_camera_frame(camera_name, frame)
                 else:
-                    print(f"Failed to get frame from {camera_name}")
+                    print(
+                        f"{Colors.YELLOW}Failed to get frame from {camera_name}{Colors.RESET}"
+                    )
                     time.sleep(0.1)
 
-                time_to_sleep = 1 / 120 - (time.time() - start_time)
+                time_to_sleep = 1 / 24 - (time.time() - start_time)
                 if time_to_sleep > 0:
                     time.sleep(time_to_sleep)
 
             except Exception as camera_error:
-                print(f"Error in camera feed worker for {camera_name}: {camera_error}")
+                print(
+                    f"{Colors.RED}Error in camera feed worker for {camera_name}: {camera_error}{Colors.RESET}"
+                )
                 time.sleep(1)
 
-        print(f"Camera feed worker for {camera_name} stopped")
+        print(
+            f"{Colors.CYAN}Camera feed worker for {camera_name} stopped{Colors.RESET}"
+        )
 
     def start_camera_thread(
         self,
@@ -126,13 +126,15 @@ class CameraThreadManager:
             camera_thread.start()
 
             print(
-                f"Successfully started camera thread for {camera_name} (index: {camera_index})"
+                f"{Colors.GREEN}Successfully started camera thread for {camera_name} (index: {camera_index}){Colors.RESET}"
             )
             return True
 
         except Exception as start_error:
-            print(f"Failed to start camera thread for {camera_name}: {start_error}")
-            print(f"Full traceback: {traceback.format_exc()}")
+            print(
+                f"{Colors.RED}Failed to start camera thread for {camera_name}: {start_error}{Colors.RESET}"
+            )
+            print(f"{Colors.RED}Full traceback: {traceback.format_exc()}{Colors.RESET}")
             self.running_cameras[camera_name] = False
             return False
 
@@ -144,7 +146,9 @@ class CameraThreadManager:
             camera_name: The name of the camera to stop.
         """
         if camera_name in self.running_cameras:
-            print(f"Stopping camera thread for {camera_name}")
+            print(
+                f"{Colors.CYAN}Stopping camera thread for {camera_name}{Colors.RESET}"
+            )
             self.running_cameras[camera_name] = False
 
             if camera_name in self.camera_threads:
@@ -159,11 +163,11 @@ class CameraThreadManager:
 
     def stop_all_cameras(self) -> None:
         """Stop all camera threads."""
-        print("Stopping all camera threads...")
+        print(f"{Colors.CYAN}Stopping all camera threads...{Colors.RESET}")
         camera_names = list(self.running_cameras.keys())
         for camera_name in camera_names:
             self.stop_camera_thread(camera_name)
-        print("All camera threads stopped")
+        print(f"{Colors.CYAN}All camera threads stopped{Colors.RESET}")
 
     def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
         """

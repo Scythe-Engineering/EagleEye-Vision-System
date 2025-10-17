@@ -47,21 +47,30 @@ class DetectApriltagsDefinition:
         self.last_detections: Optional[List[Detection]] = None
         self.last_detections_lock: Lock = Lock()
 
-    def run(self, image: np.ndarray) -> List[Detection] | None:
-        """Detect AprilTags in the given image.
+    def run(self, input_data) -> List[Detection] | None:
+        """Detect AprilTags in the given image or image segments.
 
         Args:
-            image: Input image array (grayscale or BGR format).
+            input_data: Either a single image array (np.ndarray) or a tuple of
+                       (segments, full_frame) where segments is a list of (image, offset) tuples.
 
         Returns:
             List of Detection objects containing detected AprilTag information.
             None if no detections are found.
         """
-        detections = self.detector.detect(image)
+        # Handle input from temporal acceleration preprocessor (tuple) or direct image input
+        if isinstance(input_data, tuple) and len(input_data) == 2:
+            segments, full_frame = input_data
+            detections = self.detector.detect(segments, full_frame)
+        else:
+            detections = self.detector.detect(input_data)
+
         with self.last_detections_lock:
             self.last_detections = detections
 
-        if detections is None:
+        if detections is None or (
+            isinstance(detections, list) and len(detections) == 0
+        ):
             return None
 
         # Ensure we return a list even if it's a single detection

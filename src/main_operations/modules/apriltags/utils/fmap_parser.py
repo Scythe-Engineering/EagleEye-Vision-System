@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Dict, Optional
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
@@ -13,6 +14,9 @@ def load_fmap_file(fmap_file_path: str) -> Dict[int, Apriltag]:
     Returns:
         Dict[int, Apriltag]: Dictionary of Apriltag objects keyed by their id.
     """
+    if not os.path.exists(fmap_file_path):
+        raise FileNotFoundError(f"AprilTag map file not found: {fmap_file_path}")
+        
     with open(fmap_file_path, "r", encoding="utf-8") as fmap_file:
         fmap_content = fmap_file.read()
     fmap_data = json.loads(fmap_content)

@@ -1,9 +1,15 @@
 import { defineConfig } from "vite";
-import path from "path";
-import tailwindcss from '@tailwindcss/vite';
-import handlebars from 'vite-plugin-handlebars';
+import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
+import handlebars from "vite-plugin-handlebars";
 
 export default defineConfig({
+    server: {
+        watch: {
+            include: ["src/**/*"],
+            exclude: ["static/**", "**/web_server.py"],
+        },
+    },
     root: path.resolve(__dirname, "./src/webui"),
     build: {
         outDir: path.resolve(__dirname, "./src/webui/static"),

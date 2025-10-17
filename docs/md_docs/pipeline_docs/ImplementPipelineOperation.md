@@ -22,6 +22,23 @@ This file contains the exact, essential rules and minimal examples needed to add
     - detections/features: input `np.ndarray`, output list or structured object.
     - pose estimation: output 4x4 `np.ndarray` transform.
 - Document the concrete input/output types in the class docstring.
+- **Optional**: Implement `back_propagate_input(self, input_data: YourDataType) -> None` for operations that must adjust state based on downstream BackPropagate results. BackPropagate operations automatically call this method on upstream operations during back-propagation. The method should return `None` unless otherwise specified. For more details, see the BackPropagate operation documentation.
+
+    Example implementation:
+
+    ```python
+    class MyStatefulOperation:
+        def __init__(self):
+            self.adjustment_factor = 1.0
+
+        def run(self, frame: np.ndarray) -> np.ndarray:
+            # Apply some transformation using current state
+            return frame * self.adjustment_factor
+
+        def back_propagate_input(self, feedback_data: np.ndarray) -> None:
+            # Adjust internal state based on back-propagated feedback
+            self.adjustment_factor = np.mean(feedback_data)
+    ```
 
 ### Thin-wrapper pattern (recommended)
 

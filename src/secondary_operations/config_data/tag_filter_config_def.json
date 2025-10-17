@@ -1,0 +1,21 @@
+{
+    "class_name": "TagFilter",
+    "description": "Filter AprilTag detections based on whitelist or blacklist of tag IDs",
+    "category": "filt",
+    "parameters": {
+        "filter_mode": {
+            "type": "str",
+            "description": "Filter mode: 'whitelist' keeps only specified tag IDs (or all tags if empty), 'blacklist' removes specified tag IDs",
+            "default": "whitelist",
+            "required": false,
+            "restart_for_change": false
+        },
+        "tag_ids": {
+            "type": "list",
+            "description": "List of tag IDs to filter by (integers)",
+            "default": [],
+            "required": false,
+            "restart_for_change": false
+        }
+    }
+}

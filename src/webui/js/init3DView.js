@@ -39,6 +39,9 @@ let animationStarted = false;
 let maxFPS = 30;
 let interval = 1 / maxFPS;
 
+const robotScaleMatrix = new Matrix4().makeScale(1000, 1000, 1000);
+const robotFinalMatrix = new Matrix4();
+
 function updateStats() {
     const currentTime = performance.now();
     frameCount++;
@@ -131,23 +134,51 @@ export async function init3DView(modelUrl) {
         while (scene.children.length > 0) {
             const child = scene.children[0];
             scene.remove(child);
-
-            // Dispose of geometries and materials to free memory
-            if (child.geometry) {
-                child.geometry.dispose();
-            }
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    child.material.forEach((material) => material.dispose());
-                } else {
-                    child.material.dispose();
+            child.traverse((node) => {
+                // dispose geometry
+                if (node.geometry) {
+                    node.geometry.dispose();
                 }
-            }
+                // dispose material(s) and any bound textures
+                if (node.material) {
+                    const materials = Array.isArray(node.material)
+                        ? node.material
+                        : [node.material];
+                    for (const m of materials) {
+                        for (const key in m) {
+                            const val = m[key];
+                            if (val && val.isTexture) {
+                                val.dispose();
+                            }
+                        }
+                        m.dispose();
+                    }
+                }
+            });
         }
 
         // Clear the scene
         scene.clear();
         scene = null;
+
+        // Dispose and cleanup existing WebGLRenderer to prevent context leaks
+        if (renderer) {
+            // Force WebGL context loss if method exists
+            if (renderer.forceContextLoss) {
+                renderer.forceContextLoss();
+            }
+
+            // Dispose of the renderer
+            renderer.dispose();
+
+            // Remove canvas element from DOM
+            if (renderer.domElement && renderer.domElement.parentNode) {
+                renderer.domElement.parentNode.removeChild(renderer.domElement);
+            }
+
+            // Null out renderer reference
+            renderer = null;
+        }
     }
 
     scene = new Scene();
@@ -175,17 +206,18 @@ export async function init3DView(modelUrl) {
 
                     robotObject.traverse((child) => {
                         if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
+                            child.castShadow = false;
+                            child.receiveShadow = false;
+                            child.excludeFromShadowToggle = true;
                             child.geometry.computeVertexNormals();
 
                             // Remove reflective properties from materials
                             if (child.material) {
                                 if (Array.isArray(child.material)) {
-                                    child.material.forEach((material) => {
+                                    for (const material of child.material) {
                                         material.metalness = 0;
                                         material.roughness = 1;
-                                    });
+                                    }
                                 } else {
                                     child.material.metalness = 0;
                                     child.material.roughness = 1;
@@ -252,8 +284,8 @@ export async function init3DView(modelUrl) {
     directionalLight.castShadow = true;
     directionalLight.shadow.bias = -0.0005;
     directionalLight.shadow.normalBias = -0.0005;
-    directionalLight.shadow.mapSize.width = 1024 * 5;
-    directionalLight.shadow.mapSize.height = 1024 * 5;
+    directionalLight.shadow.mapSize.width = 1024 * 3;
+    directionalLight.shadow.mapSize.height = 1024 * 3;
     directionalLight.shadow.camera.left = -300 * scale;
     directionalLight.shadow.camera.right = 300 * scale;
     directionalLight.shadow.camera.top = 150 * scale;
@@ -278,6 +310,12 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
+
+            // Disable shadow map auto updates after initial generation for performance
+            renderer.shadowMap.autoUpdate = false;
+            // Force initial shadow map generation
+            renderer.shadowMap.needsUpdate = true;
+
             startAnimationLoop();
         },
         undefined,
@@ -308,6 +346,7 @@ export async function init3DView(modelUrl) {
                     child.castShadow = true;
                     child.receiveShadow = true;
                     child.geometry.computeVertexNormals();
+                    child.visible = gamePiecesVisible;
                     gamePieces.push(child);
                 }
             });
@@ -319,14 +358,17 @@ export async function init3DView(modelUrl) {
         },
     );
 
-    document
-        .getElementById("toggleGamePiecesBtn")
-        .addEventListener("click", () => {
-            gamePiecesVisible = !gamePiecesVisible;
-            gamePieces.forEach((gp) => {
-                gp.visible = gamePiecesVisible;
+    if (!globalThis.__eev_gamePiecesToggleAttached) {
+        document
+            .getElementById("toggleGamePiecesBtn")
+            .addEventListener("click", () => {
+                gamePiecesVisible = !gamePiecesVisible;
+                for (const gp of gamePieces) {
+                    gp.visible = gamePiecesVisible;
+                }
             });
-        });
+        globalThis.__eev_gamePiecesToggleAttached = true;
+    }
 
     let clock = new Clock();
     let delta = 0;
@@ -348,32 +390,46 @@ export async function init3DView(modelUrl) {
         }
     }
 
-    window.addEventListener("resize", () => {
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-    });
+    if (!globalThis.__eev_resizeAttached) {
+        const onResize = () => {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        };
+        globalThis.addEventListener("resize", onResize);
+        globalThis.__eev_resizeAttached = true;
+    }
 
-    document.getElementById("toggleShadowBtn").addEventListener("click", () => {
-        shadowsEnabled = !shadowsEnabled;
-        scene.traverse((object) => {
-            if (object.isMesh) {
-                object.castShadow = shadowsEnabled;
-                object.receiveShadow = shadowsEnabled;
-            }
-        });
-        directionalLight.castShadow = shadowsEnabled;
-        renderer.shadowMap.enabled = shadowsEnabled;
-    });
+    if (!globalThis.__eev_shadowToggleAttached) {
+        document
+            .getElementById("toggleShadowBtn")
+            .addEventListener("click", () => {
+                shadowsEnabled = !shadowsEnabled;
+                scene.traverse((object) => {
+                    if (object.isMesh && !object.excludeFromShadowToggle) {
+                        object.castShadow = shadowsEnabled;
+                        object.receiveShadow = shadowsEnabled;
+                    }
+                });
+                directionalLight.castShadow = shadowsEnabled;
+                renderer.shadowMap.enabled = shadowsEnabled;
+
+                // Force shadow map update when shadows are re-enabled
+                if (shadowsEnabled) {
+                    renderer.shadowMap.needsUpdate = true;
+                }
+            });
+        globalThis.__eev_shadowToggleAttached = true;
+    }
 
     // Add AprilTag PNGs as planes at fiducial transforms
     fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
         .then((response) => response.json())
         .then((json) => {
             const textureLoader = new TextureLoader();
-            json.fiducials.forEach((fiducial) => {
+            for (const fiducial of json.fiducials) {
                 const tagId = fiducial.id;
                 const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
                 const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
@@ -429,32 +485,22 @@ export async function init3DView(modelUrl) {
                     normal.normalize();
                     plane.position.add(normal);
 
-                    plane.castShadow = true;
-                    plane.receiveShadow = true;
+                    plane.castShadow = false;
+                    plane.receiveShadow = false;
+                    plane.excludeFromShadowToggle = true;
                     scene.add(plane);
                 });
-            });
+            }
         });
 }
 
 export function updateRobotTransform(transformMatrix) {
     if (robotObject) {
-        // Create a scale matrix to preserve the robot's scale (1000)
-        const scaleMatrix = new Matrix4();
-        scaleMatrix.makeScale(1000, 1000, 1000);
-
-        // Combine the input transformation with the scale
-        const finalMatrix = new Matrix4();
-        finalMatrix.multiplyMatrices(transformMatrix, scaleMatrix);
+        robotFinalMatrix.multiplyMatrices(transformMatrix, robotScaleMatrix);
 
         robotObject.matrixAutoUpdate = false;
-        robotObject.matrix.copy(finalMatrix);
+        robotObject.matrix.copy(robotFinalMatrix);
         robotObject.matrixWorldNeedsUpdate = true;
-
-        // Force immediate re-render when transformation updates
-        if (renderer && scene && camera) {
-            renderer.render(scene, camera);
-        }
     } else {
         console.warn("Robot not initialized yet");
     }

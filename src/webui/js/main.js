@@ -5,10 +5,56 @@ import { saveSettings } from "./settings/saveSettings.js";
 import { updateRobotTransform } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import "../style.css";
-import io from "socket.io-client";
 import { Matrix4 } from "three";
 
 const mmToM = 1000;
+
+// Function to get the currently active view ID
+function getCurrentViewId() {
+    // First check URL parameter
+    const url = new URL(globalThis.location.href);
+    const tabParam = url.searchParams.get("tab");
+    if (tabParam && document.getElementById(tabParam)) {
+        return tabParam;
+    }
+
+    // Fallback: find the view that doesn't have the 'hidden' class
+    const views = document.querySelectorAll("[id^='view-']");
+    for (const view of views) {
+        if (!view.classList.contains("hidden")) {
+            return view.id;
+        }
+    }
+
+    // Default fallback
+    return "view-views";
+}
+
+// Function to refresh views when connection is re-established
+async function refreshViewsOnReconnection(currentViewId) {
+    console.log("Refreshing views after reconnection");
+
+    try {
+        if (currentViewId === "view-pipeline") {
+            console.log("Refreshing pipeline builder");
+            await refreshPipelineCreator();
+        }
+
+        console.log("Views refreshed successfully after reconnection");
+    } catch (error) {
+        console.error("Error refreshing views after reconnection:", error);
+    }
+}
+
+// Function to refresh pipeline creator specifically
+async function refreshPipelineCreator() {
+    // Use the refresh function from the pipeline creator module if available
+    if (globalThis.pipelineCreator?.refreshPipelineCreator) {
+        await globalThis.pipelineCreator.refreshPipelineCreator();
+    } else {
+        console.warn("Pipeline creator refresh function not available");
+    }
+}
 
 const convertDataToFieldSpace = (data) => {
     const transform = data.transform_matrix;
@@ -56,67 +102,80 @@ window.onload = async () => {
         }
     };
 
-    // Socket.IO client for camera position updates
-    const socket = io(BACKEND_BASE_URL, {
-        transports: ["websocket"],
-        upgrade: false,
-        rememberUpgrade: false,
-        timeout: 5000,
-        forceNew: true,
+    // Use EventSource for Server-Sent Events (SSE)
+    const es = new EventSource(`${BACKEND_BASE_URL}/sse/stream`);
+    let lastHeartbeat = Date.now();
+    let wasDisconnected = false;
+    const HEARTBEAT_TIMEOUT_MS = 15000; // consider connection lost if no heartbeat
+
+    es.addEventListener("open", () => {
+        console.log(
+            `SSE connection established at ${new Date().toISOString()}`,
+        );
+        hideConnectionLostOverlay();
+        if (wasDisconnected) {
+            console.log("SSE reconnected after disconnection");
+            // Brief delay to allow connection to stabilize before refreshing views
+            setTimeout(async () => {
+                wasDisconnected = false;
+                const currentViewId = getCurrentViewId();
+                await refreshViewsOnReconnection(currentViewId);
+            }, 500);
+        }
     });
 
-    socket.on("connect", () => {
-        console.log("Socket connected");
+    es.addEventListener("heartbeat", (e) => {
+        lastHeartbeat = Date.now();
         hideConnectionLostOverlay();
     });
 
-    socket.on("disconnect", () => {
-        console.log("Socket disconnected");
-        showConnectionLostOverlay();
-    });
+    es.addEventListener("update_robot_transform", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            if (
+                data?.transform_matrix &&
+                Array.isArray(data.transform_matrix) &&
+                data.transform_matrix.length === 4
+            ) {
+                const isValid4x4Matrix = data.transform_matrix.every(
+                    (row) => Array.isArray(row) && row.length === 4,
+                );
 
-    socket.on("connect_error", (error) => {
-        console.error("Connection error:", error);
-        showConnectionLostOverlay();
-    });
-
-    socket.on("reconnect", () => {
-        console.log("Socket reconnected");
-        hideConnectionLostOverlay();
-
-        // Reload page after reconnection to refresh state
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-    });
-
-    socket.on("reconnect_error", (error) => {
-        console.error("Reconnection error:", error);
-        showConnectionLostOverlay();
-    });
-
-    socket.on("update_robot_transform", (data) => {
-        if (
-            data?.transform_matrix &&
-            Array.isArray(data.transform_matrix) &&
-            data.transform_matrix.length === 4
-        ) {
-            // Validate that it's a proper 4x4 matrix
-            const isValid4x4Matrix = data.transform_matrix.every(
-                (row) => Array.isArray(row) && row.length === 4,
-            );
-
-            if (isValid4x4Matrix) {
-                const fieldSpaceTransform = convertDataToFieldSpace(data);
-                updateRobotTransform(fieldSpaceTransform);
+                if (isValid4x4Matrix) {
+                    const fieldSpaceTransform = convertDataToFieldSpace(data);
+                    updateRobotTransform(fieldSpaceTransform);
+                } else {
+                    console.warn(
+                        "Invalid transformation matrix format received:",
+                        data,
+                    );
+                }
             } else {
                 console.warn(
-                    "Invalid transformation matrix format received:",
+                    "Invalid camera transformation data received:",
                     data,
                 );
             }
-        } else {
-            console.warn("Invalid camera transformation data received:", data);
+        } catch (err) {
+            console.warn(
+                "Failed to parse SSE update_robot_transform event",
+                err,
+            );
         }
     });
+
+    es.onerror = () => {
+        console.warn("SSE connection error or lost");
+        showConnectionLostOverlay();
+        wasDisconnected = true;
+    };
+
+    // watchdog to detect missed heartbeats
+    setInterval(() => {
+        if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+            console.warn("SSE connection lost - heartbeat timeout");
+            wasDisconnected = true;
+            showConnectionLostOverlay();
+        }
+    }, 2000);
 };

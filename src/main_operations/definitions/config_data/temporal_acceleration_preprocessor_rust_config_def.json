@@ -1,0 +1,46 @@
+{
+    "class_name": "TemporalAccelerationPreprocessorRustDefinition",
+    "description": "High-performance Rust implementation for predicting ROIs for AprilTag detection using extrapolated camera motion.",
+    "category": "prep",
+    "parameters": {
+        "camera_parameters_path": {
+            "type": "str",
+            "description": "Path to camera intrinsics JSON file.",
+            "required": true,
+            "restart_for_change": true
+        },
+        "apriltag_map_path": {
+            "type": "str",
+            "description": "Path to fmap AprilTag map file.",
+            "required": true,
+            "restart_for_change": true
+        },
+        "padding_factor": {
+            "type": "float",
+            "description": "Fractional padding to apply around projected tag bounds.",
+            "default": 0.35,
+            "required": false,
+            "min": 0.0,
+            "max": 2.0,
+            "restart_for_change": false
+        },
+        "max_regions": {
+            "type": "int",
+            "description": "Maximum number of ROI regions to return.",
+            "default": 20,
+            "required": false,
+            "min": 1,
+            "max": 256,
+            "restart_for_change": false
+        },
+        "min_region_size_px": {
+            "type": "int",
+            "description": "Minimum side length for ROI squares in pixels. ROIs smaller than this are rejected.",
+            "default": 16,
+            "required": false,
+            "min": 4,
+            "max": 2048,
+            "restart_for_change": false
+        }
+    }
+}
