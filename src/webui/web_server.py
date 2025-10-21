@@ -1,5 +1,6 @@
 import json
 import os
+import queue
 import threading
 import time
 import traceback
@@ -434,6 +435,89 @@ class EagleEyeInterface:
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + no_image + b"\r\n"
             time.sleep(1 / 30)
 
+    def _format_sse(self, event: str, data: str) -> bytes:
+        """
+        Format an SSE message with a named event and JSON data payload.
+        """
+        return f"event: {event}\ndata: {data}\n\n".encode()
+
+    def _sse_stream(self) -> Generator[bytes, Any, Any]:
+        """
+        Generator that yields SSE messages for a single client using a queue.
+        """
+        import queue
+
+        q: queue.Queue = queue.Queue(maxsize=10)
+        # assume single client: set queue, replacing any existing queue
+        with self._sse_queue_lock:
+            self._sse_queue = q
+
+        self.log("SSE client connected")
+        try:
+            while True:
+                try:
+                    # Use timeout to allow checking for disconnection
+                    msg = q.get(timeout=1.0)
+                    yield msg
+                except queue.Empty:
+                    # Check if client is still connected by yielding a comment
+                    yield b": keepalive\n\n"
+                    continue
+        except GeneratorExit:
+            # Client disconnected
+            pass
+        finally:
+            # clear the single-client queue on disconnect
+            with self._sse_queue_lock:
+                if self._sse_queue is q:
+                    self._sse_queue = None
+            self.log("SSE client disconnected")
+
+    def _publish_event(self, event_name: str, data: object) -> None:
+        """
+        Publish a named SSE event (JSON-serialized) to all connected subscribers.
+        """
+        payload = json.dumps(data, allow_nan=False)
+        msg = self._format_sse(event_name, payload)
+        # publish only to the single client's queue if present
+        with self._sse_queue_lock:
+            q = self._sse_queue
+        if q is not None:
+            try:
+                # Use put_nowait to avoid blocking, and catch Full exception
+                q.put_nowait(msg)
+            except queue.Full:
+                # Queue is full, drop the oldest item and retry
+                try:
+                    q.get_nowait()  # Remove oldest item
+                    q.put_nowait(msg)  # Try again with new message
+                except queue.Empty:
+                    # Shouldn't happen, but log if queue became empty
+                    self.log(
+                        f"SSE queue unexpectedly empty when trying to drop oldest for {event_name}"
+                    )
+                except queue.Full:
+                    # Still full after dropping oldest, skip this event
+                    self.log(
+                        f"SSE queue still full after dropping oldest, dropping {event_name} event"
+                    )
+            except Exception as e:
+                # Other error, client likely disconnected
+                self.log(f"SSE publish error for {event_name}: {e}")
+
+    def _sse_heartbeat_loop(self) -> None:
+        """
+        Periodically publish a heartbeat event for connection tracking.
+        """
+        while True:
+            try:
+                self._publish_event("heartbeat", {"ts": time.time()})
+                # Optional: Uncomment for verbose heartbeat logging
+                # self.log(f"Heartbeat sent at {time.time()}")
+            except Exception as e:
+                self.log(f"Error sending heartbeat: {e}")
+            time.sleep(self._heartbeat_interval)
+
     def serve_camera_feed_route(self, camera_name: str) -> Response:
         """
         Serve the camera feed.
@@ -523,7 +607,9 @@ class EagleEyeInterface:
                 try:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
-                    description = config_data.get("description", "No description available")
+                    description = config_data.get(
+                        "description", "No description available"
+                    )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = "No description available"
@@ -555,7 +641,9 @@ class EagleEyeInterface:
                 try:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
-                    description = config_data.get("description", "No description available")
+                    description = config_data.get(
+                        "description", "No description available"
+                    )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = "No description available"
