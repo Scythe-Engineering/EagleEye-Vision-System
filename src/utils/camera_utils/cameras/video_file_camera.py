@@ -2,7 +2,9 @@ import cv2
 import numpy as np
 from typing import Callable
 from src.utils.camera_utils.cameras.camera import Camera
+from src.utils.colors import Colors
 import imutils
+from tqdm import tqdm
 
 
 class VideoFileCamera(Camera):
@@ -30,15 +32,15 @@ class VideoFileCamera(Camera):
 
     def load_frames(self) -> list[np.ndarray]:
         """Load all frames from the video into a list."""
-        print("Loading frames...")
+        print(f"{Colors.CYAN}Loading frames...{Colors.RESET}")
         frames = []
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to the start of the video
-        while True:
+        for _ in tqdm(range(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)))):
             ret, frame = self.cap.read()
             if not ret:
                 break
             frames.append(imutils.rotate_bound(frame, angle=self.frame_rotation))
-        print("Frames loaded.")
+        print(f"{Colors.GREEN}Frames loaded.{Colors.RESET}")
         self.camera_ready = True
         return frames
 

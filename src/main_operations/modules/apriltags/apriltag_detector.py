@@ -4,23 +4,25 @@ from typing import Optional
 import cv2
 import numpy as np
 from pupil_apriltags import Detector, Detection
+from threading import Lock
 
 
 @dataclass
 class CustomDetection:
     """A detection of an AprilTag.
-    
+
     Attributes:
         tag_id: The ID of the detected AprilTag.
         corners: The corners of the detected AprilTag.
     """
+
     tag_id: int
     corners: np.ndarray
 
 
 class AprilTagDetector:
     """A configurable AprilTag detector that exposes all detector parameters.
-    
+
     This class provides a clean interface for AprilTag detection with full control
     over all detector parameters. It can be used independently from pose estimation.
     """
@@ -32,7 +34,7 @@ class AprilTagDetector:
         quad_decimate: float = 2.0,
         quad_sigma: float = 0.0,
         refine_edges: int = 1,
-        decode_sharpening: float = 0.25
+        decode_sharpening: float = 0.25,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -63,7 +65,9 @@ class AprilTagDetector:
         self.quad_sigma = quad_sigma
         self.refine_edges = refine_edges
         self.decode_sharpening = decode_sharpening
-        
+
+        self.ready = False
+
         self.detector = Detector(
             families=self.families,
             nthreads=self.nthreads,
@@ -72,7 +76,51 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
+        self._detect_lock: Lock = Lock()
+        self.ready = True
 
+    def _preprocess_image(self, image: np.ndarray) -> Optional[np.ndarray]:
+        """Preprocess image to grayscale uint8 format.
+
+        Args:
+            image: Input image (grayscale or BGR).
+
+        Returns:
+            Preprocessed grayscale image or None if invalid.
+        """
+        if image is None or image.size == 0:
+            return None
+
+        # Convert to grayscale if needed
+        if len(image.shape) == 3:
+            gray_image = np.empty(image.shape[:2], dtype=np.uint8)
+            cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
+        else:
+            if image.dtype != np.uint8:
+                gray_image = np.empty(image.shape, dtype=np.uint8)
+                cv2.convertScaleAbs(image, dst=gray_image)
+            else:
+                gray_image = image
+
+        # Validate dimensions
+        if gray_image is None or gray_image.size == 0:
+            return None
+        if gray_image.ndim != 2:
+            return None
+        if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
+            return None
+
+        # Ensure writable C-contiguous uint8 buffer
+        gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"])
+
+        # Check decimated size
+        if (
+            gray_image.shape[0] / max(self.quad_decimate, 1.0) < 4
+            or gray_image.shape[1] / max(self.quad_decimate, 1.0) < 4
+        ):
+            return None
+
+        return gray_image
 
     def update_parameters(
         self,
@@ -106,6 +154,7 @@ class AprilTagDetector:
         if decode_sharpening is not None:
             self.decode_sharpening = decode_sharpening
 
+        self.ready = False
         self.detector = Detector(
             families=self.families,
             nthreads=self.nthreads,
@@ -114,46 +163,57 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
+        self.ready = True
+
+    def run_detection(
+        self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
+    ) -> Optional[list[Detection] | list[CustomDetection] | None]:
+        """Run detection on a single image."""
+        # prevents issues with detector settings being changed mid-frame / mid-run
+        if not self.ready:
+            return None
+
+        if isinstance(images, np.ndarray):
+            gray_image = self._preprocess_image(images)
+            if gray_image is None:
+                return None
+            with self._detect_lock:
+                return self.detector.detect(gray_image)
+        else:
+            detections = []
+            for image, offset in images:
+                gray_image = self._preprocess_image(image)
+                if gray_image is None:
+                    continue
+                with self._detect_lock:
+                    detected_tags = self.detector.detect(gray_image)
+                for detection in detected_tags:
+                    detections.append(
+                        CustomDetection(
+                            tag_id=detection.tag_id,
+                            corners=(detection.corners + offset),
+                        )
+                    )
+            return detections
 
     def detect(
         self,
         images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
-    ) -> list[Detection] | list[CustomDetection]:
+        full_frame: Optional[np.ndarray] = None,
+    ) -> Optional[list[Detection] | list[CustomDetection]]:
         """Detect AprilTags in an image.
         Note:
         - Input image is always converted to grayscale.
 
         Args:
             images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
-
+            full_frame: Optional full frame image for if no tags are detected.
         Returns:
-            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects.
+            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
         """
-        if isinstance(images, np.ndarray):
-            if len(images.shape) == 3:
-                gray_image = cv2.cvtColor(images, cv2.COLOR_BGR2GRAY)
-            else:
-                gray_image = images
-
-            gray_image = gray_image.astype(np.uint8)
-
-            return self.detector.detect(
-                gray_image
-            )
-        else:
-            detections = []
-            for image, offset in images:
-                if len(image.shape) == 3:
-                    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                else:
-                    gray_image = image
-
-                gray_image = gray_image.astype(np.uint8)
-
-                for detection in self.detector.detect(gray_image):
-                    detections.append(CustomDetection(
-                        tag_id=detection.tag_id,
-                        corners=(detection.corners + offset)
-                    ))
-
-            return detections
+        detections = self.run_detection(images)
+        if (detections is None or len(detections) == 0) and full_frame is not None:
+            full_frame_detections = self.run_detection(full_frame)
+            if full_frame_detections is not None and len(full_frame_detections) > 0:
+                return full_frame_detections
+        return detections

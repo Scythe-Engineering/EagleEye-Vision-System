@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import queue
 import threading
@@ -11,7 +12,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
-from flask_socketio import SocketIO
+import queue
 
 from src.main_operations.modules.object_detection.src.constants.constants import (
     Constants,
@@ -21,12 +22,17 @@ from src.webui.web_server_utils.serve_static_files import (
     serve_index,
     serve_js,
 )
+from src.utils.colors import Colors
 
 current_path = os.path.dirname(__file__)
 src_path = current_path.split("/src")[0] + "/src"
 
 with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
-    no_image = f.read()
+    no_image_bytes = f.read()
+
+no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
+no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
 
 
 class EagleEyeInterface:
@@ -49,7 +55,39 @@ class EagleEyeInterface:
             log (Callable | None): Optional logging function.
         """
         if log is None:
-            self.log = print
+
+            def colored_log(*messages: object) -> None:
+                """Log function with automatic color coding based on message content."""
+                message = " ".join(str(m) for m in messages)
+                if any(
+                    word in message.lower() for word in ["error", "failed", "exception"]
+                ):
+                    print(f"{Colors.RED}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in ["success", "added", "updated", "started"]
+                ):
+                    print(f"{Colors.GREEN}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in ["warning", "skipping", "queue full"]
+                ):
+                    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+                elif any(
+                    word in message.lower()
+                    for word in [
+                        "connected",
+                        "disconnected",
+                        "initialized",
+                        "set",
+                        "removed",
+                    ]
+                ):
+                    print(f"{Colors.CYAN}{message}{Colors.RESET}")
+                else:
+                    print(message)
+
+            self.log = colored_log
         else:
             self.log = log
 
@@ -65,18 +103,17 @@ class EagleEyeInterface:
         )
         CORS(
             self.app,
-            resources={r"/*": {"origins": ["http://localhost:5173"]}},
+            resources={
+                r"/*": {"origins": ["http://localhost:5173", "http://localhost:5001"]}
+            },
             supports_credentials=True,
         )
-        self.socketio = SocketIO(
-            self.app,
-            cors_allowed_origins="*",
-            async_mode="threading",
-            ping_timeout=60,
-            ping_interval=25,
-            logger=False,
-            engineio_logger=False,
-        )
+
+        # Disable Werkzeug access logging (HTTP request logs)
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
+        # Simplified single-client SSE: one queue and a lock to guard it.
+        self._sse_queue: queue.Queue | None = None
+        self._sse_queue_lock = threading.Lock()
 
         self.cameras = {}
         self.log(f"Initialized with cameras: {self.cameras}")
@@ -95,17 +132,25 @@ class EagleEyeInterface:
         if dev_mode:
             self.run()
         else:
+            # Run Flask normally; SSE streams are served from a route
             self.app_thread = Thread(
-                target=self.socketio.run,
-                args=(self.app,),
-                kwargs={"host": "0.0.0.0", "port": 5001, "allow_unsafe_werkzeug": True},
+                target=self.app.run,
+                args=("0.0.0.0", 5001),
+                kwargs={"debug": False, "use_reloader": False},
                 daemon=True,
             )
+            time.sleep(
+                5
+            )  # might prevent an error, idk bruh, whent away when I added this
             self.app_thread.start()
+
+        # Start heartbeat publisher thread for connection tracking
+        self._heartbeat_interval = 5.0
+        Thread(target=self._sse_heartbeat_loop, daemon=True).start()
 
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
-            self.log("Error:", traceback.format_exc())
+            self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
 
     def _register_routes(self) -> None:
@@ -259,6 +304,22 @@ class EagleEyeInterface:
             methods=["GET"],
         )
 
+        # SSE stream for frontend (named events)
+        self.app.add_url_rule(
+            "/sse/stream",
+            "sse_stream",
+            lambda: Response(
+                self._sse_stream(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "Cache-Control",
+                },
+            ),
+        )
+
     def shutdown(self) -> tuple[dict, int]:
         """
         Shutdown the web interface.
@@ -379,13 +440,13 @@ class EagleEyeInterface:
             self.log("Error updating settings:", e)
             return {"message": "Failed to update settings"}, 500
 
-    def update_camera_frame(self, camera_name: str, frame: bytes) -> None:
+    def update_camera_frame(self, camera_name: str, frame: np.ndarray) -> None:
         """
         Update the camera frame.
 
         Args:
             camera_name (str): The ID of the camera.
-            frame: The frame to update.
+            frame: The frame to update as a numpy array.
         """
         with self.frame_list_lock:
             self.frame_list[camera_name] = frame
@@ -406,19 +467,15 @@ class EagleEyeInterface:
                 frame = self.frame_list[camera_name]
 
             if frame is not None:
-                frame_array = np.frombuffer(frame, dtype=np.uint8)
-                decoded_frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-                if decoded_frame is not None:
-                    resized_frame = cv2.resize(
-                        decoded_frame,
-                        None,
-                        fx=0.5,
-                        fy=0.5,
-                        interpolation=cv2.INTER_AREA,
-                    )
-                    success, encoded_frame = cv2.imencode(".jpg", resized_frame)
-                    if success:
-                        frame = encoded_frame.tobytes()
+                resized_frame = cv2.resize(
+                    frame,
+                    None,
+                    fx=0.5,
+                    fy=0.5,
+                    interpolation=cv2.INTER_AREA,
+                )
+                success, encoded_frame = cv2.imencode(".jpg", resized_frame)
+                frame = encoded_frame.tobytes() if success else no_image_jpeg_bytes
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
@@ -431,8 +488,18 @@ class EagleEyeInterface:
         Yields:
             Generator: The no image feed.
         """
+        success, encoded_no_image = cv2.imencode(".jpg", no_image)
+        if success:
+            no_image_bytes = encoded_no_image.tobytes()
+        else:
+            no_image_bytes = b""
+
         while True:
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + no_image + b"\r\n"
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                + no_image_bytes
+                + b"\r\n"
+            )
             time.sleep(1 / 30)
 
     def _format_sse(self, event: str, data: str) -> bytes:
@@ -447,7 +514,7 @@ class EagleEyeInterface:
         """
         import queue
 
-        q: queue.Queue = queue.Queue(maxsize=10)
+        q: queue.Queue = queue.Queue(maxsize=100)
         # assume single client: set queue, replacing any existing queue
         with self._sse_queue_lock:
             self._sse_queue = q
@@ -491,6 +558,9 @@ class EagleEyeInterface:
                 try:
                     q.get_nowait()  # Remove oldest item
                     q.put_nowait(msg)  # Try again with new message
+                    self.log(
+                        f"SSE queue full, dropped oldest event to add {event_name}"
+                    )
                 except queue.Empty:
                     # Shouldn't happen, but log if queue became empty
                     self.log(
@@ -560,9 +630,20 @@ class EagleEyeInterface:
         if transformation_matrix.shape != (4, 4):
             raise ValueError("Transformation matrix must be a 4x4 numpy array.")
 
-        # Convert matrix to list for JSON serialization
+        # Skip publishing if any value is non-finite to avoid invalid JSON or bad transforms
+        if not np.all(np.isfinite(transformation_matrix)):
+            self.log("Skipping publish of robot transform due to non-finite values")
+            return
+
+        # Convert matrix to list for JSON serialization and publish via SSE
         matrix_list = transformation_matrix.tolist()
-        self.socketio.emit("update_robot_transform", {"transform_matrix": matrix_list})
+        try:
+            self._publish_event(
+                "update_robot_transform", {"transform_matrix": matrix_list}
+            )
+        except Exception:
+            # fallback: log if publish fails
+            self.log("Failed to publish update_robot_transform via SSE")
 
     def get_available_robots(self) -> dict:
         """
@@ -591,6 +672,7 @@ class EagleEyeInterface:
             dict:
                 operations: list of dicts with the name and path of the operation file.
         """
+        NO_DESCRIPTION_AVAILABLE_MESSAGE = "No description available"
         main_operations = []
 
         for file in os.listdir(
@@ -608,11 +690,11 @@ class EagleEyeInterface:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
                     description = config_data.get(
-                        "description", "No description available"
+                        "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    description = "No description available"
+                    description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
 
                 main_operations.append(
@@ -642,11 +724,11 @@ class EagleEyeInterface:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
                     description = config_data.get(
-                        "description", "No description available"
+                        "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                    description = "No description available"
+                    description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
 
                 secondary_operations.append(
@@ -857,4 +939,4 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Program terminated.")
+        print(f"{Colors.CYAN}Program terminated.{Colors.RESET}")

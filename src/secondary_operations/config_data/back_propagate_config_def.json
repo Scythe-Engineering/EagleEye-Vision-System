@@ -1,0 +1,14 @@
+{
+    "class_name": "BackPropagate",
+    "description": "Back propagates input data to a specified operation earlier in the pipeline by calling its back_propagate_input method, then passes the input through",
+    "category": "proc",
+    "parameters": {
+        "action_name": {
+            "type": "str",
+            "description": "Name of the action to back propagate to (in snake_case)",
+            "default": "",
+            "required": true,
+            "restart_for_change": false
+        }
+    }
+}

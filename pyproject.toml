@@ -9,7 +9,6 @@ dependencies = [
   "numpy",
   "pynetworktables",
   "ultralytics",
-  "Flask",
   "numba",
   "tensorflow",
   "customtkinter",
@@ -22,10 +21,12 @@ dependencies = [
   "pygrabber",
   "comtypes",
   "imutils",
-  "flask_socketio",
   "pupil-apriltags",
-  "flask_cors",
-  "memryx; sys_platform != 'win32'",
+  "flask",
+  "flask-cors",
+  "line_profiler",
+  "onnxruntime",
+  "memryx; sys_platform == 'linux'",
 ]
 
 [tool.uv.sources]
@@ -44,6 +45,5 @@ explicit = true
 
 [tool.uv]
 required-environments = [
-    "sys_platform == 'win32'",
     "sys_platform == 'linux'"
 ]

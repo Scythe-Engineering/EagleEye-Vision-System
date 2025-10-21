@@ -1,0 +1,178 @@
+from typing import Any, Dict, List, Tuple
+from threading import Lock
+
+import cv2
+import numpy as np
+
+# Import the Rust module (built automatically)
+try:
+    from temporal_acceleration import TemporalAcceleration
+except ImportError:
+    TemporalAcceleration = None
+
+from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
+from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+
+
+class TemporalAccelerationPreprocessorRustDefinition:
+    """Definition for temporal acceleration-based ROI generation using Rust implementation.
+
+    This operation consumes back-propagated poses and predicts ROIs for
+    accelerating the AprilTag detector in the next run using a high-performance
+    Rust implementation. The ROI outputs follow the same format as
+    `PositionApriltagPreprocessor.process_frame`.
+    """
+
+    def __init__(
+        self,
+        camera_parameters_path: str,
+        apriltag_map_path: str,
+        padding_factor: float = 0.65,
+        max_regions: int = 10,
+        min_region_size_px: int = 16,
+    ) -> None:
+        """Initialize the temporal acceleration definition with Rust backend.
+
+        Args:
+            camera_parameters_path: Path to camera intrinsics JSON.
+            apriltag_map_path: Path to fmap apriltag map JSON.
+            padding_factor: Fractional padding applied to ROI size.
+            max_regions: Maximum number of ROIs to return.
+            min_region_size_px: Minimum side length for ROI squares.
+        """
+        if TemporalAcceleration is None:
+            raise ImportError(
+                "Rust temporal_acceleration module not available. "
+                "Please build the Rust extension first."
+            )
+
+        camera_matrix, distortion_coefficients = load_camera_parameters(
+            camera_parameters_path
+        )
+        apriltag_map = load_fmap_file(apriltag_map_path)
+
+        # Convert data for Rust consumption
+        camera_matrix_flat: List[float] = (
+            camera_matrix.astype(np.float32).flatten().tolist()
+        )
+        distortion_coefficients_flat: List[float] = (
+            distortion_coefficients.astype(np.float32).flatten().tolist()
+        )
+
+        # Build AprilTag geometry buffers
+        apriltag_ids: List[int] = []
+        apriltag_corners_flat: List[
+            float
+        ] = []  # 12 floats per tag (4 corners x 3 coords)
+        apriltag_centers_flat: List[float] = []  # 3 floats per tag
+        for tag_id, tag in apriltag_map.items():
+            apriltag_ids.append(int(tag_id))
+            # Ensure float32 and correct shape
+            corners: np.ndarray = np.asarray(
+                tag.global_corners, dtype=np.float32
+            ).reshape(4, 3)
+            centers: np.ndarray = np.asarray(
+                tag.global_center, dtype=np.float32
+            ).reshape(3)
+            apriltag_corners_flat.extend(corners.flatten().tolist())
+            apriltag_centers_flat.extend(centers.flatten().tolist())
+
+        self._rust_impl = TemporalAcceleration(
+            camera_matrix=camera_matrix_flat,
+            distortion_coefficients=distortion_coefficients_flat,
+            apriltag_ids=apriltag_ids,
+            apriltag_corners=apriltag_corners_flat,
+            apriltag_centers=apriltag_centers_flat,
+            padding_factor=padding_factor,
+            max_regions=max_regions,
+            min_region_size_px=min_region_size_px,
+        )
+
+        self._last_regions: List[Tuple[int, int, int, int]] = []
+        self._last_regions_lock: Lock = Lock()
+
+    def back_propagate_input(self, input_data: Any) -> None:
+        """Receive back-propagated input (camera pose) from the pipeline.
+
+        Args:
+            input_data: Expected to be a 4x4 camera-to-world transform (np.ndarray).
+        """
+        if isinstance(input_data, np.ndarray) and input_data.shape == (4, 4):
+            transform_flat: List[float] = (
+                input_data.astype(np.float32).flatten().tolist()
+            )
+            self._rust_impl.back_propagate_input(transform_flat)
+        else:
+            raise ValueError(
+                f"Expected 4x4 numpy array for input_data, got {type(input_data)} "
+                f"with shape {getattr(input_data, 'shape', 'N/A')}"
+            )
+
+    def run(
+        self, frame: np.ndarray
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+        """Generate predicted ROIs for the current frame using Rust implementation.
+
+        Args:
+            frame: Input frame (BGR) for which to generate ROIs.
+
+        Returns:
+            Tuple of (list of (cropped_image, (offset_x, offset_y)) tuples, original frame).
+        """
+        height, width = frame.shape[:2]
+        _crops_data, crop_regions = self._rust_impl.process_frame(width, height)
+
+        cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
+        regions: List[Tuple[int, int, int, int]] = []
+        for region in crop_regions:
+            left, top, right, bottom = region
+            left = max(0, int(left))
+            top = max(0, int(top))
+            right = min(int(width), int(right))
+            bottom = min(int(height), int(bottom))
+            if right > left and bottom > top:
+                cropped = frame[top:bottom, left:right]
+                cropped_images.append((cropped, (left, top)))
+                regions.append((left, top, right, bottom))
+
+        with self._last_regions_lock:
+            self._last_regions = regions
+
+        return (cropped_images, frame)
+
+    def update_config(self, json_config: Dict[str, Any]) -> None:
+        """Update live configuration for the temporal acceleration.
+
+        Args:
+            json_config: Parameters to update. Supported keys:
+                - padding_factor
+                - max_regions
+                - min_region_size_px
+        """
+        self._rust_impl.update_config(json_config)
+
+    def visualize(self, frame: np.ndarray) -> np.ndarray:
+        """Visualize the temporal acceleration outputs by darkening non-predicted areas.
+
+        Args:
+            frame: Input frame to process.
+
+        Returns:
+            Frame with non-predicted areas darkened.
+        """
+        with self._last_regions_lock:
+            crop_regions = self._last_regions
+
+        visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
+        for region in crop_regions:
+            left, top, right, bottom = region
+            left = max(0, left)
+            top = max(0, top)
+            right = min(frame.shape[1], right)
+            bottom = min(frame.shape[0], bottom)
+            if right > left and bottom > top:
+                visualization_frame[top:bottom, left:right] = frame[
+                    top:bottom, left:right
+                ]
+
+        return visualization_frame

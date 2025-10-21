@@ -1,5 +1,4 @@
 from typing import Callable
-from time import sleep
 
 import cv2
 import imutils

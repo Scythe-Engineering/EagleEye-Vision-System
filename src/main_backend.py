@@ -1,16 +1,31 @@
 import csv
+import faulthandler
 import os
+import subprocess
 from pathlib import Path
 from time import sleep
 from typing import Callable, Dict, Set
 
-from src.config.utils.generate_all_pipelines import generate_all_pipelines
-from src.config.utils.pipeline import Pipeline
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
-from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras
-from src.utils.device_management_utils.compute_pool import ComputePool
-from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
-from src.webui.web_server import EagleEyeInterface
+faulthandler.enable()
+
+from src.config.utils.generate_all_pipelines import generate_all_pipelines  # noqa: E402
+from src.utils.colors import Colors  # noqa: E402
+from src.config.utils.pipeline import Pipeline  # noqa: E402
+from src.utils.camera_utils.camera_thread_manager import CameraThreadManager  # noqa: E402
+from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras  # noqa: E402
+from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
+from src.utils.device_management_utils.cpu import CPU  # noqa: E402
+from src.webui.web_server import EagleEyeInterface  # noqa: E402
+from src.utils.get_available_devices import get_available_devices  # noqa: E402
+from src.rust_implementations.build import main as rust_build  # noqa: E402
+
+# Build the Rust implementations
+print(f"{Colors.CYAN}Building Rust implementations...{Colors.RESET}")
+rust_build()
+print(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
+
+available_devices = get_available_devices()
+print(f"{Colors.CYAN}Detected Available Devices:{Colors.RESET}", available_devices)
 
 current_dir = Path(__file__).parent
 
@@ -66,13 +81,13 @@ def add_video_file_cameras(
             str(video_file),
         )
         known_cameras.add(camera_name)
-        print(f"Added video file camera: {camera_name}")
+        print(f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}")
 
 
 class MainBackend:
     def __init__(self):
         try:
-            print("Initializing EagleEye backend...")
+            print(f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}")
 
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
@@ -82,7 +97,46 @@ class MainBackend:
             self.known_cameras: Set[str] = set()
 
             self.compute_pool = ComputePool()
-            self.compute_pool.add_compute_device(MX3Accelerator())
+
+            # Add CPU device if available
+            if available_devices.get("CPU"):
+                cpu_device = CPU()
+                self.compute_pool.add_compute_device(cpu_device)
+                print(
+                    f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
+                )
+
+            # Add TPU devices if available
+            tpu_devices = available_devices.get("TPU", [])
+            if tpu_devices:
+                from src.utils.device_management_utils.mx3_accelerator import (
+                    MX3Accelerator,
+                )  # noqa: E402
+
+                for tpu_device in tpu_devices:
+                    if tpu_device.startswith("memx:"):
+                        try:
+                            # Extract device index from memx:X
+                            device_parts = tpu_device.split(":", 1)
+                            if len(device_parts) != 2:
+                                print(
+                                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                                )
+                                continue
+
+                            device_index = device_parts[1]
+                            mx3_device = MX3Accelerator(device_id=f"MX3_{device_index}")
+                            self.compute_pool.add_compute_device(mx3_device)
+
+                            print(
+                                f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
+                            )
+                        except Exception as e:
+                            print(
+                                f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
+                            )
+
+            # TODO: GPU support not yet implemented - would need a GPU device class
 
             self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
                 self.web_interface,
@@ -91,7 +145,7 @@ class MainBackend:
             )
 
             # Initial camera detection
-            print("Performing initial camera detection...")
+            print(f"{Colors.CYAN}Performing initial camera detection...{Colors.RESET}")
             self.known_cameras = check_and_add_new_cameras(
                 self.web_interface, self.camera_manager, self.known_cameras
             )
@@ -106,18 +160,18 @@ class MainBackend:
                     for pipeline_name, pipeline in pipelines.items():
                         pipeline.thread_run(self.camera_manager, camera_name)
                         print(
-                            f"Started pipeline for camera bus id: {camera_name} and pipeline name: {pipeline_name}"
+                            f"{Colors.GREEN}Started pipeline for camera bus id: {camera_name} and pipeline name: {pipeline_name}{Colors.RESET}"
                         )
                 else:
                     print(
-                        f"Pipeline bus id: {camera_name} was not found in available cameras"
+                        f"{Colors.YELLOW}Pipeline bus id: {camera_name} was not found in available cameras{Colors.RESET}"
                     )
 
             if not self.known_cameras:
-                print("No cameras detected initially.")
+                print(f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}")
             else:
                 print(
-                    f"Initially detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}"
+                    f"{Colors.CYAN}Initially detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
         except KeyboardInterrupt:
             self.shutdown()
@@ -136,17 +190,27 @@ class MainBackend:
             restart_service: If True, trigger a systemctl restart of the service after shutdown.
         """
         if restart_service:
-            print("Restarting systemctl service...")
+            print(f"{Colors.CYAN}Restarting systemctl service...{Colors.RESET}")
             try:
                 # Get the service name from environment or use a default
                 service_name = os.environ.get("SERVICE_NAME", "eagleeye")
-                result = os.system(f"sudo systemctl restart {service_name}")
-                if result == 0:
-                    print(f"Successfully restarted systemctl service: {service_name}")
-                else:
-                    print(f"Failed to restart systemctl service: {service_name}")
-            except Exception as e:
-                print(f"Error restarting systemctl service: {e}")
+                subprocess.run(
+                    ["sudo", "systemctl", "restart", service_name],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                print(
+                    f"{Colors.GREEN}Successfully restarted systemctl service: {service_name}{Colors.RESET}"
+                )
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Failed to restart systemctl service: {service_name}, return code: {e.returncode}"
+                if e.stdout:
+                    error_msg += f", stdout: {e.stdout}"
+                if e.stderr:
+                    error_msg += f", stderr: {e.stderr}"
+                print(f"{Colors.RED}{error_msg}{Colors.RESET}")
+                raise RuntimeError(error_msg) from e
 
     def restart(self) -> None:
         """

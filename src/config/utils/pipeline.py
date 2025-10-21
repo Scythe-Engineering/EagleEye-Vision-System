@@ -5,11 +5,13 @@ import traceback
 from collections import deque
 from typing import Any, Dict, List
 
+import cv2
 import numpy as np
 from networktables import NetworkTable
 
 from src.config.utils.print_timing_summary import print_timing_summary
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
@@ -49,6 +51,7 @@ class Pipeline:
             deque(maxlen=50) for _ in range(len(self.operations))
         ]
         self.total_time_history: deque[float] = deque(maxlen=50)
+        self.total_time_history_lock = threading.Lock()
         self.all_total_times: List[float] = []
 
         self.set_visualize = False
@@ -178,24 +181,21 @@ class Pipeline:
                 if current_data is None and i != len(self.operations) - 1:
                     if debug_mode:
                         print(
-                            f"Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline"
+                            f"{Colors.YELLOW}Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline{Colors.RESET}"
                         )
-                    self.web_interface.update_robot_position(
-                        np.zeros((4, 4), dtype=np.float32)
-                    )
                     break
                 end_time = time.time()
                 elapsed = end_time - start_time
-                if debug_mode:
-                    self.operation_time_history[i].append(elapsed)
-                    time_elapsed += elapsed
+                self.operation_time_history[i].append(elapsed)
+                time_elapsed += elapsed
             except Exception as _:
                 raise RuntimeError(
-                    f"Error in operation {i} ({type(operation).__name__}): {traceback.format_exc()}"
-                )
-        if debug_mode:
+                    f"Error in operation {i} ({type(operation).__name__})"
+                ) from _
+        with self.total_time_history_lock:
             self.total_time_history.append(time_elapsed)
-            self.all_total_times.append(time_elapsed)
+        self.all_total_times.append(time_elapsed)
+        if debug_mode:
             print_timing_summary(
                 self.operations, self.operation_time_history, self.total_time_history
             )
@@ -246,15 +246,23 @@ class Pipeline:
                 try:
                     operation.update_config(action_params)
                     if debug_mode:
-                        print(f"Updated config for {action_name}: {action_params}")
+                        print(
+                            f"{Colors.GREEN}Updated config for {action_name}: {action_params}{Colors.RESET}"
+                        )
                 except Exception as e:
-                    print(f"Error updating config for {action_name}: {e}")
+                    print(
+                        f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
+                    )
             elif operation is not None:
                 if debug_mode:
-                    print(f"Operation {action_name} does not support config updates")
+                    print(
+                        f"{Colors.YELLOW}Operation {action_name} does not support config updates{Colors.RESET}"
+                    )
             else:
                 if debug_mode:
-                    print(f"Operation {action_name} not found in pipeline")
+                    print(
+                        f"{Colors.RED}Operation {action_name} not found in pipeline{Colors.RESET}"
+                    )
 
     def thread_run(
         self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
@@ -282,13 +290,17 @@ class Pipeline:
         """
         if not camera_thread_manager.get_camera_ready(camera_bus_id):
             print(
-                f"Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready"
+                f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
             )
             while not camera_thread_manager.get_camera_ready(camera_bus_id):
                 time.sleep(0.01)
-            print(f"Camera bus id: {camera_bus_id} is ready")
+            print(
+                f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
+            )
 
-        print(f"Starting pipeline for camera bus id: {camera_bus_id}")
+        print(
+            f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
+        )
         time.sleep(0.1)
         while self.thread_running:
             camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
@@ -300,7 +312,9 @@ class Pipeline:
                             self.current_frame = frame.copy()
                     self.run(frame)
                 except Exception as _:
-                    print(f"Error in pipeline itself: {traceback.format_exc()}")
+                    print(
+                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                    )
             else:
                 time.sleep(0.01)
 
@@ -324,6 +338,24 @@ class Pipeline:
                 "definition", ""
             ) == action_name.lower().replace("_", ""):
                 break
+
+        # Add FPS display in top left corner
+        with self.total_time_history_lock:
+            if self.total_time_history:
+                avg_time = sum(self.total_time_history) / len(self.total_time_history)
+            else:
+                avg_time = 0.0
+        fps = 1.0 / avg_time if avg_time > 0 else 0.0
+        fps_text = f"FPS: {fps:.1f}"
+        cv2.putText(
+            current_frame,
+            fps_text,
+            (30, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 255),  # Yellow color in BGR
+            2,
+        )
 
         return current_frame
 

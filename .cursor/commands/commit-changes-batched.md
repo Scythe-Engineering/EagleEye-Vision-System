@@ -1,0 +1,1 @@
+Commit all repository changes, or the changes specified by the user (if specified explicitly), using .cursor/rules/batched-commits.mdc

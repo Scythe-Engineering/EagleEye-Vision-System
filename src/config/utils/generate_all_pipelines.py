@@ -7,6 +7,33 @@ from src.utils.device_management_utils.compute_pool import ComputePool
 from networktables import NetworkTable
 
 current_path = os.path.dirname(__file__)
+project_root = current_path.split("src")[0][:-1] # remove trailing slash
+
+value_map = {
+    "{project_root}": project_root
+}
+
+def _replace_string_value(text: str) -> str:
+    """Replace all placeholders in a string using the value_map."""
+    result = text
+    for old_value, new_value in value_map.items():
+        result = result.replace(old_value, new_value)
+    return result
+
+def replace_values(config_data: dict) -> dict:
+    """Recursively replace values in nested dictionaries and lists."""
+    for key, value in config_data.items():
+        if isinstance(value, str):
+            config_data[key] = _replace_string_value(value)
+        elif isinstance(value, dict):
+            config_data[key] = replace_values(value)
+        elif isinstance(value, list):
+            config_data[key] = [
+                replace_values(item) if isinstance(item, dict) else
+                _replace_string_value(item) if isinstance(item, str) else item
+                for item in value
+            ]
+    return config_data
 
 
 def generate_all_pipelines(
@@ -34,6 +61,9 @@ def generate_all_pipelines(
     else:
         with open(pipeline_config, "r") as f:
             config_data = json.load(f)
+
+    # Replace placeholders in the configuration data
+    config_data = replace_values(config_data)
 
     pipelines: Dict[str, Dict[str, Pipeline]] = {}
     pipeline_count = 0
