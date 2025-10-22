@@ -22,10 +22,10 @@ def check_and_add_new_cameras(
     Args:
         web_interface: The web interface instance.
         camera_manager: The camera thread manager instance.
-        known_cameras: Set of camera bus values already known to the system.
+        known_cameras: Set of camera names already known to the system.
 
     Returns:
-        Updated set of known camera bus values.
+        Updated set of known camera names.
     """
     detected_cameras = detect_cameras_with_names()
 
@@ -36,22 +36,18 @@ def check_and_add_new_cameras(
 
     for index, camera_info in detected_cameras.items():
         camera_name = camera_info["name"]
-        bus_value = camera_info["bus_value"]
         camera_info["index"] = index
-        if bus_value not in known_cameras:
-            new_cameras[bus_value] = camera_info
-            new_cameras[bus_value]["name"] = camera_name
-
-    if new_cameras:
-        print(f"{Colors.CYAN}Camera Detection Info:{Colors.RESET}")
+        if camera_name not in known_cameras:
+            new_cameras[camera_name] = camera_info
+            new_cameras[camera_name]["name"] = camera_name
+        
         print(
             f"{Colors.CYAN}{spacer}Found {len(new_cameras)} new cameras: {list(camera_info['name'] for camera_info in new_cameras.values())}{Colors.RESET}"
         )
 
-        for bus_value, camera_info in new_cameras.items():
-            camera_name = camera_info["name"]
+        for camera_name, camera_info in new_cameras.items():
             calibration_folder = os.path.join(
-                current_dir, "camera_calibrations", f"{bus_value}"
+                current_dir, "camera_calibrations", f"{camera_info['bus_value']}"
             )
 
             if not os.path.exists(calibration_folder):
@@ -63,16 +59,16 @@ def check_and_add_new_cameras(
             )
 
             if camera_manager.start_camera_thread(
-                bus_value, calibration_folder, camera_index=camera_info["index"]
+                camera_name, calibration_folder, camera_index=camera_info["index"]
             ):
-                known_cameras.add(bus_value)
+                known_cameras.add(camera_name)
                 print(
-                    f"{Colors.GREEN}{spacer}Successfully started thread for new camera: {camera_name} (bus: {bus_value}){Colors.RESET}"
+                    f"{Colors.GREEN}{spacer}Successfully started thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
                 )
             else:
                 web_interface.remove_camera(camera_name)
                 print(
-                    f"{Colors.RED}{spacer}Failed to start thread for new camera: {camera_name} (bus: {bus_value}){Colors.RESET}"
+                    f"{Colors.RED}{spacer}Failed to start thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
                 )
 
     return known_cameras

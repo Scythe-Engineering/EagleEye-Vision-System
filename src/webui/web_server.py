@@ -119,7 +119,8 @@ class EagleEyeInterface:
         self.frame_list = {}
         self.available_cameras = {}
 
-        self.frame_list_lock = threading.Lock()
+        self.frame_locks = {}
+        self.frame_list_structure_lock = threading.Lock()
 
         if settings_object is None:
             self.settings_object = Constants()
@@ -343,14 +344,14 @@ class EagleEyeInterface:
         if camera_id is None:
             camera_id = camera_name
 
-        self.cameras[camera_name] = camera_id
-
-        with self.frame_list_lock:
+        with self.frame_list_structure_lock:
+            self.cameras[camera_name] = camera_id
             if camera_name not in self.frame_list:
                 self.frame_list[camera_name] = no_image
+                self.frame_locks[camera_name] = threading.Lock()
 
-        url_safe_name = camera_name.replace(" ", "_")
-        self.available_cameras[camera_name] = url_safe_name
+            url_safe_name = camera_name.replace(" ", "_")
+            self.available_cameras[camera_name] = url_safe_name
 
         self.log(f"Added camera: {camera_name} with ID: {camera_id}")
 
@@ -361,17 +362,20 @@ class EagleEyeInterface:
         Args:
             camera_name (str): The name of the camera to remove.
         """
-        if camera_name in self.cameras:
-            del self.cameras[camera_name]
+        with self.frame_list_structure_lock:
+            if camera_name in self.cameras:
+                del self.cameras[camera_name]
 
-            with self.frame_list_lock:
                 if camera_name in self.frame_list:
                     del self.frame_list[camera_name]
 
-            if camera_name in self.available_cameras:
-                del self.available_cameras[camera_name]
+                if camera_name in self.frame_locks:
+                    del self.frame_locks[camera_name]
 
-            self.log(f"Removed camera: {camera_name}")
+                if camera_name in self.available_cameras:
+                    del self.available_cameras[camera_name]
+
+                self.log(f"Removed camera: {camera_name}")
 
     def set_cameras(self, cameras_dict: dict[str, int | str]) -> None:
         """
@@ -380,13 +384,15 @@ class EagleEyeInterface:
         Args:
             cameras_dict (dict[str, int | str]): A dictionary mapping camera names to camera IDs.
         """
-        with self.frame_list_lock:
+        with self.frame_list_structure_lock:
             self.cameras = cameras_dict.copy()
             self.frame_list = {}
             self.available_cameras = {}
+            self.frame_locks = {}
 
             for camera_name in self.cameras:
                 self.frame_list[camera_name] = no_image
+                self.frame_locks[camera_name] = threading.Lock()
                 url_safe_name = camera_name.replace(" ", "_")
                 self.available_cameras[camera_name] = url_safe_name
 
@@ -447,8 +453,9 @@ class EagleEyeInterface:
             camera_name (str): The ID of the camera.
             frame: The frame to update as a numpy array.
         """
-        with self.frame_list_lock:
-            self.frame_list[camera_name] = frame
+        if camera_name in self.frame_locks:
+            with self.frame_locks[camera_name]:
+                self.frame_list[camera_name] = frame
 
     def _frame_generator(self, camera_name: str) -> Generator[bytes, Any, Any]:
         """
@@ -462,7 +469,12 @@ class EagleEyeInterface:
         """
         while True:
             time_start = time.time()
-            with self.frame_list_lock:
+            
+            if camera_name not in self.frame_locks:
+                time.sleep(0.01)
+                continue
+            
+            with self.frame_locks[camera_name]:
                 frame = self.frame_list[camera_name]
 
             if frame is not None:
