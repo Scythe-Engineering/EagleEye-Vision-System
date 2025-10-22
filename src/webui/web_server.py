@@ -798,7 +798,12 @@ class EagleEyeInterface:
             dict: The config data for the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
-            return json.load(f)[camera_name][pipeline_name]
+            config = json.load(f)
+            if camera_name not in config:
+                return []
+            if pipeline_name not in config[camera_name]:
+                return []
+            return config[camera_name][pipeline_name]
 
     def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
         """
@@ -811,7 +816,10 @@ class EagleEyeInterface:
             list[str]: The names of the pipelines for the camera.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
-            return list(json.load(f)[camera_name].keys())
+            config = json.load(f)
+            if camera_name not in config:
+                return []
+            return list(config[camera_name].keys())
 
     def save_pipeline_config(
         self, camera_name: str, pipeline_name: str
@@ -829,6 +837,12 @@ class EagleEyeInterface:
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             current_config = json.load(f)
             new_data = request.get_json()
+
+            if camera_name not in current_config:
+                current_config[camera_name] = {}
+
+            if pipeline_name not in current_config[camera_name]:
+                current_config[camera_name][pipeline_name] = []
 
             for operation in new_data:
                 operation_name = operation["action_name"]
@@ -854,9 +868,16 @@ class EagleEyeInterface:
 
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
-        self.pipeline_objects_callback()[camera_name][
-            pipeline_name
-        ].update_operations_config(request.get_json())
+
+        pipeline_objects = self.pipeline_objects_callback()
+        if (
+            camera_name in pipeline_objects
+            and pipeline_name in pipeline_objects[camera_name]
+        ):
+            pipeline_objects[camera_name][pipeline_name].update_operations_config(
+                request.get_json()
+            )
+
         return {"message": "Pipeline config saved successfully"}, 200
 
     def delete_pipeline(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
@@ -865,7 +886,13 @@ class EagleEyeInterface:
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             current_config = json.load(f)
-            del current_config[camera_name][pipeline_name]
+            if (
+                camera_name in current_config
+                and pipeline_name in current_config[camera_name]
+            ):
+                del current_config[camera_name][pipeline_name]
+            else:
+                return {"message": "Pipeline not found"}, 404
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
         return {"message": "Pipeline deleted successfully"}, 200
