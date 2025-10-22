@@ -7,11 +7,10 @@ from src.utils.device_management_utils.compute_pool import ComputePool
 from networktables import NetworkTable
 
 current_path = os.path.dirname(__file__)
-project_root = current_path.split("src")[0][:-1] # remove trailing slash
+project_root = current_path.split("src")[0][:-1]  # remove trailing slash
 
-value_map = {
-    "{project_root}": project_root
-}
+value_map = {"{project_root}": project_root}
+
 
 def _replace_string_value(text: str) -> str:
     """Replace all placeholders in a string using the value_map."""
@@ -19,6 +18,7 @@ def _replace_string_value(text: str) -> str:
     for old_value, new_value in value_map.items():
         result = result.replace(old_value, new_value)
     return result
+
 
 def replace_values(config_data: dict) -> dict:
     """Recursively replace values in nested dictionaries and lists."""
@@ -29,8 +29,11 @@ def replace_values(config_data: dict) -> dict:
             config_data[key] = replace_values(value)
         elif isinstance(value, list):
             config_data[key] = [
-                replace_values(item) if isinstance(item, dict) else
-                _replace_string_value(item) if isinstance(item, str) else item
+                replace_values(item)
+                if isinstance(item, dict)
+                else _replace_string_value(item)
+                if isinstance(item, str)
+                else item
                 for item in value
             ]
     return config_data
@@ -40,6 +43,7 @@ def generate_all_pipelines(
     web_interface: EagleEyeInterface,
     compute_pool: ComputePool,
     network_table: NetworkTable,
+    camera_manager,
     pipeline_config: str | None = None,
 ) -> Dict[str, Dict[str, Pipeline]]:
     """Generate all pipelines from the pipeline_config.json file.
@@ -74,7 +78,12 @@ def generate_all_pipelines(
             config = config_data[camera_name][pipeline_name]
 
             pipeline = Pipeline(
-                config, web_interface, camera_name, compute_pool, network_table
+                config,
+                web_interface,
+                camera_name,
+                compute_pool,
+                network_table,
+                camera_manager,
             )
             pipelines[camera_name][pipeline_name] = pipeline
             pipeline_count += 1

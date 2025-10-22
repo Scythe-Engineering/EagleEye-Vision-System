@@ -2,6 +2,10 @@
     "basic_test": {
         "apriltag_pipeline": [
             {
+                "action_name": "camera_adjust",
+                "action_params": {}
+            },
+            {
                 "action_name": "temporal_acceleration_preprocessor_rust",
                 "action_params": {
                     "camera_parameters_path": "{project_root}/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json",

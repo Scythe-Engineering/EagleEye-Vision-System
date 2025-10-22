@@ -28,6 +28,7 @@ class Pipeline:
         camera_bus_id: str,
         compute_pool: ComputePool,
         network_table: NetworkTable,
+        camera_manager: CameraThreadManager | None = None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -43,6 +44,7 @@ class Pipeline:
         self.camera_bus_id = camera_bus_id
         self.compute_pool = compute_pool
         self.network_table = network_table
+        self.camera_manager = camera_manager
 
         self.thread_running = False
         self.thread = None
@@ -149,6 +151,12 @@ class Pipeline:
                 and "network_table" in operation_class.__init__.__code__.co_varnames
             ):
                 action_params["network_table"] = self.network_table
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "camera_manager" in operation_class.__init__.__code__.co_varnames
+            ):
+                action_params["camera_manager"] = self.camera_manager
 
             return operation_class(**action_params)
 
