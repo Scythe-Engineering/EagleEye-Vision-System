@@ -66,6 +66,10 @@ class VideoFileCamera(Camera):
         """Return the current frame index."""
         return self.current_frame_index
 
+    def get_achieved_fps(self) -> int:
+        """Get the FPS that the video file is set to play at."""
+        return int(self.cap.get(cv2.CAP_PROP_FPS))
+
     def __del__(self):
         """Release the video capture object."""
         if hasattr(self, "cap") and self.cap.isOpened():
