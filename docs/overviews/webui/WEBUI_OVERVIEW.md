@@ -69,6 +69,8 @@ The EagleEye WebUI is a comprehensive web-based interface for FIRST Robotics Com
 - Automatic pipeline saving on all structure changes (add, remove, reorder)
 - Settings configuration per pipeline stage
 - Backend state monitoring and restart requirements
+- Graceful handling of cameras without pipelines (see [Pipeline Error Handling](PIPELINE_ERROR_HANDLING.md))
+- Automatic creation of camera/pipeline entries when saving new pipelines
 
 ### Settings Management
 

@@ -221,7 +221,7 @@ Currently, the API does not require authentication. All endpoints are publicly a
 
 #### GET `/get-pipeline-names-for-camera/<camera_name>`
 
-**Description:** Retrieves list of pipeline names for a specific camera
+**Description:** Retrieves list of pipeline names for a specific camera. Returns an empty array if the camera has no configured pipelines.
 **Parameters:**
 
 - `camera_name` (path): Name of the camera
@@ -231,24 +231,30 @@ Currently, the API does not require authentication. All endpoints are publicly a
 ["pipeline_name_1", "pipeline_name_2"]
 ```
 
+Or if no pipelines exist for the camera:
+
+```json
+[]
+```
+
 **Status Codes:**
 
-- `200`: Success
+- `200`: Success (even if camera has no pipelines)
 
 #### GET `/get-pipeline-config/<camera_name>/<pipeline_name>`
 
-**Description:** Retrieves configuration for a specific pipeline
+**Description:** Retrieves configuration for a specific pipeline. Returns an empty array if the camera or pipeline doesn't exist.
 **Parameters:**
 
 - `camera_name` (path): Name of the camera
 - `pipeline_name` (path): Name of the pipeline
-  **Response:** Pipeline configuration JSON object
+  **Response:** Pipeline configuration JSON object, or empty array if not found
   **Status Codes:**
-- `200`: Success
+- `200`: Success (even if pipeline doesn't exist)
 
 #### POST `/save-pipeline-config/<camera_name>/<pipeline_name>`
 
-**Description:** Saves/updates pipeline configuration
+**Description:** Saves/updates pipeline configuration. If the camera or pipeline doesn't exist in the configuration, they will be created automatically.
 **Parameters:**
 
 - `camera_name` (path): Name of the camera
@@ -279,6 +285,11 @@ Currently, the API does not require authentication. All endpoints are publicly a
 
 - `200`: Success
 
+**Notes:**
+- Creates camera entry if it doesn't exist
+- Creates pipeline entry if it doesn't exist
+- Updates existing operations or appends new ones
+
 #### DELETE `/delete-pipeline/<camera_name>/<pipeline_name>`
 
 **Description:** Deletes a pipeline configuration
@@ -294,9 +305,18 @@ Currently, the API does not require authentication. All endpoints are publicly a
 }
 ```
 
+Or if not found:
+
+```json
+{
+    "message": "Pipeline not found"
+}
+```
+
 **Status Codes:**
 
 - `200`: Success
+- `404`: Pipeline not found
 
 ### Pipeline Visualization
 
