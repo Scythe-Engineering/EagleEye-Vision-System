@@ -3,7 +3,7 @@ use pyo3::types::PyDict;
 
 /// A simple temporal acceleration module
 #[pymodule]
-fn temporal_acceleration(_py: Python, m: &PyModule) -> PyResult<()> {
+fn temporal_acceleration(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TemporalAcceleration>()?;
     Ok(())
 }
@@ -226,14 +226,14 @@ impl TemporalAcceleration {
         Ok((vec![], crop_regions))
     }
 
-    fn update_config(&mut self, py: Python, config: &PyDict) -> PyResult<()> {
-        if let Ok(Some(val)) = config.get_item("padding_factor") {
+    fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
+        if let Some(val) = config.get_item("padding_factor")? {
             self.padding_factor = val.extract::<f32>()?;
         }
-        if let Ok(Some(val)) = config.get_item("max_regions") {
+        if let Some(val) = config.get_item("max_regions")? {
             self.max_regions = val.extract::<usize>()?;
         }
-        if let Ok(Some(val)) = config.get_item("min_region_size_px") {
+        if let Some(val) = config.get_item("min_region_size_px")? {
             self.min_region_size_px = val.extract::<i32>()?;
         }
         Ok(())

@@ -401,7 +401,7 @@ impl PoseOutlierFilter {
 
 /// Python module initialization
 #[pymodule]
-fn pose_outlier_filter(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pose_outlier_filter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PoseOutlierFilter>()?;
     Ok(())
 }
