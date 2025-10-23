@@ -227,14 +227,26 @@ impl TemporalAcceleration {
     }
 
     fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
-        if let Some(val) = config.get_item("padding_factor")? {
-            self.padding_factor = val.extract::<f32>()?;
+        match config.get_item("padding_factor") {
+            Ok(Some(val)) => {
+                self.padding_factor = val.extract::<f32>()?;
+            }
+            Ok(None) => {}
+            Err(e) => return Err(e),
         }
-        if let Some(val) = config.get_item("max_regions")? {
-            self.max_regions = val.extract::<usize>()?;
+        match config.get_item("max_regions") {
+            Ok(Some(val)) => {
+                self.max_regions = val.extract::<usize>()?;
+            }
+            Ok(None) => {}
+            Err(e) => return Err(e),
         }
-        if let Some(val) = config.get_item("min_region_size_px")? {
-            self.min_region_size_px = val.extract::<i32>()?;
+        match config.get_item("min_region_size_px") {
+            Ok(Some(val)) => {
+                self.min_region_size_px = val.extract::<i32>()?;
+            }
+            Ok(None) => {}
+            Err(e) => return Err(e),
         }
         Ok(())
     }
