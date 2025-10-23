@@ -16,7 +16,7 @@ from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
-
+max_frame_limit = 240 # 240 frames per second
 
 class Pipeline:
     """Pipeline for processing data through a sequence of operations."""
@@ -310,21 +310,33 @@ class Pipeline:
             f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
         )
         time.sleep(0.1)
+
+        min_frame_time = 1.0 / max_frame_limit
+        last_frame_time = time.time()
+
         while self.thread_running:
-            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
-            if camera_frame_result is not None:
-                frame, _ = camera_frame_result
-                try:
-                    if self.set_visualize:
-                        with self.current_frame_lock:
-                            self.current_frame = frame.copy()
-                    self.run(frame)
-                except Exception as _:
-                    print(
-                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                    )
+            current_time = time.time()
+            time_since_last_frame = current_time - last_frame_time
+
+            if time_since_last_frame >= min_frame_time:
+                camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
+                if camera_frame_result is not None:
+                    frame, _ = camera_frame_result
+                    try:
+                        if self.set_visualize:
+                            with self.current_frame_lock:
+                                self.current_frame = frame.copy()
+                        self.run(frame)
+                        last_frame_time = current_time
+                    except Exception as _:
+                        print(
+                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                        )
+                else:
+                    time.sleep(0.01)
             else:
-                time.sleep(0.01)
+                sleep_time = min_frame_time - time_since_last_frame
+                time.sleep(sleep_time)
 
     def visualize(self, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.
