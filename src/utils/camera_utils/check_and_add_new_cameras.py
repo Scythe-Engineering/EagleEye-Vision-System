@@ -40,7 +40,8 @@ def check_and_add_new_cameras(
         if camera_name not in known_cameras:
             new_cameras[camera_name] = camera_info
             new_cameras[camera_name]["name"] = camera_name
-        
+
+    if new_cameras:
         print(
             f"{Colors.CYAN}{spacer}Found {len(new_cameras)} new cameras: {list(camera_info['name'] for camera_info in new_cameras.values())}{Colors.RESET}"
         )

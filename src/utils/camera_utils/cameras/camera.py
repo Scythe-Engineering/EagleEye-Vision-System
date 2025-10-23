@@ -118,13 +118,13 @@ class Camera(abc.ABC):
             self.frame_rotation: int = extrinsics["frame_rotation"]
             self.frame_width: int = extrinsics.get("frame_width", 1280)
             self.frame_height: int = extrinsics.get("frame_height", 720)
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             self.log(
                 f"{Colors.RED}Camera: {self.name} created without extrinsics calibration{Colors.RESET}"
             )
             raise RuntimeError(
                 f"Camera: {self.name} created without extrinsics calibration, must have extrinsics before creation"
-            )
+            ) from e
 
         self.camera_ready: bool = False
 
