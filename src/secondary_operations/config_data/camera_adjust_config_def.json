@@ -1,11 +1,11 @@
 {
     "class_name": "CameraAdjust",
-    "description": "Adjust brightness, contrast, exposure (gamma), saturation, hue, and optional CLAHE on camera frames.",
+    "description": "Hardware-accelerated camera adjustments for brightness, contrast, exposure, saturation, and hue.",
     "category": "prep",
     "parameters": {
         "brightness": {
             "type": "float",
-            "description": "Brightness offset (-100..100). Attempts hardware acceleration; CPU fallback if unsupported.",
+            "description": "Brightness offset (-100..100).",
             "default": 0.0,
             "required": false,
             "min": -100,
@@ -14,7 +14,7 @@
         },
         "contrast": {
             "type": "float",
-            "description": "Contrast multiplier (0.5..3.0). Attempts hardware acceleration; CPU fallback if unsupported.",
+            "description": "Contrast multiplier (0.5..3.0).",
             "default": 1.0,
             "required": false,
             "min": 0.5,
@@ -23,7 +23,7 @@
         },
         "exposure": {
             "type": "float",
-            "description": "Exposure control mapped to gamma (-2..2). Attempts hardware acceleration; CPU fallback if unsupported.",
+            "description": "Exposure control mapped to gamma (-2..2).",
             "default": 0.0,
             "required": false,
             "min": -2.0,
@@ -32,7 +32,7 @@
         },
         "saturation": {
             "type": "float",
-            "description": "Saturation multiplier (0.0..2.0). Attempts hardware acceleration; CPU fallback if unsupported.",
+            "description": "Saturation multiplier (0.0..2.0).",
             "default": 1.0,
             "required": false,
             "min": 0.0,
@@ -41,27 +41,11 @@
         },
         "hue": {
             "type": "int",
-            "description": "Hue shift in degrees (-180..180). Attempts hardware acceleration; CPU fallback if unsupported.",
+            "description": "Hue shift in degrees (-180..180).",
             "default": 0,
             "required": false,
             "min": -180,
             "max": 180,
-            "restart_for_change": false
-        },
-        "enable_clahe": {
-            "type": "bool",
-            "description": "Enable CLAHE on luminance channel. WARNING: Always CPU-based, causes significant overhead.",
-            "default": false,
-            "required": false,
-            "restart_for_change": false
-        },
-        "clahe_clip_limit": {
-            "type": "float",
-            "description": "CLAHE clip limit (1.0..40.0). Only used when enable_clahe=true. Higher values reduce CPU overhead but may over-enhance.",
-            "default": 2.0,
-            "required": false,
-            "min": 1.0,
-            "max": 40.0,
             "restart_for_change": false
         }
     }
