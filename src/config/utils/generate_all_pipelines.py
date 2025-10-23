@@ -1,13 +1,21 @@
 import os
 import json
+from pathlib import Path
 from typing import Dict
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.device_management_utils.compute_pool import ComputePool
 from networktables import NetworkTable
 
-current_path = os.path.dirname(__file__)
-project_root = current_path.split("src")[0][:-1]  # remove trailing slash
+# Find project root by walking up from this file's directory until we find 'src'
+current_path = Path(__file__).resolve().parent
+project_root = current_path
+while project_root.name != "src" and project_root.parent != project_root:
+    project_root = project_root.parent
+if project_root.name == "src":
+    project_root = str(project_root.parent)
+else:
+    raise ValueError("Project root not found")
 
 value_map = {"{project_root}": project_root}
 
@@ -58,9 +66,7 @@ def generate_all_pipelines(
         A list of Pipeline objects.
     """
     if pipeline_config is None:
-        with open(
-            os.path.join(os.path.dirname(current_path), "pipeline_config.json"), "r"
-        ) as f:
+        with open(os.path.join(str(current_path), "pipeline_config.json"), "r") as f:
             config_data = json.load(f)
     else:
         with open(pipeline_config, "r") as f:
