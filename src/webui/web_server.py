@@ -453,8 +453,9 @@ class EagleEyeInterface:
             camera_name (str): The ID of the camera.
             frame: The frame to update as a numpy array.
         """
-        if camera_name in self.frame_locks:
-            with self.frame_locks[camera_name]:
+        lock = self.frame_locks.get(camera_name)
+        if lock:
+            with lock:
                 self.frame_list[camera_name] = frame
 
     def _frame_generator(self, camera_name: str) -> Generator[bytes, Any, Any]:
@@ -469,12 +470,13 @@ class EagleEyeInterface:
         """
         while True:
             time_start = time.time()
-            
-            if camera_name not in self.frame_locks:
+
+            lock = self.frame_locks.get(camera_name)
+            if not lock:
                 time.sleep(0.01)
                 continue
-            
-            with self.frame_locks[camera_name]:
+
+            with lock:
                 frame = self.frame_list[camera_name]
 
             if frame is not None:
