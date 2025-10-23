@@ -70,8 +70,7 @@ class CameraThreadManager:
                         timestamp_from_start,
                     )
 
-                    if frame_count % 5 == 0:
-                        self.web_interface.update_camera_frame(camera_name, frame)
+                    self.web_interface.update_camera_frame(camera_name, frame)
                 else:
                     consecutive_failures += 1
                     if last_cached_frame is not None:

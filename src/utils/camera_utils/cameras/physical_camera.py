@@ -139,7 +139,9 @@ class PhysicalCamera(Camera):
         ret, frame = self.cap.read()
         if not ret:
             return None
-        return imutils.rotate_bound(frame, self.frame_rotation)
+        if self.frame_rotation != 0:
+            return imutils.rotate_bound(frame, self.frame_rotation)
+        return frame
 
     def get_achieved_fps(self) -> int:
         return self.achieved_fps

@@ -798,7 +798,7 @@ class EagleEyeInterface:
             self.log(f"Error loading config for operation {operation_name}: {e}")
             return {}
 
-    def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> dict:
+    def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> list:
         """
         Get the config data for a pipeline.
 
