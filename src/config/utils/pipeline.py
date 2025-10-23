@@ -129,37 +129,40 @@ class Pipeline:
                         f"Could not find class for action: {class_name} at {action_name}"
                     )
 
+            # Create a shallow copy to avoid mutating the original action_params
+            init_params = action_params.copy()
+
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "web_interface" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["web_interface"] = self.web_interface
+                init_params["web_interface"] = self.web_interface
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "compute_pool" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["compute_pool"] = self.compute_pool
+                init_params["compute_pool"] = self.compute_pool
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "pipeline" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["pipeline"] = self
+                init_params["pipeline"] = self
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "network_table" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["network_table"] = self.network_table
+                init_params["network_table"] = self.network_table
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "camera_manager" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["camera_manager"] = self.camera_manager
+                init_params["camera_manager"] = self.camera_manager
 
-            return operation_class(**action_params)
+            return operation_class(**init_params)
 
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
@@ -282,11 +285,11 @@ class Pipeline:
             camera_thread_manager: The camera thread manager.
             camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
+        self.thread_running = True
         self.thread = threading.Thread(
             target=self._thread_run, args=(camera_thread_manager, camera_bus_id)
         )
         self.thread.start()
-        self.thread_running = True
 
     def _thread_run(
         self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
@@ -343,7 +346,7 @@ class Pipeline:
                 # Frame arrived too quickly, skip it but advance timing to prevent drift
                 last_frame_time += min_frame_time
                 # Sleep until the next scheduled frame time
-                sleep_time = max(0, (last_frame_time + min_frame_time) - time.time())
+                sleep_time = max(0, last_frame_time - time.time())
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 

@@ -90,17 +90,25 @@ class Camera(abc.ABC):
         self.log = log
 
         if camera_calibration_folder is not None:
-            self.is_calibrated = True
-
-            self.camera_matrix, self.distortion_coefficients, self.image_size = (
-                load_camera_parameters(
-                    os.path.join(camera_calibration_folder, "intrinsics.json")
+            try:
+                self.camera_matrix, self.distortion_coefficients, self.image_size = (
+                    load_camera_parameters(
+                        os.path.join(str(camera_calibration_folder), "intrinsics.json")
+                    )
                 )
-            )
 
-            self.fov: np.ndarray = calculate_fov_from_camera_matrix(
-                self.camera_matrix, self.image_size
-            )
+                self.fov: np.ndarray = calculate_fov_from_camera_matrix(
+                    self.camera_matrix, self.image_size
+                )
+
+                self.is_calibrated = True
+            except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError) as e:
+                self.log(
+                    f"{Colors.YELLOW}Camera: {self.name} failed to load intrinsics calibration: {e}{Colors.RESET}"
+                )
+                self.camera_matrix = None
+                self.distortion_coefficients = None
+                self.image_size = None
         else:
             log(
                 f"{Colors.YELLOW}Camera: {self.name} created without intrinsics calibration{Colors.RESET}"

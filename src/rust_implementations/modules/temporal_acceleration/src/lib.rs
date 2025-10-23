@@ -167,7 +167,7 @@ impl TemporalAcceleration {
                 continue;
             }
 
-            // Project corners (no distortion applied here)
+            // Project corners with Brown–Conrady distortion
 	            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
 	            let mut valid_count = 0usize;
 	            let (k1, k2, p1, p2, k3) = extract_brown_conrady_coefficients(&self.distortion_coefficients);
@@ -227,26 +227,17 @@ impl TemporalAcceleration {
     }
 
     fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
-        match config.get_item("padding_factor") {
-            Ok(Some(val)) => {
-                self.padding_factor = val.extract::<f32>()?;
-            }
-            Ok(None) => {}
-            Err(e) => return Err(e),
+        if let Some(val) = config.get_item("padding_factor")? {
+            let extracted_f32 = val.extract::<f32>()?;
+            self.padding_factor = extracted_f32.clamp(0.0, 5.0);
         }
-        match config.get_item("max_regions") {
-            Ok(Some(val)) => {
-                self.max_regions = val.extract::<usize>()?;
-            }
-            Ok(None) => {}
-            Err(e) => return Err(e),
+        if let Some(val) = config.get_item("max_regions")? {
+            let extracted_usize = val.extract::<usize>()?;
+            self.max_regions = extracted_usize.max(1);
         }
-        match config.get_item("min_region_size_px") {
-            Ok(Some(val)) => {
-                self.min_region_size_px = val.extract::<i32>()?;
-            }
-            Ok(None) => {}
-            Err(e) => return Err(e),
+        if let Some(val) = config.get_item("min_region_size_px")? {
+            let extracted_i32 = val.extract::<i32>()?;
+            self.min_region_size_px = extracted_i32.max(1);
         }
         Ok(())
     }
