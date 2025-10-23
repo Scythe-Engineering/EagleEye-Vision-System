@@ -47,7 +47,9 @@ class CameraThreadManager:
         max_consecutive_failures = 10
         last_cached_frame: Optional[np.ndarray] = None
         camera_fps = camera.get_achieved_fps()
-        target_frame_time = 1.0 / camera_fps if camera_fps > 0 else 0.033  # 30 fps
+        target_frame_time = (
+            1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
+        )  # 30 fps default + (5 fps buffer)
         print(
             f"{Colors.CYAN}Camera thread for {camera_name} is running at {camera_fps} target fps{Colors.RESET}"
         )

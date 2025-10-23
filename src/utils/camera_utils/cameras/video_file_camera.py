@@ -32,7 +32,9 @@ class VideoFileCamera(Camera):
 
     def load_frames(self) -> list[np.ndarray]:
         """Load all frames from the video into a list."""
-        print(f"{Colors.CYAN}Loading frames...{Colors.RESET}")
+        print(
+            f"{Colors.CYAN}Loading frames (will init after frames are loaded into ram)...{Colors.RESET}"
+        )
         frames = []
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to the start of the video
         for _ in tqdm(range(int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)))):
