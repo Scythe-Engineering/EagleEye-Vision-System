@@ -122,9 +122,15 @@ Handles 3D model compression and decompression for web delivery.
 ## Error Handling
 
 ### HTTP Error Responses
-- 404: Camera not found
-- 500: Internal server error during settings save
 - 200: Success responses with appropriate data
+- 404: Camera not found, Pipeline not found
+- 500: Internal server error during settings save
+
+### Pipeline Error Handling
+- Returns empty arrays for cameras without pipelines (graceful degradation)
+- Automatically creates camera/pipeline entries when saving new pipelines
+- Validates pipeline existence before deletion
+- Safe pipeline visualization for non-existent pipelines
 
 ### SocketIO Error Handling
 - Connection timeouts (60s ping timeout, 25s ping interval)
@@ -136,6 +142,7 @@ Handles 3D model compression and decompression for web delivery.
 - Settings changes logging
 - Error conditions and stack traces
 - Connection status monitoring
+- Pipeline configuration changes
 
 ## Threading Model
 

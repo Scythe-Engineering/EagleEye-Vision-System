@@ -1,17 +1,24 @@
 import os
 import json
+from pathlib import Path
 from typing import Dict
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.device_management_utils.compute_pool import ComputePool
 from networktables import NetworkTable
 
-current_path = os.path.dirname(__file__)
-project_root = current_path.split("src")[0][:-1] # remove trailing slash
+# Find project root by walking up from this file's directory until we find 'src'
+current_path = Path(__file__).resolve().parent
+project_root = current_path
+while project_root.name != "src" and project_root.parent != project_root:
+    project_root = project_root.parent
+if project_root.name == "src":
+    project_root = str(project_root.parent)
+else:
+    raise ValueError("Project root not found")
 
-value_map = {
-    "{project_root}": project_root
-}
+value_map = {"{project_root}": project_root}
+
 
 def _replace_string_value(text: str) -> str:
     """Replace all placeholders in a string using the value_map."""
@@ -19,6 +26,7 @@ def _replace_string_value(text: str) -> str:
     for old_value, new_value in value_map.items():
         result = result.replace(old_value, new_value)
     return result
+
 
 def replace_values(config_data: dict) -> dict:
     """Recursively replace values in nested dictionaries and lists."""
@@ -29,8 +37,11 @@ def replace_values(config_data: dict) -> dict:
             config_data[key] = replace_values(value)
         elif isinstance(value, list):
             config_data[key] = [
-                replace_values(item) if isinstance(item, dict) else
-                _replace_string_value(item) if isinstance(item, str) else item
+                replace_values(item)
+                if isinstance(item, dict)
+                else _replace_string_value(item)
+                if isinstance(item, str)
+                else item
                 for item in value
             ]
     return config_data
@@ -40,6 +51,7 @@ def generate_all_pipelines(
     web_interface: EagleEyeInterface,
     compute_pool: ComputePool,
     network_table: NetworkTable,
+    camera_manager,
     pipeline_config: str | None = None,
 ) -> Dict[str, Dict[str, Pipeline]]:
     """Generate all pipelines from the pipeline_config.json file.
@@ -54,13 +66,7 @@ def generate_all_pipelines(
         A list of Pipeline objects.
     """
     if pipeline_config is None:
-        with open(
-<<<<<<< Updated upstream
-            os.path.join(os.path.dirname(current_path), "pipeline_config.json"), "r"
-=======
-            os.path.join(str(current_path.parent), "pipeline_config.json"), "r"
->>>>>>> Stashed changes
-        ) as f:
+        with open(os.path.join(str(current_path), "pipeline_config.json"), "r") as f:
             config_data = json.load(f)
     else:
         with open(pipeline_config, "r") as f:
@@ -78,7 +84,12 @@ def generate_all_pipelines(
             config = config_data[camera_name][pipeline_name]
 
             pipeline = Pipeline(
-                config, web_interface, camera_name, compute_pool, network_table
+                config,
+                web_interface,
+                camera_name,
+                compute_pool,
+                network_table,
+                camera_manager,
             )
             pipelines[camera_name][pipeline_name] = pipeline
             pipeline_count += 1

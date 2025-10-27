@@ -43,6 +43,16 @@ class CameraThreadManager:
         )
 
         frame_count = 0
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+        last_cached_frame: Optional[np.ndarray] = None
+        camera_fps = camera.get_achieved_fps()
+        target_frame_time = (
+            1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
+        )  # 30 fps default + (5 fps buffer)
+        print(
+            f"{Colors.CYAN}Camera thread for {camera_name} is running at {camera_fps} target fps{Colors.RESET}"
+        )
 
         while self.running_cameras.get(camera_name, False):
             try:
@@ -50,6 +60,8 @@ class CameraThreadManager:
                 frame = camera.get_frame()
                 frame_count += 1
                 if frame is not None:
+                    consecutive_failures = 0
+                    last_cached_frame = frame.copy()
                     current_time_ms = time.time() * 1000.0
                     timestamp_from_start = current_time_ms - self.start_time_ms
 
@@ -58,25 +70,44 @@ class CameraThreadManager:
                         timestamp_from_start,
                     )
 
-                    if (
-                        frame_count % 5 == 0
-                    ):  # Update every 5 frames to reduce load on the web interface
-                        self.web_interface.update_camera_frame(camera_name, frame)
+                    self.web_interface.update_camera_frame(camera_name, frame)
                 else:
-                    print(
-                        f"{Colors.YELLOW}Failed to get frame from {camera_name}{Colors.RESET}"
-                    )
-                    time.sleep(0.1)
+                    consecutive_failures += 1
+                    if last_cached_frame is not None:
+                        current_time_ms = time.time() * 1000.0
+                        timestamp_from_start = current_time_ms - self.start_time_ms
+                        self.current_frames[camera_name] = (
+                            last_cached_frame.copy(),
+                            timestamp_from_start,
+                        )
+                    if consecutive_failures <= 3:
+                        print(
+                            f"{Colors.YELLOW}Failed to get frame from {camera_name} ({consecutive_failures}){Colors.RESET}"
+                        )
+                    time.sleep(0.001)
 
-                time_to_sleep = 1 / 24 - (time.time() - start_time)
+                time_to_sleep = target_frame_time - (time.time() - start_time)
                 if time_to_sleep > 0:
                     time.sleep(time_to_sleep)
+
+                if consecutive_failures >= max_consecutive_failures:
+                    print(
+                        f"{Colors.RED}Too many consecutive failures from {camera_name}, stopping worker{Colors.RESET}"
+                    )
+                    break
 
             except Exception as camera_error:
                 print(
                     f"{Colors.RED}Error in camera feed worker for {camera_name}: {camera_error}{Colors.RESET}"
                 )
-                time.sleep(1)
+                consecutive_failures += 1
+                time.sleep(0.01)
+
+                if consecutive_failures >= max_consecutive_failures:
+                    print(
+                        f"{Colors.RED}Too many errors from {camera_name}, stopping worker{Colors.RESET}"
+                    )
+                    break
 
         print(
             f"{Colors.CYAN}Camera feed worker for {camera_name} stopped{Colors.RESET}"

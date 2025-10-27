@@ -5,6 +5,8 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from src.utils.colors import Colors
+
 
 def load_camera_parameters(
     json_path: str,
@@ -16,10 +18,10 @@ def load_camera_parameters(
 
     Returns:
         tuple[np.ndarray, np.ndarray, tuple[int, int]]: Camera matrix, distortion coefficients, and image size (width, height).
-    """    
+    """
     with open(json_path, "r") as file:
         data = json.load(file)
-        
+
     camera_matrix = np.array(data["camera_matrix"], dtype=np.float64)
     distortion_coefficients = np.array(
         data["distortion_coefficients"], dtype=np.float64
@@ -47,7 +49,7 @@ def calculate_fov_from_camera_matrix(
 
     Returns:
         np.ndarray: FOV angles in degrees as [horizontal_fov, vertical_fov].
-    """    
+    """
     image_width, image_height = image_size
 
     # Extract focal lengths from camera matrix
@@ -69,7 +71,10 @@ class Camera(abc.ABC):
     """Abstract base class defining a common camera interface."""
 
     def __init__(
-        self, camera_name: str, camera_calibration_folder: str | None, log: Callable[[str], None] = print
+        self,
+        camera_name: str,
+        camera_calibration_folder: str | None,
+        log: Callable[[str], None] = print,
     ) -> None:
         """
         Initialize common parameters and start the camera.
@@ -81,34 +86,54 @@ class Camera(abc.ABC):
         """
         self.name: str = camera_name
         self.is_calibrated: bool = False
-        
+
         self.log = log
 
         if camera_calibration_folder is not None:
-            self.is_calibrated = True
-            
-            self.camera_matrix, self.distortion_coefficients, self.image_size = (
-                load_camera_parameters(os.path.join(camera_calibration_folder, "intrinsics.json"))
+            try:
+                self.camera_matrix, self.distortion_coefficients, self.image_size = (
+                    load_camera_parameters(
+                        os.path.join(str(camera_calibration_folder), "intrinsics.json")
+                    )
+                )
+
+                self.fov: np.ndarray = calculate_fov_from_camera_matrix(
+                    self.camera_matrix, self.image_size
+                )
+
+                self.is_calibrated = True
+            except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError) as e:
+                self.log(
+                    f"{Colors.YELLOW}Camera: {self.name} failed to load intrinsics calibration: {e}{Colors.RESET}"
+                )
+                self.camera_matrix = None
+                self.distortion_coefficients = None
+                self.image_size = None
+        else:
+            log(
+                f"{Colors.YELLOW}Camera: {self.name} created without intrinsics calibration{Colors.RESET}"
             )
 
-            self.fov: np.ndarray = calculate_fov_from_camera_matrix(
-                self.camera_matrix, self.image_size
-            )
-        else:
-            log(f"Camera: {self.name} created without intrinsics calibration")
-            
         try:
-            with open(os.path.join(str(camera_calibration_folder), "extrinsics.json"), "r") as file:
+            with open(
+                os.path.join(str(camera_calibration_folder), "extrinsics.json"), "r"
+            ) as file:
                 extrinsics = json.load(file)
-                
+
             self.camera_offset_pos: np.ndarray = extrinsics["camera_offset_pos"]
             self.camera_pitch: float = extrinsics["camera_pitch"]
             self.camera_yaw: float = extrinsics["camera_yaw"]
             self.frame_rotation: int = extrinsics["frame_rotation"]
-        except FileNotFoundError:
-            self.log(f"Camera: {self.name} created without extrinsics calibration")
-            raise RuntimeError(f"Camera: {self.name} created without extrinsics calibration, must have extrinsics before creation")
-            
+            self.frame_width: int = extrinsics.get("frame_width", 1280)
+            self.frame_height: int = extrinsics.get("frame_height", 720)
+        except FileNotFoundError as e:
+            self.log(
+                f"{Colors.RED}Camera: {self.name} created without extrinsics calibration{Colors.RESET}"
+            )
+            raise RuntimeError(
+                f"Camera: {self.name} created without extrinsics calibration, must have extrinsics before creation"
+            ) from e
+
         self.camera_ready: bool = False
 
         self.cap = None
@@ -129,17 +154,27 @@ class Camera(abc.ABC):
             The latest frame, or None on failure/end-of-stream.
         """
         pass
-    
+
+    @abc.abstractmethod
+    def get_achieved_fps(self) -> int:
+        """
+        Get the FPS that the camera is operating at.
+
+        Returns:
+            Achieved FPS value.
+        """
+        pass
+
     def calibrate_camera(self, camera_calibration_folder: str) -> None:
         """Calibrate the camera."""
         self.camera_matrix, self.distortion_coefficients, self.image_size = (
-            load_camera_parameters(os.path.join(camera_calibration_folder, "intrinsics.json"))
+            load_camera_parameters(
+                os.path.join(camera_calibration_folder, "intrinsics.json")
+            )
         )
-        self.fov = calculate_fov_from_camera_matrix(
-            self.camera_matrix, self.image_size
-        )
+        self.fov = calculate_fov_from_camera_matrix(self.camera_matrix, self.image_size)
         self.is_calibrated = True
-        self.log(f"Camera: {self.name} calibrated")
+        self.log(f"{Colors.GREEN}Camera: {self.name} calibrated{Colors.RESET}")
 
     def get_camera_offset_pos(self) -> np.ndarray:
         """Returns the 3D offset position of the camera."""
