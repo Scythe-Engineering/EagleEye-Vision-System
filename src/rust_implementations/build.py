@@ -114,6 +114,35 @@ class RustModuleBuilder:
 
         return current_hash != cached_hash
 
+    def reinstall_package(self, module_dir: Path) -> bool:
+        """Reinstall a package using maturin develop."""
+        module_name = module_dir.name
+        print(f"{Colors.YELLOW}Reinstalling {module_name} package...{Colors.RESET}")
+
+        if not self.check_dependencies():
+            return False
+
+        result = subprocess.run(
+            ["maturin", "develop"],
+            cwd=module_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            print(
+                f"{Colors.GREEN}✓ Successfully reinstalled {module_name}{Colors.RESET}"
+            )
+            if result.stdout:
+                print(result.stdout)
+            return True
+        else:
+            print(f"{Colors.RED}✗ Failed to reinstall {module_name}{Colors.RESET}")
+            if result.stderr:
+                print(f"{Colors.RED}Reinstall error:{Colors.RESET}")
+                print(result.stderr)
+            return False
+
     def test_module_import(self, module_name: str) -> bool:
         """Test that a module can be imported in Python."""
         print(f"{Colors.CYAN}Testing import of {module_name}...{Colors.RESET}")
@@ -136,7 +165,28 @@ class RustModuleBuilder:
                 if result.stderr:
                     print(f"{Colors.RED}Import error:{Colors.RESET}")
                     print(result.stderr)
-                return False
+
+                # Try to rebuild the module
+                module_dir = self.modules_dir / module_name
+                if (
+                    module_dir.exists()
+                    and (module_dir / self.CARGO_TOML_FILENAME).exists()
+                ):
+                    print(
+                        f"{Colors.YELLOW}Attempting to rebuild {module_name}...{Colors.RESET}"
+                    )
+                    if self.build_module(module_dir):
+                        return True
+                    else:
+                        print(
+                            f"{Colors.RED}✗ Failed to rebuild {module_name}{Colors.RESET}"
+                        )
+                        return False
+                else:
+                    print(
+                        f"{Colors.RED}✗ Cannot rebuild: module directory not found{Colors.RESET}"
+                    )
+                    return False
 
         except FileNotFoundError as e:
             print(
@@ -232,7 +282,7 @@ class RustModuleBuilder:
             print(f"{Colors.CYAN}Removed {so_file}{Colors.RESET}")
 
     def build_all(self, force: bool = False) -> bool:
-        """Build all modules that need rebuilding."""
+        """Build all modules that need rebuilding and verify all are installed."""
         modules = self.get_modules()
         if not modules:
             print(
@@ -257,6 +307,12 @@ class RustModuleBuilder:
                     }
             else:
                 print(f"{Colors.GREEN}✓ {module_name} is up to date{Colors.RESET}")
+                # Even if up to date, verify the package is properly installed
+                if not self.test_module_import(module_name):
+                    print(
+                        f"{Colors.RED}✗ {module_name} is up to date but not installed{Colors.RESET}"
+                    )
+                    success = False
 
         if success:
             # Clean cache of non-existent modules and save
@@ -265,7 +321,7 @@ class RustModuleBuilder:
         return success
 
     def build_specific(self, module_name: str) -> bool:
-        """Build a specific module."""
+        """Build a specific module and verify it's installed."""
         module_dir = self.modules_dir / module_name
         if not module_dir.exists():
             print(f"{Colors.RED}Module '{module_name}' not found{Colors.RESET}")
@@ -342,6 +398,8 @@ def main(ran_directly=False):
 
     if ran_directly:
         sys.exit(0 if success else 1)
+
+    return success
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ dependencies = [
   "flask-cors",
   "line_profiler",
   "onnxruntime",
+  "linuxpy",
+  "maturin",
   "memryx; sys_platform == 'linux'",
 ]
 

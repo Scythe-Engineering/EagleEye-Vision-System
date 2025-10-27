@@ -302,6 +302,13 @@ class Pipeline:
             f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
         )
         time.sleep(0.1)
+<<<<<<< Updated upstream
+=======
+
+        min_frame_time = 1.0 / max_frame_limit
+        frame_start_time = time.time()
+
+>>>>>>> Stashed changes
         while self.thread_running:
             camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
             if camera_frame_result is not None:
@@ -317,6 +324,15 @@ class Pipeline:
                     )
             else:
                 time.sleep(0.01)
+<<<<<<< Updated upstream
+=======
+
+            elapsed_time = time.time() - frame_start_time
+            sleep_time = max(0, min_frame_time - elapsed_time)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            frame_start_time = time.time()
+>>>>>>> Stashed changes
 
     def visualize(self, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.

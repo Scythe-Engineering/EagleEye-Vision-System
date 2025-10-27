@@ -44,5 +44,23 @@
                 "action_params": {}
             }
         ]
+    },
+    "Arducam OV9782 USB Camera": {
+        "testing": [
+            {
+                "action_name": "camera_adjust",
+                "action_params": {
+                    "brightness": 0,
+                    "contrast": 0.5,
+                    "exposure": 0.9,
+                    "gain": 0,
+                    "saturation": 0.78
+                }
+            },
+            {
+                "action_name": "detect_apriltags",
+                "action_params": {}
+            }
+        ]
     }
 }

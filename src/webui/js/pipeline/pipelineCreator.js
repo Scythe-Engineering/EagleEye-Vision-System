@@ -1228,13 +1228,25 @@ export async function initPipelineCreator() {
         element.addEventListener("dragenter", (e) =>
             handleDragEnterPipeline(e),
         );
-        element.addEventListener("dragover", (e) =>
-            handleDragOverPipeline(e, pipeline, pipelineContainer),
-        );
+        element.addEventListener("dragover", (e) => {
+            // Prevent drag-over feedback if no pipeline is selected
+            if (!selectedPipeline) {
+                e.preventDefault();
+                return;
+            }
+            handleDragOverPipeline(e, pipeline, pipelineContainer);
+        });
         element.addEventListener("dragleave", (e) =>
             handleDragLeavePipeline(e, pipeline, pipelinePlaceholder),
         );
         element.addEventListener("drop", async (e) => {
+            // Prevent dropping operations if no pipeline is selected
+            if (!selectedPipeline) {
+                console.log("[PIPELINE] Cannot drop operations: no pipeline selected");
+                e.preventDefault();
+                return;
+            }
+
             const pipelineLengthBefore = pipeline.length;
             const pipelineOrderBefore = pipeline
                 .map((item) => item.instanceId)

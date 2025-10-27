@@ -93,6 +93,9 @@ window.onload = async () => {
         if (overlay) {
             overlay.classList.remove("hidden");
         }
+        if (globalThis.SettingsPopup?.close) {
+            globalThis.SettingsPopup.close();
+        }
     };
 
     const hideConnectionLostOverlay = () => {

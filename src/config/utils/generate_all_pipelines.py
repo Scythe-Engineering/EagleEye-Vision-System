@@ -55,7 +55,11 @@ def generate_all_pipelines(
     """
     if pipeline_config is None:
         with open(
+<<<<<<< Updated upstream
             os.path.join(os.path.dirname(current_path), "pipeline_config.json"), "r"
+=======
+            os.path.join(str(current_path.parent), "pipeline_config.json"), "r"
+>>>>>>> Stashed changes
         ) as f:
             config_data = json.load(f)
     else:

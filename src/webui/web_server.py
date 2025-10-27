@@ -12,10 +12,6 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
-
-from src.main_operations.modules.object_detection.src.constants.constants import (
-    Constants,
-)
 from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,
@@ -39,7 +35,7 @@ class EagleEyeInterface:
         self,
         restart_callback: Callable,
         pipeline_objects_callback: Callable,
-        settings_object: Constants | None = None,
+        settings_object=None,
         dev_mode: bool = False,
         log: Callable | None = None,
     ):
@@ -122,7 +118,7 @@ class EagleEyeInterface:
         self.frame_list_lock = threading.Lock()
 
         if settings_object is None:
-            self.settings_object = Constants()
+            self.settings_object = None
         else:
             self.settings_object = settings_object
 
@@ -171,12 +167,6 @@ class EagleEyeInterface:
             lambda: send_from_directory(
                 os.path.join(current_path, "assets"), "favicon.ico"
             ),
-        )
-        self.app.add_url_rule(
-            "/save-settings", "save_settings", self.set_settings, methods=["POST"]
-        )
-        self.app.add_url_rule(
-            "/get-settings", "get_settings", self.get_settings, methods=["GET"]
         )
         self.app.add_url_rule(
             "/get-available-cameras",
@@ -413,31 +403,6 @@ class EagleEyeInterface:
             allow_unsafe_werkzeug=True,
             extra_files=["./static/bundle.js", "./style.css", "./index.html"],
         )
-
-    def get_settings(self) -> dict:
-        """
-        Get the current settings.
-
-        Returns:
-            dict: The current settings.
-        """
-        return self.settings_object.get_config()
-
-    def set_settings(self) -> tuple[dict, int]:
-        """
-        Set the current settings.
-
-        Returns:
-            Response: A success or failure message.
-        """
-        try:
-            settings = request.get_json()
-            self.settings_object.load_config_from_json(settings)
-            self.log("Settings updated successfully")
-            return {"message": "Settings updated successfully"}, 200
-        except Exception as e:
-            self.log("Error updating settings:", e)
-            return {"message": "Failed to update settings"}, 500
 
     def update_camera_frame(self, camera_name: str, frame: np.ndarray) -> None:
         """

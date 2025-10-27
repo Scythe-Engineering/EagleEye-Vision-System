@@ -20,8 +20,21 @@ from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.rust_implementations.build import main as rust_build  # noqa: E402
 
 # Build the Rust implementations
+<<<<<<< Updated upstream
 print(f"{Colors.CYAN}Building Rust implementations...{Colors.RESET}")
 rust_build()
+=======
+print(
+    f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
+)
+build_success = rust_build()
+if not build_success:
+    error_msg = (
+        "Failed to build Rust implementations. Backend initialization cannot continue."
+    )
+    print(f"{Colors.RED}{error_msg}{Colors.RESET}")
+    raise RuntimeError(error_msg)
+>>>>>>> Stashed changes
 print(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
 available_devices = get_available_devices()
