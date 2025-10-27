@@ -16,6 +16,7 @@ from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
+max_frame_limit = 240  # 240 frames per second
 
 
 class Pipeline:
@@ -28,6 +29,7 @@ class Pipeline:
         camera_bus_id: str,
         compute_pool: ComputePool,
         network_table: NetworkTable,
+        camera_manager: CameraThreadManager | None = None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -43,6 +45,7 @@ class Pipeline:
         self.camera_bus_id = camera_bus_id
         self.compute_pool = compute_pool
         self.network_table = network_table
+        self.camera_manager = camera_manager
 
         self.thread_running = False
         self.thread = None
@@ -126,31 +129,40 @@ class Pipeline:
                         f"Could not find class for action: {class_name} at {action_name}"
                     )
 
+            # Create a shallow copy to avoid mutating the original action_params
+            init_params = action_params.copy()
+
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "web_interface" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["web_interface"] = self.web_interface
+                init_params["web_interface"] = self.web_interface
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "compute_pool" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["compute_pool"] = self.compute_pool
+                init_params["compute_pool"] = self.compute_pool
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "pipeline" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["pipeline"] = self
+                init_params["pipeline"] = self
 
             if (
                 hasattr(operation_class.__init__, "__code__")
                 and "network_table" in operation_class.__init__.__code__.co_varnames
             ):
-                action_params["network_table"] = self.network_table
+                init_params["network_table"] = self.network_table
 
-            return operation_class(**action_params)
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "camera_manager" in operation_class.__init__.__code__.co_varnames
+            ):
+                init_params["camera_manager"] = self.camera_manager
+
+            return operation_class(**init_params)
 
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
@@ -273,11 +285,11 @@ class Pipeline:
             camera_thread_manager: The camera thread manager.
             camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
+        self.thread_running = True
         self.thread = threading.Thread(
             target=self._thread_run, args=(camera_thread_manager, camera_bus_id)
         )
         self.thread.start()
-        self.thread_running = True
 
     def _thread_run(
         self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
@@ -302,21 +314,41 @@ class Pipeline:
             f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
         )
         time.sleep(0.1)
+
+        min_frame_time = 1.0 / max_frame_limit
+        last_frame_time = time.time()
+
         while self.thread_running:
-            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
-            if camera_frame_result is not None:
-                frame, _ = camera_frame_result
-                try:
-                    if self.set_visualize:
-                        with self.current_frame_lock:
-                            self.current_frame = frame.copy()
-                    self.run(frame)
-                except Exception as _:
-                    print(
-                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                    )
+            current_time = time.time()
+            time_since_last_frame = current_time - last_frame_time
+
+            if time_since_last_frame >= min_frame_time:
+                camera_frame_result = camera_thread_manager.get_current_frame(
+                    camera_bus_id
+                )
+                if camera_frame_result is not None:
+                    frame, _ = camera_frame_result
+                    try:
+                        if self.set_visualize:
+                            with self.current_frame_lock:
+                                self.current_frame = frame.copy()
+                        self.run(frame)
+                        last_frame_time = current_time
+                    except Exception as _:
+                        print(
+                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                        )
+                else:
+                    time.sleep(0.01)
+                    # Update last_frame_time even when no frame is available to prevent drift
+                    last_frame_time = current_time
             else:
-                time.sleep(0.01)
+                # Frame arrived too quickly, skip it but advance timing to prevent drift
+                last_frame_time += min_frame_time
+                # Sleep until the next scheduled frame time
+                sleep_time = max(0, last_frame_time - time.time())
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
 
     def visualize(self, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.

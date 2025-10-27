@@ -17,7 +17,7 @@
                     "decode_sharpening": 0.25,
                     "families": "tag36h11",
                     "nthreads": 3,
-                    "quad_decimate": 2,
+                    "quad_decimate": 1,
                     "quad_sigma": 0,
                     "refine_edges": "1"
                 }
@@ -42,6 +42,20 @@
             {
                 "action_name": "robot_pose_output",
                 "action_params": {}
+            }
+        ]
+    },
+    "FaceTime HD Camera": {
+        "testing": [
+            {
+                "action_name": "camera_adjust",
+                "action_params": {
+                    "brightness": 100,
+                    "contrast": 1,
+                    "exposure": 0,
+                    "hue": 0,
+                    "saturation": 1
+                }
             }
         ]
     }

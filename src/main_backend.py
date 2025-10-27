@@ -20,7 +20,9 @@ from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.rust_implementations.build import main as rust_build  # noqa: E402
 
 # Build the Rust implementations
-print(f"{Colors.CYAN}Building Rust implementations...{Colors.RESET}")
+print(
+    f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
+)
 rust_build()
 print(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
@@ -142,6 +144,7 @@ class MainBackend:
                 self.web_interface,
                 self.compute_pool,
                 DummyNetworkTable(self.camera_manager.get_video_camera_index),
+                self.camera_manager,
             )
 
             # Initial camera detection
