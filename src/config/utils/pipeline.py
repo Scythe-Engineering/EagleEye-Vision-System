@@ -16,7 +16,6 @@ from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
-max_frame_limit = 240  # 240 frames per second
 
 
 class Pipeline:
@@ -315,40 +314,21 @@ class Pipeline:
         )
         time.sleep(0.1)
 
-        min_frame_time = 1.0 / max_frame_limit
-        last_frame_time = time.time()
-
         while self.thread_running:
-            current_time = time.time()
-            time_since_last_frame = current_time - last_frame_time
-
-            if time_since_last_frame >= min_frame_time:
-                camera_frame_result = camera_thread_manager.get_current_frame(
-                    camera_bus_id
-                )
-                if camera_frame_result is not None:
-                    frame, _ = camera_frame_result
-                    try:
-                        if self.set_visualize:
-                            with self.current_frame_lock:
-                                self.current_frame = frame.copy()
-                        self.run(frame)
-                        last_frame_time = current_time
-                    except Exception as _:
-                        print(
-                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                        )
-                else:
-                    time.sleep(0.01)
-                    # Update last_frame_time even when no frame is available to prevent drift
-                    last_frame_time = current_time
+            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
+            if camera_frame_result is not None:
+                frame, _ = camera_frame_result
+                try:
+                    if self.set_visualize:
+                        with self.current_frame_lock:
+                            self.current_frame = frame.copy()
+                    self.run(frame)
+                except Exception as _:
+                    print(
+                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                    )
             else:
-                # Frame arrived too quickly, skip it but advance timing to prevent drift
-                last_frame_time += min_frame_time
-                # Sleep until the next scheduled frame time
-                sleep_time = max(0, last_frame_time - time.time())
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
+                time.sleep(0.01)
 
     def visualize(self, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.

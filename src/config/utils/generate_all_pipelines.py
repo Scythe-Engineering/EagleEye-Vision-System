@@ -66,7 +66,9 @@ def generate_all_pipelines(
         A list of Pipeline objects.
     """
     if pipeline_config is None:
-        with open(os.path.join(str(current_path), "pipeline_config.json"), "r") as f:
+        with open(
+            os.path.join(str(current_path.parent), "pipeline_config.json"), "r"
+        ) as f:
             config_data = json.load(f)
     else:
         with open(pipeline_config, "r") as f:
