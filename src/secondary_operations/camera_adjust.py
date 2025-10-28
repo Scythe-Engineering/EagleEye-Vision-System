@@ -1,5 +1,6 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import numpy as np
+import cv2
 import subprocess
 from src.utils.colors import Colors
 
@@ -38,6 +39,7 @@ class CameraAdjust:
         self.pipeline = pipeline
 
         self._last_applied: Dict[str, Any] = {}
+        self._apriltag_detections: Optional[Any] = None
         self._apply_device_controls()
 
     def run(self, frame: np.ndarray) -> np.ndarray:
@@ -62,16 +64,58 @@ class CameraAdjust:
                 setattr(self, key, value)
         self._apply_device_controls()
 
+    def back_propagate_input(self, input_data: Any) -> None:
+        """Receive back-propagated AprilTag detections for visualization.
+
+        Args:
+            input_data: AprilTag detections from detector (list of Detection or CustomDetection objects).
+        """
+        self._apriltag_detections = input_data
+
     def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Return a visualization frame.
+        """Return a visualization frame with AprilTag detections drawn.
 
         Args:
             frame: Input frame.
 
         Returns:
-            Visualization frame.
+            Visualization frame with AprilTag detections overlaid.
         """
-        return frame
+        vis_frame = frame.copy()
+
+        if self._apriltag_detections is not None:
+            for detection in self._apriltag_detections:
+                if detection is None:
+                    continue
+
+                # Get corners and tag_id
+                corners = detection.corners
+                tag_id = detection.tag_id
+
+                if corners is not None and len(corners) == 4:
+                    # Convert corners to integer coordinates
+                    corners_int = np.round(corners).astype(int)
+
+                    # Draw the tag outline
+                    cv2.polylines(vis_frame, [corners_int], True, (0, 255, 0), 2)
+
+                    # Calculate center point for tag ID
+                    center_x = int(np.mean(corners[:, 0]))
+                    center_y = int(np.mean(corners[:, 1]))
+
+                    # Draw tag ID
+                    cv2.putText(
+                        vis_frame,
+                        str(tag_id),
+                        (center_x, center_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (255, 255, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+        return vis_frame
 
     def _get_device_path(self) -> str | None:
         """Resolve the v4l2 device path for the current camera if available.
