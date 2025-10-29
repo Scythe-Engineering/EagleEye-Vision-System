@@ -33,7 +33,10 @@ dependencies = [
 
 [tool.uv.sources]
 memryx = { index = "memryx" }
-torch = { index = "pytorch" }
+torch = [
+    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'"}
+]
 
 [[tool.uv.index]]
 name = "memryx"
@@ -41,7 +44,12 @@ url = "https://developer.memryx.com/pip"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch"
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 

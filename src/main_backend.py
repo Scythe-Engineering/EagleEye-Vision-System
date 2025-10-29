@@ -9,19 +9,21 @@ from typing import Callable, Dict, Set
 faulthandler.enable()
 
 from src.config.utils.generate_all_pipelines import generate_all_pipelines  # noqa: E402
-from src.utils.colors import Colors  # noqa: E402
 from src.config.utils.pipeline import Pipeline  # noqa: E402
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager  # noqa: E402
-from src.utils.camera_utils.check_and_add_new_cameras import check_and_add_new_cameras  # noqa: E402
+from src.rust_implementations.build import main as rust_build  # noqa: E402
+from src.utils.camera_utils.camera_thread_manager import (
+    CameraThreadManager,  # noqa: E402
+)
+from src.utils.camera_utils.check_and_add_new_cameras import (
+    check_and_add_new_cameras,  # noqa: E402
+)
+from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
-from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
-from src.rust_implementations.build import main as rust_build  # noqa: E402
+from src.webui.web_server import EagleEyeInterface  # noqa: E402
 
-# Build the Rust implementations
-rust_build()
-
+# Build the Rust implementations (removed during uv sync)
 print(
     f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
 )
@@ -146,7 +148,27 @@ class MainBackend:
                                 f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
                             )
 
-            # TODO: GPU support not yet implemented - would need a GPU device class
+            # Add GPU devices if available
+            gpu_devices = available_devices.get("GPU", [])
+            if gpu_devices:
+                from src.utils.device_management_utils.gpu import GPU  # noqa: E402
+
+                for gpu_index, gpu_device_name in enumerate(gpu_devices):
+                    try:
+                        gpu_device = GPU(device_id=f"GPU_{gpu_index}")
+                        self.compute_pool.add_compute_device(gpu_device)
+
+                        print(
+                            f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
+                        )
+                    except RuntimeError as e:
+                        print(
+                            f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                        )
+                    except Exception as e:
+                        print(
+                            f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                        )
 
             self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
                 self.web_interface,
