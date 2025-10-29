@@ -12,15 +12,16 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
+
+from src.utils.colors import Colors
 from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,
     serve_js,
 )
-from src.utils.colors import Colors
 
 current_path = os.path.dirname(__file__)
-src_path = current_path.split("/src")[0] + "/src"
+src_path = os.path.abspath(os.path.join(current_path, os.pardir))
 
 with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
     no_image_bytes = f.read()
