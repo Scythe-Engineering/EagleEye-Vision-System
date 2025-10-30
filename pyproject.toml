@@ -13,6 +13,7 @@ dependencies = [
   "tensorflow",
   "customtkinter",
   "torch",
+  "torchvision",
   "tqdm",
   "pip",
   "pillow",
@@ -34,6 +35,10 @@ dependencies = [
 [tool.uv.sources]
 memryx = { index = "memryx" }
 torch = [
+    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'"}
+]
+torchvision = [
     { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
     { index = "pytorch-cpu", marker = "sys_platform == 'linux'"}
 ]

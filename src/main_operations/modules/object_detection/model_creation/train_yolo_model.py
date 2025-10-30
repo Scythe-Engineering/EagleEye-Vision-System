@@ -1,6 +1,7 @@
 """Simple YOLO Model Training Script for EagleEye Object Detection."""
 
 import os
+
 from ultralytics import YOLO
 
 # Try to import torch for GPU detection
@@ -59,6 +60,22 @@ def main() -> None:
             print("Error: Batch size must be a number!")
             return
 
+    # Optional: custom image size
+    img_size_input = input(
+        "Enter image size (320, 640, or press Enter for auto): "
+    ).strip()
+    img_size = None
+    if img_size_input:
+        try:
+            img_size = int(img_size_input)
+            if img_size not in [320, 640]:
+                print(
+                    "Warning: Unusual image size selected. Common sizes are 320 or 640."
+                )
+        except ValueError:
+            print("Error: Image size must be a number!")
+            return
+
     # Validate inputs
     if not os.path.exists(data_dir):
         print(f"Error: Data directory '{data_dir}' does not exist!")
@@ -79,6 +96,8 @@ def main() -> None:
     print(f"  Patience: {patience}")
     if batch_size:
         print(f"  Batch size: {batch_size}")
+    if img_size:
+        print(f"  Image size: {img_size}x{img_size}")
 
     # Load model
     model = YOLO(model_name)
@@ -103,6 +122,9 @@ def main() -> None:
 
     if batch_size:
         train_kwargs["batch"] = batch_size
+
+    if img_size:
+        train_kwargs["imgsz"] = img_size
 
     model.train(**train_kwargs)
 
