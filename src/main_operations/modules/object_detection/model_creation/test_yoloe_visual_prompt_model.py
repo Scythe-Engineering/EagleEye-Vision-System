@@ -15,13 +15,18 @@ visual_prompts = dict(
 
 # Run prediction on a different image, using reference image to guide what to look for
 model.predict(
-    r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\utils\sim_videos\basic_test.mp4",  # Target image for detection
+    r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\object_detection\model_creation\visual_prompts\random_frame.jpg",  # Target image for detection
     refer_image=r"E:\Ceph-Mirror\Python-Files\Projects\FIRST-Note-Detection\src\main_operations\modules\object_detection\model_creation\visual_prompts\random_frame.jpg",  # Reference image used to get visual prompts
     visual_prompts=visual_prompts,
     predictor=YOLOEVPSegPredictor,
-    show=True,
-    show_conf=True,
+    show=False,
+    show_conf=False,
     conf=0.5,
 )
 
-model.export(format="onnx")
+try:
+    model.export(format="onnx")
+    print("Model exported successfully to ONNX format")
+except Exception as export_error:
+    print(f"Warning: Failed to export model to ONNX format: {export_error}")
+    print("Continuing without export...")
