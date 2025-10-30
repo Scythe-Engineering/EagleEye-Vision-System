@@ -25,7 +25,7 @@ model.predict(
 )
 
 try:
-    model.export(format="onnx")
+    model.export(format="onnx", opset=17)
     print("Model exported successfully to ONNX format")
 except Exception as export_error:
     print(f"Warning: Failed to export model to ONNX format: {export_error}")
