@@ -281,3 +281,6 @@ src/utils/camera_calibration/apriltag_test.png
 
 .cudavenv/
 .build_cache.json
+
+*.pt
+eagleeye_training
