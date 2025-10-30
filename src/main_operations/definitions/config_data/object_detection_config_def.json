@@ -1,0 +1,57 @@
+{
+	"class_name": "ObjectDetectionDefinition",
+	"description": "Generic object detection operation using device-backed model if available or CPU fallback.",
+	"category": "det",
+	"parameters": {
+		"model_path": {
+			"type": "str",
+			"description": "Path to device-compatible model file. If omitted, CPU fallback contour detector is used.",
+			"default": null,
+			"required": false,
+			"restart_for_change": true
+		},
+		"device_id": {
+			"type": "str",
+			"description": "Identifier for compute device from ComputePool. Required if model_path is provided.",
+			"default": null,
+			"required": false,
+			"restart_for_change": true
+		},
+		"target_width": {
+			"type": "int",
+			"description": "Target model input width.",
+			"default": 640,
+			"required": false,
+			"min": 16,
+			"max": 4096,
+			"restart_for_change": true
+		},
+		"target_height": {
+			"type": "int",
+			"description": "Target model input height.",
+			"default": 640,
+			"required": false,
+			"min": 16,
+			"max": 4096,
+			"restart_for_change": true
+		},
+		"conf_threshold": {
+			"type": "float",
+			"description": "Minimum confidence threshold for detections.",
+			"default": 0.25,
+			"required": false,
+			"min": 0.0,
+			"max": 1.0,
+			"restart_for_change": false
+		},
+		"max_detections": {
+			"type": "int",
+			"description": "Maximum number of detections to return.",
+			"default": 100,
+			"required": false,
+			"min": 1,
+			"max": 1000,
+			"restart_for_change": false
+		}
+	}
+}
