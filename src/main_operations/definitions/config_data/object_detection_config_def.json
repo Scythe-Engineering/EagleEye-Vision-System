@@ -1,57 +1,71 @@
 {
-	"class_name": "ObjectDetectionDefinition",
-	"description": "Generic object detection operation using device-backed model if available or CPU fallback.",
-	"category": "det",
-	"parameters": {
-		"model_path": {
-			"type": "str",
-			"description": "Path to device-compatible model file. If omitted, CPU fallback contour detector is used.",
-			"default": null,
-			"required": false,
-			"restart_for_change": true
-		},
-		"device_id": {
-			"type": "str",
-			"description": "Identifier for compute device from ComputePool. Required if model_path is provided.",
-			"default": null,
-			"required": false,
-			"restart_for_change": true
-		},
-		"target_width": {
-			"type": "int",
-			"description": "Target model input width.",
-			"default": 640,
-			"required": false,
-			"min": 16,
-			"max": 4096,
-			"restart_for_change": true
-		},
-		"target_height": {
-			"type": "int",
-			"description": "Target model input height.",
-			"default": 640,
-			"required": false,
-			"min": 16,
-			"max": 4096,
-			"restart_for_change": true
-		},
-		"conf_threshold": {
-			"type": "float",
-			"description": "Minimum confidence threshold for detections.",
-			"default": 0.25,
-			"required": false,
-			"min": 0.0,
-			"max": 1.0,
-			"restart_for_change": false
-		},
-		"max_detections": {
-			"type": "int",
-			"description": "Maximum number of detections to return.",
-			"default": 100,
-			"required": false,
-			"min": 1,
-			"max": 1000,
-			"restart_for_change": false
-		}
-	}
+    "class_name": "ObjectDetectionDefinition",
+    "description": "Generic object detection operation using device-backed model if available or CPU fallback. Supports compiled models (.dfp) with optional post-processing or standalone ONNX models.",
+    "category": "det",
+    "parameters": {
+        "model_path": {
+            "type": "str",
+            "description": "Path to device-compatible model file. Can be compiled model (.dfp) for MX3 with optional post-processing, or standalone ONNX model (.onnx) for CPU/GPU/MX3. If omitted, CPU fallback is used.",
+            "default": null,
+            "required": false,
+            "restart_for_change": true
+        },
+        "device_id": {
+            "type": "str",
+            "description": "Identifier for compute device from ComputePool. Required if model_path is provided.",
+            "default": null,
+            "required": false,
+            "restart_for_change": true
+        },
+        "post_processing_model_path": {
+            "type": "str",
+            "description": "Optional path to ONNX post-processing model. Used with compiled models (.dfp) to convert raw outputs to detections.",
+            "default": null,
+            "required": false,
+            "restart_for_change": true
+        },
+        "target_width": {
+            "type": "int",
+            "description": "Target model input width.",
+            "default": 320,
+            "required": false,
+            "min": 16,
+            "max": 4096,
+            "restart_for_change": true
+        },
+        "target_height": {
+            "type": "int",
+            "description": "Target model input height.",
+            "default": 320,
+            "required": false,
+            "min": 16,
+            "max": 4096,
+            "restart_for_change": true
+        },
+        "conf_threshold": {
+            "type": "float",
+            "description": "Minimum confidence threshold for detections.",
+            "default": 0.25,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0,
+            "restart_for_change": false
+        },
+        "max_detections": {
+            "type": "int",
+            "description": "Maximum number of detections to return.",
+            "default": 100,
+            "required": false,
+            "min": 1,
+            "max": 1000,
+            "restart_for_change": false
+        },
+        "is_grayscale": {
+            "type": "bool",
+            "description": "Whether the model expects grayscale input (single channel) instead of RGB (3 channels). Set to true for grayscale models, false for RGB models.",
+            "default": false,
+            "required": false,
+            "restart_for_change": true
+        }
+    }
 }
