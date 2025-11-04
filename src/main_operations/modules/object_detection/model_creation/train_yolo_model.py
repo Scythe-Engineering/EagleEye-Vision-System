@@ -1,4 +1,4 @@
-"""Simple YOLO Model Training Script for EagleEye Object Detection."""
+"""YOLO Model Training Script with Data Augmentation for EagleEye Object Detection."""
 
 import os
 
@@ -76,6 +76,52 @@ def main() -> None:
             print("Error: Image size must be a number!")
             return
 
+    # Optional: augmentation settings
+    print("\n--- Augmentation Settings ---")
+    augmentation_input = (
+        input("Enable data augmentation? (y/n, press Enter for auto): ").strip().lower()
+    )
+    enable_augmentation = augmentation_input == "y"
+
+    if enable_augmentation:
+        # HSV hue augmentation
+        hsv_h_input = input(
+            "HSV hue augmentation (0.0-0.5, press Enter for 0.015): "
+        ).strip()
+        hsv_h = 0.015 if not hsv_h_input else float(hsv_h_input)
+
+        # Geometric augmentations
+        degrees_input = input(
+            "Rotation degrees (-180 to 180, press Enter for 0.0): "
+        ).strip()
+        degrees = 0.0 if not degrees_input else float(degrees_input)
+
+        translate_input = input(
+            "Translation factor (0.0-1.0, press Enter for 0.1): "
+        ).strip()
+        translate = 0.1 if not translate_input else float(translate_input)
+
+        scale_input = input("Scale factor (0.0-1.0, press Enter for 0.5): ").strip()
+        scale = 0.5 if not scale_input else float(scale_input)
+
+        shear_input = input(
+            "Shear degrees (-180 to 180, press Enter for 0.0): "
+        ).strip()
+        shear = 0.0 if not shear_input else float(shear_input)
+
+        perspective_input = input(
+            "Perspective factor (0.0-0.001, press Enter for 0.0): "
+        ).strip()
+        perspective = 0.0 if not perspective_input else float(perspective_input)
+    else:
+        # Default augmentation settings (minimal)
+        hsv_h = 0.015
+        degrees = 0.0
+        translate = 0.1
+        scale = 0.5
+        shear = 0.0
+        perspective = 0.0
+
     # Validate inputs
     if not os.path.exists(data_dir):
         print(f"Error: Data directory '{data_dir}' does not exist!")
@@ -99,6 +145,14 @@ def main() -> None:
     if img_size:
         print(f"  Image size: {img_size}x{img_size}")
 
+    print("\n  Augmentation:")
+    print(f"    HSV Hue: {hsv_h}")
+    print(f"    Rotation: {degrees}°")
+    print(f"    Translation: {translate}")
+    print(f"    Scale: {scale}")
+    print(f"    Shear: {shear}°")
+    print(f"    Perspective: {perspective}")
+
     # Load model
     model = YOLO(model_name)
 
@@ -111,13 +165,20 @@ def main() -> None:
         # For standard models, use the model name
         run_name = f"{model_name}_train"
 
-    # Train with optional batch size
+    # Train with optional parameters
     train_kwargs = {
         "data": data_yaml,
         "epochs": epochs,
         "patience": patience,
         "project": "eagleeye_training",
         "name": run_name,
+        # Augmentation parameters
+        "hsv_h": hsv_h,
+        "degrees": degrees,
+        "translate": translate,
+        "scale": scale,
+        "shear": shear,
+        "perspective": perspective,
     }
 
     if batch_size:
