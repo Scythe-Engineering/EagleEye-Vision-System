@@ -286,6 +286,7 @@ Or if no pipelines exist for the camera:
 - `200`: Success
 
 **Notes:**
+
 - Creates camera entry if it doesn't exist
 - Creates pipeline entry if it doesn't exist
 - Updates existing operations or appends new ones
@@ -382,6 +383,36 @@ Or if not found:
 ```json
 {
     "message": "Backend restarted successfully"
+}
+```
+
+**Status Codes:**
+
+- `200`: Success
+
+#### POST `/set-restart-required`
+
+**Description:** Sets a flag indicating that a backend restart is required (used after configuration changes)
+**Response:**
+
+```json
+{
+    "message": "Restart required for config set successfully"
+}
+```
+
+**Status Codes:**
+
+- `200`: Success
+
+#### GET `/get-restart-required`
+
+**Description:** Retrieves the current state of the restart required flag
+**Response:**
+
+```json
+{
+    "restart_required": true
 }
 ```
 
