@@ -374,19 +374,35 @@ export async function init3DView(modelUrl) {
     let delta = 0;
 
     function startAnimationLoop() {
-        if (animationStarted) return;
-        animationStarted = true;
-        animate();
+        const container = document.getElementById("view-3d");
+        const isViewVisible =
+            container && !container.classList.contains("hidden");
+
+        if (animationStarted && isViewVisible) return;
+
+        if (isViewVisible) {
+            animationStarted = true;
+            animate();
+        }
     }
 
     function animate() {
-        requestAnimationFrame(animate);
-        delta += clock.getDelta();
+        const container = document.getElementById("view-3d");
+        const isViewVisible =
+            container && !container.classList.contains("hidden");
 
-        if (delta >= interval) {
-            renderer.render(scene, camera);
-            updateStats();
-            delta = delta % interval;
+        if (isViewVisible) {
+            requestAnimationFrame(animate);
+
+            delta += clock.getDelta();
+
+            if (delta >= interval) {
+                renderer.render(scene, camera);
+                updateStats();
+                delta = delta % interval;
+            }
+        } else {
+            animationStarted = false;
         }
     }
 

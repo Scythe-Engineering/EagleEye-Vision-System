@@ -766,6 +766,45 @@ class EagleEyeInterface:
             self.log(f"Error loading config for operation {operation_name}: {e}")
             return {}
 
+    def _reorder_operation_params(
+        self, operation_name: str, action_params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Reorder operation parameters according to their config definition.
+
+        Args:
+            operation_name (str): The name of the operation.
+            action_params (dict[str, Any]): The current action parameters.
+
+        Returns:
+            dict[str, Any]: The reordered action parameters.
+        """
+        try:
+            # Try main operations first, then secondary operations
+            config_def = self.get_operation_config_data(operation_name, False)
+            if not config_def or "parameters" not in config_def:
+                # Try secondary operations
+                config_def = self.get_operation_config_data(operation_name, True)
+
+            if config_def and "parameters" in config_def:
+                param_order = list(config_def["parameters"].keys())
+                # Reorder action_params according to config definition
+                reordered_params = {}
+                for param in param_order:
+                    if param in action_params:
+                        reordered_params[param] = action_params[param]
+                # Add any parameters not in config definition (for backward compatibility)
+                for param, value in action_params.items():
+                    if param not in reordered_params:
+                        reordered_params[param] = value
+                return reordered_params
+        except Exception as e:
+            # If reordering fails, keep original order
+            self.log(f"Warning: Could not reorder parameters for {operation_name}: {e}")
+
+        # Return original params if reordering failed
+        return action_params
+
     def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> list:
         """
         Get the config data for a pipeline.
@@ -783,7 +822,22 @@ class EagleEyeInterface:
                 return []
             if pipeline_name not in config[camera_name]:
                 return []
-            return config[camera_name][pipeline_name]
+            pipeline_config = config[camera_name][pipeline_name]
+
+            # Reorder parameters according to config definitions
+            reordered_pipeline = []
+            for operation in pipeline_config:
+                operation_name = operation["action_name"]
+                action_params = self._reorder_operation_params(
+                    operation_name, operation["action_params"]
+                )
+
+                reordered_pipeline.append({
+                    "action_name": operation_name,
+                    "action_params": action_params
+                })
+
+            return reordered_pipeline
 
     def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
         """
@@ -826,7 +880,9 @@ class EagleEyeInterface:
 
             for operation in new_data:
                 operation_name = operation["action_name"]
-                operation_params = operation["action_params"]
+                operation_params = self._reorder_operation_params(
+                    operation_name, operation["action_params"]
+                )
 
                 operation_names = [
                     operation["action_name"]
