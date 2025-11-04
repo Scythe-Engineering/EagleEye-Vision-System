@@ -3,6 +3,7 @@ from src.utils.colors import Colors
 import numpy as np
 from torch import Tensor
 import time
+import onnxruntime as ort
 
 print(f"{Colors.YELLOW}Initializing MX3 Library{Colors.RESET}")
 from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
@@ -14,7 +15,10 @@ POLL_INTERVAL_S = 0.001
 
 class MX3ModelIO:
     def __init__(
-        self, model_object: MultiStreamAsyncAccl, input_data_shape: tuple[int, int]
+        self,
+        model_object: MultiStreamAsyncAccl,
+        input_data_shape: tuple[int, int],
+        is_grayscale: bool = False,
     ):
         """
         Initializes the MX3 model IO object.
@@ -25,7 +29,7 @@ class MX3ModelIO:
         self.stop_signal: bool = False
         self.model_object: MultiStreamAsyncAccl = model_object
         self.input_data_shape: np.ndarray = np.array(
-            [1, 1, input_data_shape[0], input_data_shape[1]]
+            [1, 1 if is_grayscale else 3, input_data_shape[0], input_data_shape[1]]
         )
         self.zero_object = np.zeros(self.input_data_shape, dtype=np.float32)
 
@@ -111,7 +115,7 @@ class MX3ModelIO:
                 )
             time.sleep(POLL_INTERVAL_S)
 
-        return self.model_most_recent_outputs[stream_idx][0][0]
+        return self.model_most_recent_outputs[stream_idx][0]
 
     def stop(self) -> None:
         """
@@ -133,14 +137,27 @@ class MX3Accelerator(ComputeDevice):
         self.models = {}
         self.model_io_objects = {}
 
+        self.post_processing_models: dict[str, ort.InferenceSession] = {}
+        self.post_processing_input_names: dict[str, list[str]] = {}
+        self.post_processing_output_names: dict[str, str] = {}
+
         self.thread_access_count = 0
 
-    def load_model(self, model_path: str, input_data_shape: tuple[int, int]) -> None:
+    def load_model(
+        self,
+        model_path: str,
+        input_data_shape: tuple[int, int],
+        post_processing_model_path: str | None = None,
+        is_grayscale: bool = False,
+    ) -> None:
         """
         Load a model into the MX3 accelerator.
 
         Args:
             model_path (str): Path to the model to be loaded.
+            input_data_shape (tuple[int, int]): Shape of the input data.
+            post_processing_model_path (str | None): Optional path to ONNX post-processing model.
+            is_grayscale (bool): Whether the model expects grayscale input (single channel) instead of RGB.
         """
 
         model_name = model_path.split("/")[-1].split(".")[0]
@@ -153,8 +170,34 @@ class MX3Accelerator(ComputeDevice):
         try:
             self.models[model_name] = MultiStreamAsyncAccl(model_path)
             self.model_io_objects[model_name] = MX3ModelIO(
-                model_object=self.models[model_name], input_data_shape=input_data_shape
+                model_object=self.models[model_name],
+                input_data_shape=input_data_shape,
+                is_grayscale=is_grayscale,
             )
+
+            if post_processing_model_path is not None:
+                session_options = ort.SessionOptions()
+                session_options.graph_optimization_level = (
+                    ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                )
+
+                providers = ["CPUExecutionProvider"]
+
+                session = ort.InferenceSession(
+                    post_processing_model_path, session_options, providers=providers
+                )
+
+                input_names = [inp.name for inp in session.get_inputs()]
+                output_name = session.get_outputs()[0].name
+
+                self.post_processing_models[model_name] = session
+                self.post_processing_input_names[model_name] = input_names
+                self.post_processing_output_names[model_name] = output_name
+
+                print(
+                    f"{Colors.GREEN}Loaded post-processing model for {model_name}{Colors.RESET}"
+                )
+
         except Exception as e:
             print(f"{Colors.RED}Error loading model {model_path}: {e}{Colors.RESET}")
             raise e
@@ -162,7 +205,7 @@ class MX3Accelerator(ComputeDevice):
     def run(
         self,
         model_name: str,
-        input_tensor: Tensor,
+        input_data: Tensor | np.ndarray,
         input_data_shape: tuple[int, int],
         stream_idx: int,
     ) -> np.ndarray:
@@ -171,20 +214,54 @@ class MX3Accelerator(ComputeDevice):
 
         Args:
             model_name (str): Name of the model to be run.
-            input_tensor (torch.Tensor): Input tensor to be processed.
+            input_data (Tensor | np.ndarray): Input data to be processed.
             input_data_shape (tuple[int, int]): Shape of the input data.
 
         Returns:
             np.ndarray: Processed output data.
         """
-        data_array = input_tensor.cpu().numpy()
+        if isinstance(input_data, Tensor):
+            input_data = input_data.cpu().numpy()
 
-        data_array = data_array.reshape(1, 1, input_data_shape[0], input_data_shape[1])
-        data_array = data_array.astype(np.float32)
+        expected_channels = input_data.shape[1]
+        expected_shape = (
+            1,
+            expected_channels,
+            input_data_shape[0],
+            input_data_shape[1],
+        )
+        if input_data.shape != expected_shape:
+            input_data = input_data.reshape(expected_shape)
+        input_data = input_data.astype(np.float32)
 
         return_data = self.model_io_objects[model_name].sequential_run(
-            stream_idx, data_array
+            stream_idx, input_data
         )
+
+        if model_name in self.post_processing_models:
+            session = self.post_processing_models[model_name]
+            input_names = self.post_processing_input_names[model_name]
+            output_name = self.post_processing_output_names[model_name]
+
+            if isinstance(return_data, (list, tuple)):
+                outputs_list = list(return_data)
+            else:
+                outputs_list = [return_data]
+
+            if len(input_names) != len(outputs_list):
+                raise ValueError(
+                    f"Post-processing model for {model_name} expects {len(input_names)} inputs but received {len(outputs_list)} from accelerator."
+                )
+
+            input_feed = {
+                name: tensor for name, tensor in zip(input_names, outputs_list)
+            }
+            post_processed_outputs = np.array(session.run([output_name], input_feed))
+
+            return post_processed_outputs[0]
+
+        if isinstance(return_data, (list, tuple)):
+            return return_data[0]
 
         return return_data
 
@@ -206,8 +283,17 @@ class MX3Accelerator(ComputeDevice):
         """
         Stop the MX3 accelerator.
         """
+        # Cancel the auto-connect timer if it's still running
+        if hasattr(self, "_connect_timer") and self._connect_timer.is_alive():
+            self._connect_timer.cancel()
+
         for model_io_object in self.model_io_objects.values():
             model_io_object.stop()
         for model_object in self.models.values():
             model_object.stop()
+
+        self.post_processing_models.clear()
+        self.post_processing_input_names.clear()
+        self.post_processing_output_names.clear()
+
         print(f"{Colors.CYAN}MX3 accelerator stopped{Colors.RESET}")
