@@ -172,7 +172,7 @@ def main() -> None:
         "patience": patience,
         "project": "eagleeye_training",
         "name": run_name,
-        # Augmentation parameters
+        "augment": enable_augmentation,
         "hsv_h": hsv_h,
         "degrees": degrees,
         "translate": translate,
