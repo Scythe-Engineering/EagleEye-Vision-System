@@ -259,7 +259,7 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/start-visualize/<string:camera_name>/<string:pipeline_name>",
+            "/start-visualize/<string:camera_name>/<string:pipeline_name>/<string:operation_name>",
             "start_visualize",
             self.start_visualize,
             methods=["POST"],
@@ -271,7 +271,7 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/visualize/<string:camera_name>/<string:pipeline_name>/<string:action_name>",
+            "/visualize/<string:camera_name>/<string:pipeline_name>",
             "visualize",
             self.visualize,
             methods=["GET"],
@@ -832,10 +832,9 @@ class EagleEyeInterface:
                     operation_name, operation["action_params"]
                 )
 
-                reordered_pipeline.append({
-                    "action_name": operation_name,
-                    "action_params": action_params
-                })
+                reordered_pipeline.append(
+                    {"action_name": operation_name, "action_params": action_params}
+                )
 
             return reordered_pipeline
 
@@ -933,11 +932,23 @@ class EagleEyeInterface:
             json.dump(current_config, f, indent=4)
         return {"message": "Pipeline deleted successfully"}, 200
 
-    def start_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+    def start_visualize(
+        self, camera_name: str, pipeline_name: str, operation_name: str
+    ) -> tuple[dict, int]:
         """
         Start visualizing the pipeline.
+
+        Args:
+            camera_name: Name of the camera whose pipeline should be visualized.
+            pipeline_name: Name of the pipeline to visualize.
+            operation_name: Name of the operation to visualize.
+
+        Returns:
+            A response message and HTTP status code.
         """
-        self.pipeline_objects_callback()[camera_name][pipeline_name].start_visualize()
+        self.pipeline_objects_callback()[camera_name][pipeline_name].start_visualize(
+            operation_name
+        )
         return {"message": "Pipeline visualized successfully"}, 200
 
     def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
@@ -947,18 +958,25 @@ class EagleEyeInterface:
         self.pipeline_objects_callback()[camera_name][pipeline_name].stop_visualize()
         return {"message": "Pipeline visualized stopped"}, 200
 
-    def visualize(
-        self, camera_name: str, pipeline_name: str, action_name: str
-    ) -> Response:
+    def visualize(self, camera_name: str, pipeline_name: str) -> Response:
         """
-        Visualize the pipeline up to the given action name.
+        Visualize the pipeline.
 
         Returns the image as JPEG binary data.
         """
-        # Get the numpy array from the pipeline's visualize method
-        image_array = self.pipeline_objects_callback()[camera_name][
-            pipeline_name
-        ].visualize(action_name)
+        pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+
+        # Get visualization data from pipeline
+        with pipeline.visualization_data_lock:
+            visualization_data = pipeline.visualization_data
+
+        if visualization_data is None:
+            return Response(
+                "No visualization data available", status=500, mimetype="text/plain"
+            )
+
+        # Get the visualized frame from the visualization data
+        image_array = visualization_data.get("visualization_data")
 
         if image_array is None:
             return Response(

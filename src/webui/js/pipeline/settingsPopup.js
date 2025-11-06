@@ -488,8 +488,11 @@ import { BACKEND_BASE_URL } from "../config.js";
                     timestamp: new Date().toISOString(),
                 });
                 await fetch(
-                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}`,
-                    { method: "POST" },
+                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(actionNameForApi)}`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                    },
                 );
 
                 _currentVisCamera = selectedCameraName;
@@ -534,7 +537,7 @@ import { BACKEND_BASE_URL } from "../config.js";
                 if (_visInterval) clearInterval(_visInterval);
                 _visInterval = setInterval(async () => {
                     try {
-                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}/${encodeURIComponent(_currentVisAction)}`;
+                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`;
                         const response = await fetch(url, {
                             cache: "no-store",
                         });

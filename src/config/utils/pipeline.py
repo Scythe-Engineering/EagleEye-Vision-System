@@ -57,8 +57,9 @@ class Pipeline:
         self.all_total_times: List[float] = []
 
         self.set_visualize = False
-        self.current_frame = None
-        self.current_frame_lock = threading.Lock()
+        self.visualization_data = None
+        self.visualization_data_lock = threading.Lock()
+        self.visualization_operation_name = None
 
     def _snake_to_camel(self, snake_str: str) -> str:
         """Convert snake_case string to CamelCase.
@@ -166,14 +167,21 @@ class Pipeline:
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
 
-    def run(self, input_data: np.ndarray) -> Any:
+    def run(
+        self,
+        input_data: np.ndarray,
+        visualize: bool = False,
+        visualization_operation_name: str = None,
+    ) -> Any | None:
         """Run the pipeline with the given input data.
 
         Args:
             input_data: Input data to process through the pipeline.
+            visualize: Whether to visualize the pipeline.
 
         Returns:
-            Final output after processing through all operations.
+            If visualize is True, returns a dictionary with the frame and visualization data.
+            Otherwise, returns nothing
 
         Raises:
             ValueError: If pipeline operations are empty or input validation fails.
@@ -206,12 +214,14 @@ class Pipeline:
         with self.total_time_history_lock:
             self.total_time_history.append(time_elapsed)
         self.all_total_times.append(time_elapsed)
+
         if debug_mode:
             print_timing_summary(
                 self.operations, self.operation_time_history, self.total_time_history
             )
 
-        return current_data
+        if visualize:
+            return self._visualize(input_data.copy(), visualization_operation_name)
 
     def get_operation_by_class_name(self, class_name: str) -> Any:
         """Get an operation by its class name.
@@ -319,10 +329,26 @@ class Pipeline:
             if camera_frame_result is not None:
                 frame, _ = camera_frame_result
                 try:
-                    if self.set_visualize:
-                        with self.current_frame_lock:
-                            self.current_frame = frame.copy()
-                    self.run(frame)
+                    # Snapshot visualize state and target name atomically
+                    with self.visualization_data_lock:
+                        should_visualize = self.set_visualize
+                        operation_name_snapshot = self.visualization_operation_name
+
+                    if should_visualize:
+                        frame_copy = frame.copy()
+                        visualization_frame = self.run(
+                            frame,
+                            visualize=True,
+                            visualization_operation_name=operation_name_snapshot,
+                        )
+                        # Only hold the lock for the assignment
+                        with self.visualization_data_lock:
+                            self.visualization_data = {
+                                "frame": frame_copy,
+                                "visualization_data": visualization_frame,
+                            }
+                    else:
+                        self.run(frame)
                 except Exception as _:
                     print(
                         f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
@@ -330,7 +356,7 @@ class Pipeline:
             else:
                 time.sleep(0.01)
 
-    def visualize(self, action_name: str) -> np.ndarray:
+    def _visualize(self, start_frame: np.ndarray, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.
 
         Args:
@@ -339,16 +365,16 @@ class Pipeline:
         Returns:
             The visualized frame.
         """
-        with self.current_frame_lock:
-            if self.current_frame is None:
-                raise ValueError("No current frame to visualize")
-            current_frame = self.current_frame
-
+        # Normalize the target operation name; if None/empty, visualize full pipeline
+        normalized_target = (
+            action_name.lower().replace("_", "") if action_name else None
+        )
         for operation in self.operations:
-            current_frame = operation.visualize(current_frame)
-            if operation.__class__.__name__.lower().replace(
+            start_frame = operation.visualize(start_frame)
+            current_op_name = operation.__class__.__name__.lower().replace(
                 "definition", ""
-            ) == action_name.lower().replace("_", ""):
+            )
+            if normalized_target and current_op_name == normalized_target:
                 break
 
         # Add FPS display in top left corner
@@ -360,7 +386,7 @@ class Pipeline:
         fps = 1.0 / avg_time if avg_time > 0 else 0.0
         fps_text = f"FPS: {fps:.1f}"
         cv2.putText(
-            current_frame,
+            start_frame,
             fps_text,
             (30, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -369,15 +395,19 @@ class Pipeline:
             2,
         )
 
-        return current_frame
+        return start_frame
 
-    def start_visualize(self) -> None:
+    def start_visualize(self, visualization_operation_name: str) -> None:
         """Start visualizing the pipeline."""
-        self.set_visualize = True
+        # Ensure operation name is set before enabling visualization
+        with self.visualization_data_lock:
+            self.visualization_operation_name = visualization_operation_name
+            self.set_visualize = True
 
     def stop_visualize(self) -> None:
         """Stop visualizing the pipeline."""
-        self.set_visualize = False
+        with self.visualization_data_lock:
+            self.set_visualize = False
 
     def stop(self) -> None:
         """Stop the pipeline thread."""

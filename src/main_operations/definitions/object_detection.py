@@ -1,6 +1,6 @@
 import cv2
 from threading import Lock
-from typing import List, Optional, Tuple
+from typing import List, Optional, Dict, Any
 
 import numpy as np
 
@@ -14,15 +14,16 @@ class ObjectDetectionDefinition:
     """Main operation definition for generic object detection.
 
     Input: np.ndarray BGR frame (H, W, 3) uint8.
-    Output: list of detections: (x1, y1, x2, y2, confidence, class_id).
+    Output: list of detections: {"bbox": (x1, y1, x2, y2), "score": confidence, "class_id": class_id}
+    where bbox coordinates are percentages (0-1) of image dimensions.
     """
 
     def __init__(
         self,
         model_path: Optional[str],
-        post_processing_model_path: Optional[str],
         device_id: Optional[str],
         compute_pool: ComputePool,
+        post_processing_model_path: Optional[str] = None,
         target_width: int = 320,
         target_height: int = 320,
         conf_threshold: float = 0.25,
@@ -57,19 +58,18 @@ class ObjectDetectionDefinition:
             is_grayscale=is_grayscale,
         )
 
-        self.last_detections: Optional[List[Tuple[int, int, int, int, float, int]]] = (
-            None
-        )
+        self.last_detections: Optional[List[Dict[str, Any]]] = None
         self.last_detections_lock: Lock = Lock()
 
-    def run(self, frame: np.ndarray) -> List[Tuple[int, int, int, int, float, int]]:
+    def run(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """Run object detection on a frame.
 
         Args:
                 frame: BGR image, dtype=uint8.
 
         Returns:
-                Detections as a list of (x1, y1, x2, y2, confidence, class_id).
+                Detections as a list of {"bbox": (x1, y1, x2, y2), "score": confidence, "class_id": class_id}
+                where bbox coordinates are percentages (0-1) of image dimensions.
         """
         detections = self.delegate.run(frame)
 
@@ -91,22 +91,27 @@ class ObjectDetectionDefinition:
             detections = self.last_detections
 
         if detections is not None and len(detections) > 0:
+            height, width = frame.shape[:2]
             for detection in detections:
-                x1, y1, x2, y2 = detection["bbox"]
+                x1_pct, y1_pct, x2_pct, y2_pct = detection["bbox"]
                 confidence = detection["score"]
                 class_id = detection["class_id"]
 
+                # Convert percentages back to pixels
+                x1 = int(x1_pct * width)
+                y1 = int(y1_pct * height)
+                x2 = int(x2_pct * width)
+                y2 = int(y2_pct * height)
+
                 # Draw bounding box
-                cv2.rectangle(
-                    frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2
-                )
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                 # Draw label with confidence and class ID
                 label = f"Class {class_id}: {confidence:.2f}"
                 cv2.putText(
                     frame,
                     label,
-                    (int(x1), int(y1) - 10),
+                    (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
                     (0, 255, 0),
