@@ -14,7 +14,7 @@ alwaysApply: false
 - [ ] **Create Config Definition** - Add `{operation_name}_config_def.json` file with parameters, validation, and metadata
 - [ ] **Update Pipeline Config** - Add operation entry to `src/config/pipeline_config.json` with `action_name` and `action_params`
 - [ ] **Add Type Hints & Docstrings** - Include Google-style docstrings and type hints for all parameters and return values
-- [ ] **Use Thin-Wrapper Pattern** - For main operations, separate heavy logic into `src/modules/{operation_name}/implementation.py`
+- [ ] **Use Thin-Wrapper Pattern** - For main operations, separate heavy logic into `src/main_operations/modules/{category}/{operation_name}/implementation.py`
 - [ ] **Test Integration** - Verify operation works by running pipeline with sample `np.ndarray` frame
 - [ ] **Follow Naming Conventions** - Use `CamelCaseDefinition` for main operations, `CamelCase` for secondary operations
 
@@ -27,7 +27,7 @@ alwaysApply: false
 - **Location**: `src/main_operations/definitions/{operation_name}.py`
 - **Class Naming**: Use `CamelCaseDefinition` suffix (e.g., `MyOpDefinition`)
 - **Purpose**: Complex operations with heavy logic, use thin-wrapper pattern
-- **Implementation**: Delegate to `src/modules/{operation_name}/implementation.py`
+- **Implementation**: Delegate to `src/main_operations/modules/{category}/{operation_name}/implementation.py`
 
 ### Secondary Operations
 
@@ -80,32 +80,44 @@ Operations can optionally implement:
 
 ### Structure
 
-- **Implementation**: `src/modules/{operation_name}/implementation.py`
+- **Implementation**: `src/main_operations/modules/{category}/{operation_name}/implementation.py`
 - **Wrapper**: `src/main_operations/definitions/{operation_name}.py`
 - **Pattern**: Definition resolves resources, delegates to implementation
+
+### Module Organization
+
+Modules are organized by functional categories within `src/main_operations/modules/`:
+
+- **`object_detection/`** - Object detection algorithms (YOLO, SSD, etc.)
+- **`apriltags/`** - AprilTag detection and pose estimation
+- **`{category}/`** - Create new category directories for related operations (e.g., `pose_estimation/`, `tracking/`, `segmentation/`)
+
+Each category directory contains operation-specific subdirectories with implementation files.
 
 ### Example Structure
 
 ```python
-# src/modules/my_op/implementation.py
-class MyOpImplementation:
-    def __init__(self, model_path: str, device: object, threshold: float = 0.1):
+# src/main_operations/modules/object_detection/yolo_detection/implementation.py
+class YoloDetectionImplementation:
+    def __init__(self, model_path: str, device: object, confidence_threshold: float = 0.5):
         self.model_path = model_path
         self.device = device
+        self.confidence_threshold = confidence_threshold
 
-    def run(self, frame: np.ndarray) -> np.ndarray:
-        return frame
+    def run(self, frame: np.ndarray) -> list:
+        # Heavy detection logic here
+        return detections
 
-# src/main_operations/definitions/my_op.py
-from src.modules.my_op.implementation import MyOpImplementation
+# src/main_operations/definitions/yolo_detection.py
+from src.main_operations.modules.object_detection.yolo_detection.implementation import YoloDetectionImplementation
 from src.utils.device_management_utils.compute_pool import ComputePool
 
-class MyOpDefinition:
-    def __init__(self, model_path: str, device_id: str, compute_pool: ComputePool, threshold: float = 0.1):
+class YoloDetectionDefinition:
+    def __init__(self, model_path: str, device_id: str, compute_pool: ComputePool, confidence_threshold: float = 0.5):
         device = compute_pool.get_compute_device(device_id)
-        self.delegate = MyOpImplementation(model_path, device, threshold)
+        self.delegate = YoloDetectionImplementation(model_path, device, confidence_threshold)
 
-    def run(self, frame):
+    def run(self, frame: np.ndarray) -> list:
         return self.delegate.run(frame)
 ```
 
