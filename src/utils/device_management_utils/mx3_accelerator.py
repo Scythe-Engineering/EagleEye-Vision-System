@@ -5,7 +5,6 @@ from torch import Tensor
 import time
 import onnxruntime as ort
 from threading import Condition
-from line_profiler import profile
 
 print(f"{Colors.YELLOW}Initializing MX3 Library{Colors.RESET}")
 from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
@@ -18,7 +17,6 @@ EPOCH_MAX = 2**31 - 1
 
 
 class MX3ModelIO:
-    @profile
     def __init__(
         self,
         model_object: MultiStreamAsyncAccl,
@@ -48,7 +46,6 @@ class MX3ModelIO:
         self.input_epoch_counter: dict[int, int] = {}
         self.latest_output_epoch: dict[int, int] = {}
 
-    @profile
     def model_input_generator(self, stream_idx: int) -> np.ndarray | None:
         """
         Generator for the model input.
@@ -71,7 +68,6 @@ class MX3ModelIO:
             self.inflight_epochs[stream_idx].append(epoch)
             return data_array
 
-    @profile
     def model_output_processor(self, stream_idx: int, *outputs) -> None:
         """
         Processor for the model output.
@@ -92,7 +88,6 @@ class MX3ModelIO:
             with out_cond:
                 out_cond.notify_all()
 
-    @profile
     def connect_streams(self, stream_count: int) -> None:
         """
         Connect the streams to the model.
@@ -116,7 +111,6 @@ class MX3ModelIO:
             f"{Colors.GREEN}Connected {stream_count} streams to the model.{Colors.RESET}"
         )
 
-    @profile
     def sequential_run(
         self, stream_idx: int, data_array: np.ndarray, timeout_s: float = 5.0
     ) -> np.ndarray:
@@ -157,7 +151,6 @@ class MX3ModelIO:
                     timeout=min(POLL_INTERVAL_S, remaining)
                 )
 
-    @profile
     def stop(self) -> None:
         """
         Stop the MX3 model IO object.
@@ -172,7 +165,6 @@ class MX3ModelIO:
 
 
 class MX3Accelerator(ComputeDevice):
-    @profile
     def __init__(self, device_id: str = "MX3_001"):
         """
         Initializes the MX3 accelerator.
@@ -191,7 +183,6 @@ class MX3Accelerator(ComputeDevice):
 
         self.thread_access_count = 0
 
-    @profile
     def load_model(
         self,
         model_path: str,
@@ -251,7 +242,6 @@ class MX3Accelerator(ComputeDevice):
             print(f"{Colors.RED}Error loading model {model_path}: {e}{Colors.RESET}")
             raise e
 
-    @profile
     def run(
         self,
         model_name: str,
@@ -317,7 +307,6 @@ class MX3Accelerator(ComputeDevice):
 
         return return_data
 
-    @profile
     def register_thread_access(self) -> int:
         """
         Register a thread access to the MX3 accelerator.
@@ -325,7 +314,6 @@ class MX3Accelerator(ComputeDevice):
         self.thread_access_count += 1
         return self.thread_access_count - 1
 
-    @profile
     def connect_streams(self, stream_count: int) -> None:
         """
         Connect the streams to the MX3 accelerator.
@@ -333,7 +321,6 @@ class MX3Accelerator(ComputeDevice):
         for model_io_object in self.model_io_objects.values():
             model_io_object.connect_streams(stream_count)
 
-    @profile
     def stop(self) -> None:
         """
         Stop the MX3 accelerator.

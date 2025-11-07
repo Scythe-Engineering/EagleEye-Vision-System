@@ -9,7 +9,6 @@ from src.utils.colors import Colors
 from src.main_operations.modules.object_detection.utils.yolov10.yolov10_ops import (
     YoloV10,
 )
-from line_profiler import profile
 
 
 class ObjectDetectionImplementation:
@@ -26,7 +25,6 @@ class ObjectDetectionImplementation:
     }.
     """
 
-    @profile
     def __init__(
         self,
         model_path: Optional[str],
@@ -86,7 +84,6 @@ class ObjectDetectionImplementation:
                 f"{Colors.GREEN}Assigned stream index: {self.stream_idx}{Colors.RESET}"
             )
 
-    @profile
     def _load_model(self) -> None:
         """Load the model onto the device if available."""
         assert self.device is not None
@@ -112,13 +109,11 @@ class ObjectDetectionImplementation:
                 self.model_path, (self.target_height, self.target_width)
             )
 
-    @profile
     def _is_onnx_or_pt_model(self, model_path: str) -> bool:
         """Check if the model file is ONNX or PyTorch format."""
         model_extension = Path(model_path).suffix.lower()
         return model_extension in [".onnx", ".pt"]
 
-    @profile
     def _init_ultralytics_model(self) -> None:
         """Initialize ultralytics YOLO model for direct inference."""
         try:
@@ -136,7 +131,6 @@ class ObjectDetectionImplementation:
         except Exception as e:
             raise RuntimeError(f"Failed to load model with ultralytics: {e}")
 
-    @profile
     def _init_yolov10_ops(self) -> None:
         """Initialize YOLOv10 operations for preprocessing and postprocessing."""
         self.yolov10_ops = YoloV10(
@@ -150,7 +144,6 @@ class ObjectDetectionImplementation:
             conf_threshold=self.conf_threshold,
         )
 
-    @profile
     def run(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """Run detection on a single frame using YOLOv10-style postprocessing.
 

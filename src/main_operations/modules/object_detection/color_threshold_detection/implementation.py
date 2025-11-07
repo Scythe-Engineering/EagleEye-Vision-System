@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 from typing import List, Dict, Any, Tuple
 
-from line_profiler import profile
 from src.main_operations.modules.object_detection.utils.letterbox import letterbox_image
 
 
@@ -95,7 +94,6 @@ class ColorThresholdDetectionImplementation:
 
         return letterboxed_image, (resized_width, resized_height), (pad_x, pad_y)
 
-    @profile
     def create_color_mask(
         self, hsv_image: np.ndarray, lower_hsv: List[int], upper_hsv: List[int]
     ) -> np.ndarray:
@@ -116,7 +114,6 @@ class ColorThresholdDetectionImplementation:
 
         return mask
 
-    @profile
     def process_mask(self, mask: np.ndarray) -> np.ndarray:
         """Apply morphological operations to clean up mask.
 
@@ -142,7 +139,6 @@ class ColorThresholdDetectionImplementation:
 
         return mask
 
-    @profile
     def extract_bounding_boxes(
         self, mask: np.ndarray, class_id: int, color_name: str
     ) -> List[Dict[str, Any]]:
@@ -179,7 +175,6 @@ class ColorThresholdDetectionImplementation:
 
         return detections
 
-    @profile
     def run(self, frame: np.ndarray) -> Tuple[List[Dict[str, Any]], np.ndarray]:
         """Process frame and detect colored objects.
 
