@@ -2,16 +2,22 @@
     "basic_test": {
         "object_detection_pipeline": [
             {
-                "action_name": "object_detection",
+                "action_name": "color_threshold_detection",
                 "action_params": {
-                    "model_path": "{project_root}/src/main_operations/modules/object_detection/detection_models/320/small/v1/frc_2024_320_sim_s.dfp",
-                    "post_processing_model_path": "{project_root}/src/main_operations/modules/object_detection/detection_models/320/small/v1/frc_2024_320_sim_s_post.onnx",
-                    "device_id": "MX3_0",
-                    "is_grayscale": false,
-                    "conf_threshold": 0.25,
-                    "max_detections": 20,
-                    "target_height": 320,
-                    "target_width": 320
+                    "target_size": 320,
+                    "color_ranges": [
+                        {
+                            "name": "custom_color",
+                            "class_id": 1,
+                            "lower_hsv": [88, 54, 102],
+                            "upper_hsv": [93, 229, 207]
+                        }
+                    ],
+                    "min_area": 100,
+                    "max_area": 50000,
+                    "blur_kernel_size": 5,
+                    "morphology_kernel_size": 5,
+                    "morphology_iterations": 2
                 }
             }
         ]

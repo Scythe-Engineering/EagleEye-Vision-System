@@ -1,0 +1,68 @@
+{
+    "class_name": "ColorThresholdDetectionDefinition",
+    "description": "Color-based object detection with downscaling, letterboxing, HSV color thresholding for multiple objects, contour extraction, and bounding box calculation. Returns detections with bounding boxes scaled to original frame coordinates.",
+    "category": "det",
+    "parameters": {
+        "target_size": {
+            "type": "int",
+            "description": "Target size for square letterboxed image. Frame will be resized maintaining aspect ratio and padded to this size.",
+            "default": 320,
+            "required": false,
+            "min": 64,
+            "max": 1024,
+            "restart_for_change": true
+        },
+        "color_ranges": {
+            "type": "list",
+            "description": "List of color dictionaries for multi-object detection. Each dictionary must contain: 'name' (string), 'class_id' (int), 'lower_hsv' (list of 3 ints), 'upper_hsv' (list of 3 ints). HSV values: H (0-179), S (0-255), V (0-255). If null, defaults to red color range.",
+            "default": null,
+            "required": false,
+            "restart_for_change": false
+        },
+        "min_area": {
+            "type": "int",
+            "description": "Minimum contour area in pixels to consider as valid detection. Smaller contours are filtered out as noise.",
+            "default": 100,
+            "required": false,
+            "min": 1,
+            "max": 100000,
+            "restart_for_change": false
+        },
+        "max_area": {
+            "type": "int",
+            "description": "Maximum contour area in pixels to consider as valid detection. Larger contours are filtered out.",
+            "default": 50000,
+            "required": false,
+            "min": 100,
+            "max": 1000000,
+            "restart_for_change": false
+        },
+        "blur_kernel_size": {
+            "type": "int",
+            "description": "Gaussian blur kernel size for noise reduction. Must be odd number. Set to 0 to disable blurring.",
+            "default": 0,
+            "required": false,
+            "min": 0,
+            "max": 31,
+            "restart_for_change": false
+        },
+        "morphology_kernel_size": {
+            "type": "int",
+            "description": "Kernel size for morphological operations (opening and closing) to clean up masks. Must be odd number.",
+            "default": 5,
+            "required": false,
+            "min": 3,
+            "max": 31,
+            "restart_for_change": false
+        },
+        "morphology_iterations": {
+            "type": "int",
+            "description": "Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality. Set to 0 to disable morphological operations (speed increase).",
+            "default": 0,
+            "required": false,
+            "min": 1,
+            "max": 10,
+            "restart_for_change": false
+        }
+    }
+}
