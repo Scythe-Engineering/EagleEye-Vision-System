@@ -2,6 +2,7 @@ import numpy as np
 from src.main_operations.modules.object_detection.utils.letterbox import letterbox_image
 from typing import Tuple, Union
 import torch
+from line_profiler import profile
 
 
 class YoloV10:
@@ -12,6 +13,7 @@ class YoloV10:
     and postprocessing of model predictions (confidence filtering, box scaling).
     """
 
+    @profile
     def __init__(
         self,
         original_image_shape: Tuple[int, int, int] | None,
@@ -40,6 +42,7 @@ class YoloV10:
             original_image_shape[:2] if original_image_shape is not None else None
         )
 
+    @profile
     def preprocess(self, img):
         """
         Preprocess an image for YOLOv10 model inference.
@@ -80,6 +83,7 @@ class YoloV10:
 
         return img
 
+    @profile
     def reverse_letterbox_padding(
         self, boxes: np.ndarray
     ) -> Union[np.ndarray, torch.Tensor]:
@@ -110,6 +114,7 @@ class YoloV10:
         )
         return boxes
 
+    @profile
     def postprocess(self, preds):
         """
         Postprocess YOLOv10 model predictions.
