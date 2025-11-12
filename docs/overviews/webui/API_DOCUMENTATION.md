@@ -17,7 +17,7 @@ The EagleEyeInterface is a Flask-based web server with SocketIO support that pro
     - [Pipeline Management](#pipeline-management)
     - [Pipeline Visualization](#pipeline-visualization)
     - [System Management](#system-management)
-- [WebSocket Events](#websocket-events)
+- [Server-Sent Events](#server-sent-events)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
 - [Usage Examples](#usage-examples)
@@ -321,13 +321,14 @@ Or if not found:
 
 ### Pipeline Visualization
 
-#### POST `/start-visualize/<camera_name>/<pipeline_name>`
+#### POST `/start-visualize/<camera_name>/<pipeline_name>/<operation_name>`
 
-**Description:** Starts visualization mode for a pipeline
+**Description:** Starts visualization mode for a specific pipeline operation
 **Parameters:**
 
 - `camera_name` (path): Name of the camera
 - `pipeline_name` (path): Name of the pipeline
+- `operation_name` (path): Name of the operation to visualize
   **Response:**
 
 ```json
@@ -390,7 +391,7 @@ Or if not found:
 
 - `200`: Success
 
-#### POST `/set-restart-required`
+#### POST `/set_restart_required`
 
 **Description:** Sets a flag indicating that a backend restart is required (used after configuration changes)
 **Response:**
@@ -405,7 +406,7 @@ Or if not found:
 
 - `200`: Success
 
-#### GET `/get-restart-required`
+#### GET `/get_restart_required`
 
 **Description:** Retrieves the current state of the restart required flag
 **Response:**
@@ -420,11 +421,34 @@ Or if not found:
 
 - `200`: Success
 
-## WebSocket Events
+#### POST `/shutdown`
 
-The server uses SocketIO for real-time communication.
+**Description:** Shuts down the web server completely
+**Response:** None (server terminates)
+**Status Codes:**
 
-### Server-to-Client Events
+- `200`: Success (before shutdown)
+
+#### GET `/sse/stream`
+
+**Description:** Server-Sent Events stream for real-time updates
+**Response:** Event stream with real-time data
+**Content-Type:** `text/event-stream`
+**Events:**
+
+- `heartbeat`: Server heartbeat with timestamp
+- `update_robot_transform`: Robot position updates
+- `update_detected_objects`: Object detection results
+
+**Status Codes:**
+
+- `200`: Success
+
+## Server-Sent Events
+
+The server uses Server-Sent Events (SSE) for real-time communication via the `/sse/stream` endpoint.
+
+### Available Events
 
 #### `update_robot_transform`
 
