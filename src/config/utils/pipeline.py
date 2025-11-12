@@ -239,6 +239,33 @@ class Pipeline:
             None,
         )
 
+    def get_pipeline_by_name(
+        self,
+        pipeline_name: str,
+        camera_name: str | None = None,
+    ) -> None:
+        """Retrieve a pipeline by name for the specified camera.
+
+        Args:
+            pipeline_name: Name of the pipeline to retrieve.
+            camera_name: Optional camera identifier; defaults to the current pipeline camera.
+
+        Returns:
+            Pipeline | None: The matching pipeline instance if found, otherwise None.
+        """
+        pipeline_objects_callback = getattr(
+            self.web_interface, "pipeline_objects_callback", None
+        )
+        if pipeline_objects_callback is None:
+            return None
+        pipeline_objects = pipeline_objects_callback()
+        target_camera_name = (
+            camera_name if camera_name is not None else self.camera_bus_id
+        )
+        if target_camera_name not in pipeline_objects:
+            return None
+        return pipeline_objects[target_camera_name].get(pipeline_name)
+
     def update_operations_config(self, operations_config: List[Dict[str, Any]]) -> None:
         """Update the configuration of multiple operations in the pipeline.
 
