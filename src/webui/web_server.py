@@ -624,6 +624,59 @@ class EagleEyeInterface:
             # fallback: log if publish fails
             self.log("Failed to publish update_robot_transform via SSE")
 
+    def update_detected_objects(self, detections: list[dict[str, Any]]) -> None:
+        """
+        Publish detected objects for 3D visualization.
+
+        Args:
+            detections (list[dict[str, Any]]): Detected objects with 3D positions and metadata.
+
+        Returns:
+            None: This method does not return a value.
+        """
+        if not isinstance(detections, list):
+            return
+
+        validated_detections: list[dict[str, Any]] = []
+        for detection in detections:
+            if not isinstance(detection, dict):
+                continue
+
+            position = detection.get("position_3d")
+            if not (
+                isinstance(position, (list, tuple))
+                and len(position) == 3
+                and all(isinstance(coord, (int, float)) for coord in position)
+            ):
+                continue
+
+            position_values = [float(coord) for coord in position]
+            if not np.all(np.isfinite(position_values)):
+                continue
+
+            detection_payload: dict[str, Any] = {"position_3d": position_values}
+
+            class_id = detection.get("class_id")
+            if isinstance(class_id, (int, float, str)):
+                detection_payload["class_id"] = class_id
+
+            confidence = detection.get("confidence")
+            if isinstance(confidence, (int, float)) and np.isfinite(confidence):
+                detection_payload["confidence"] = float(confidence)
+
+            class_name = detection.get("class_name")
+            if class_name is not None:
+                detection_payload["class_name"] = str(class_name)
+
+            validated_detections.append(detection_payload)
+
+        try:
+            self._publish_event(
+                "update_detected_objects", {"detections": validated_detections}
+            )
+        except Exception:
+            self.log("Failed to publish update_detected_objects via SSE")
+
     def get_available_robots(self) -> dict:
         """
         Get a dict of available robots.
