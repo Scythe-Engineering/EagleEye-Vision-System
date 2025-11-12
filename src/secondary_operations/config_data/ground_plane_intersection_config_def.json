@@ -1,15 +1,8 @@
 {
     "class_name": "GroundPlaneIntersection",
-    "description": "Performs ground plane intersection with bounding box detections to estimate 3D pose of detected objects",
+    "description": "Ground plane intersection for 3D position estimation",
     "category": "proc",
     "parameters": {
-        "camera_intrinsics_path": {
-            "type": "str",
-            "description": "Path to camera intrinsics JSON file, or camera bus ID (e.g., '0', '0-1') to auto-resolve path",
-            "default": "0",
-            "required": true,
-            "restart_for_change": true
-        },
         "camera_height": {
             "type": "float",
             "description": "Height of camera above ground plane in meters",
@@ -28,22 +21,22 @@
             "max": 1.57,
             "restart_for_change": false
         },
-        "frame_width": {
-            "type": "int",
-            "description": "Width of input frames (if None, will try to get from intrinsics)",
-            "default": null,
+        "fov_horizontal": {
+            "type": "float",
+            "description": "Horizontal field of view in degrees",
+            "default": 60.0,
             "required": false,
-            "min": 1,
-            "max": 10000,
+            "min": 1.0,
+            "max": 180.0,
             "restart_for_change": false
         },
-        "frame_height": {
-            "type": "int",
-            "description": "Height of input frames (if None, will try to get from intrinsics)",
-            "default": null,
+        "fov_vertical": {
+            "type": "float",
+            "description": "Vertical field of view in degrees",
+            "default": 45.0,
             "required": false,
-            "min": 1,
-            "max": 10000,
+            "min": 1.0,
+            "max": 180.0,
             "restart_for_change": false
         }
     }
