@@ -27,6 +27,8 @@ class ColorThresholdDetectionImplementation:
         blur_kernel_size: int = 5,
         morphology_kernel_size: int = 5,
         morphology_iterations: int = 2,
+        camera_matrix: np.ndarray = None,
+        distortion_coefficients: np.ndarray = None,
     ):
         """Initialize color threshold detection implementation.
 
@@ -44,6 +46,8 @@ class ColorThresholdDetectionImplementation:
             blur_kernel_size: Gaussian blur kernel size for noise reduction
             morphology_kernel_size: Kernel size for morphological operations
             morphology_iterations: Number of morphological operation iterations
+            camera_matrix: Camera intrinsics matrix for undistortion
+            distortion_coefficients: Camera distortion coefficients for undistortion
         """
         self.target_size = target_size
         self.min_area = min_area
@@ -51,6 +55,8 @@ class ColorThresholdDetectionImplementation:
         self.blur_kernel_size = blur_kernel_size
         self.morphology_kernel_size = morphology_kernel_size
         self.morphology_iterations = morphology_iterations
+        self.camera_matrix = camera_matrix
+        self.distortion_coefficients = distortion_coefficients
 
         if color_ranges is None:
             self.color_ranges = [
@@ -64,10 +70,11 @@ class ColorThresholdDetectionImplementation:
         else:
             self.color_ranges = color_ranges
 
-        self.morphology_kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (self.morphology_kernel_size, self.morphology_kernel_size),
-        )
+        if self.morphology_kernel_size > 0:
+            self.morphology_kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE,
+                (self.morphology_kernel_size, self.morphology_kernel_size),
+            )
 
     def letterbox_image(
         self, image: np.ndarray, target_size: int
@@ -168,12 +175,32 @@ class ColorThresholdDetectionImplementation:
                     "bbox": bbox,
                     "class_id": class_id,
                     "color_name": color_name,
-                    "area": area,
                 }
 
                 detections.append(detection)
 
         return detections
+
+    def _undistort_point(self, point: np.ndarray) -> np.ndarray:
+        """Undistort a single 2D point using camera distortion coefficients.
+
+        Args:
+            point: [x, y] point in image coordinates
+
+        Returns:
+            Undistorted [x, y] point
+        """
+        if self.distortion_coefficients is None:
+            return point
+
+        point_reshaped = point.reshape(1, 1, 2).astype(np.float32)
+        undistorted = cv2.undistortPoints(
+            point_reshaped,
+            self.camera_matrix,
+            self.distortion_coefficients,
+            P=self.camera_matrix,
+        )
+        return undistorted.reshape(2)
 
     def run(self, frame: np.ndarray) -> Tuple[List[Dict[str, Any]], np.ndarray]:
         """Process frame and detect colored objects.
@@ -219,9 +246,17 @@ class ColorThresholdDetectionImplementation:
             )
 
             for detection in detections:
+                # Undistort bounding box coordinates before normalization
+                x1, y1, x2, y2 = detection["bbox"]
+                if self.camera_matrix is not None:
+                    # Undistort each corner point of the bounding box
+                    top_left = self._undistort_point(np.array([x1, y1]))
+                    bottom_right = self._undistort_point(np.array([x2, y2]))
+                    x1, y1 = top_left
+                    x2, y2 = bottom_right
+
                 # Convert bbox to 0-1 percentages of resized content area (like YOLO)
                 # First subtract padding, then divide by resized dimensions
-                x1, y1, x2, y2 = detection["bbox"]
                 x1 = (x1 - pad_x) / resized_width
                 y1 = (y1 - pad_y) / resized_height
                 x2 = (x2 - pad_x) / resized_width

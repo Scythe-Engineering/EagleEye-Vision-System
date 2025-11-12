@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from src.main_operations.modules.object_detection.color_threshold_detection.implementation import (
     ColorThresholdDetectionImplementation,
 )
+from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 
 
 class ColorThresholdDetectionDefinition:
@@ -36,6 +37,8 @@ class ColorThresholdDetectionDefinition:
         blur_kernel_size: int = 5,
         morphology_kernel_size: int = 5,
         morphology_iterations: int = 2,
+        intrinsics_path: Optional[str] = None,
+        pipeline: Any = None,
     ):
         """Initialize color threshold detection operation.
 
@@ -55,7 +58,18 @@ class ColorThresholdDetectionDefinition:
             blur_kernel_size: Gaussian blur kernel size (0 to disable)
             morphology_kernel_size: Kernel size for morphological operations
             morphology_iterations: Number of morphological operation iterations
+            intrinsics_path: Path to camera intrinsics JSON file, or camera bus ID
+                (e.g., "0", "0-1") to auto-resolve path. If None, no undistortion applied.
+            pipeline: Injected pipeline reference for accessing camera information
         """
+        self.intrinsics_path = intrinsics_path
+        self.pipeline = pipeline
+
+        self.camera_matrix: Optional[np.ndarray] = None
+        self.distortion_coefficients: Optional[np.ndarray] = None
+        if self.intrinsics_path is not None:
+            self._load_camera_parameters()
+
         self.delegate = ColorThresholdDetectionImplementation(
             target_size=target_size,
             color_ranges=color_ranges,
@@ -64,12 +78,56 @@ class ColorThresholdDetectionDefinition:
             blur_kernel_size=blur_kernel_size,
             morphology_kernel_size=morphology_kernel_size,
             morphology_iterations=morphology_iterations,
+            camera_matrix=self.camera_matrix,
+            distortion_coefficients=self.distortion_coefficients,
         )
 
         self.last_detections: Optional[List[Dict[str, Any]]] = None
         self.last_thresholded_frame: Optional[np.ndarray] = None
         self.last_detections_lock: Lock = Lock()
         self.color_map: Dict[str, tuple] = {}
+
+    def _load_camera_parameters(self) -> None:
+        """Load camera intrinsics from file or resolve from camera bus ID."""
+        intrinsics_path = self.intrinsics_path
+
+        if self.pipeline is not None:
+            camera_bus_id = getattr(self.pipeline, "camera_bus_id", None)
+            if camera_bus_id is not None and not intrinsics_path.endswith(".json"):
+                intrinsics_path = f"src/utils/camera_utils/camera_calibrations/{camera_bus_id}/intrinsics.json"
+
+        try:
+            self.camera_matrix, self.distortion_coefficients = load_camera_parameters(
+                intrinsics_path
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Failed to load camera parameters from {intrinsics_path}: {e}"
+            )
+
+        if self.camera_matrix is None:
+            raise ValueError("Camera matrix not loaded")
+
+    def _undistort_point(self, point: np.ndarray) -> np.ndarray:
+        """Undistort a single 2D point using camera distortion coefficients.
+
+        Args:
+            point: [x, y] point in image coordinates
+
+        Returns:
+            Undistorted [x, y] point
+        """
+        if self.distortion_coefficients is None:
+            return point
+
+        point_reshaped = point.reshape(1, 1, 2).astype(np.float32)
+        undistorted = cv2.undistortPoints(
+            point_reshaped,
+            self.camera_matrix,
+            self.distortion_coefficients,
+            P=self.camera_matrix,
+        )
+        return undistorted.reshape(2)
 
     def run(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """Process frame and detect colored objects.
