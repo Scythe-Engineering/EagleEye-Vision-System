@@ -9,6 +9,13 @@
             "default": "",
             "required": true,
             "restart_for_change": false
+        },
+        "target_pipeline_name": {
+            "type": "str",
+            "description": "Optional name of the pipeline that contains the target operation",
+            "default": "",
+            "required": false,
+            "restart_for_change": false
         }
     }
 }
