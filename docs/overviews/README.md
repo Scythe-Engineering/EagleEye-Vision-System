@@ -25,6 +25,12 @@ Hardware abstraction and compute device management:
 - **[Pool Management](./device_management_utils/POOL_MANAGEMENT.md)** - Device pooling and resource management
 - **[API Documentation](./device_management_utils/API_DOCUMENTATION.md)** - Device management API reference
 
+### [Secondary Operations](./secondary_operations/)
+
+Pipeline operations and data processing components:
+
+- **[PublishToNetworktables Overview](./secondary_operations/PUBLISH_TO_NETWORKTABLES_OVERVIEW.md)** - NetworkTables publishing with Flatpack serialization
+
 ## Quick Start
 
 1. **WebUI**: Start with [WebUI Overview](./webui/WEBUI_OVERVIEW.md) for understanding the interface
@@ -35,7 +41,8 @@ Hardware abstraction and compute device management:
 
 - WebUI Documentation: November 10, 2025
 - Device Management Documentation: November 2, 2025
-- Overview Organization: November 10, 2025
+- Secondary Operations Documentation: November 12, 2025
+- Overview Organization: November 12, 2025
 
 ---
 
