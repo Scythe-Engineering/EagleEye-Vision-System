@@ -60,14 +60,14 @@ Each detection contains:
 - **Default**: 320
 - **Range**: 16-4096
 - **Restart Required**: Yes
-- **Description**: Target model input width. Image will be resized maintaining aspect ratio.
+- **Description**: Target model input width in pixels. Image will be resized maintaining aspect ratio.
 
 ### `target_height` (int)
 
 - **Default**: 320
 - **Range**: 16-4096
 - **Restart Required**: Yes
-- **Description**: Target model input height. Image will be resized maintaining aspect ratio.
+- **Description**: Target model input height in pixels. Image will be resized maintaining aspect ratio.
 
 ### `conf_threshold` (float)
 

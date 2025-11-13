@@ -50,14 +50,14 @@ Each cropped region represents a predicted location where AprilTags are likely t
 
 ### `padding_factor` (float)
 
-- **Default**: 0.35
+- **Default**: 0.65
 - **Range**: 0.0-2.0
 - **Restart Required**: No
 - **Description**: Fractional padding applied around projected tag bounds. Higher values include more context but increase processing area.
 
 ### `max_regions` (int)
 
-- **Default**: 20
+- **Default**: 10
 - **Range**: 1-256
 - **Restart Required**: No
 - **Description**: Maximum number of ROI regions to return. Limits computational overhead while ensuring coverage.
@@ -79,8 +79,8 @@ Each cropped region represents a predicted location where AprilTags are likely t
     "action_params": {
         "camera_parameters_path": "config/camera_parameters.json",
         "apriltag_map_path": "config/apriltag_map.fmap",
-        "padding_factor": 0.35,
-        "max_regions": 20,
+        "padding_factor": 0.65,
+        "max_regions": 10,
         "min_region_size_px": 16
     }
 }
