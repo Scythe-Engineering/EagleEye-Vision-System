@@ -1,5 +1,44 @@
 {
     "basic_test": {
+        "object_detection_pipeline": [
+            {
+                "action_name": "color_threshold_detection",
+                "action_params": {
+                    "target_size": 320,
+                    "color_ranges": [
+                        {
+                            "name": "custom_color",
+                            "class_id": 1,
+                            "lower_hsv": [47, 130, 80],
+                            "upper_hsv": [59, 255, 188]
+                        }
+                    ],
+                    "min_area": 10,
+                    "max_area": 50000,
+                    "blur_kernel_size": 5,
+                    "morphology_kernel_size": 0,
+                    "morphology_iterations": 0,
+                    "intrinsics_path": "/home/eagle/EagleEye-Object-Detection/src/utils/camera_utils/camera_calibrations/sim_camera/intrinsics.json"
+                }
+            },
+            {
+                "action_name": "ground_plane_intersection",
+                "action_params": {
+                    "camera_height": 0.25,
+                    "camera_pitch": 0.0,
+                    "fov_horizontal": 63.6,
+                    "fov_vertical": 47.8
+                }
+            },
+            {
+                "action_name": "robot_local_to_field_transform",
+                "action_params": {}
+            },
+            {
+                "action_name": "detected_objects_output",
+                "action_params": {}
+            }
+        ],
         "apriltag_pipeline": [
             {
                 "action_name": "temporal_acceleration_preprocessor_rust",
@@ -33,6 +72,13 @@
                 "action_name": "back_propagate",
                 "action_params": {
                     "action_name": "temporal_acceleration_preprocessor_rust"
+                }
+            },
+            {
+                "action_name": "back_propagate",
+                "action_params": {
+                    "action_name": "robot_local_to_field_transform",
+                    "target_pipeline_name": "object_detection_pipeline"
                 }
             },
             {
