@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EagleEye WebUI provides a comprehensive REST API and WebSocket interface for managing camera feeds, settings, and real-time robot tracking. This summary covers the main endpoints and their functionality.
+The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE) interface for managing camera feeds, settings, pipelines, and real-time robot tracking. This summary covers all available endpoints and their functionality.
 
 **Base URL:** `http://localhost:5001`
 
@@ -19,13 +19,13 @@ The EagleEye WebUI provides a comprehensive REST API and WebSocket interface for
 #### `GET /script.js`
 
 - **Purpose**: Serves the main JavaScript bundle
-- **Response**: Minified JavaScript containing all frontend logic
+- **Response**: JavaScript file containing all frontend logic
 - **Use**: Client-side application code
 
 #### `GET /main.css`
 
 - **Purpose**: Serves the main CSS stylesheet
-- **Response**: Compiled CSS with all styling
+- **Response**: CSS file with all styling
 - **Use**: Application styling and layout
 
 #### `GET /background.png`
@@ -49,251 +49,134 @@ The EagleEye WebUI provides a comprehensive REST API and WebSocket interface for
 #### `GET /src/webui/assets/apriltags/<filename>`
 
 - **Purpose**: Serves AprilTag image assets
-- **Parameters**: `filename` - Name of the AprilTag image file
-- **Response**: Image file (PNG)
-- **Use**: Fiducial markers for robot localization
+- **Response**: Image files for AprilTag visualization
+- **Use**: AprilTag marker display
 
-### Settings Management
+#### `GET /get-robot-file/<filename>`
 
-#### `GET /get-settings`
+- **Purpose**: Serves 3D robot model files
+- **Response**: GLTF/GLB robot model files
+- **Use**: 3D robot visualization
 
-- **Purpose**: Retrieves current application settings
-- **Response**: JSON object with all current settings
-- **Status**: 200 OK
-- **Use**: Load current configuration into the UI
+#### `GET /draco/<filename>`
 
-#### `POST /save-settings`
-
-- **Purpose**: Updates application settings
-- **Request Body**: JSON object with settings to update
-- **Response**: Success/error message
-- **Status**: 200 OK / 500 Internal Server Error
-- **Use**: Persist user configuration changes
+- **Purpose**: Serves Draco-compressed 3D geometry files
+- **Response**: Draco-compressed files for 3D rendering
+- **Use**: Optimized 3D model loading
 
 ### Camera Management
 
 #### `GET /get-available-cameras`
 
-- **Purpose**: Retrieves list of available cameras
+- **Purpose**: Lists all configured cameras
 - **Response**: JSON array of camera names
-- **Status**: 200 OK
-- **Use**: Populate camera selection dropdowns
+- **Use**: Camera selection and configuration
 
 #### `GET /feed/<camera_name>`
 
-- **Purpose**: Returns MJPEG video stream for a camera
-- **Parameters**: `camera_name` - URL-safe camera identifier
+- **Purpose**: Streams MJPEG video feed from camera
 - **Response**: MJPEG stream
-- **Status**: 200 OK / 404 Not Found
-- **Use**: Real-time video feed display
+- **Use**: Real-time camera preview
 
-#### `GET /camera/<camera_name>/snapshot`
+### Robot Management
 
-- **Purpose**: Returns a single frame from a camera
-- **Parameters**: `camera_name` - URL-safe camera identifier
-- **Response**: JPEG image
-- **Status**: 200 OK / 404 Not Found
-- **Use**: Static camera image capture
+#### `GET /get-available-robots`
+
+- **Purpose**: Lists available robot configurations
+- **Response**: JSON array of robot names
+- **Use**: Robot model selection
+
+### Pipeline Management
+
+#### `GET /get-available-operations`
+
+- **Purpose**: Lists all available pipeline operations
+- **Response**: JSON array of operation types
+- **Use**: Pipeline configuration
+
+#### `GET /get-operation-config-data/<operation_name>/<is_secondary>`
+
+- **Purpose**: Gets configuration schema for an operation
+- **Parameters**: `is_secondary` (0=main, 1=secondary)
+- **Response**: JSON configuration schema
+- **Use**: Dynamic form generation
+
+#### `GET /get-pipeline-names-for-camera/<camera_name>`
+
+- **Purpose**: Lists pipeline names for a camera
+- **Response**: JSON array of pipeline names
+- **Use**: Pipeline selection
+
+#### `GET /get-pipeline-config/<camera_name>/<pipeline_name>`
+
+- **Purpose**: Gets full pipeline configuration
+- **Response**: JSON pipeline configuration
+- **Use**: Pipeline editing and display
+
+#### `POST /save-pipeline-config/<camera_name>/<pipeline_name>`
+
+- **Purpose**: Saves pipeline configuration
+- **Body**: JSON pipeline configuration
+- **Response**: Success/error message
+- **Use**: Pipeline creation and updates
+
+#### `DELETE /delete-pipeline/<camera_name>/<pipeline_name>`
+
+- **Purpose**: Deletes a pipeline configuration
+- **Response**: Success/error message
+- **Use**: Pipeline removal
+
+### Pipeline Visualization
+
+#### `POST /start-visualize/<camera_name>/<pipeline_name>/<operation_name>`
+
+- **Purpose**: Starts visualization for a specific operation
+- **Response**: Success/error message
+- **Use**: Debug pipeline operation output
+
+#### `GET /visualize/<camera_name>/<pipeline_name>`
+
+- **Purpose**: Gets visualization image
+- **Response**: JPEG image of operation output
+- **Use**: Visual debugging of pipelines
+
+#### `POST /stop-visualize/<camera_name>/<pipeline_name>`
+
+- **Purpose**: Stops pipeline visualization
+- **Response**: Success/error message
+- **Use**: End visualization session
 
 ### System Management
 
 #### `POST /restart-backend`
 
-- **Purpose**: Triggers a backend system restart
-- **Response**: Success/error message
-- **Status**: 200 OK / 500 Internal Server Error
-- **Use**: Apply configuration changes requiring restart
-
-#### `POST /set-restart-required`
-
-- **Purpose**: Sets flag indicating backend restart is required
+- **Purpose**: Triggers backend system restart
 - **Response**: Success message
-- **Status**: 200 OK
-- **Use**: Mark configuration as requiring restart
+- **Use**: Apply configuration changes
 
-#### `GET /get-restart-required`
+#### `POST /set_restart_required`
 
-- **Purpose**: Gets current restart required status
-- **Response**: JSON with restart_required boolean
-- **Status**: 200 OK
-- **Use**: Check if restart is needed before applying changes
+- **Purpose**: Sets restart required flag
+- **Response**: Success message
+- **Use**: Mark system for restart
 
-#### `GET /get-pipeline-objects`
+#### `GET /get_restart_required`
 
-- **Purpose**: Retrieves current pipeline configuration
-- **Response**: JSON object with pipeline structure
-- **Status**: 200 OK
-- **Use**: Load pipeline configuration into the editor
+- **Purpose**: Gets restart required status
+- **Response**: JSON boolean status
+- **Use**: Check if restart is needed
 
-## WebSocket Events (SocketIO)
+#### `POST /shutdown`
 
-### Connection Management
+- **Purpose**: Shuts down the web server
+- **Response**: Success message before shutdown
+- **Use**: System shutdown
 
-- **`connect`**: Client successfully connects to server
-- **`disconnect`**: Client disconnects from server
-- **`connect_error`**: Connection attempt fails
-- **`reconnect`**: Client successfully reconnects after disconnection
+### Real-time Data (SSE)
 
-### Real-time Data
+#### `GET /sse/stream`
 
-- **`update_robot_transform`**: Robot position and orientation updates
-    - **Data**: Transform matrix with position and rotation
-    - **Use**: Update 3D visualization with current robot pose
-
-## Data Formats
-
-### Settings JSON Structure
-
-```json
-{
-  "setting_name": "value",
-  "camera_resolution": "640x480",
-  "pipeline_enabled": true,
-  "calibration_data": {
-    "camera_matrix": [[...], [...], [...]],
-    "distortion_coefficients": [...]
-  }
-}
-```
-
-### Camera List Response
-
-```json
-["camera_1", "camera_2", "overhead_camera"]
-```
-
-### Robot Transform Data
-
-```json
-{
-    "transform_matrix": [
-        [1.0, 0.0, 0.0, 1000.0],
-        [0.0, 1.0, 0.0, 2000.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0]
-    ]
-}
-```
-
-## Error Handling
-
-### HTTP Status Codes
-
-- **200 OK**: Successful operation
-- **404 Not Found**: Camera or resource not found
-- **500 Internal Server Error**: Server-side error
-
-### Error Response Format
-
-```json
-{
-    "error": "Description of the error",
-    "details": "Additional error information"
-}
-```
-
-## Authentication & Security
-
-### Current State
-
-- **Authentication**: None required (development mode)
-- **CORS**: Configured for `http://localhost:5173`
-- **Security**: Basic HTTP, no encryption in development
-
-### Production Considerations
-
-- Add authentication headers
-- Implement HTTPS
-- Configure CORS for production domains
-- Add rate limiting and input validation
-
-## Performance Considerations
-
-### Streaming
-
-- MJPEG streams provide low-latency video
-- Frame rate depends on camera and network
-- Connection pooling for multiple clients
-
-### Real-time Updates
-
-- SocketIO provides efficient bidirectional communication
-- Configured ping timeout: 60s, ping interval: 25s
-- Automatic reconnection with exponential backoff
-
-### Caching
-
-- Static assets cached by browser
-- Settings cached in memory
-- Camera frames served fresh (no caching)
-
-## Usage Examples
-
-### JavaScript (Frontend)
-
-```javascript
-// Load settings
-fetch("/get-settings")
-    .then((response) => response.json())
-    .then((settings) => console.log(settings));
-
-// Save settings
-fetch("/save-settings", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ setting: "value" }),
-});
-
-// Camera stream
-const img = document.getElementById("camera-stream");
-img.src = "/camera/front_camera";
-```
-
-### Python (External Integration)
-
-```python
-import requests
-
-# Get settings
-response = requests.get('http://localhost:5001/get-settings')
-settings = response.json()
-
-# Update settings
-requests.post('http://localhost:5001/save-settings',
-              json={'new_setting': 'value'})
-```
-
-## Integration Guidelines
-
-### For External Applications
-
-1. Use appropriate content-type headers for POST requests
-2. Handle connection failures gracefully
-3. Implement reconnection logic for WebSocket connections
-4. Cache frequently accessed data locally
-
-### For Development
-
-1. Test endpoints with tools like Postman or curl
-2. Monitor network traffic for performance optimization
-3. Use browser developer tools for WebSocket debugging
-4. Implement proper error handling in client applications
-
-## Future Enhancements
-
-### Planned Features
-
-- Authentication and authorization
-- API versioning
-- Bulk operations for multiple cameras
-- Advanced filtering and search for settings
-- Webhook support for external integrations
-- API rate limiting and throttling
-- Comprehensive logging and monitoring
-
-### API Evolution
-
-- Maintain backward compatibility
-- Deprecate old endpoints with clear migration paths
-- Provide comprehensive documentation updates
-- Implement proper semantic versioning
+- **Purpose**: Server-Sent Events stream
+- **Response**: Event stream with real-time updates
+- **Events**: `heartbeat`, `update_robot_transform`, `update_detected_objects`
+- **Use**: Real-time data subscription

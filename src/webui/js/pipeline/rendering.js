@@ -81,6 +81,7 @@ export function renderOperations(
         el.draggable = true;
         el.className =
             "bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg mb-2 group";
+        el.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
         el.innerHTML = `
         <div class="flex items-center gap-3">
           <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(op.type)}</div>
@@ -146,6 +147,7 @@ export function renderPipeline(
         wrapper.draggable = true;
         wrapper.className =
             "pipeline-item group relative bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg";
+        wrapper.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
 
         // Inner content
         wrapper.innerHTML = `

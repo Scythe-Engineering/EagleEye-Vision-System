@@ -1,0 +1,43 @@
+{
+    "class_name": "GroundPlaneIntersection",
+    "description": "Ground plane intersection for 3D position estimation",
+    "category": "proc",
+    "parameters": {
+        "camera_height": {
+            "type": "float",
+            "description": "Height of camera above ground plane in meters",
+            "default": 1.0,
+            "required": false,
+            "min": 0.0,
+            "max": 10.0,
+            "restart_for_change": false
+        },
+        "camera_pitch": {
+            "type": "float",
+            "description": "Pitch angle of camera in radians (positive = looking down)",
+            "default": 0.0,
+            "required": false,
+            "min": -1.57,
+            "max": 1.57,
+            "restart_for_change": false
+        },
+        "fov_horizontal": {
+            "type": "float",
+            "description": "Horizontal field of view in degrees",
+            "default": 60.0,
+            "required": false,
+            "min": 1.0,
+            "max": 180.0,
+            "restart_for_change": false
+        },
+        "fov_vertical": {
+            "type": "float",
+            "description": "Vertical field of view in degrees",
+            "default": 45.0,
+            "required": false,
+            "min": 1.0,
+            "max": 180.0,
+            "restart_for_change": false
+        }
+    }
+}

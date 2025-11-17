@@ -1,19 +1,2 @@
 {
-    "basic_test": {
-        "object_detection_pipeline": [
-            {
-                "action_name": "object_detection",
-                "action_params": {
-                    "model_path": "{project_root}/src/main_operations/modules/object_detection/detection_models/320/small/2024_sim_320.dfp",
-                    "post_processing_model_path": "{project_root}/src/main_operations/modules/object_detection/detection_models/320/small/2024_sim_320_post.onnx",
-                    "device_id": "MX3_0",
-                    "is_grayscale": false,
-                    "conf_threshold": 0.25,
-                    "max_detections": 20,
-                    "target_height": 320,
-                    "target_width": 320
-                }
-            }
-        ]
-    }
 }

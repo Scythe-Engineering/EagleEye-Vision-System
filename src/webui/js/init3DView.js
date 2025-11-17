@@ -11,7 +11,9 @@ import {
     Mesh,
     MeshStandardMaterial,
     PlaneGeometry,
+    CylinderGeometry,
     TextureLoader,
+    CanvasTexture,
     Matrix4,
     NearestFilter,
     Vector3,
@@ -20,6 +22,8 @@ import {
     LineSegments,
     LineBasicMaterial,
     Group,
+    Sprite,
+    SpriteMaterial,
 } from "three";
 import { OrbitControls } from "OrbitControls";
 import { DRACOLoader } from "DRACOLoader";
@@ -35,12 +39,18 @@ let lastTime = performance.now();
 let robotObject = null;
 let robotAxes = null;
 let animationStarted = false;
+let detectedObjectsGroup = null;
+let pendingDetectedObjects = null;
 
 let maxFPS = 30;
 let interval = 1 / maxFPS;
 
 const robotScaleMatrix = new Matrix4().makeScale(1000, 1000, 1000);
 const robotFinalMatrix = new Matrix4();
+const detectionCylinderRadius = 150;
+const detectionCylinderHeight = 400;
+const detectionLabelOffset = 250;
+const detectionScaleFactor = 1000;
 
 function updateStats() {
     const currentTime = performance.now();
@@ -114,6 +124,216 @@ function createRobotAxes() {
     return axesGroup;
 }
 
+function disposeObject(object) {
+    object.traverse((node) => {
+        if (node.geometry) {
+            node.geometry.dispose();
+        }
+        if (node.material) {
+            const materials = Array.isArray(node.material)
+                ? node.material
+                : [node.material];
+            for (const material of materials) {
+                if (material.map) {
+                    material.map.dispose();
+                }
+                material.dispose();
+            }
+        }
+    });
+}
+
+function clearDetectedObjectsGroup() {
+    if (!detectedObjectsGroup) {
+        return;
+    }
+    while (detectedObjectsGroup.children.length > 0) {
+        const child = detectedObjectsGroup.children.pop();
+        if (child) {
+            detectedObjectsGroup.remove(child);
+            disposeObject(child);
+        }
+    }
+}
+
+function getHueFromClassIdentifier(classIdentifier) {
+    if (
+        typeof classIdentifier === "number" &&
+        Number.isFinite(classIdentifier)
+    ) {
+        const hueDegrees = (classIdentifier * 137.5) % 360;
+        return hueDegrees / 360;
+    }
+    const key = String(classIdentifier ?? "detection");
+    let hash = 0;
+    for (let index = 0; index < key.length; index += 1) {
+        hash = (hash * 31 + key.charCodeAt(index)) % 360;
+    }
+    return (hash % 360) / 360;
+}
+
+function clampConfidence(confidence) {
+    if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
+        return null;
+    }
+    if (confidence < 0) {
+        return 0;
+    }
+    if (confidence > 1) {
+        return 1;
+    }
+    return confidence;
+}
+
+function normalizeDetectionPosition(position) {
+    if (!Array.isArray(position) || position.length !== 3) {
+        return null;
+    }
+    const numericPosition = position.map((value) => Number(value));
+    if (numericPosition.some((value) => !Number.isFinite(value))) {
+        return null;
+    }
+    const fieldCenterX = 8.774125;
+    const fieldCenterZ = 4.025901;
+    return new Vector3(
+        (numericPosition[0] - fieldCenterX) * detectionScaleFactor,
+        numericPosition[2] * detectionScaleFactor,
+        (-numericPosition[1] + fieldCenterZ) * detectionScaleFactor,
+    );
+}
+
+function createDetectionMaterial(classIdentifier, normalizedConfidence) {
+    const hue = getHueFromClassIdentifier(classIdentifier);
+    const saturation = 0.7;
+    const baseLightness = 0.45;
+    const lightnessRange = 0.2;
+    const confidenceValue =
+        normalizedConfidence === null ? 0.5 : normalizedConfidence;
+    const materialColor = new Color();
+    materialColor.setHSL(
+        hue,
+        saturation,
+        baseLightness + lightnessRange * (confidenceValue - 0.5),
+    );
+    const opacityBase = 0.35;
+    const opacityRange = 0.35;
+    const materialOpacity = opacityBase + opacityRange * confidenceValue;
+    return new MeshStandardMaterial({
+        color: materialColor,
+        transparent: true,
+        opacity: materialOpacity,
+        depthWrite: false,
+    });
+}
+
+function createDetectionCylinderMesh(classIdentifier, normalizedConfidence) {
+    const geometry = new CylinderGeometry(
+        detectionCylinderRadius,
+        detectionCylinderRadius,
+        detectionCylinderHeight,
+        28,
+    );
+    const material = createDetectionMaterial(
+        classIdentifier,
+        normalizedConfidence,
+    );
+    const cylinder = new Mesh(geometry, material);
+    cylinder.position.y = detectionCylinderHeight / 2;
+    cylinder.castShadow = false;
+    cylinder.receiveShadow = false;
+    cylinder.excludeFromShadowToggle = true;
+    return cylinder;
+}
+
+function buildDetectionLabelText(detection, normalizedConfidence) {
+    const classIdentifier =
+        detection.class_name ?? detection.class_id ?? "Detection";
+    const classLabel = String(classIdentifier);
+    if (normalizedConfidence === null) {
+        return classLabel;
+    }
+    const confidencePercent = Math.round(normalizedConfidence * 100);
+    return `${classLabel} ${confidencePercent}%`;
+}
+
+function createDetectionLabelSprite(labelText) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (!context) {
+        return null;
+    }
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "rgba(20, 20, 20, 0.8)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#ffffff";
+    context.font = "bold 64px Arial";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(labelText, canvas.width / 2, canvas.height / 2);
+    const texture = new CanvasTexture(canvas);
+    const material = new SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new Sprite(material);
+    const scaleFactor = 0.4;
+    sprite.scale.set(
+        canvas.width * scaleFactor,
+        canvas.height * scaleFactor,
+        1,
+    );
+    sprite.center.set(0.5, 0);
+    sprite.renderOrder = 1000;
+    return sprite;
+}
+
+function createDetectionGroup(detection) {
+    if (!detection || typeof detection !== "object") {
+        return null;
+    }
+    const positionVector = normalizeDetectionPosition(detection.position_3d);
+    if (!positionVector) {
+        return null;
+    }
+    const normalizedConfidence = clampConfidence(detection.confidence);
+    const classIdentifier =
+        detection.class_id ?? detection.class_name ?? "Detection";
+    const detectionGroup = new Group();
+    detectionGroup.position.copy(positionVector);
+    const cylinder = createDetectionCylinderMesh(
+        classIdentifier,
+        normalizedConfidence,
+    );
+    detectionGroup.add(cylinder);
+    const labelText = buildDetectionLabelText(detection, normalizedConfidence);
+    const labelSprite = createDetectionLabelSprite(labelText);
+    if (labelSprite) {
+        labelSprite.position.y = detectionCylinderHeight + detectionLabelOffset;
+        detectionGroup.add(labelSprite);
+    }
+    return detectionGroup;
+}
+
+function renderDetectedObjects(detections) {
+    if (!detectedObjectsGroup) {
+        return;
+    }
+    clearDetectedObjectsGroup();
+    if (!Array.isArray(detections)) {
+        return;
+    }
+    for (const detection of detections) {
+        const detectionGroup = createDetectionGroup(detection);
+        if (detectionGroup) {
+            detectedObjectsGroup.add(detectionGroup);
+        }
+    }
+}
+
+export function updateDetectedObjects(detections) {
+    pendingDetectedObjects = detections;
+    renderDetectedObjects(detections);
+}
+
 export async function init3DView(modelUrl) {
     const container = document.getElementById("view-3d");
     statsDisplay = document.getElementById("statsDisplay");
@@ -130,6 +350,7 @@ export async function init3DView(modelUrl) {
 
     // Clear and destroy existing scene if it exists
     if (scene) {
+        clearDetectedObjectsGroup();
         // Remove all objects from the scene
         while (scene.children.length > 0) {
             const child = scene.children[0];
@@ -160,6 +381,7 @@ export async function init3DView(modelUrl) {
         // Clear the scene
         scene.clear();
         scene = null;
+        detectedObjectsGroup = null;
 
         // Dispose and cleanup existing WebGLRenderer to prevent context leaks
         if (renderer) {
@@ -182,6 +404,12 @@ export async function init3DView(modelUrl) {
     }
 
     scene = new Scene();
+    detectedObjectsGroup = new Group();
+    detectedObjectsGroup.excludeFromShadowToggle = true;
+    scene.add(detectedObjectsGroup);
+    if (pendingDetectedObjects) {
+        renderDetectedObjects(pendingDetectedObjects);
+    }
 
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/`);

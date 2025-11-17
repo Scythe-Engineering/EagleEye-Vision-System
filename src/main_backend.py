@@ -22,6 +22,8 @@ from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: 
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
+from networktables import NetworkTables  # noqa: E402
+from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
 
 # Build the Rust implementations (removed during uv sync)
 print(
@@ -40,6 +42,7 @@ available_devices = get_available_devices()
 print(f"{Colors.CYAN}Detected Available Devices:{Colors.RESET}", available_devices)
 
 current_dir = Path(__file__).parent
+SCHEMA_MANIFEST_KEY = "schema_manifest"
 
 
 class DummyNetworkTable:
@@ -100,6 +103,11 @@ class MainBackend:
     def __init__(self):
         try:
             print(f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}")
+
+            NetworkTables.initialize(server="10.0.0.62")
+            self.network_table = NetworkTables.getTable("EagleEye")
+            schema_manifest_payload = generate_schema_manifest_bytes()
+            self.network_table.putRaw(SCHEMA_MANIFEST_KEY, schema_manifest_payload)
 
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
@@ -173,7 +181,7 @@ class MainBackend:
             self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
                 self.web_interface,
                 self.compute_pool,
-                DummyNetworkTable(self.camera_manager.get_video_camera_index),
+                self.network_table,
                 self.camera_manager,
             )
 

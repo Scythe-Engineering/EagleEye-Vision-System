@@ -4,9 +4,11 @@
             <!-- Pipeline Area -->
             <div
                 class="flex-1 flex flex-col bg-[#1f1f1f] rounded-[15px] min-h-0 mt-[5px]"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
             >
                 <div
                     class="bg-[#1E1E1E] p-4 border-b border-[#414141] flex items-center justify-between rounded-[15px]"
+                    style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
                 >
                     <div class="flex items-center gap-4">
                         <div class="flex flex-col gap-2">
@@ -67,7 +69,7 @@
                     style="
                         background-image: radial-gradient(
                             circle,
-                            rgba(249, 115, 22, 0.1) 1px,
+                            rgba(128, 128, 128, 0.2) 1px,
                             transparent 1px
                         );
                         background-size: 20px 20px;
@@ -107,22 +109,29 @@
                         class="flex items-center justify-center h-full"
                     >
                         <div class="text-center">
-                            <div
-                                class="w-24 h-24 mx-auto mb-4 bg-[rgb(35,35,35)] rounded-2xl flex items-center justify-center"
-                            >
-                                <!-- Small branch icon -->
-                                <svg
-                                    class="w-10 h-10 text-[#f9c84a]"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
+                            <div class="relative mx-auto mb-4 w-24 h-24 flex items-center justify-center">
+                                <!-- Background layer - slightly larger and darker -->
+                                <div
+                                    class="absolute inset-0 w-28 h-28 -translate-x-2 -translate-y-2 bg-[rgb(33,33,33)] rounded-2xl"
+                                ></div>
+                                <!-- Foreground layer -->
+                                <div
+                                    class="relative w-24 h-24 bg-[rgb(35,35,35)] rounded-2xl flex items-center justify-center"
                                 >
-                                    <path d="M6 3v12"></path>
-                                    <circle cx="6" cy="18" r="2"></circle>
-                                    <circle cx="18" cy="6" r="2"></circle>
-                                    <path d="M18 8v12"></path>
-                                </svg>
+                                    <!-- Small branch icon -->
+                                    <svg
+                                        class="w-10 h-10 text-[#f9c84a]"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    >
+                                        <path d="M6 3v12"></path>
+                                        <circle cx="6" cy="18" r="2"></circle>
+                                        <circle cx="18" cy="6" r="2"></circle>
+                                        <path d="M18 8v12"></path>
+                                    </svg>
+                                </div>
                             </div>
                             <p class="text-[#ac8a2f] text-lg">
                                 Start by dragging operations here
@@ -146,9 +155,11 @@
             <!-- Operations Panel -->
             <div
                 class="w-80 bg-[#1f1f1f] border border-transparent flex flex-col rounded-[15px] min-h-0 mt-[5px]"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
             >
                 <div
                     class="p-4 border-b border-[#414141] rounded-[15px] bg-[#1E1E1E]"
+                    style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
                 >
                     <h2 class="text-2xl font-bold text-[#f9c845]">
                         Operations
@@ -173,7 +184,8 @@
             <!-- Settings Panel -->
             <div
                 id="operationSettingsModal"
-                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] overflow-hidden"
+                style="box-shadow: 12px 12px 24px rgba(0, 0, 0, 0.5);"
             >
                 <div
                     class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"
@@ -230,7 +242,8 @@
             <!-- Live View Panel -->
             <div
                 id="operationLiveViewPanel"
-                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] overflow-hidden"
+                style="box-shadow: 12px 12px 24px rgba(0, 0, 0, 0.5);"
             >
                 <div
                     class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"

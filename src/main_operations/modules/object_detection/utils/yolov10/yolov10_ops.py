@@ -67,6 +67,10 @@ class YoloV10:
         self.padding = padding
         self.resized_size = resized_size
 
+        # Convert BGR to RGB if needed
+        if img.ndim == 3 and img.shape[2] == 3:
+            img = img[..., ::-1]
+
         img = img.astype(np.float32)
         img /= 255.0  # Scale
 
@@ -76,14 +80,14 @@ class YoloV10:
 
         return img
 
-    def scale_boxes_to_original(
+    def reverse_letterbox_padding(
         self, boxes: np.ndarray
     ) -> Union[np.ndarray, torch.Tensor]:
         """
-        Scale boxes from letterboxed coordinate space to original image coordinate space.
+        Reverse letterbox padding and convert boxes to percentages relative to resized content area.
 
-        This accounts for both padding and resizing transformations applied during preprocessing.
-        The resized size is assumed to be the model input size.
+        This removes the padding added during letterboxing preprocessing and converts
+        coordinates to percentages relative to the resized content dimensions.
         Boxes are expected to be in xyxy format (x1, y1, x2, y2).
 
         Args:
@@ -91,25 +95,27 @@ class YoloV10:
                   Format: xyxy (x1, y1, x2, y2).
 
         Returns:
-            Scaled boxes in original image coordinate space, same shape and type as input.
+            Boxes with padding removed and converted to percentages (0-1) of resized content dimensions,
+            same shape and type as input.
         """
         pad_x, pad_y = self.padding
         resized_width, resized_height = self.resized_size
-        original_width, original_height = self.original_image_shape[:2]
 
-        scale_x = original_width / resized_width
-        scale_y = original_height / resized_height
-
+        # Reverse letterbox padding
         boxes -= np.array([pad_x, pad_y, pad_x, pad_y])
-        boxes *= np.array([scale_x, scale_y, scale_x, scale_y])
+
+        # Convert to percentages relative to resized content area
+        boxes /= np.array(
+            [resized_width, resized_height, resized_width, resized_height]
+        )
         return boxes
 
     def postprocess(self, preds):
         """
         Postprocess YOLOv10 model predictions.
 
-        Filters predictions by confidence threshold, scales bounding boxes back to
-        original image coordinates, and returns the processed detections.
+        Filters predictions by confidence threshold, scales bounding boxes to
+        percentages of original image dimensions, and returns the processed detections.
 
         Args:
             preds: Model predictions. Can be a dict with 'one2one' key, a list/tuple,
@@ -117,8 +123,8 @@ class YoloV10:
                   [x1, y1, x2, y2, confidence, class_id].
 
         Returns:
-            Filtered and scaled predictions with bounding boxes in original image
-            coordinate space. Same type as input preds.
+            Filtered and scaled predictions with bounding boxes as percentages (0-1)
+            of original image dimensions. Same type as input preds.
         """
         if isinstance(preds, dict):
             preds = preds["one2one"]
@@ -131,7 +137,7 @@ class YoloV10:
 
         if len(preds) > 0:
             boxes = preds[..., :4]
-            scaled_boxes = self.scale_boxes_to_original(boxes)
+            scaled_boxes = self.reverse_letterbox_padding(boxes)
             preds[..., :4] = scaled_boxes
 
         results = []

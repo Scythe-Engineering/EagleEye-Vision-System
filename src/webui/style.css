@@ -35,3 +35,37 @@
         transform: translateY(-1px);
     }
 }
+
+/* Scrollbar styling for rounded containers */
+#pipelineArea::-webkit-scrollbar,
+#operationsList::-webkit-scrollbar {
+    width: 12px;
+    background: transparent;
+}
+
+#pipelineArea::-webkit-scrollbar-track,
+#operationsList::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 0 15px 15px 0;
+}
+
+#pipelineArea::-webkit-scrollbar-thumb,
+#operationsList::-webkit-scrollbar-thumb {
+    background: rgba(65, 65, 65, 0.6);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+#pipelineArea::-webkit-scrollbar-thumb:hover,
+#operationsList::-webkit-scrollbar-thumb:hover {
+    background: rgba(65, 65, 65, 0.8);
+    background-clip: padding-box;
+}
+
+/* Firefox scrollbar styling */
+#pipelineArea,
+#operationsList {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
+}

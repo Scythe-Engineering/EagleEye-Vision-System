@@ -1,3 +1,4 @@
+import { B as BACKEND_BASE_URL } from "./bundle3.js";
 /**
  * @license
  * Copyright 2010-2025 Three.js Authors
@@ -243,8 +244,8 @@ function generateUUID() {
   const uuid = _lut[d0 & 255] + _lut[d0 >> 8 & 255] + _lut[d0 >> 16 & 255] + _lut[d0 >> 24 & 255] + "-" + _lut[d1 & 255] + _lut[d1 >> 8 & 255] + "-" + _lut[d1 >> 16 & 15 | 64] + _lut[d1 >> 24 & 255] + "-" + _lut[d2 & 63 | 128] + _lut[d2 >> 8 & 255] + "-" + _lut[d2 >> 16 & 255] + _lut[d2 >> 24 & 255] + _lut[d3 & 255] + _lut[d3 >> 8 & 255] + _lut[d3 >> 16 & 255] + _lut[d3 >> 24 & 255];
   return uuid.toLowerCase();
 }
-function clamp(value2, min, max) {
-  return Math.max(min, Math.min(max, value2));
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 function euclideanModulo(n, m) {
   return (n % m + m) % m;
@@ -252,9 +253,9 @@ function euclideanModulo(n, m) {
 function mapLinear(x, a1, a2, b1, b2) {
   return b1 + (x - a1) * (b2 - b1) / (a2 - a1);
 }
-function inverseLerp(x, y, value2) {
+function inverseLerp(x, y, value) {
   if (x !== y) {
-    return (value2 - x) / (y - x);
+    return (value - x) / (y - x);
   } else {
     return 0;
   }
@@ -302,14 +303,14 @@ function degToRad(degrees) {
 function radToDeg(radians) {
   return radians * RAD2DEG;
 }
-function isPowerOfTwo(value2) {
-  return (value2 & value2 - 1) === 0 && value2 !== 0;
+function isPowerOfTwo(value) {
+  return (value & value - 1) === 0 && value !== 0;
 }
-function ceilPowerOfTwo(value2) {
-  return Math.pow(2, Math.ceil(Math.log(value2) / Math.LN2));
+function ceilPowerOfTwo(value) {
+  return Math.pow(2, Math.ceil(Math.log(value) / Math.LN2));
 }
-function floorPowerOfTwo(value2) {
-  return Math.pow(2, Math.floor(Math.log(value2) / Math.LN2));
+function floorPowerOfTwo(value) {
+  return Math.pow(2, Math.floor(Math.log(value) / Math.LN2));
 }
 function setQuaternionFromProperEuler(q, a, b, c, order) {
   const cos = Math.cos;
@@ -345,42 +346,42 @@ function setQuaternionFromProperEuler(q, a, b, c, order) {
       console.warn("THREE.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order: " + order);
   }
 }
-function denormalize(value2, array) {
+function denormalize(value, array) {
   switch (array.constructor) {
     case Float32Array:
-      return value2;
+      return value;
     case Uint32Array:
-      return value2 / 4294967295;
+      return value / 4294967295;
     case Uint16Array:
-      return value2 / 65535;
+      return value / 65535;
     case Uint8Array:
-      return value2 / 255;
+      return value / 255;
     case Int32Array:
-      return Math.max(value2 / 2147483647, -1);
+      return Math.max(value / 2147483647, -1);
     case Int16Array:
-      return Math.max(value2 / 32767, -1);
+      return Math.max(value / 32767, -1);
     case Int8Array:
-      return Math.max(value2 / 127, -1);
+      return Math.max(value / 127, -1);
     default:
       throw new Error("Invalid component type.");
   }
 }
-function normalize(value2, array) {
+function normalize(value, array) {
   switch (array.constructor) {
     case Float32Array:
-      return value2;
+      return value;
     case Uint32Array:
-      return Math.round(value2 * 4294967295);
+      return Math.round(value * 4294967295);
     case Uint16Array:
-      return Math.round(value2 * 65535);
+      return Math.round(value * 65535);
     case Uint8Array:
-      return Math.round(value2 * 255);
+      return Math.round(value * 255);
     case Int32Array:
-      return Math.round(value2 * 2147483647);
+      return Math.round(value * 2147483647);
     case Int16Array:
-      return Math.round(value2 * 32767);
+      return Math.round(value * 32767);
     case Int8Array:
-      return Math.round(value2 * 127);
+      return Math.round(value * 127);
     default:
       throw new Error("Invalid component type.");
   }
@@ -649,8 +650,8 @@ class Vector2 {
   get width() {
     return this.x;
   }
-  set width(value2) {
-    this.x = value2;
+  set width(value) {
+    this.x = value;
   }
   /**
    * Alias for {@link Vector2#y}.
@@ -660,8 +661,8 @@ class Vector2 {
   get height() {
     return this.y;
   }
-  set height(value2) {
-    this.y = value2;
+  set height(value) {
+    this.y = value;
   }
   /**
    * Sets the vector components.
@@ -713,13 +714,13 @@ class Vector2 {
    * @param {number} value - The value to set.
    * @return {Vector2} A reference to this vector.
    */
-  setComponent(index, value2) {
+  setComponent(index, value) {
     switch (index) {
       case 0:
-        this.x = value2;
+        this.x = value;
         break;
       case 1:
-        this.y = value2;
+        this.y = value;
         break;
       default:
         throw new Error("index is out of range: " + index);
@@ -1995,8 +1996,8 @@ class Source {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    if (value2 === true) this.version++;
+  set needsUpdate(value) {
+    if (value === true) this.version++;
   }
   /**
    * Serializes the source into JSON.
@@ -2016,20 +2017,20 @@ class Source {
     };
     const data = this.data;
     if (data !== null) {
-      let url2;
+      let url;
       if (Array.isArray(data)) {
-        url2 = [];
+        url = [];
         for (let i = 0, l = data.length; i < l; i++) {
           if (data[i].isDataTexture) {
-            url2.push(serializeImage(data[i].image));
+            url.push(serializeImage(data[i].image));
           } else {
-            url2.push(serializeImage(data[i]));
+            url.push(serializeImage(data[i]));
           }
         }
       } else {
-        url2 = serializeImage(data);
+        url = serializeImage(data);
       }
-      output.url = url2;
+      output.url = url;
     }
     if (!isRootObject) {
       meta.images[this.uuid] = output;
@@ -2114,8 +2115,8 @@ class Texture extends EventDispatcher {
   get image() {
     return this.source.data;
   }
-  set image(value2 = null) {
-    this.source.data = value2;
+  set image(value = null) {
+    this.source.data = value;
   }
   /**
    * Updates the texture transformation matrix from the from the properties {@link Texture#offset},
@@ -2281,8 +2282,8 @@ class Texture extends EventDispatcher {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    if (value2 === true) {
+  set needsUpdate(value) {
+    if (value === true) {
       this.version++;
       this.source.needsUpdate = true;
     }
@@ -2295,8 +2296,8 @@ class Texture extends EventDispatcher {
    * @default false
    * @param {boolean} value
    */
-  set needsPMREMUpdate(value2) {
-    if (value2 === true) {
+  set needsPMREMUpdate(value) {
+    if (value === true) {
       this.pmremVersion++;
     }
   }
@@ -2328,8 +2329,8 @@ class Vector4 {
   get width() {
     return this.z;
   }
-  set width(value2) {
-    this.z = value2;
+  set width(value) {
+    this.z = value;
   }
   /**
    * Alias for {@link Vector4#w}.
@@ -2339,8 +2340,8 @@ class Vector4 {
   get height() {
     return this.w;
   }
-  set height(value2) {
-    this.w = value2;
+  set height(value) {
+    this.w = value;
   }
   /**
    * Sets the vector components.
@@ -2419,19 +2420,19 @@ class Vector4 {
    * @param {number} value - The value to set.
    * @return {Vector4} A reference to this vector.
    */
-  setComponent(index, value2) {
+  setComponent(index, value) {
     switch (index) {
       case 0:
-        this.x = value2;
+        this.x = value;
         break;
       case 1:
-        this.y = value2;
+        this.y = value;
         break;
       case 2:
-        this.z = value2;
+        this.z = value;
         break;
       case 3:
-        this.w = value2;
+        this.w = value;
         break;
       default:
         throw new Error("index is out of range: " + index);
@@ -3112,8 +3113,8 @@ class RenderTarget extends EventDispatcher {
   get texture() {
     return this.textures[0];
   }
-  set texture(value2) {
-    this.textures[0] = value2;
+  set texture(value) {
+    this.textures[0] = value;
   }
   set depthTexture(current) {
     if (this._depthTexture !== null) this._depthTexture.renderTarget = null;
@@ -3385,8 +3386,8 @@ class Quaternion {
   get x() {
     return this._x;
   }
-  set x(value2) {
-    this._x = value2;
+  set x(value) {
+    this._x = value;
     this._onChangeCallback();
   }
   /**
@@ -3398,8 +3399,8 @@ class Quaternion {
   get y() {
     return this._y;
   }
-  set y(value2) {
-    this._y = value2;
+  set y(value) {
+    this._y = value;
     this._onChangeCallback();
   }
   /**
@@ -3411,8 +3412,8 @@ class Quaternion {
   get z() {
     return this._z;
   }
-  set z(value2) {
-    this._z = value2;
+  set z(value) {
+    this._z = value;
     this._onChangeCallback();
   }
   /**
@@ -3424,8 +3425,8 @@ class Quaternion {
   get w() {
     return this._w;
   }
-  set w(value2) {
-    this._w = value2;
+  set w(value) {
+    this._w = value;
     this._onChangeCallback();
   }
   /**
@@ -3986,16 +3987,16 @@ class Vector3 {
    * @param {number} value - The value to set.
    * @return {Vector3} A reference to this vector.
    */
-  setComponent(index, value2) {
+  setComponent(index, value) {
     switch (index) {
       case 0:
-        this.x = value2;
+        this.x = value;
         break;
       case 1:
-        this.y = value2;
+        this.y = value;
         break;
       case 2:
-        this.z = value2;
+        this.z = value;
         break;
       default:
         throw new Error("index is out of range: " + index);
@@ -7083,8 +7084,8 @@ class Euler {
   get x() {
     return this._x;
   }
-  set x(value2) {
-    this._x = value2;
+  set x(value) {
+    this._x = value;
     this._onChangeCallback();
   }
   /**
@@ -7096,8 +7097,8 @@ class Euler {
   get y() {
     return this._y;
   }
-  set y(value2) {
-    this._y = value2;
+  set y(value) {
+    this._y = value;
     this._onChangeCallback();
   }
   /**
@@ -7109,8 +7110,8 @@ class Euler {
   get z() {
     return this._z;
   }
-  set z(value2) {
-    this._z = value2;
+  set z(value) {
+    this._z = value;
     this._onChangeCallback();
   }
   /**
@@ -7122,8 +7123,8 @@ class Euler {
   get order() {
     return this._order;
   }
-  set order(value2) {
-    this._order = value2;
+  set order(value) {
+    this._order = value;
     this._onChangeCallback();
   }
   /**
@@ -7917,11 +7918,11 @@ class Object3D extends EventDispatcher {
    * @param {any} value - The value.
    * @return {Object3D|undefined} The found 3D object. Returns `undefined` if no 3D object has been found.
    */
-  getObjectByProperty(name, value2) {
-    if (this[name] === value2) return this;
+  getObjectByProperty(name, value) {
+    if (this[name] === value) return this;
     for (let i = 0, l = this.children.length; i < l; i++) {
       const child = this.children[i];
-      const object = child.getObjectByProperty(name, value2);
+      const object = child.getObjectByProperty(name, value);
       if (object !== void 0) {
         return object;
       }
@@ -7937,11 +7938,11 @@ class Object3D extends EventDispatcher {
    * @param {Array<Object3D>} result - The method stores the result in this array.
    * @return {Array<Object3D>} The found 3D objects.
    */
-  getObjectsByProperty(name, value2, result = []) {
-    if (this[name] === value2) result.push(this);
+  getObjectsByProperty(name, value, result = []) {
+    if (this[name] === value) result.push(this);
     const children = this.children;
     for (let i = 0, l = children.length; i < l; i++) {
-      children[i].getObjectsByProperty(name, value2, result);
+      children[i].getObjectsByProperty(name, value, result);
     }
     return result;
   }
@@ -8276,10 +8277,10 @@ class Object3D extends EventDispatcher {
     }
     output.object = object;
     return output;
-    function extractFromCache(cache2) {
+    function extractFromCache(cache) {
       const values = [];
-      for (const key in cache2) {
-        const data = cache2[key];
+      for (const key in cache) {
+        const data = cache[key];
         delete data.metadata;
         values.push(data);
       }
@@ -8898,13 +8899,13 @@ class Color {
    */
   set(r, g, b) {
     if (g === void 0 && b === void 0) {
-      const value2 = r;
-      if (value2 && value2.isColor) {
-        this.copy(value2);
-      } else if (typeof value2 === "number") {
-        this.setHex(value2);
-      } else if (typeof value2 === "string") {
-        this.setStyle(value2);
+      const value = r;
+      if (value && value.isColor) {
+        this.copy(value);
+      } else if (typeof value === "number") {
+        this.setHex(value);
+      } else if (typeof value === "string") {
+        this.setStyle(value);
       }
     } else {
       this.setRGB(r, g, b);
@@ -9528,11 +9529,11 @@ class Material extends EventDispatcher {
   get alphaTest() {
     return this._alphaTest;
   }
-  set alphaTest(value2) {
-    if (this._alphaTest > 0 !== value2 > 0) {
+  set alphaTest(value) {
+    if (this._alphaTest > 0 !== value > 0) {
       this.version++;
     }
-    this._alphaTest = value2;
+    this._alphaTest = value;
   }
   /**
    * An optional callback that is executed immediately before the material is used to render a 3D object.
@@ -9766,10 +9767,10 @@ class Material extends EventDispatcher {
     if (this.toneMapped === false) data.toneMapped = false;
     if (this.fog === false) data.fog = false;
     if (Object.keys(this.userData).length > 0) data.userData = this.userData;
-    function extractFromCache(cache2) {
+    function extractFromCache(cache) {
       const values = [];
-      for (const key in cache2) {
-        const data2 = cache2[key];
+      for (const key in cache) {
+        const data2 = cache[key];
         delete data2.metadata;
         values.push(data2);
       }
@@ -9869,8 +9870,8 @@ class Material extends EventDispatcher {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    if (value2 === true) this.version++;
+  set needsUpdate(value) {
+    if (value === true) this.version++;
   }
   onBuild() {
     console.warn("Material: onBuild() has been removed.");
@@ -9974,8 +9975,8 @@ class BufferAttribute {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    if (value2 === true) this.version++;
+  set needsUpdate(value) {
+    if (value === true) this.version++;
   }
   /**
    * Sets the usage of this buffer attribute.
@@ -9983,8 +9984,8 @@ class BufferAttribute {
    * @param {(StaticDrawUsage|DynamicDrawUsage|StreamDrawUsage|StaticReadUsage|DynamicReadUsage|StreamReadUsage|StaticCopyUsage|DynamicCopyUsage|StreamCopyUsage)} value - The usage to set.
    * @return {BufferAttribute} A reference to this buffer attribute.
    */
-  setUsage(value2) {
-    this.usage = value2;
+  setUsage(value) {
+    this.usage = value;
     return this;
   }
   /**
@@ -10121,8 +10122,8 @@ class BufferAttribute {
    * @param {number} [offset=0] - The offset in this buffer attribute's array.
    * @return {BufferAttribute} A reference to this instance.
    */
-  set(value2, offset = 0) {
-    this.array.set(value2, offset);
+  set(value, offset = 0) {
+    this.array.set(value, offset);
     return this;
   }
   /**
@@ -10133,9 +10134,9 @@ class BufferAttribute {
    * @return {number} The returned value.
    */
   getComponent(index, component) {
-    let value2 = this.array[index * this.itemSize + component];
-    if (this.normalized) value2 = denormalize(value2, this.array);
-    return value2;
+    let value = this.array[index * this.itemSize + component];
+    if (this.normalized) value = denormalize(value, this.array);
+    return value;
   }
   /**
    * Sets the given value to the given component of the vector at the given index.
@@ -10145,9 +10146,9 @@ class BufferAttribute {
    * @param {number} value - The value to set.
    * @return {BufferAttribute} A reference to this instance.
    */
-  setComponent(index, component, value2) {
-    if (this.normalized) value2 = normalize(value2, this.array);
-    this.array[index * this.itemSize + component] = value2;
+  setComponent(index, component, value) {
+    if (this.normalized) value = normalize(value, this.array);
+    this.array[index * this.itemSize + component] = value;
     return this;
   }
   /**
@@ -11619,45 +11620,45 @@ class ShaderMaterial extends Material {
     data.uniforms = {};
     for (const name in this.uniforms) {
       const uniform = this.uniforms[name];
-      const value2 = uniform.value;
-      if (value2 && value2.isTexture) {
+      const value = uniform.value;
+      if (value && value.isTexture) {
         data.uniforms[name] = {
           type: "t",
-          value: value2.toJSON(meta).uuid
+          value: value.toJSON(meta).uuid
         };
-      } else if (value2 && value2.isColor) {
+      } else if (value && value.isColor) {
         data.uniforms[name] = {
           type: "c",
-          value: value2.getHex()
+          value: value.getHex()
         };
-      } else if (value2 && value2.isVector2) {
+      } else if (value && value.isVector2) {
         data.uniforms[name] = {
           type: "v2",
-          value: value2.toArray()
+          value: value.toArray()
         };
-      } else if (value2 && value2.isVector3) {
+      } else if (value && value.isVector3) {
         data.uniforms[name] = {
           type: "v3",
-          value: value2.toArray()
+          value: value.toArray()
         };
-      } else if (value2 && value2.isVector4) {
+      } else if (value && value.isVector4) {
         data.uniforms[name] = {
           type: "v4",
-          value: value2.toArray()
+          value: value.toArray()
         };
-      } else if (value2 && value2.isMatrix3) {
+      } else if (value && value.isMatrix3) {
         data.uniforms[name] = {
           type: "m3",
-          value: value2.toArray()
+          value: value.toArray()
         };
-      } else if (value2 && value2.isMatrix4) {
+      } else if (value && value.isMatrix4) {
         data.uniforms[name] = {
           type: "m4",
-          value: value2.toArray()
+          value: value.toArray()
         };
       } else {
         data.uniforms[name] = {
-          value: value2
+          value
         };
       }
     }
@@ -11986,9 +11987,9 @@ class CubeCamera extends Object3D {
    */
   updateCoordinateSystem() {
     const coordinateSystem = this.coordinateSystem;
-    const cameras = this.children.concat();
-    const [cameraPX, cameraNX, cameraPY, cameraNY, cameraPZ, cameraNZ] = cameras;
-    for (const camera2 of cameras) this.remove(camera2);
+    const cameras2 = this.children.concat();
+    const [cameraPX, cameraNX, cameraPY, cameraNY, cameraPZ, cameraNZ] = cameras2;
+    for (const camera2 of cameras2) this.remove(camera2);
     if (coordinateSystem === WebGLCoordinateSystem) {
       cameraPX.up.set(0, 1, 0);
       cameraPX.lookAt(1, 0, 0);
@@ -12018,7 +12019,7 @@ class CubeCamera extends Object3D {
     } else {
       throw new Error("THREE.CubeCamera.updateCoordinateSystem(): Invalid coordinate system: " + coordinateSystem);
     }
-    for (const camera2 of cameras) {
+    for (const camera2 of cameras2) {
       this.add(camera2);
       camera2.updateMatrixWorld();
     }
@@ -12091,8 +12092,8 @@ class CubeTexture extends Texture {
   get images() {
     return this.image;
   }
-  set images(value2) {
-    this.image = value2;
+  set images(value) {
+    this.image = value;
   }
 }
 class WebGLCubeRenderTarget extends WebGLRenderTarget {
@@ -12537,8 +12538,8 @@ class InterleavedBuffer {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    if (value2 === true) this.version++;
+  set needsUpdate(value) {
+    if (value === true) this.version++;
   }
   /**
    * Sets the usage of this interleaved buffer.
@@ -12546,8 +12547,8 @@ class InterleavedBuffer {
    * @param {(StaticDrawUsage|DynamicDrawUsage|StreamDrawUsage|StaticReadUsage|DynamicReadUsage|StreamReadUsage|StaticCopyUsage|DynamicCopyUsage|StreamCopyUsage)} value - The usage to set.
    * @return {InterleavedBuffer} A reference to this interleaved buffer.
    */
-  setUsage(value2) {
-    this.usage = value2;
+  setUsage(value) {
+    this.usage = value;
     return this;
   }
   /**
@@ -12603,8 +12604,8 @@ class InterleavedBuffer {
    * @param {number} [offset=0] - The offset in this interleaved buffer's array.
    * @return {InterleavedBuffer} A reference to this instance.
    */
-  set(value2, offset = 0) {
-    this.array.set(value2, offset);
+  set(value, offset = 0) {
+    this.array.set(value, offset);
     return this;
   }
   /**
@@ -12707,8 +12708,8 @@ class InterleavedBufferAttribute {
    * @default false
    * @param {boolean} value
    */
-  set needsUpdate(value2) {
-    this.data.needsUpdate = value2;
+  set needsUpdate(value) {
+    this.data.needsUpdate = value;
   }
   /**
    * Applies the given 4x4 matrix to the given attribute. Only works with
@@ -12763,9 +12764,9 @@ class InterleavedBufferAttribute {
    * @return {number} The returned value.
    */
   getComponent(index, component) {
-    let value2 = this.array[index * this.data.stride + this.offset + component];
-    if (this.normalized) value2 = denormalize(value2, this.array);
-    return value2;
+    let value = this.array[index * this.data.stride + this.offset + component];
+    if (this.normalized) value = denormalize(value, this.array);
+    return value;
   }
   /**
    * Sets the given value to the given component of the vector at the given index.
@@ -12775,9 +12776,9 @@ class InterleavedBufferAttribute {
    * @param {number} value - The value to set.
    * @return {InterleavedBufferAttribute} A reference to this instance.
    */
-  setComponent(index, component, value2) {
-    if (this.normalized) value2 = normalize(value2, this.array);
-    this.data.array[index * this.data.stride + this.offset + component] = value2;
+  setComponent(index, component, value) {
+    if (this.normalized) value = normalize(value, this.array);
+    this.data.array[index * this.data.stride + this.offset + component] = value;
     return this;
   }
   /**
@@ -13004,6 +13005,165 @@ class InterleavedBufferAttribute {
       };
     }
   }
+}
+class SpriteMaterial extends Material {
+  /**
+   * Constructs a new sprite material.
+   *
+   * @param {Object} [parameters] - An object with one or more properties
+   * defining the material's appearance. Any property of the material
+   * (including any property from inherited materials) can be passed
+   * in here. Color values can be passed any type of value accepted
+   * by {@link Color#set}.
+   */
+  constructor(parameters) {
+    super();
+    this.isSpriteMaterial = true;
+    this.type = "SpriteMaterial";
+    this.color = new Color(16777215);
+    this.map = null;
+    this.alphaMap = null;
+    this.rotation = 0;
+    this.sizeAttenuation = true;
+    this.transparent = true;
+    this.fog = true;
+    this.setValues(parameters);
+  }
+  copy(source) {
+    super.copy(source);
+    this.color.copy(source.color);
+    this.map = source.map;
+    this.alphaMap = source.alphaMap;
+    this.rotation = source.rotation;
+    this.sizeAttenuation = source.sizeAttenuation;
+    this.fog = source.fog;
+    return this;
+  }
+}
+let _geometry;
+const _intersectPoint = /* @__PURE__ */ new Vector3();
+const _worldScale = /* @__PURE__ */ new Vector3();
+const _mvPosition = /* @__PURE__ */ new Vector3();
+const _alignedPosition = /* @__PURE__ */ new Vector2();
+const _rotatedPosition = /* @__PURE__ */ new Vector2();
+const _viewWorldMatrix = /* @__PURE__ */ new Matrix4();
+const _vA = /* @__PURE__ */ new Vector3();
+const _vB = /* @__PURE__ */ new Vector3();
+const _vC = /* @__PURE__ */ new Vector3();
+const _uvA = /* @__PURE__ */ new Vector2();
+const _uvB = /* @__PURE__ */ new Vector2();
+const _uvC = /* @__PURE__ */ new Vector2();
+class Sprite extends Object3D {
+  /**
+   * Constructs a new sprite.
+   *
+   * @param {SpriteMaterial} [material] - The sprite material.
+   */
+  constructor(material = new SpriteMaterial()) {
+    super();
+    this.isSprite = true;
+    this.type = "Sprite";
+    if (_geometry === void 0) {
+      _geometry = new BufferGeometry();
+      const float32Array = new Float32Array([
+        -0.5,
+        -0.5,
+        0,
+        0,
+        0,
+        0.5,
+        -0.5,
+        0,
+        1,
+        0,
+        0.5,
+        0.5,
+        0,
+        1,
+        1,
+        -0.5,
+        0.5,
+        0,
+        0,
+        1
+      ]);
+      const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
+      _geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      _geometry.setAttribute("position", new InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+      _geometry.setAttribute("uv", new InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+    }
+    this.geometry = _geometry;
+    this.material = material;
+    this.center = new Vector2(0.5, 0.5);
+  }
+  /**
+   * Computes intersection points between a casted ray and this sprite.
+   *
+   * @param {Raycaster} raycaster - The raycaster.
+   * @param {Array<Object>} intersects - The target array that holds the intersection points.
+   */
+  raycast(raycaster, intersects) {
+    if (raycaster.camera === null) {
+      console.error('THREE.Sprite: "Raycaster.camera" needs to be set in order to raycast against sprites.');
+    }
+    _worldScale.setFromMatrixScale(this.matrixWorld);
+    _viewWorldMatrix.copy(raycaster.camera.matrixWorld);
+    this.modelViewMatrix.multiplyMatrices(raycaster.camera.matrixWorldInverse, this.matrixWorld);
+    _mvPosition.setFromMatrixPosition(this.modelViewMatrix);
+    if (raycaster.camera.isPerspectiveCamera && this.material.sizeAttenuation === false) {
+      _worldScale.multiplyScalar(-_mvPosition.z);
+    }
+    const rotation = this.material.rotation;
+    let sin, cos;
+    if (rotation !== 0) {
+      cos = Math.cos(rotation);
+      sin = Math.sin(rotation);
+    }
+    const center = this.center;
+    transformVertex(_vA.set(-0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vB.set(0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vC.set(0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    _uvA.set(0, 0);
+    _uvB.set(1, 0);
+    _uvC.set(1, 1);
+    let intersect = raycaster.ray.intersectTriangle(_vA, _vB, _vC, false, _intersectPoint);
+    if (intersect === null) {
+      transformVertex(_vB.set(-0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      _uvB.set(0, 1);
+      intersect = raycaster.ray.intersectTriangle(_vA, _vC, _vB, false, _intersectPoint);
+      if (intersect === null) {
+        return;
+      }
+    }
+    const distance = raycaster.ray.origin.distanceTo(_intersectPoint);
+    if (distance < raycaster.near || distance > raycaster.far) return;
+    intersects.push({
+      distance,
+      point: _intersectPoint.clone(),
+      uv: Triangle.getInterpolation(_intersectPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, new Vector2()),
+      face: null,
+      object: this
+    });
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    if (source.center !== void 0) this.center.copy(source.center);
+    this.material = source.material;
+    return this;
+  }
+}
+function transformVertex(vertexPosition, mvPosition, center, scale, sin, cos) {
+  _alignedPosition.subVectors(vertexPosition, center).addScalar(0.5).multiply(scale);
+  if (sin !== void 0) {
+    _rotatedPosition.x = cos * _alignedPosition.x - sin * _alignedPosition.y;
+    _rotatedPosition.y = sin * _alignedPosition.x + cos * _alignedPosition.y;
+  } else {
+    _rotatedPosition.copy(_alignedPosition);
+  }
+  vertexPosition.copy(mvPosition);
+  vertexPosition.x += _rotatedPosition.x;
+  vertexPosition.y += _rotatedPosition.y;
+  vertexPosition.applyMatrix4(_viewWorldMatrix);
 }
 const _basePosition = /* @__PURE__ */ new Vector3();
 const _skinIndex = /* @__PURE__ */ new Vector4();
@@ -14417,6 +14577,26 @@ function testPoint(point, index, localThresholdSq, matrixWorld, raycaster, inter
     });
   }
 }
+class CanvasTexture extends Texture {
+  /**
+   * Constructs a new texture.
+   *
+   * @param {HTMLCanvasElement} [canvas] - The HTML canvas element.
+   * @param {number} [mapping=Texture.DEFAULT_MAPPING] - The texture mapping.
+   * @param {number} [wrapS=ClampToEdgeWrapping] - The wrapS value.
+   * @param {number} [wrapT=ClampToEdgeWrapping] - The wrapT value.
+   * @param {number} [magFilter=LinearFilter] - The mag filter value.
+   * @param {number} [minFilter=LinearMipmapLinearFilter] - The min filter value.
+   * @param {number} [format=RGBAFormat] - The texture format.
+   * @param {number} [type=UnsignedByteType] - The texture type.
+   * @param {number} [anisotropy=Texture.DEFAULT_ANISOTROPY] - The anisotropy value.
+   */
+  constructor(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy) {
+    super(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy);
+    this.isCanvasTexture = true;
+    this.needsUpdate = true;
+  }
+}
 class DepthTexture extends Texture {
   /**
    * Constructs a new depth texture.
@@ -14453,6 +14633,156 @@ class DepthTexture extends Texture {
     const data = super.toJSON(meta);
     if (this.compareFunction !== null) data.compareFunction = this.compareFunction;
     return data;
+  }
+}
+class CylinderGeometry extends BufferGeometry {
+  /**
+   * Constructs a new cylinder geometry.
+   *
+   * @param {number} [radiusTop=1] - Radius of the cylinder at the top.
+   * @param {number} [radiusBottom=1] - Radius of the cylinder at the bottom.
+   * @param {number} [height=1] - Height of the cylinder.
+   * @param {number} [radialSegments=32] - Number of segmented faces around the circumference of the cylinder.
+   * @param {number} [heightSegments=1] - Number of rows of faces along the height of the cylinder.
+   * @param {boolean} [openEnded=false] - Whether the base of the cylinder is open or capped.
+   * @param {number} [thetaStart=0] - Start angle for first segment, in radians.
+   * @param {number} [thetaLength=Math.PI*2] - The central angle, often called theta, of the circular sector, in radians.
+   * The default value results in a complete cylinder.
+   */
+  constructor(radiusTop = 1, radiusBottom = 1, height = 1, radialSegments = 32, heightSegments = 1, openEnded = false, thetaStart = 0, thetaLength = Math.PI * 2) {
+    super();
+    this.type = "CylinderGeometry";
+    this.parameters = {
+      radiusTop,
+      radiusBottom,
+      height,
+      radialSegments,
+      heightSegments,
+      openEnded,
+      thetaStart,
+      thetaLength
+    };
+    const scope = this;
+    radialSegments = Math.floor(radialSegments);
+    heightSegments = Math.floor(heightSegments);
+    const indices = [];
+    const vertices = [];
+    const normals = [];
+    const uvs = [];
+    let index = 0;
+    const indexArray = [];
+    const halfHeight = height / 2;
+    let groupStart = 0;
+    generateTorso();
+    if (openEnded === false) {
+      if (radiusTop > 0) generateCap(true);
+      if (radiusBottom > 0) generateCap(false);
+    }
+    this.setIndex(indices);
+    this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+    this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    function generateTorso() {
+      const normal = new Vector3();
+      const vertex2 = new Vector3();
+      let groupCount = 0;
+      const slope = (radiusBottom - radiusTop) / height;
+      for (let y = 0; y <= heightSegments; y++) {
+        const indexRow = [];
+        const v = y / heightSegments;
+        const radius = v * (radiusBottom - radiusTop) + radiusTop;
+        for (let x = 0; x <= radialSegments; x++) {
+          const u = x / radialSegments;
+          const theta = u * thetaLength + thetaStart;
+          const sinTheta = Math.sin(theta);
+          const cosTheta = Math.cos(theta);
+          vertex2.x = radius * sinTheta;
+          vertex2.y = -v * height + halfHeight;
+          vertex2.z = radius * cosTheta;
+          vertices.push(vertex2.x, vertex2.y, vertex2.z);
+          normal.set(sinTheta, slope, cosTheta).normalize();
+          normals.push(normal.x, normal.y, normal.z);
+          uvs.push(u, 1 - v);
+          indexRow.push(index++);
+        }
+        indexArray.push(indexRow);
+      }
+      for (let x = 0; x < radialSegments; x++) {
+        for (let y = 0; y < heightSegments; y++) {
+          const a = indexArray[y][x];
+          const b = indexArray[y + 1][x];
+          const c = indexArray[y + 1][x + 1];
+          const d = indexArray[y][x + 1];
+          if (radiusTop > 0 || y !== 0) {
+            indices.push(a, b, d);
+            groupCount += 3;
+          }
+          if (radiusBottom > 0 || y !== heightSegments - 1) {
+            indices.push(b, c, d);
+            groupCount += 3;
+          }
+        }
+      }
+      scope.addGroup(groupStart, groupCount, 0);
+      groupStart += groupCount;
+    }
+    function generateCap(top) {
+      const centerIndexStart = index;
+      const uv = new Vector2();
+      const vertex2 = new Vector3();
+      let groupCount = 0;
+      const radius = top === true ? radiusTop : radiusBottom;
+      const sign = top === true ? 1 : -1;
+      for (let x = 1; x <= radialSegments; x++) {
+        vertices.push(0, halfHeight * sign, 0);
+        normals.push(0, sign, 0);
+        uvs.push(0.5, 0.5);
+        index++;
+      }
+      const centerIndexEnd = index;
+      for (let x = 0; x <= radialSegments; x++) {
+        const u = x / radialSegments;
+        const theta = u * thetaLength + thetaStart;
+        const cosTheta = Math.cos(theta);
+        const sinTheta = Math.sin(theta);
+        vertex2.x = radius * sinTheta;
+        vertex2.y = halfHeight * sign;
+        vertex2.z = radius * cosTheta;
+        vertices.push(vertex2.x, vertex2.y, vertex2.z);
+        normals.push(0, sign, 0);
+        uv.x = cosTheta * 0.5 + 0.5;
+        uv.y = sinTheta * 0.5 * sign + 0.5;
+        uvs.push(uv.x, uv.y);
+        index++;
+      }
+      for (let x = 0; x < radialSegments; x++) {
+        const c = centerIndexStart + x;
+        const i = centerIndexEnd + x;
+        if (top === true) {
+          indices.push(i, i + 1, c);
+        } else {
+          indices.push(i + 1, i, c);
+        }
+        groupCount += 3;
+      }
+      scope.addGroup(groupStart, groupCount, top === true ? 1 : 2);
+      groupStart += groupCount;
+    }
+  }
+  copy(source) {
+    super.copy(source);
+    this.parameters = Object.assign({}, source.parameters);
+    return this;
+  }
+  /**
+   * Factory method for creating an instance of this class from the given
+   * JSON object.
+   *
+   * @param {Object} data - A JSON object representing the serialized geometry.
+   * @return {CylinderGeometry} A new instance.
+   */
+  static fromJSON(data) {
+    return new CylinderGeometry(data.radiusTop, data.radiusBottom, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
   }
 }
 class PlaneGeometry extends BufferGeometry {
@@ -14679,11 +15009,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get anisotropy() {
     return this._anisotropy;
   }
-  set anisotropy(value2) {
-    if (this._anisotropy > 0 !== value2 > 0) {
+  set anisotropy(value) {
+    if (this._anisotropy > 0 !== value > 0) {
       this.version++;
     }
-    this._anisotropy = value2;
+    this._anisotropy = value;
   }
   /**
    * Represents the intensity of the clear coat layer, from `0.0` to `1.0`. Use
@@ -14696,11 +15026,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get clearcoat() {
     return this._clearcoat;
   }
-  set clearcoat(value2) {
-    if (this._clearcoat > 0 !== value2 > 0) {
+  set clearcoat(value) {
+    if (this._clearcoat > 0 !== value > 0) {
       this.version++;
     }
-    this._clearcoat = value2;
+    this._clearcoat = value;
   }
   /**
    * The intensity of the iridescence layer, simulating RGB color shift based on the angle between
@@ -14712,11 +15042,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get iridescence() {
     return this._iridescence;
   }
-  set iridescence(value2) {
-    if (this._iridescence > 0 !== value2 > 0) {
+  set iridescence(value) {
+    if (this._iridescence > 0 !== value > 0) {
       this.version++;
     }
-    this._iridescence = value2;
+    this._iridescence = value;
   }
   /**
    * Defines the strength of the angular separation of colors (chromatic aberration) transmitting
@@ -14729,11 +15059,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get dispersion() {
     return this._dispersion;
   }
-  set dispersion(value2) {
-    if (this._dispersion > 0 !== value2 > 0) {
+  set dispersion(value) {
+    if (this._dispersion > 0 !== value > 0) {
       this.version++;
     }
-    this._dispersion = value2;
+    this._dispersion = value;
   }
   /**
    * The intensity of the sheen layer, from `0.0` to `1.0`.
@@ -14744,11 +15074,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get sheen() {
     return this._sheen;
   }
-  set sheen(value2) {
-    if (this._sheen > 0 !== value2 > 0) {
+  set sheen(value) {
+    if (this._sheen > 0 !== value > 0) {
       this.version++;
     }
-    this._sheen = value2;
+    this._sheen = value;
   }
   /**
    * Degree of transmission (or optical transparency), from `0.0` to `1.0`.
@@ -14765,11 +15095,11 @@ class MeshPhysicalMaterial extends MeshStandardMaterial {
   get transmission() {
     return this._transmission;
   }
-  set transmission(value2) {
-    if (this._transmission > 0 !== value2 > 0) {
+  set transmission(value) {
+    if (this._transmission > 0 !== value > 0) {
       this.version++;
     }
-    this._transmission = value2;
+    this._transmission = value;
   }
   copy(source) {
     super.copy(source);
@@ -14916,32 +15246,32 @@ function flattenJSON(jsonKeys, times, values, valuePropertyName) {
     key = jsonKeys[i++];
   }
   if (key === void 0) return;
-  let value2 = key[valuePropertyName];
-  if (value2 === void 0) return;
-  if (Array.isArray(value2)) {
+  let value = key[valuePropertyName];
+  if (value === void 0) return;
+  if (Array.isArray(value)) {
     do {
-      value2 = key[valuePropertyName];
-      if (value2 !== void 0) {
+      value = key[valuePropertyName];
+      if (value !== void 0) {
         times.push(key.time);
-        values.push(...value2);
+        values.push(...value);
       }
       key = jsonKeys[i++];
     } while (key !== void 0);
-  } else if (value2.toArray !== void 0) {
+  } else if (value.toArray !== void 0) {
     do {
-      value2 = key[valuePropertyName];
-      if (value2 !== void 0) {
+      value = key[valuePropertyName];
+      if (value !== void 0) {
         times.push(key.time);
-        value2.toArray(values, values.length);
+        value.toArray(values, values.length);
       }
       key = jsonKeys[i++];
     } while (key !== void 0);
   } else {
     do {
-      value2 = key[valuePropertyName];
-      if (value2 !== void 0) {
+      value = key[valuePropertyName];
+      if (value !== void 0) {
         times.push(key.time);
-        values.push(value2);
+        values.push(value);
       }
       key = jsonKeys[i++];
     } while (key !== void 0);
@@ -15423,9 +15753,9 @@ class KeyframeTrack {
     if (values !== void 0) {
       if (isTypedArray(values)) {
         for (let i = 0, n = values.length; i !== n; ++i) {
-          const value2 = values[i];
-          if (isNaN(value2)) {
-            console.error("THREE.KeyframeTrack: Value is not a valid number.", this, i, value2);
+          const value = values[i];
+          if (isNaN(value)) {
+            console.error("THREE.KeyframeTrack: Value is not a valid number.", this, i, value);
             valid = false;
             break;
           }
@@ -15451,8 +15781,8 @@ class KeyframeTrack {
         if (!smoothInterpolation) {
           const offset = i * stride, offsetP = offset - stride, offsetN = offset + stride;
           for (let j = 0; j !== stride; ++j) {
-            const value2 = values[offset + j];
-            if (value2 !== values[offsetP + j] || value2 !== values[offsetN + j]) {
+            const value = values[offset + j];
+            if (value !== values[offsetP + j] || value !== values[offsetN + j]) {
               keep = true;
               break;
             }
@@ -15780,9 +16110,9 @@ class AnimationClip {
     const pattern = /^([\w-]*?)([\d]+)$/;
     for (let i = 0, il = morphTargets.length; i < il; i++) {
       const morphTarget = morphTargets[i];
-      const parts2 = morphTarget.name.match(pattern);
-      if (parts2 && parts2.length > 1) {
-        const name = parts2[1];
+      const parts = morphTarget.name.match(pattern);
+      if (parts && parts.length > 1) {
+        const name = parts[1];
         let animationMorphTargets = animationToMorphTargets[name];
         if (!animationMorphTargets) {
           animationToMorphTargets[name] = animationMorphTargets = [];
@@ -16072,19 +16402,19 @@ class LoadingManager {
     this.onLoad = onLoad;
     this.onProgress = onProgress;
     this.onError = onError;
-    this.itemStart = function(url2) {
+    this.itemStart = function(url) {
       itemsTotal++;
       if (isLoading === false) {
         if (scope.onStart !== void 0) {
-          scope.onStart(url2, itemsLoaded, itemsTotal);
+          scope.onStart(url, itemsLoaded, itemsTotal);
         }
       }
       isLoading = true;
     };
-    this.itemEnd = function(url2) {
+    this.itemEnd = function(url) {
       itemsLoaded++;
       if (scope.onProgress !== void 0) {
-        scope.onProgress(url2, itemsLoaded, itemsTotal);
+        scope.onProgress(url, itemsLoaded, itemsTotal);
       }
       if (itemsLoaded === itemsTotal) {
         isLoading = false;
@@ -16093,16 +16423,16 @@ class LoadingManager {
         }
       }
     };
-    this.itemError = function(url2) {
+    this.itemError = function(url) {
       if (scope.onError !== void 0) {
-        scope.onError(url2);
+        scope.onError(url);
       }
     };
-    this.resolveURL = function(url2) {
+    this.resolveURL = function(url) {
       if (urlModifier) {
-        return urlModifier(url2);
+        return urlModifier(url);
       }
-      return url2;
+      return url;
     };
     this.setURLModifier = function(transform) {
       urlModifier = transform;
@@ -16165,10 +16495,10 @@ class Loader {
    * @param {onProgressCallback} [onProgress] - Executed while the loading is in progress.
    * @return {Promise} A Promise that resolves when the asset has been loaded.
    */
-  loadAsync(url2, onProgress) {
+  loadAsync(url, onProgress) {
     const scope = this;
     return new Promise(function(resolve, reject) {
-      scope.load(url2, resolve, onProgress, reject);
+      scope.load(url, resolve, onProgress, reject);
     });
   }
   /**
@@ -16199,8 +16529,8 @@ class Loader {
    * @param {boolean} value - The `withCredentials` value.
    * @return {Loader} A reference to this instance.
    */
-  setWithCredentials(value2) {
-    this.withCredentials = value2;
+  setWithCredentials(value) {
+    this.withCredentials = value;
     return this;
   }
   /**
@@ -16263,34 +16593,34 @@ class FileLoader extends Loader {
    * @param {onErrorCallback} [onError] - Executed when errors occur.
    * @return {any|undefined} The cached resource if available.
    */
-  load(url2, onLoad, onProgress, onError) {
-    if (url2 === void 0) url2 = "";
-    if (this.path !== void 0) url2 = this.path + url2;
-    url2 = this.manager.resolveURL(url2);
-    const cached = Cache.get(url2);
+  load(url, onLoad, onProgress, onError) {
+    if (url === void 0) url = "";
+    if (this.path !== void 0) url = this.path + url;
+    url = this.manager.resolveURL(url);
+    const cached = Cache.get(url);
     if (cached !== void 0) {
-      this.manager.itemStart(url2);
+      this.manager.itemStart(url);
       setTimeout(() => {
         if (onLoad) onLoad(cached);
-        this.manager.itemEnd(url2);
+        this.manager.itemEnd(url);
       }, 0);
       return cached;
     }
-    if (loading[url2] !== void 0) {
-      loading[url2].push({
+    if (loading[url] !== void 0) {
+      loading[url].push({
         onLoad,
         onProgress,
         onError
       });
       return;
     }
-    loading[url2] = [];
-    loading[url2].push({
+    loading[url] = [];
+    loading[url].push({
       onLoad,
       onProgress,
       onError
     });
-    const req = new Request(url2, {
+    const req = new Request(url, {
       headers: new Headers(this.requestHeader),
       credentials: this.withCredentials ? "include" : "same-origin"
       // An abort controller could be added within a future PR
@@ -16305,7 +16635,7 @@ class FileLoader extends Loader {
         if (typeof ReadableStream === "undefined" || response.body === void 0 || response.body.getReader === void 0) {
           return response;
         }
-        const callbacks = loading[url2];
+        const callbacks = loading[url];
         const reader = response.body.getReader();
         const contentLength = response.headers.get("X-File-Size") || response.headers.get("Content-Length");
         const total = contentLength ? parseInt(contentLength) : 0;
@@ -16315,17 +16645,17 @@ class FileLoader extends Loader {
           start(controller) {
             readData();
             function readData() {
-              reader.read().then(({ done, value: value2 }) => {
+              reader.read().then(({ done, value }) => {
                 if (done) {
                   controller.close();
                 } else {
-                  loaded += value2.byteLength;
+                  loaded += value.byteLength;
                   const event = new ProgressEvent("progress", { lengthComputable, loaded, total });
                   for (let i = 0, il = callbacks.length; i < il; i++) {
                     const callback = callbacks[i];
                     if (callback.onProgress) callback.onProgress(event);
                   }
-                  controller.enqueue(value2);
+                  controller.enqueue(value);
                   readData();
                 }
               }, (e) => {
@@ -16346,8 +16676,8 @@ class FileLoader extends Loader {
           return response.blob();
         case "document":
           return response.text().then((text) => {
-            const parser2 = new DOMParser();
-            return parser2.parseFromString(text, mimeType);
+            const parser = new DOMParser();
+            return parser.parseFromString(text, mimeType);
           });
         case "json":
           return response.json();
@@ -16355,37 +16685,37 @@ class FileLoader extends Loader {
           if (mimeType === "") {
             return response.text();
           } else {
-            const re2 = /charset="?([^;"\s]*)"?/i;
-            const exec = re2.exec(mimeType);
+            const re = /charset="?([^;"\s]*)"?/i;
+            const exec = re.exec(mimeType);
             const label = exec && exec[1] ? exec[1].toLowerCase() : void 0;
             const decoder = new TextDecoder(label);
             return response.arrayBuffer().then((ab) => decoder.decode(ab));
           }
       }
     }).then((data) => {
-      Cache.add(url2, data);
-      const callbacks = loading[url2];
-      delete loading[url2];
+      Cache.add(url, data);
+      const callbacks = loading[url];
+      delete loading[url];
       for (let i = 0, il = callbacks.length; i < il; i++) {
         const callback = callbacks[i];
         if (callback.onLoad) callback.onLoad(data);
       }
     }).catch((err) => {
-      const callbacks = loading[url2];
+      const callbacks = loading[url];
       if (callbacks === void 0) {
-        this.manager.itemError(url2);
+        this.manager.itemError(url);
         throw err;
       }
-      delete loading[url2];
+      delete loading[url];
       for (let i = 0, il = callbacks.length; i < il; i++) {
         const callback = callbacks[i];
         if (callback.onError) callback.onError(err);
       }
-      this.manager.itemError(url2);
+      this.manager.itemError(url);
     }).finally(() => {
-      this.manager.itemEnd(url2);
+      this.manager.itemEnd(url);
     });
-    this.manager.itemStart(url2);
+    this.manager.itemStart(url);
   }
   /**
    * Sets the expected response type.
@@ -16393,8 +16723,8 @@ class FileLoader extends Loader {
    * @param {('arraybuffer'|'blob'|'document'|'json'|'')} value - The response type.
    * @return {FileLoader} A reference to this file loader.
    */
-  setResponseType(value2) {
-    this.responseType = value2;
+  setResponseType(value) {
+    this.responseType = value;
     return this;
   }
   /**
@@ -16403,8 +16733,8 @@ class FileLoader extends Loader {
    * @param {string} value - The mime type.
    * @return {FileLoader} A reference to this file loader.
    */
-  setMimeType(value2) {
-    this.mimeType = value2;
+  setMimeType(value) {
+    this.mimeType = value;
     return this;
   }
 }
@@ -16429,31 +16759,31 @@ class ImageLoader extends Loader {
    * @param {onErrorCallback} onError - Executed when errors occur.
    * @return {Image} The image.
    */
-  load(url2, onLoad, onProgress, onError) {
-    if (this.path !== void 0) url2 = this.path + url2;
-    url2 = this.manager.resolveURL(url2);
+  load(url, onLoad, onProgress, onError) {
+    if (this.path !== void 0) url = this.path + url;
+    url = this.manager.resolveURL(url);
     const scope = this;
-    const cached = Cache.get(url2);
+    const cached = Cache.get(url);
     if (cached !== void 0) {
-      scope.manager.itemStart(url2);
+      scope.manager.itemStart(url);
       setTimeout(function() {
         if (onLoad) onLoad(cached);
-        scope.manager.itemEnd(url2);
+        scope.manager.itemEnd(url);
       }, 0);
       return cached;
     }
     const image = createElementNS("img");
     function onImageLoad() {
       removeEventListeners();
-      Cache.add(url2, this);
+      Cache.add(url, this);
       if (onLoad) onLoad(this);
-      scope.manager.itemEnd(url2);
+      scope.manager.itemEnd(url);
     }
     function onImageError(event) {
       removeEventListeners();
       if (onError) onError(event);
-      scope.manager.itemError(url2);
-      scope.manager.itemEnd(url2);
+      scope.manager.itemError(url);
+      scope.manager.itemEnd(url);
     }
     function removeEventListeners() {
       image.removeEventListener("load", onImageLoad, false);
@@ -16461,11 +16791,11 @@ class ImageLoader extends Loader {
     }
     image.addEventListener("load", onImageLoad, false);
     image.addEventListener("error", onImageError, false);
-    if (url2.slice(0, 5) !== "data:") {
+    if (url.slice(0, 5) !== "data:") {
       if (this.crossOrigin !== void 0) image.crossOrigin = this.crossOrigin;
     }
-    scope.manager.itemStart(url2);
-    image.src = url2;
+    scope.manager.itemStart(url);
+    image.src = url;
     return image;
   }
 }
@@ -16490,12 +16820,12 @@ class TextureLoader extends Loader {
    * @param {onErrorCallback} onError - Executed when errors occur.
    * @return {Texture} The texture.
    */
-  load(url2, onLoad, onProgress, onError) {
+  load(url, onLoad, onProgress, onError) {
     const texture = new Texture();
     const loader = new ImageLoader(this.manager);
     loader.setCrossOrigin(this.crossOrigin);
     loader.setPath(this.path);
-    loader.load(url2, function(image) {
+    loader.load(url, function(image) {
       texture.image = image;
       texture.needsUpdate = true;
       if (onLoad !== void 0) {
@@ -17066,10 +17396,10 @@ class LoaderUtils {
    * @param {string} url -The URL to extract the base URL from.
    * @return {string} The extracted base URL.
    */
-  static extractUrlBase(url2) {
-    const index = url2.lastIndexOf("/");
+  static extractUrlBase(url) {
+    const index = url.lastIndexOf("/");
     if (index === -1) return "./";
-    return url2.slice(0, index + 1);
+    return url.slice(0, index + 1);
   }
   /**
    * Resolves relative URLs against the given path. Absolute paths, data urls,
@@ -17080,15 +17410,15 @@ class LoaderUtils {
    * @param {string} path - The base path for relative URLs to be resolved against.
    * @return {string} The resolved URL.
    */
-  static resolveURL(url2, path) {
-    if (typeof url2 !== "string" || url2 === "") return "";
-    if (/^https?:\/\//i.test(path) && /^\//.test(url2)) {
+  static resolveURL(url, path) {
+    if (typeof url !== "string" || url === "") return "";
+    if (/^https?:\/\//i.test(path) && /^\//.test(url)) {
       path = path.replace(/(^https?:\/\/[^\/]+).*/i, "$1");
     }
-    if (/^(https?:)?\/\//i.test(url2)) return url2;
-    if (/^data:.*,.*$/i.test(url2)) return url2;
-    if (/^blob:.*$/i.test(url2)) return url2;
-    return path + url2;
+    if (/^(https?:)?\/\//i.test(url)) return url;
+    if (/^data:.*,.*$/i.test(url)) return url;
+    if (/^blob:.*$/i.test(url)) return url;
+    return path + url;
   }
 }
 class ImageBitmapLoader extends Loader {
@@ -17128,18 +17458,18 @@ class ImageBitmapLoader extends Loader {
    * @param {onErrorCallback} onError - Executed when errors occur.
    * @return {ImageBitmap|undefined} The image bitmap.
    */
-  load(url2, onLoad, onProgress, onError) {
-    if (url2 === void 0) url2 = "";
-    if (this.path !== void 0) url2 = this.path + url2;
-    url2 = this.manager.resolveURL(url2);
+  load(url, onLoad, onProgress, onError) {
+    if (url === void 0) url = "";
+    if (this.path !== void 0) url = this.path + url;
+    url = this.manager.resolveURL(url);
     const scope = this;
-    const cached = Cache.get(url2);
+    const cached = Cache.get(url);
     if (cached !== void 0) {
-      scope.manager.itemStart(url2);
+      scope.manager.itemStart(url);
       if (cached.then) {
         cached.then((imageBitmap) => {
           if (onLoad) onLoad(imageBitmap);
-          scope.manager.itemEnd(url2);
+          scope.manager.itemEnd(url);
         }).catch((e) => {
           if (onError) onError(e);
         });
@@ -17147,30 +17477,30 @@ class ImageBitmapLoader extends Loader {
       }
       setTimeout(function() {
         if (onLoad) onLoad(cached);
-        scope.manager.itemEnd(url2);
+        scope.manager.itemEnd(url);
       }, 0);
       return cached;
     }
     const fetchOptions = {};
     fetchOptions.credentials = this.crossOrigin === "anonymous" ? "same-origin" : "include";
     fetchOptions.headers = this.requestHeader;
-    const promise = fetch(url2, fetchOptions).then(function(res) {
+    const promise = fetch(url, fetchOptions).then(function(res) {
       return res.blob();
     }).then(function(blob) {
       return createImageBitmap(blob, Object.assign(scope.options, { colorSpaceConversion: "none" }));
     }).then(function(imageBitmap) {
-      Cache.add(url2, imageBitmap);
+      Cache.add(url, imageBitmap);
       if (onLoad) onLoad(imageBitmap);
-      scope.manager.itemEnd(url2);
+      scope.manager.itemEnd(url);
       return imageBitmap;
     }).catch(function(e) {
       if (onError) onError(e);
-      Cache.remove(url2);
-      scope.manager.itemError(url2);
-      scope.manager.itemEnd(url2);
+      Cache.remove(url);
+      scope.manager.itemError(url);
+      scope.manager.itemEnd(url);
     });
-    Cache.add(url2, promise);
-    scope.manager.itemStart(url2);
+    Cache.add(url, promise);
+    scope.manager.itemStart(url);
   }
 }
 class ArrayCamera extends PerspectiveCamera {
@@ -17965,8 +18295,8 @@ function WebGLAnimation() {
     setAnimationLoop: function(callback) {
       animationLoop = callback;
     },
-    setContext: function(value2) {
-      context = value2;
+    setContext: function(value) {
+      context = value;
     }
   };
 }
@@ -19087,7 +19417,7 @@ function WebGLBindingStates(gl, attributes) {
     return false;
   }
   function saveCache(object, geometry, program, index) {
-    const cache2 = {};
+    const cache = {};
     const attributes2 = geometry.attributes;
     let attributesNum = 0;
     const programAttributes = program.getAttributes();
@@ -19104,11 +19434,11 @@ function WebGLBindingStates(gl, attributes) {
         if (attribute && attribute.data) {
           data.data = attribute.data;
         }
-        cache2[name] = data;
+        cache[name] = data;
         attributesNum++;
       }
     }
-    currentState.attributes = cache2;
+    currentState.attributes = cache;
     currentState.attributesNum = attributesNum;
     currentState.index = index;
   }
@@ -19229,20 +19559,20 @@ function WebGLBindingStates(gl, attributes) {
             }
           }
         } else if (materialDefaultAttributeValues !== void 0) {
-          const value2 = materialDefaultAttributeValues[name];
-          if (value2 !== void 0) {
-            switch (value2.length) {
+          const value = materialDefaultAttributeValues[name];
+          if (value !== void 0) {
+            switch (value.length) {
               case 2:
-                gl.vertexAttrib2fv(programAttribute.location, value2);
+                gl.vertexAttrib2fv(programAttribute.location, value);
                 break;
               case 3:
-                gl.vertexAttrib3fv(programAttribute.location, value2);
+                gl.vertexAttrib3fv(programAttribute.location, value);
                 break;
               case 4:
-                gl.vertexAttrib4fv(programAttribute.location, value2);
+                gl.vertexAttrib4fv(programAttribute.location, value);
                 break;
               default:
-                gl.vertexAttrib1fv(programAttribute.location, value2);
+                gl.vertexAttrib1fv(programAttribute.location, value);
             }
           }
         }
@@ -19316,8 +19646,8 @@ function WebGLBindingStates(gl, attributes) {
 }
 function WebGLBufferRenderer(gl, extensions, info) {
   let mode;
-  function setMode(value2) {
-    mode = value2;
+  function setMode(value) {
+    mode = value;
   }
   function render(start, count) {
     gl.drawArrays(mode, start, count);
@@ -20449,13 +20779,13 @@ function WebGLGeometries(gl, attributes, info, bindingStates) {
 }
 function WebGLIndexedBufferRenderer(gl, extensions, info) {
   let mode;
-  function setMode(value2) {
-    mode = value2;
+  function setMode(value) {
+    mode = value;
   }
   let type, bytesPerElement;
-  function setIndex(value2) {
-    type = value2.type;
-    bytesPerElement = value2.bytesPerElement;
+  function setIndex(value) {
+    type = value.type;
+    bytesPerElement = value.bytesPerElement;
   }
   function render(start, count) {
     gl.drawElements(mode, count, type, start * bytesPerElement);
@@ -20558,12 +20888,11 @@ function WebGLMorphtargets(gl, capabilities, textures) {
     const morphTargetsCount = morphAttribute !== void 0 ? morphAttribute.length : 0;
     let entry = morphTextures.get(geometry);
     if (entry === void 0 || entry.count !== morphTargetsCount) {
-      let disposeTexture2 = function() {
+      let disposeTexture = function() {
         texture.dispose();
         morphTextures.delete(geometry);
-        geometry.removeEventListener("dispose", disposeTexture2);
+        geometry.removeEventListener("dispose", disposeTexture);
       };
-      var disposeTexture = disposeTexture2;
       if (entry !== void 0) entry.texture.dispose();
       const hasMorphPosition = geometry.morphAttributes.position !== void 0;
       const hasMorphNormals = geometry.morphAttributes.normal !== void 0;
@@ -20622,7 +20951,7 @@ function WebGLMorphtargets(gl, capabilities, textures) {
         size: new Vector2(width, height)
       };
       morphTextures.set(geometry, entry);
-      geometry.addEventListener("dispose", disposeTexture2);
+      geometry.addEventListener("dispose", disposeTexture);
     }
     if (object.isInstancedMesh === true && object.morphTexture !== null) {
       program.getUniforms().setValue(gl, "morphTexture", object.morphTexture, textures);
@@ -20739,213 +21068,213 @@ function allocTexUnits(textures, n) {
   return r;
 }
 function setValueV1f(gl, v) {
-  const cache2 = this.cache;
-  if (cache2[0] === v) return;
+  const cache = this.cache;
+  if (cache[0] === v) return;
   gl.uniform1f(this.addr, v);
-  cache2[0] = v;
+  cache[0] = v;
 }
 function setValueV2f(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y) {
+    if (cache[0] !== v.x || cache[1] !== v.y) {
       gl.uniform2f(this.addr, v.x, v.y);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
+      cache[0] = v.x;
+      cache[1] = v.y;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform2fv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV3f(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z) {
       gl.uniform3f(this.addr, v.x, v.y, v.z);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
     }
   } else if (v.r !== void 0) {
-    if (cache2[0] !== v.r || cache2[1] !== v.g || cache2[2] !== v.b) {
+    if (cache[0] !== v.r || cache[1] !== v.g || cache[2] !== v.b) {
       gl.uniform3f(this.addr, v.r, v.g, v.b);
-      cache2[0] = v.r;
-      cache2[1] = v.g;
-      cache2[2] = v.b;
+      cache[0] = v.r;
+      cache[1] = v.g;
+      cache[2] = v.b;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform3fv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV4f(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z || cache2[3] !== v.w) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z || cache[3] !== v.w) {
       gl.uniform4f(this.addr, v.x, v.y, v.z, v.w);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
-      cache2[3] = v.w;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
+      cache[3] = v.w;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform4fv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueM2(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const elements = v.elements;
   if (elements === void 0) {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniformMatrix2fv(this.addr, false, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   } else {
-    if (arraysEqual(cache2, elements)) return;
+    if (arraysEqual(cache, elements)) return;
     mat2array.set(elements);
     gl.uniformMatrix2fv(this.addr, false, mat2array);
-    copyArray(cache2, elements);
+    copyArray(cache, elements);
   }
 }
 function setValueM3(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const elements = v.elements;
   if (elements === void 0) {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniformMatrix3fv(this.addr, false, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   } else {
-    if (arraysEqual(cache2, elements)) return;
+    if (arraysEqual(cache, elements)) return;
     mat3array.set(elements);
     gl.uniformMatrix3fv(this.addr, false, mat3array);
-    copyArray(cache2, elements);
+    copyArray(cache, elements);
   }
 }
 function setValueM4(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const elements = v.elements;
   if (elements === void 0) {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniformMatrix4fv(this.addr, false, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   } else {
-    if (arraysEqual(cache2, elements)) return;
+    if (arraysEqual(cache, elements)) return;
     mat4array.set(elements);
     gl.uniformMatrix4fv(this.addr, false, mat4array);
-    copyArray(cache2, elements);
+    copyArray(cache, elements);
   }
 }
 function setValueV1i(gl, v) {
-  const cache2 = this.cache;
-  if (cache2[0] === v) return;
+  const cache = this.cache;
+  if (cache[0] === v) return;
   gl.uniform1i(this.addr, v);
-  cache2[0] = v;
+  cache[0] = v;
 }
 function setValueV2i(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y) {
+    if (cache[0] !== v.x || cache[1] !== v.y) {
       gl.uniform2i(this.addr, v.x, v.y);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
+      cache[0] = v.x;
+      cache[1] = v.y;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform2iv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV3i(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z) {
       gl.uniform3i(this.addr, v.x, v.y, v.z);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform3iv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV4i(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z || cache2[3] !== v.w) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z || cache[3] !== v.w) {
       gl.uniform4i(this.addr, v.x, v.y, v.z, v.w);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
-      cache2[3] = v.w;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
+      cache[3] = v.w;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform4iv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV1ui(gl, v) {
-  const cache2 = this.cache;
-  if (cache2[0] === v) return;
+  const cache = this.cache;
+  if (cache[0] === v) return;
   gl.uniform1ui(this.addr, v);
-  cache2[0] = v;
+  cache[0] = v;
 }
 function setValueV2ui(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y) {
+    if (cache[0] !== v.x || cache[1] !== v.y) {
       gl.uniform2ui(this.addr, v.x, v.y);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
+      cache[0] = v.x;
+      cache[1] = v.y;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform2uiv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV3ui(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z) {
       gl.uniform3ui(this.addr, v.x, v.y, v.z);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform3uiv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueV4ui(gl, v) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   if (v.x !== void 0) {
-    if (cache2[0] !== v.x || cache2[1] !== v.y || cache2[2] !== v.z || cache2[3] !== v.w) {
+    if (cache[0] !== v.x || cache[1] !== v.y || cache[2] !== v.z || cache[3] !== v.w) {
       gl.uniform4ui(this.addr, v.x, v.y, v.z, v.w);
-      cache2[0] = v.x;
-      cache2[1] = v.y;
-      cache2[2] = v.z;
-      cache2[3] = v.w;
+      cache[0] = v.x;
+      cache[1] = v.y;
+      cache[2] = v.z;
+      cache[3] = v.w;
     }
   } else {
-    if (arraysEqual(cache2, v)) return;
+    if (arraysEqual(cache, v)) return;
     gl.uniform4uiv(this.addr, v);
-    copyArray(cache2, v);
+    copyArray(cache, v);
   }
 }
 function setValueT1(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const unit = textures.allocateTextureUnit();
-  if (cache2[0] !== unit) {
+  if (cache[0] !== unit) {
     gl.uniform1i(this.addr, unit);
-    cache2[0] = unit;
+    cache[0] = unit;
   }
   let emptyTexture2D;
   if (this.type === gl.SAMPLER_2D_SHADOW) {
@@ -20957,29 +21286,29 @@ function setValueT1(gl, v, textures) {
   textures.setTexture2D(v || emptyTexture2D, unit);
 }
 function setValueT3D1(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const unit = textures.allocateTextureUnit();
-  if (cache2[0] !== unit) {
+  if (cache[0] !== unit) {
     gl.uniform1i(this.addr, unit);
-    cache2[0] = unit;
+    cache[0] = unit;
   }
   textures.setTexture3D(v || empty3dTexture, unit);
 }
 function setValueT6(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const unit = textures.allocateTextureUnit();
-  if (cache2[0] !== unit) {
+  if (cache[0] !== unit) {
     gl.uniform1i(this.addr, unit);
-    cache2[0] = unit;
+    cache[0] = unit;
   }
   textures.setTextureCube(v || emptyCubeTexture, unit);
 }
 function setValueT2DArray1(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const unit = textures.allocateTextureUnit();
-  if (cache2[0] !== unit) {
+  if (cache[0] !== unit) {
     gl.uniform1i(this.addr, unit);
-    cache2[0] = unit;
+    cache[0] = unit;
   }
   textures.setTexture2DArray(v || emptyArrayTexture, unit);
 }
@@ -21120,48 +21449,48 @@ function setValueV4uiArray(gl, v) {
   gl.uniform4uiv(this.addr, v);
 }
 function setValueT1Array(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const n = v.length;
   const units = allocTexUnits(textures, n);
-  if (!arraysEqual(cache2, units)) {
+  if (!arraysEqual(cache, units)) {
     gl.uniform1iv(this.addr, units);
-    copyArray(cache2, units);
+    copyArray(cache, units);
   }
   for (let i = 0; i !== n; ++i) {
     textures.setTexture2D(v[i] || emptyTexture, units[i]);
   }
 }
 function setValueT3DArray(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const n = v.length;
   const units = allocTexUnits(textures, n);
-  if (!arraysEqual(cache2, units)) {
+  if (!arraysEqual(cache, units)) {
     gl.uniform1iv(this.addr, units);
-    copyArray(cache2, units);
+    copyArray(cache, units);
   }
   for (let i = 0; i !== n; ++i) {
     textures.setTexture3D(v[i] || empty3dTexture, units[i]);
   }
 }
 function setValueT6Array(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const n = v.length;
   const units = allocTexUnits(textures, n);
-  if (!arraysEqual(cache2, units)) {
+  if (!arraysEqual(cache, units)) {
     gl.uniform1iv(this.addr, units);
-    copyArray(cache2, units);
+    copyArray(cache, units);
   }
   for (let i = 0; i !== n; ++i) {
     textures.setTextureCube(v[i] || emptyCubeTexture, units[i]);
   }
 }
 function setValueT2DArrayArray(gl, v, textures) {
-  const cache2 = this.cache;
+  const cache = this.cache;
   const n = v.length;
   const units = allocTexUnits(textures, n);
-  if (!arraysEqual(cache2, units)) {
+  if (!arraysEqual(cache, units)) {
     gl.uniform1iv(this.addr, units);
-    copyArray(cache2, units);
+    copyArray(cache, units);
   }
   for (let i = 0; i !== n; ++i) {
     textures.setTexture2DArray(v[i] || emptyArrayTexture, units[i]);
@@ -21277,11 +21606,11 @@ class StructuredUniform {
     this.seq = [];
     this.map = {};
   }
-  setValue(gl, value2, textures) {
+  setValue(gl, value, textures) {
     const seq = this.seq;
     for (let i = 0, n = seq.length; i !== n; ++i) {
       const u = seq[i];
-      u.setValue(gl, value2[u.id], textures);
+      u.setValue(gl, value[u.id], textures);
     }
   }
 }
@@ -21322,9 +21651,9 @@ class WebGLUniforms {
       parseUniform(info, addr, this);
     }
   }
-  setValue(gl, name, value2, textures) {
+  setValue(gl, name, value, textures) {
     const u = this.map[name];
-    if (u !== void 0) u.setValue(gl, value2, textures);
+    if (u !== void 0) u.setValue(gl, value, textures);
   }
   setOptional(gl, object, name) {
     const v = object[name];
@@ -21453,9 +21782,9 @@ function generateVertexExtensions(parameters) {
 function generateDefines(defines) {
   const chunks = [];
   for (const name in defines) {
-    const value2 = defines[name];
-    if (value2 === false) continue;
-    chunks.push("#define " + name + " " + value2);
+    const value = defines[name];
+    if (value === false) continue;
+    chunks.push("#define " + name + " " + value);
   }
   return chunks.join("\n");
 }
@@ -22020,20 +22349,20 @@ class WebGLShaderCache {
     this.materialCache.clear();
   }
   _getShaderCacheForMaterial(material) {
-    const cache2 = this.materialCache;
-    let set = cache2.get(material);
+    const cache = this.materialCache;
+    let set = cache.get(material);
     if (set === void 0) {
       set = /* @__PURE__ */ new Set();
-      cache2.set(material, set);
+      cache.set(material, set);
     }
     return set;
   }
   _getShaderStage(code) {
-    const cache2 = this.shaderCache;
-    let stage = cache2.get(code);
+    const cache = this.shaderCache;
+    let stage = cache.get(code);
     if (stage === void 0) {
       stage = new WebGLShaderStage(code);
-      cache2.set(code, stage);
+      cache.set(code, stage);
     }
     return stage;
   }
@@ -22070,10 +22399,10 @@ function WebGLPrograms(renderer2, cubemaps, cubeuvmaps, extensions, capabilities
     ShadowMaterial: "shadow",
     SpriteMaterial: "sprite"
   };
-  function getChannel(value2) {
-    _activeChannels.add(value2);
-    if (value2 === 0) return "uv";
-    return `uv${value2}`;
+  function getChannel(value) {
+    _activeChannels.add(value);
+    if (value === 0) return "uv";
+    return `uv${value}`;
   }
   function getParameters(material, lights, shadows, scene2, object) {
     const fog = scene2.fog;
@@ -22525,8 +22854,8 @@ function WebGLProperties() {
   function remove(object) {
     properties.delete(object);
   }
-  function update(object, key, value2) {
-    properties.get(object)[key] = value2;
+  function update(object, key, value) {
+    properties.get(object)[key] = value;
   }
   function dispose() {
     properties = /* @__PURE__ */ new WeakMap();
@@ -22779,7 +23108,7 @@ function shadowCastingAndTexturingLightsFirst(lightA, lightB) {
   return (lightB.castShadow ? 2 : 0) - (lightA.castShadow ? 2 : 0) + (lightB.map ? 1 : 0) - (lightA.map ? 1 : 0);
 }
 function WebGLLights(extensions) {
-  const cache2 = new UniformsCache();
+  const cache = new UniformsCache();
   const shadowCache = ShadowUniformsCache();
   const state = {
     version: 0,
@@ -22852,7 +23181,7 @@ function WebGLLights(extensions) {
         }
         numLightProbes++;
       } else if (light.isDirectionalLight) {
-        const uniforms = cache2.get(light);
+        const uniforms = cache.get(light);
         uniforms.color.copy(light.color).multiplyScalar(light.intensity);
         if (light.castShadow) {
           const shadow = light.shadow;
@@ -22870,7 +23199,7 @@ function WebGLLights(extensions) {
         state.directional[directionalLength] = uniforms;
         directionalLength++;
       } else if (light.isSpotLight) {
-        const uniforms = cache2.get(light);
+        const uniforms = cache.get(light);
         uniforms.position.setFromMatrixPosition(light.matrixWorld);
         uniforms.color.copy(color).multiplyScalar(intensity);
         uniforms.distance = distance;
@@ -22899,14 +23228,14 @@ function WebGLLights(extensions) {
         }
         spotLength++;
       } else if (light.isRectAreaLight) {
-        const uniforms = cache2.get(light);
+        const uniforms = cache.get(light);
         uniforms.color.copy(color).multiplyScalar(intensity);
         uniforms.halfWidth.set(light.width * 0.5, 0, 0);
         uniforms.halfHeight.set(0, light.height * 0.5, 0);
         state.rectArea[rectAreaLength] = uniforms;
         rectAreaLength++;
       } else if (light.isPointLight) {
-        const uniforms = cache2.get(light);
+        const uniforms = cache.get(light);
         uniforms.color.copy(light.color).multiplyScalar(light.intensity);
         uniforms.distance = light.distance;
         uniforms.decay = light.decay;
@@ -22928,7 +23257,7 @@ function WebGLLights(extensions) {
         state.point[pointLength] = uniforms;
         pointLength++;
       } else if (light.isHemisphereLight) {
-        const uniforms = cache2.get(light);
+        const uniforms = cache.get(light);
         uniforms.skyColor.copy(light.color).multiplyScalar(intensity);
         uniforms.groundColor.copy(light.groundColor).multiplyScalar(intensity);
         state.hemi[hemiLength] = uniforms;
@@ -23314,12 +23643,12 @@ function WebGLShadowMap(renderer2, objects, capabilities) {
     const material = event.target;
     material.removeEventListener("dispose", onMaterialDispose);
     for (const id in _materialCache) {
-      const cache2 = _materialCache[id];
+      const cache = _materialCache[id];
       const uuid = event.target.uuid;
-      if (uuid in cache2) {
-        const shadowMaterial = cache2[uuid];
+      if (uuid in cache) {
+        const shadowMaterial = cache[uuid];
         shadowMaterial.dispose();
-        delete cache2[uuid];
+        delete cache[uuid];
       }
     }
   }
@@ -25466,7 +25795,7 @@ class WebXRManager extends EventDispatcher {
     cameraL.viewport = new Vector4();
     const cameraR = new PerspectiveCamera();
     cameraR.viewport = new Vector4();
-    const cameras = [cameraL, cameraR];
+    const cameras2 = [cameraL, cameraR];
     const cameraXR = new ArrayCamera();
     let _currentDepthNear = null;
     let _currentDepthFar = null;
@@ -25538,14 +25867,14 @@ class WebXRManager extends EventDispatcher {
       renderer2.setSize(currentSize.width, currentSize.height, false);
       scope.dispatchEvent({ type: "sessionend" });
     }
-    this.setFramebufferScaleFactor = function(value2) {
-      framebufferScaleFactor = value2;
+    this.setFramebufferScaleFactor = function(value) {
+      framebufferScaleFactor = value;
       if (scope.isPresenting === true) {
         console.warn("THREE.WebXRManager: Cannot change framebuffer scale while presenting.");
       }
     };
-    this.setReferenceSpaceType = function(value2) {
-      referenceSpaceType = value2;
+    this.setReferenceSpaceType = function(value) {
+      referenceSpaceType = value;
       if (scope.isPresenting === true) {
         console.warn("THREE.WebXRManager: Cannot change reference space type while presenting.");
       }
@@ -25568,8 +25897,8 @@ class WebXRManager extends EventDispatcher {
     this.getSession = function() {
       return session;
     };
-    this.setSession = async function(value2) {
-      session = value2;
+    this.setSession = async function(value) {
+      session = value;
       if (session !== null) {
         initialRenderTarget = renderer2.getRenderTarget();
         session.addEventListener("select", onSessionEvent);
@@ -25761,12 +26090,12 @@ class WebXRManager extends EventDispatcher {
       cameraR.layers.mask = camera2.layers.mask | 4;
       cameraXR.layers.mask = cameraL.layers.mask | cameraR.layers.mask;
       const parent = camera2.parent;
-      const cameras2 = cameraXR.cameras;
+      const cameras3 = cameraXR.cameras;
       updateCamera(cameraXR, parent);
-      for (let i = 0; i < cameras2.length; i++) {
-        updateCamera(cameras2[i], parent);
+      for (let i = 0; i < cameras3.length; i++) {
+        updateCamera(cameras3[i], parent);
       }
-      if (cameras2.length === 2) {
+      if (cameras3.length === 2) {
         setProjectionFromUnion(cameraXR, cameraL, cameraR);
       } else {
         cameraXR.projectionMatrix.copy(cameraL.projectionMatrix);
@@ -25799,13 +26128,13 @@ class WebXRManager extends EventDispatcher {
       }
       return foveation;
     };
-    this.setFoveation = function(value2) {
-      foveation = value2;
+    this.setFoveation = function(value) {
+      foveation = value;
       if (glProjLayer !== null) {
-        glProjLayer.fixedFoveation = value2;
+        glProjLayer.fixedFoveation = value;
       }
       if (glBaseLayer !== null && glBaseLayer.fixedFoveation !== void 0) {
-        glBaseLayer.fixedFoveation = value2;
+        glBaseLayer.fixedFoveation = value;
       }
     };
     this.hasDepthSensing = function() {
@@ -25846,12 +26175,12 @@ class WebXRManager extends EventDispatcher {
               renderer2.setRenderTarget(newRenderTarget);
             }
           }
-          let camera2 = cameras[i];
+          let camera2 = cameras2[i];
           if (camera2 === void 0) {
             camera2 = new PerspectiveCamera();
             camera2.layers.enable(i);
             camera2.viewport = new Vector4();
-            cameras[i] = camera2;
+            cameras2[i] = camera2;
           }
           camera2.matrix.fromArray(view.transform.matrix);
           camera2.matrix.decompose(camera2.position, camera2.quaternion, camera2.scale);
@@ -26258,37 +26587,37 @@ function WebGLUniformsGroups(gl, info, capabilities, state) {
   function updateBufferData(uniformsGroup) {
     const buffer = buffers[uniformsGroup.id];
     const uniforms = uniformsGroup.uniforms;
-    const cache2 = uniformsGroup.__cache;
+    const cache = uniformsGroup.__cache;
     gl.bindBuffer(gl.UNIFORM_BUFFER, buffer);
     for (let i = 0, il = uniforms.length; i < il; i++) {
       const uniformArray = Array.isArray(uniforms[i]) ? uniforms[i] : [uniforms[i]];
       for (let j = 0, jl = uniformArray.length; j < jl; j++) {
         const uniform = uniformArray[j];
-        if (hasUniformChanged(uniform, i, j, cache2) === true) {
+        if (hasUniformChanged(uniform, i, j, cache) === true) {
           const offset = uniform.__offset;
           const values = Array.isArray(uniform.value) ? uniform.value : [uniform.value];
           let arrayOffset = 0;
           for (let k = 0; k < values.length; k++) {
-            const value2 = values[k];
-            const info2 = getUniformSize(value2);
-            if (typeof value2 === "number" || typeof value2 === "boolean") {
-              uniform.__data[0] = value2;
+            const value = values[k];
+            const info2 = getUniformSize(value);
+            if (typeof value === "number" || typeof value === "boolean") {
+              uniform.__data[0] = value;
               gl.bufferSubData(gl.UNIFORM_BUFFER, offset + arrayOffset, uniform.__data);
-            } else if (value2.isMatrix3) {
-              uniform.__data[0] = value2.elements[0];
-              uniform.__data[1] = value2.elements[1];
-              uniform.__data[2] = value2.elements[2];
+            } else if (value.isMatrix3) {
+              uniform.__data[0] = value.elements[0];
+              uniform.__data[1] = value.elements[1];
+              uniform.__data[2] = value.elements[2];
               uniform.__data[3] = 0;
-              uniform.__data[4] = value2.elements[3];
-              uniform.__data[5] = value2.elements[4];
-              uniform.__data[6] = value2.elements[5];
+              uniform.__data[4] = value.elements[3];
+              uniform.__data[5] = value.elements[4];
+              uniform.__data[6] = value.elements[5];
               uniform.__data[7] = 0;
-              uniform.__data[8] = value2.elements[6];
-              uniform.__data[9] = value2.elements[7];
-              uniform.__data[10] = value2.elements[8];
+              uniform.__data[8] = value.elements[6];
+              uniform.__data[9] = value.elements[7];
+              uniform.__data[10] = value.elements[8];
               uniform.__data[11] = 0;
             } else {
-              value2.toArray(uniform.__data, arrayOffset);
+              value.toArray(uniform.__data, arrayOffset);
               arrayOffset += info2.storage / Float32Array.BYTES_PER_ELEMENT;
             }
           }
@@ -26298,26 +26627,26 @@ function WebGLUniformsGroups(gl, info, capabilities, state) {
     }
     gl.bindBuffer(gl.UNIFORM_BUFFER, null);
   }
-  function hasUniformChanged(uniform, index, indexArray, cache2) {
-    const value2 = uniform.value;
+  function hasUniformChanged(uniform, index, indexArray, cache) {
+    const value = uniform.value;
     const indexString = index + "_" + indexArray;
-    if (cache2[indexString] === void 0) {
-      if (typeof value2 === "number" || typeof value2 === "boolean") {
-        cache2[indexString] = value2;
+    if (cache[indexString] === void 0) {
+      if (typeof value === "number" || typeof value === "boolean") {
+        cache[indexString] = value;
       } else {
-        cache2[indexString] = value2.clone();
+        cache[indexString] = value.clone();
       }
       return true;
     } else {
-      const cachedObject = cache2[indexString];
-      if (typeof value2 === "number" || typeof value2 === "boolean") {
-        if (cachedObject !== value2) {
-          cache2[indexString] = value2;
+      const cachedObject = cache[indexString];
+      if (typeof value === "number" || typeof value === "boolean") {
+        if (cachedObject !== value) {
+          cache[indexString] = value;
           return true;
         }
       } else {
-        if (cachedObject.equals(value2) === false) {
-          cachedObject.copy(value2);
+        if (cachedObject.equals(value) === false) {
+          cachedObject.copy(value);
           return true;
         }
       }
@@ -26334,8 +26663,8 @@ function WebGLUniformsGroups(gl, info, capabilities, state) {
         const uniform = uniformArray[j];
         const values = Array.isArray(uniform.value) ? uniform.value : [uniform.value];
         for (let k = 0, kl = values.length; k < kl; k++) {
-          const value2 = values[k];
-          const info2 = getUniformSize(value2);
+          const value = values[k];
+          const info2 = getUniformSize(value);
           const chunkOffset2 = offset % chunkSize;
           const chunkPadding = chunkOffset2 % info2.boundary;
           const chunkStart = chunkOffset2 + chunkPadding;
@@ -26355,35 +26684,35 @@ function WebGLUniformsGroups(gl, info, capabilities, state) {
     uniformsGroup.__cache = {};
     return this;
   }
-  function getUniformSize(value2) {
+  function getUniformSize(value) {
     const info2 = {
       boundary: 0,
       // bytes
       storage: 0
       // bytes
     };
-    if (typeof value2 === "number" || typeof value2 === "boolean") {
+    if (typeof value === "number" || typeof value === "boolean") {
       info2.boundary = 4;
       info2.storage = 4;
-    } else if (value2.isVector2) {
+    } else if (value.isVector2) {
       info2.boundary = 8;
       info2.storage = 8;
-    } else if (value2.isVector3 || value2.isColor) {
+    } else if (value.isVector3 || value.isColor) {
       info2.boundary = 16;
       info2.storage = 12;
-    } else if (value2.isVector4) {
+    } else if (value.isVector4) {
       info2.boundary = 16;
       info2.storage = 16;
-    } else if (value2.isMatrix3) {
+    } else if (value.isMatrix3) {
       info2.boundary = 48;
       info2.storage = 48;
-    } else if (value2.isMatrix4) {
+    } else if (value.isMatrix4) {
       info2.boundary = 64;
       info2.storage = 64;
-    } else if (value2.isTexture) {
+    } else if (value.isTexture) {
       console.warn("THREE.WebGLRenderer: Texture samplers can not be part of an uniforms group.");
     } else {
-      console.warn("THREE.WebGLRenderer: Unsupported uniform value type.", value2);
+      console.warn("THREE.WebGLRenderer: Unsupported uniform value type.", value);
     }
     return info2;
   }
@@ -26599,9 +26928,9 @@ class WebGLRenderer {
     this.getPixelRatio = function() {
       return _pixelRatio;
     };
-    this.setPixelRatio = function(value2) {
-      if (value2 === void 0) return;
-      _pixelRatio = value2;
+    this.setPixelRatio = function(value) {
+      if (value === void 0) return;
+      _pixelRatio = value;
       this.setSize(_width, _height, false);
     };
     this.getSize = function(target) {
@@ -27035,16 +27364,16 @@ class WebGLRenderer {
       const transmissiveObjects = currentRenderList.transmissive;
       currentRenderState.setupLights();
       if (camera2.isArrayCamera) {
-        const cameras = camera2.cameras;
+        const cameras2 = camera2.cameras;
         if (transmissiveObjects.length > 0) {
-          for (let i = 0, l = cameras.length; i < l; i++) {
-            const camera22 = cameras[i];
+          for (let i = 0, l = cameras2.length; i < l; i++) {
+            const camera22 = cameras2[i];
             renderTransmissionPass(opaqueObjects, transmissiveObjects, scene2, camera22);
           }
         }
         if (_renderBackground) background.render(scene2);
-        for (let i = 0, l = cameras.length; i < l; i++) {
-          const camera22 = cameras[i];
+        for (let i = 0, l = cameras2.length; i < l; i++) {
+          const camera22 = cameras2[i];
           renderScene(currentRenderList, scene2, camera22, camera22.viewport);
         }
       } else {
@@ -27530,17 +27859,17 @@ class WebGLRenderer {
       }
       return program;
     }
-    function markUniformsLightsNeedsUpdate(uniforms, value2) {
-      uniforms.ambientLightColor.needsUpdate = value2;
-      uniforms.lightProbe.needsUpdate = value2;
-      uniforms.directionalLights.needsUpdate = value2;
-      uniforms.directionalLightShadows.needsUpdate = value2;
-      uniforms.pointLights.needsUpdate = value2;
-      uniforms.pointLightShadows.needsUpdate = value2;
-      uniforms.spotLights.needsUpdate = value2;
-      uniforms.spotLightShadows.needsUpdate = value2;
-      uniforms.rectAreaLights.needsUpdate = value2;
-      uniforms.hemisphereLights.needsUpdate = value2;
+    function markUniformsLightsNeedsUpdate(uniforms, value) {
+      uniforms.ambientLightColor.needsUpdate = value;
+      uniforms.lightProbe.needsUpdate = value;
+      uniforms.directionalLights.needsUpdate = value;
+      uniforms.directionalLightShadows.needsUpdate = value;
+      uniforms.pointLights.needsUpdate = value;
+      uniforms.pointLightShadows.needsUpdate = value;
+      uniforms.spotLights.needsUpdate = value;
+      uniforms.spotLightShadows.needsUpdate = value;
+      uniforms.rectAreaLights.needsUpdate = value;
+      uniforms.hemisphereLights.needsUpdate = value;
     }
     function materialNeedsLights(material) {
       return material.isMeshLambertMaterial || material.isMeshToonMaterial || material.isMeshPhongMaterial || material.isMeshStandardMaterial || material.isShadowMaterial || material.isShaderMaterial && material.lights === true;
@@ -28000,56 +28329,56 @@ class GLTFLoader extends Loader {
     this.ktx2Loader = null;
     this.meshoptDecoder = null;
     this.pluginCallbacks = [];
-    this.register(function(parser2) {
-      return new GLTFMaterialsClearcoatExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsClearcoatExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsDispersionExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsDispersionExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFTextureBasisUExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFTextureBasisUExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFTextureWebPExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFTextureWebPExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFTextureAVIFExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFTextureAVIFExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsSheenExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsSheenExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsTransmissionExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsTransmissionExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsVolumeExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsVolumeExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsIorExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsIorExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsEmissiveStrengthExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsEmissiveStrengthExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsSpecularExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsSpecularExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsIridescenceExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsIridescenceExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsAnisotropyExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsAnisotropyExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMaterialsBumpExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFMaterialsBumpExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFLightsExtension(parser2);
+    this.register(function(parser) {
+      return new GLTFLightsExtension(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMeshoptCompression(parser2);
+    this.register(function(parser) {
+      return new GLTFMeshoptCompression(parser);
     });
-    this.register(function(parser2) {
-      return new GLTFMeshGpuInstancing(parser2);
+    this.register(function(parser) {
+      return new GLTFMeshGpuInstancing(parser);
     });
   }
   /**
@@ -28061,37 +28390,37 @@ class GLTFLoader extends Loader {
    * @param {onProgressCallback} onProgress - Executed while the loading is in progress.
    * @param {onErrorCallback} onError - Executed when errors occur.
    */
-  load(url2, onLoad, onProgress, onError) {
+  load(url, onLoad, onProgress, onError) {
     const scope = this;
     let resourcePath;
     if (this.resourcePath !== "") {
       resourcePath = this.resourcePath;
     } else if (this.path !== "") {
-      const relativeUrl = LoaderUtils.extractUrlBase(url2);
+      const relativeUrl = LoaderUtils.extractUrlBase(url);
       resourcePath = LoaderUtils.resolveURL(relativeUrl, this.path);
     } else {
-      resourcePath = LoaderUtils.extractUrlBase(url2);
+      resourcePath = LoaderUtils.extractUrlBase(url);
     }
-    this.manager.itemStart(url2);
+    this.manager.itemStart(url);
     const _onError = function(e) {
       if (onError) {
         onError(e);
       } else {
         console.error(e);
       }
-      scope.manager.itemError(url2);
-      scope.manager.itemEnd(url2);
+      scope.manager.itemError(url);
+      scope.manager.itemEnd(url);
     };
     const loader = new FileLoader(this.manager);
     loader.setPath(this.path);
     loader.setResponseType("arraybuffer");
     loader.setRequestHeader(this.requestHeader);
     loader.setWithCredentials(this.withCredentials);
-    loader.load(url2, function(data) {
+    loader.load(url, function(data) {
       try {
         scope.parse(data, resourcePath, function(gltf) {
           onLoad(gltf);
-          scope.manager.itemEnd(url2);
+          scope.manager.itemEnd(url);
         }, _onError);
       } catch (e) {
         _onError(e);
@@ -28192,7 +28521,7 @@ class GLTFLoader extends Loader {
       if (onError) onError(new Error("THREE.GLTFLoader: Unsupported asset. glTF versions >=2.0 are supported."));
       return;
     }
-    const parser2 = new GLTFParser(json, {
+    const parser = new GLTFParser(json, {
       path: path || this.resourcePath || "",
       crossOrigin: this.crossOrigin,
       requestHeader: this.requestHeader,
@@ -28200,9 +28529,9 @@ class GLTFLoader extends Loader {
       ktx2Loader: this.ktx2Loader,
       meshoptDecoder: this.meshoptDecoder
     });
-    parser2.fileLoader.setRequestHeader(this.requestHeader);
+    parser.fileLoader.setRequestHeader(this.requestHeader);
     for (let i = 0; i < this.pluginCallbacks.length; i++) {
-      const plugin = this.pluginCallbacks[i](parser2);
+      const plugin = this.pluginCallbacks[i](parser);
       if (!plugin.name) console.error("THREE.GLTFLoader: Invalid plugin found: missing name");
       plugins[plugin.name] = plugin;
       extensions[plugin.name] = true;
@@ -28231,9 +28560,9 @@ class GLTFLoader extends Loader {
         }
       }
     }
-    parser2.setExtensions(extensions);
-    parser2.setPlugins(plugins);
-    parser2.parse(onLoad, onError);
+    parser.setExtensions(extensions);
+    parser.setPlugins(plugins);
+    parser.parse(onLoad, onError);
   }
   /**
    * Async version of {@link GLTFLoader#parse}.
@@ -28292,27 +28621,27 @@ const EXTENSIONS = {
   EXT_MESH_GPU_INSTANCING: "EXT_mesh_gpu_instancing"
 };
 class GLTFLightsExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_LIGHTS_PUNCTUAL;
     this.cache = { refs: {}, uses: {} };
   }
   _markDefs() {
-    const parser2 = this.parser;
+    const parser = this.parser;
     const nodeDefs = this.parser.json.nodes || [];
     for (let nodeIndex = 0, nodeLength = nodeDefs.length; nodeIndex < nodeLength; nodeIndex++) {
       const nodeDef = nodeDefs[nodeIndex];
       if (nodeDef.extensions && nodeDef.extensions[this.name] && nodeDef.extensions[this.name].light !== void 0) {
-        parser2._addNodeRef(this.cache, nodeDef.extensions[this.name].light);
+        parser._addNodeRef(this.cache, nodeDef.extensions[this.name].light);
       }
     }
   }
   _loadLight(lightIndex) {
-    const parser2 = this.parser;
+    const parser = this.parser;
     const cacheKey = "light:" + lightIndex;
-    let dependency = parser2.cache.get(cacheKey);
+    let dependency = parser.cache.get(cacheKey);
     if (dependency) return dependency;
-    const json = parser2.json;
+    const json = parser.json;
     const extensions = json.extensions && json.extensions[this.name] || {};
     const lightDefs = extensions.lights || [];
     const lightDef = lightDefs[lightIndex];
@@ -28347,9 +28676,9 @@ class GLTFLightsExtension {
     lightNode.position.set(0, 0, 0);
     assignExtrasToUserData(lightNode, lightDef);
     if (lightDef.intensity !== void 0) lightNode.intensity = lightDef.intensity;
-    lightNode.name = parser2.createUniqueName(lightDef.name || "light_" + lightIndex);
+    lightNode.name = parser.createUniqueName(lightDef.name || "light_" + lightIndex);
     dependency = Promise.resolve(lightNode);
-    parser2.cache.add(cacheKey, dependency);
+    parser.cache.add(cacheKey, dependency);
     return dependency;
   }
   getDependency(type, index) {
@@ -28358,14 +28687,14 @@ class GLTFLightsExtension {
   }
   createNodeAttachment(nodeIndex) {
     const self2 = this;
-    const parser2 = this.parser;
-    const json = parser2.json;
+    const parser = this.parser;
+    const json = parser.json;
     const nodeDef = json.nodes[nodeIndex];
     const lightDef = nodeDef.extensions && nodeDef.extensions[this.name] || {};
     const lightIndex = lightDef.light;
     if (lightIndex === void 0) return null;
     return this._loadLight(lightIndex).then(function(light) {
-      return parser2._getNodeRef(self2.cache, lightIndex, light);
+      return parser._getNodeRef(self2.cache, lightIndex, light);
     });
   }
 }
@@ -28376,7 +28705,7 @@ class GLTFMaterialsUnlitExtension {
   getMaterialType() {
     return MeshBasicMaterial;
   }
-  extendParams(materialParams, materialDef, parser2) {
+  extendParams(materialParams, materialDef, parser) {
     const pending = [];
     materialParams.color = new Color(1, 1, 1);
     materialParams.opacity = 1;
@@ -28388,20 +28717,20 @@ class GLTFMaterialsUnlitExtension {
         materialParams.opacity = array[3];
       }
       if (metallicRoughness.baseColorTexture !== void 0) {
-        pending.push(parser2.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
+        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
       }
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsEmissiveStrengthExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_EMISSIVE_STRENGTH;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28413,19 +28742,19 @@ class GLTFMaterialsEmissiveStrengthExtension {
   }
 }
 class GLTFMaterialsClearcoatExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_CLEARCOAT;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28435,16 +28764,16 @@ class GLTFMaterialsClearcoatExtension {
       materialParams.clearcoat = extension.clearcoatFactor;
     }
     if (extension.clearcoatTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "clearcoatMap", extension.clearcoatTexture));
+      pending.push(parser.assignTexture(materialParams, "clearcoatMap", extension.clearcoatTexture));
     }
     if (extension.clearcoatRoughnessFactor !== void 0) {
       materialParams.clearcoatRoughness = extension.clearcoatRoughnessFactor;
     }
     if (extension.clearcoatRoughnessTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "clearcoatRoughnessMap", extension.clearcoatRoughnessTexture));
+      pending.push(parser.assignTexture(materialParams, "clearcoatRoughnessMap", extension.clearcoatRoughnessTexture));
     }
     if (extension.clearcoatNormalTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "clearcoatNormalMap", extension.clearcoatNormalTexture));
+      pending.push(parser.assignTexture(materialParams, "clearcoatNormalMap", extension.clearcoatNormalTexture));
       if (extension.clearcoatNormalTexture.scale !== void 0) {
         const scale = extension.clearcoatNormalTexture.scale;
         materialParams.clearcoatNormalScale = new Vector2(scale, scale);
@@ -28454,19 +28783,19 @@ class GLTFMaterialsClearcoatExtension {
   }
 }
 class GLTFMaterialsDispersionExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_DISPERSION;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28476,19 +28805,19 @@ class GLTFMaterialsDispersionExtension {
   }
 }
 class GLTFMaterialsIridescenceExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_IRIDESCENCE;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28498,7 +28827,7 @@ class GLTFMaterialsIridescenceExtension {
       materialParams.iridescence = extension.iridescenceFactor;
     }
     if (extension.iridescenceTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "iridescenceMap", extension.iridescenceTexture));
+      pending.push(parser.assignTexture(materialParams, "iridescenceMap", extension.iridescenceTexture));
     }
     if (extension.iridescenceIor !== void 0) {
       materialParams.iridescenceIOR = extension.iridescenceIor;
@@ -28513,25 +28842,25 @@ class GLTFMaterialsIridescenceExtension {
       materialParams.iridescenceThicknessRange[1] = extension.iridescenceThicknessMaximum;
     }
     if (extension.iridescenceThicknessTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "iridescenceThicknessMap", extension.iridescenceThicknessTexture));
+      pending.push(parser.assignTexture(materialParams, "iridescenceThicknessMap", extension.iridescenceThicknessTexture));
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsSheenExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_SHEEN;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28548,28 +28877,28 @@ class GLTFMaterialsSheenExtension {
       materialParams.sheenRoughness = extension.sheenRoughnessFactor;
     }
     if (extension.sheenColorTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "sheenColorMap", extension.sheenColorTexture, SRGBColorSpace));
+      pending.push(parser.assignTexture(materialParams, "sheenColorMap", extension.sheenColorTexture, SRGBColorSpace));
     }
     if (extension.sheenRoughnessTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "sheenRoughnessMap", extension.sheenRoughnessTexture));
+      pending.push(parser.assignTexture(materialParams, "sheenRoughnessMap", extension.sheenRoughnessTexture));
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsTransmissionExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_TRANSMISSION;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28579,25 +28908,25 @@ class GLTFMaterialsTransmissionExtension {
       materialParams.transmission = extension.transmissionFactor;
     }
     if (extension.transmissionTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "transmissionMap", extension.transmissionTexture));
+      pending.push(parser.assignTexture(materialParams, "transmissionMap", extension.transmissionTexture));
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsVolumeExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_VOLUME;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28605,7 +28934,7 @@ class GLTFMaterialsVolumeExtension {
     const extension = materialDef.extensions[this.name];
     materialParams.thickness = extension.thicknessFactor !== void 0 ? extension.thicknessFactor : 0;
     if (extension.thicknessTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "thicknessMap", extension.thicknessTexture));
+      pending.push(parser.assignTexture(materialParams, "thicknessMap", extension.thicknessTexture));
     }
     materialParams.attenuationDistance = extension.attenuationDistance || Infinity;
     const colorArray = extension.attenuationColor || [1, 1, 1];
@@ -28614,19 +28943,19 @@ class GLTFMaterialsVolumeExtension {
   }
 }
 class GLTFMaterialsIorExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_IOR;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28636,19 +28965,19 @@ class GLTFMaterialsIorExtension {
   }
 }
 class GLTFMaterialsSpecularExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_SPECULAR;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28656,30 +28985,30 @@ class GLTFMaterialsSpecularExtension {
     const extension = materialDef.extensions[this.name];
     materialParams.specularIntensity = extension.specularFactor !== void 0 ? extension.specularFactor : 1;
     if (extension.specularTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "specularIntensityMap", extension.specularTexture));
+      pending.push(parser.assignTexture(materialParams, "specularIntensityMap", extension.specularTexture));
     }
     const colorArray = extension.specularColorFactor || [1, 1, 1];
     materialParams.specularColor = new Color().setRGB(colorArray[0], colorArray[1], colorArray[2], LinearSRGBColorSpace);
     if (extension.specularColorTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "specularColorMap", extension.specularColorTexture, SRGBColorSpace));
+      pending.push(parser.assignTexture(materialParams, "specularColorMap", extension.specularColorTexture, SRGBColorSpace));
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsBumpExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.EXT_MATERIALS_BUMP;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28687,25 +29016,25 @@ class GLTFMaterialsBumpExtension {
     const extension = materialDef.extensions[this.name];
     materialParams.bumpScale = extension.bumpFactor !== void 0 ? extension.bumpFactor : 1;
     if (extension.bumpTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "bumpMap", extension.bumpTexture));
+      pending.push(parser.assignTexture(materialParams, "bumpMap", extension.bumpTexture));
     }
     return Promise.all(pending);
   }
 }
 class GLTFMaterialsAnisotropyExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_MATERIALS_ANISOTROPY;
   }
   getMaterialType(materialIndex) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) return null;
     return MeshPhysicalMaterial;
   }
   extendMaterialParams(materialIndex, materialParams) {
-    const parser2 = this.parser;
-    const materialDef = parser2.json.materials[materialIndex];
+    const parser = this.parser;
+    const materialDef = parser.json.materials[materialIndex];
     if (!materialDef.extensions || !materialDef.extensions[this.name]) {
       return Promise.resolve();
     }
@@ -28718,25 +29047,25 @@ class GLTFMaterialsAnisotropyExtension {
       materialParams.anisotropyRotation = extension.anisotropyRotation;
     }
     if (extension.anisotropyTexture !== void 0) {
-      pending.push(parser2.assignTexture(materialParams, "anisotropyMap", extension.anisotropyTexture));
+      pending.push(parser.assignTexture(materialParams, "anisotropyMap", extension.anisotropyTexture));
     }
     return Promise.all(pending);
   }
 }
 class GLTFTextureBasisUExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.KHR_TEXTURE_BASISU;
   }
   loadTexture(textureIndex) {
-    const parser2 = this.parser;
-    const json = parser2.json;
+    const parser = this.parser;
+    const json = parser.json;
     const textureDef = json.textures[textureIndex];
     if (!textureDef.extensions || !textureDef.extensions[this.name]) {
       return null;
     }
     const extension = textureDef.extensions[this.name];
-    const loader = parser2.options.ktx2Loader;
+    const loader = parser.options.ktx2Loader;
     if (!loader) {
       if (json.extensionsRequired && json.extensionsRequired.indexOf(this.name) >= 0) {
         throw new Error("THREE.GLTFLoader: setKTX2Loader must be called before loading KTX2 textures");
@@ -28744,36 +29073,36 @@ class GLTFTextureBasisUExtension {
         return null;
       }
     }
-    return parser2.loadTextureImage(textureIndex, extension.source, loader);
+    return parser.loadTextureImage(textureIndex, extension.source, loader);
   }
 }
 class GLTFTextureWebPExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.EXT_TEXTURE_WEBP;
     this.isSupported = null;
   }
   loadTexture(textureIndex) {
     const name = this.name;
-    const parser2 = this.parser;
-    const json = parser2.json;
+    const parser = this.parser;
+    const json = parser.json;
     const textureDef = json.textures[textureIndex];
     if (!textureDef.extensions || !textureDef.extensions[name]) {
       return null;
     }
     const extension = textureDef.extensions[name];
     const source = json.images[extension.source];
-    let loader = parser2.textureLoader;
+    let loader = parser.textureLoader;
     if (source.uri) {
-      const handler = parser2.options.manager.getHandler(source.uri);
+      const handler = parser.options.manager.getHandler(source.uri);
       if (handler !== null) loader = handler;
     }
     return this.detectSupport().then(function(isSupported) {
-      if (isSupported) return parser2.loadTextureImage(textureIndex, extension.source, loader);
+      if (isSupported) return parser.loadTextureImage(textureIndex, extension.source, loader);
       if (json.extensionsRequired && json.extensionsRequired.indexOf(name) >= 0) {
         throw new Error("THREE.GLTFLoader: WebP required by asset but unsupported.");
       }
-      return parser2.loadTexture(textureIndex);
+      return parser.loadTexture(textureIndex);
     });
   }
   detectSupport() {
@@ -28790,32 +29119,32 @@ class GLTFTextureWebPExtension {
   }
 }
 class GLTFTextureAVIFExtension {
-  constructor(parser2) {
-    this.parser = parser2;
+  constructor(parser) {
+    this.parser = parser;
     this.name = EXTENSIONS.EXT_TEXTURE_AVIF;
     this.isSupported = null;
   }
   loadTexture(textureIndex) {
     const name = this.name;
-    const parser2 = this.parser;
-    const json = parser2.json;
+    const parser = this.parser;
+    const json = parser.json;
     const textureDef = json.textures[textureIndex];
     if (!textureDef.extensions || !textureDef.extensions[name]) {
       return null;
     }
     const extension = textureDef.extensions[name];
     const source = json.images[extension.source];
-    let loader = parser2.textureLoader;
+    let loader = parser.textureLoader;
     if (source.uri) {
-      const handler = parser2.options.manager.getHandler(source.uri);
+      const handler = parser.options.manager.getHandler(source.uri);
       if (handler !== null) loader = handler;
     }
     return this.detectSupport().then(function(isSupported) {
-      if (isSupported) return parser2.loadTextureImage(textureIndex, extension.source, loader);
+      if (isSupported) return parser.loadTextureImage(textureIndex, extension.source, loader);
       if (json.extensionsRequired && json.extensionsRequired.indexOf(name) >= 0) {
         throw new Error("THREE.GLTFLoader: AVIF required by asset but unsupported.");
       }
-      return parser2.loadTexture(textureIndex);
+      return parser.loadTexture(textureIndex);
     });
   }
   detectSupport() {
@@ -28832,9 +29161,9 @@ class GLTFTextureAVIFExtension {
   }
 }
 class GLTFMeshoptCompression {
-  constructor(parser2) {
+  constructor(parser) {
     this.name = EXTENSIONS.EXT_MESHOPT_COMPRESSION;
-    this.parser = parser2;
+    this.parser = parser;
   }
   loadBufferView(index) {
     const json = this.parser.json;
@@ -28852,10 +29181,10 @@ class GLTFMeshoptCompression {
       }
       return buffer.then(function(res) {
         const byteOffset = extensionDef.byteOffset || 0;
-        const byteLength2 = extensionDef.byteLength || 0;
+        const byteLength = extensionDef.byteLength || 0;
         const count = extensionDef.count;
         const stride = extensionDef.byteStride;
-        const source = new Uint8Array(res, byteOffset, byteLength2);
+        const source = new Uint8Array(res, byteOffset, byteLength);
         if (decoder.decodeGltfBufferAsync) {
           return decoder.decodeGltfBufferAsync(count, stride, source, extensionDef.mode, extensionDef.filter).then(function(res2) {
             return res2.buffer;
@@ -28874,9 +29203,9 @@ class GLTFMeshoptCompression {
   }
 }
 class GLTFMeshGpuInstancing {
-  constructor(parser2) {
+  constructor(parser) {
     this.name = EXTENSIONS.EXT_MESH_GPU_INSTANCING;
-    this.parser = parser2;
+    this.parser = parser;
   }
   createNodeMesh(nodeIndex) {
     const json = this.parser.json;
@@ -29000,7 +29329,7 @@ class GLTFDracoMeshCompressionExtension {
     this.dracoLoader = dracoLoader;
     this.dracoLoader.preload();
   }
-  decodePrimitive(primitive, parser2) {
+  decodePrimitive(primitive, parser) {
     const json = this.json;
     const dracoLoader = this.dracoLoader;
     const bufferViewIndex = primitive.extensions[this.name].bufferView;
@@ -29021,7 +29350,7 @@ class GLTFDracoMeshCompressionExtension {
         attributeNormalizedMap[threeAttributeName] = accessorDef.normalized === true;
       }
     }
-    return parser2.getDependency("bufferView", bufferViewIndex).then(function(bufferView) {
+    return parser.getDependency("bufferView", bufferViewIndex).then(function(bufferView) {
       return new Promise(function(resolve, reject) {
         dracoLoader.decodeDracoFile(bufferView, function(geometry) {
           for (const attributeName in geometry.attributes) {
@@ -29179,9 +29508,9 @@ const ALPHA_MODES = {
   MASK: "MASK",
   BLEND: "BLEND"
 };
-function createDefaultMaterial(cache2) {
-  if (cache2["DefaultMaterial"] === void 0) {
-    cache2["DefaultMaterial"] = new MeshStandardMaterial({
+function createDefaultMaterial(cache) {
+  if (cache["DefaultMaterial"] === void 0) {
+    cache["DefaultMaterial"] = new MeshStandardMaterial({
       color: 16777215,
       emissive: 0,
       metalness: 1,
@@ -29191,7 +29520,7 @@ function createDefaultMaterial(cache2) {
       side: FrontSide
     });
   }
-  return cache2["DefaultMaterial"];
+  return cache["DefaultMaterial"];
 }
 function addUnknownExtensionsToUserData(knownExtensions, object, objectDef) {
   for (const name in objectDef.extensions) {
@@ -29210,7 +29539,7 @@ function assignExtrasToUserData(object, gltfDef) {
     }
   }
 }
-function addMorphTargets(geometry, targets, parser2) {
+function addMorphTargets(geometry, targets, parser) {
   let hasMorphPosition = false;
   let hasMorphNormal = false;
   let hasMorphColor = false;
@@ -29228,15 +29557,15 @@ function addMorphTargets(geometry, targets, parser2) {
   for (let i = 0, il = targets.length; i < il; i++) {
     const target = targets[i];
     if (hasMorphPosition) {
-      const pendingAccessor = target.POSITION !== void 0 ? parser2.getDependency("accessor", target.POSITION) : geometry.attributes.position;
+      const pendingAccessor = target.POSITION !== void 0 ? parser.getDependency("accessor", target.POSITION) : geometry.attributes.position;
       pendingPositionAccessors.push(pendingAccessor);
     }
     if (hasMorphNormal) {
-      const pendingAccessor = target.NORMAL !== void 0 ? parser2.getDependency("accessor", target.NORMAL) : geometry.attributes.normal;
+      const pendingAccessor = target.NORMAL !== void 0 ? parser.getDependency("accessor", target.NORMAL) : geometry.attributes.normal;
       pendingNormalAccessors.push(pendingAccessor);
     }
     if (hasMorphColor) {
-      const pendingAccessor = target.COLOR_0 !== void 0 ? parser2.getDependency("accessor", target.COLOR_0) : geometry.attributes.color;
+      const pendingAccessor = target.COLOR_0 !== void 0 ? parser.getDependency("accessor", target.COLOR_0) : geometry.attributes.color;
       pendingColorAccessors.push(pendingAccessor);
     }
   }
@@ -29366,7 +29695,7 @@ class GLTFParser {
     this.plugins = plugins;
   }
   parse(onLoad, onError) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const extensions = this.extensions;
     this.cache.removeAll();
@@ -29378,9 +29707,9 @@ class GLTFParser {
       return ext.beforeRoot && ext.beforeRoot();
     })).then(function() {
       return Promise.all([
-        parser2.getDependencies("scene"),
-        parser2.getDependencies("animation"),
-        parser2.getDependencies("camera")
+        parser.getDependencies("scene"),
+        parser.getDependencies("animation"),
+        parser.getDependencies("camera")
       ]);
     }).then(function(dependencies) {
       const result = {
@@ -29389,12 +29718,12 @@ class GLTFParser {
         animations: dependencies[1],
         cameras: dependencies[2],
         asset: json.asset,
-        parser: parser2,
+        parser,
         userData: {}
       };
       addUnknownExtensionsToUserData(extensions, result, json);
       assignExtrasToUserData(result, json);
-      return Promise.all(parser2._invokeAll(function(ext) {
+      return Promise.all(parser._invokeAll(function(ext) {
         return ext.afterRoot && ext.afterRoot(result);
       })).then(function() {
         for (const scene2 of result.scenes) {
@@ -29445,12 +29774,12 @@ class GLTFParser {
    * @param {Object} cache
    * @param {Object3D} index
    */
-  _addNodeRef(cache2, index) {
+  _addNodeRef(cache, index) {
     if (index === void 0) return;
-    if (cache2.refs[index] === void 0) {
-      cache2.refs[index] = cache2.uses[index] = 0;
+    if (cache.refs[index] === void 0) {
+      cache.refs[index] = cache.uses[index] = 0;
     }
-    cache2.refs[index]++;
+    cache.refs[index]++;
   }
   /**
    * Returns a reference to a shared resource, cloning it if necessary.
@@ -29461,8 +29790,8 @@ class GLTFParser {
    * @param {Object} object
    * @return {Object}
    */
-  _getNodeRef(cache2, index, object) {
-    if (cache2.refs[index] <= 1) return object;
+  _getNodeRef(cache, index, object) {
+    if (cache.refs[index] <= 1) return object;
     const ref = object.clone();
     const updateMappings = (original, clone) => {
       const mappings = this.associations.get(original);
@@ -29474,7 +29803,7 @@ class GLTFParser {
       }
     };
     updateMappings(object, ref);
-    ref.name += "_instance_" + cache2.uses[index]++;
+    ref.name += "_instance_" + cache.uses[index]++;
     return ref;
   }
   _invokeOne(func) {
@@ -29577,10 +29906,10 @@ class GLTFParser {
   getDependencies(type) {
     let dependencies = this.cache.get(type);
     if (!dependencies) {
-      const parser2 = this;
+      const parser = this;
       const defs = this.json[type + (type === "mesh" ? "es" : "s")] || [];
       dependencies = Promise.all(defs.map(function(def, index) {
-        return parser2.getDependency(type, index);
+        return parser.getDependency(type, index);
       }));
       this.cache.add(type, dependencies);
     }
@@ -29619,9 +29948,9 @@ class GLTFParser {
   loadBufferView(bufferViewIndex) {
     const bufferViewDef = this.json.bufferViews[bufferViewIndex];
     return this.getDependency("buffer", bufferViewDef.buffer).then(function(buffer) {
-      const byteLength2 = bufferViewDef.byteLength || 0;
+      const byteLength = bufferViewDef.byteLength || 0;
       const byteOffset = bufferViewDef.byteOffset || 0;
-      return buffer.slice(byteOffset, byteOffset + byteLength2);
+      return buffer.slice(byteOffset, byteOffset + byteLength);
     });
   }
   /**
@@ -29632,7 +29961,7 @@ class GLTFParser {
    * @return {Promise<BufferAttribute|InterleavedBufferAttribute>}
    */
   loadAccessor(accessorIndex) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const accessorDef = this.json.accessors[accessorIndex];
     if (accessorDef.bufferView === void 0 && accessorDef.sparse === void 0) {
@@ -29665,11 +29994,11 @@ class GLTFParser {
       if (byteStride && byteStride !== itemBytes) {
         const ibSlice = Math.floor(byteOffset / byteStride);
         const ibCacheKey = "InterleavedBuffer:" + accessorDef.bufferView + ":" + accessorDef.componentType + ":" + ibSlice + ":" + accessorDef.count;
-        let ib = parser2.cache.get(ibCacheKey);
+        let ib = parser.cache.get(ibCacheKey);
         if (!ib) {
           array = new TypedArray(bufferView, ibSlice * byteStride, accessorDef.count * byteStride / elementBytes);
           ib = new InterleavedBuffer(array, byteStride / elementBytes);
-          parser2.cache.add(ibCacheKey, ib);
+          parser.cache.add(ibCacheKey, ib);
         }
         bufferAttribute = new InterleavedBufferAttribute(ib, itemSize, byteOffset % byteStride / elementBytes, normalized);
       } else {
@@ -29725,7 +30054,7 @@ class GLTFParser {
     return this.loadTextureImage(textureIndex, sourceIndex, loader);
   }
   loadTextureImage(textureIndex, sourceIndex, loader) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const textureDef = json.textures[textureIndex];
     const sourceDef = json.images[sourceIndex];
@@ -29746,7 +30075,7 @@ class GLTFParser {
       texture.wrapS = WEBGL_WRAPPINGS[sampler.wrapS] || RepeatWrapping;
       texture.wrapT = WEBGL_WRAPPINGS[sampler.wrapT] || RepeatWrapping;
       texture.generateMipmaps = !texture.isCompressedTexture && texture.minFilter !== NearestFilter && texture.minFilter !== LinearFilter;
-      parser2.associations.set(texture, { textures: textureIndex });
+      parser.associations.set(texture, { textures: textureIndex });
       return texture;
     }).catch(function() {
       return null;
@@ -29755,7 +30084,7 @@ class GLTFParser {
     return promise;
   }
   loadImageSource(sourceIndex, loader) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const options = this.options;
     if (this.sourceCache[sourceIndex] !== void 0) {
@@ -29766,7 +30095,7 @@ class GLTFParser {
     let sourceURI = sourceDef.uri || "";
     let isObjectURL = false;
     if (sourceDef.bufferView !== void 0) {
-      sourceURI = parser2.getDependency("bufferView", sourceDef.bufferView).then(function(bufferView) {
+      sourceURI = parser.getDependency("bufferView", sourceDef.bufferView).then(function(bufferView) {
         isObjectURL = true;
         const blob = new Blob([bufferView], { type: sourceDef.mimeType });
         sourceURI = URL2.createObjectURL(blob);
@@ -29812,19 +30141,19 @@ class GLTFParser {
    * @return {Promise<Texture>}
    */
   assignTexture(materialParams, mapName, mapDef, colorSpace) {
-    const parser2 = this;
+    const parser = this;
     return this.getDependency("texture", mapDef.index).then(function(texture) {
       if (!texture) return null;
       if (mapDef.texCoord !== void 0 && mapDef.texCoord > 0) {
         texture = texture.clone();
         texture.channel = mapDef.texCoord;
       }
-      if (parser2.extensions[EXTENSIONS.KHR_TEXTURE_TRANSFORM]) {
+      if (parser.extensions[EXTENSIONS.KHR_TEXTURE_TRANSFORM]) {
         const transform = mapDef.extensions !== void 0 ? mapDef.extensions[EXTENSIONS.KHR_TEXTURE_TRANSFORM] : void 0;
         if (transform) {
-          const gltfReference = parser2.associations.get(texture);
-          texture = parser2.extensions[EXTENSIONS.KHR_TEXTURE_TRANSFORM].extendTexture(texture, transform);
-          parser2.associations.set(texture, gltfReference);
+          const gltfReference = parser.associations.get(texture);
+          texture = parser.extensions[EXTENSIONS.KHR_TEXTURE_TRANSFORM].extendTexture(texture, transform);
+          parser.associations.set(texture, gltfReference);
         }
       }
       if (colorSpace !== void 0) {
@@ -29906,7 +30235,7 @@ class GLTFParser {
    * @return {Promise<Material>}
    */
   loadMaterial(materialIndex) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const extensions = this.extensions;
     const materialDef = json.materials[materialIndex];
@@ -29917,7 +30246,7 @@ class GLTFParser {
     if (materialExtensions[EXTENSIONS.KHR_MATERIALS_UNLIT]) {
       const kmuExtension = extensions[EXTENSIONS.KHR_MATERIALS_UNLIT];
       materialType = kmuExtension.getMaterialType();
-      pending.push(kmuExtension.extendParams(materialParams, materialDef, parser2));
+      pending.push(kmuExtension.extendParams(materialParams, materialDef, parser));
     } else {
       const metallicRoughness = materialDef.pbrMetallicRoughness || {};
       materialParams.color = new Color(1, 1, 1);
@@ -29928,13 +30257,13 @@ class GLTFParser {
         materialParams.opacity = array[3];
       }
       if (metallicRoughness.baseColorTexture !== void 0) {
-        pending.push(parser2.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
+        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
       }
       materialParams.metalness = metallicRoughness.metallicFactor !== void 0 ? metallicRoughness.metallicFactor : 1;
       materialParams.roughness = metallicRoughness.roughnessFactor !== void 0 ? metallicRoughness.roughnessFactor : 1;
       if (metallicRoughness.metallicRoughnessTexture !== void 0) {
-        pending.push(parser2.assignTexture(materialParams, "metalnessMap", metallicRoughness.metallicRoughnessTexture));
-        pending.push(parser2.assignTexture(materialParams, "roughnessMap", metallicRoughness.metallicRoughnessTexture));
+        pending.push(parser.assignTexture(materialParams, "metalnessMap", metallicRoughness.metallicRoughnessTexture));
+        pending.push(parser.assignTexture(materialParams, "roughnessMap", metallicRoughness.metallicRoughnessTexture));
       }
       materialType = this._invokeOne(function(ext) {
         return ext.getMaterialType && ext.getMaterialType(materialIndex);
@@ -29957,7 +30286,7 @@ class GLTFParser {
       }
     }
     if (materialDef.normalTexture !== void 0 && materialType !== MeshBasicMaterial) {
-      pending.push(parser2.assignTexture(materialParams, "normalMap", materialDef.normalTexture));
+      pending.push(parser.assignTexture(materialParams, "normalMap", materialDef.normalTexture));
       materialParams.normalScale = new Vector2(1, 1);
       if (materialDef.normalTexture.scale !== void 0) {
         const scale = materialDef.normalTexture.scale;
@@ -29965,7 +30294,7 @@ class GLTFParser {
       }
     }
     if (materialDef.occlusionTexture !== void 0 && materialType !== MeshBasicMaterial) {
-      pending.push(parser2.assignTexture(materialParams, "aoMap", materialDef.occlusionTexture));
+      pending.push(parser.assignTexture(materialParams, "aoMap", materialDef.occlusionTexture));
       if (materialDef.occlusionTexture.strength !== void 0) {
         materialParams.aoMapIntensity = materialDef.occlusionTexture.strength;
       }
@@ -29975,13 +30304,13 @@ class GLTFParser {
       materialParams.emissive = new Color().setRGB(emissiveFactor[0], emissiveFactor[1], emissiveFactor[2], LinearSRGBColorSpace);
     }
     if (materialDef.emissiveTexture !== void 0 && materialType !== MeshBasicMaterial) {
-      pending.push(parser2.assignTexture(materialParams, "emissiveMap", materialDef.emissiveTexture, SRGBColorSpace));
+      pending.push(parser.assignTexture(materialParams, "emissiveMap", materialDef.emissiveTexture, SRGBColorSpace));
     }
     return Promise.all(pending).then(function() {
       const material = new materialType(materialParams);
       if (materialDef.name) material.name = materialDef.name;
       assignExtrasToUserData(material, materialDef);
-      parser2.associations.set(material, { materials: materialIndex });
+      parser.associations.set(material, { materials: materialIndex });
       if (materialDef.extensions) addUnknownExtensionsToUserData(extensions, material, materialDef);
       return material;
     });
@@ -30012,19 +30341,19 @@ class GLTFParser {
    * @return {Promise<Array<BufferGeometry>>}
    */
   loadGeometries(primitives) {
-    const parser2 = this;
+    const parser = this;
     const extensions = this.extensions;
-    const cache2 = this.primitiveCache;
+    const cache = this.primitiveCache;
     function createDracoPrimitive(primitive) {
-      return extensions[EXTENSIONS.KHR_DRACO_MESH_COMPRESSION].decodePrimitive(primitive, parser2).then(function(geometry) {
-        return addPrimitiveAttributes(geometry, primitive, parser2);
+      return extensions[EXTENSIONS.KHR_DRACO_MESH_COMPRESSION].decodePrimitive(primitive, parser).then(function(geometry) {
+        return addPrimitiveAttributes(geometry, primitive, parser);
       });
     }
     const pending = [];
     for (let i = 0, il = primitives.length; i < il; i++) {
       const primitive = primitives[i];
       const cacheKey = createPrimitiveKey(primitive);
-      const cached = cache2[cacheKey];
+      const cached = cache[cacheKey];
       if (cached) {
         pending.push(cached.promise);
       } else {
@@ -30032,9 +30361,9 @@ class GLTFParser {
         if (primitive.extensions && primitive.extensions[EXTENSIONS.KHR_DRACO_MESH_COMPRESSION]) {
           geometryPromise = createDracoPrimitive(primitive);
         } else {
-          geometryPromise = addPrimitiveAttributes(new BufferGeometry(), primitive, parser2);
+          geometryPromise = addPrimitiveAttributes(new BufferGeometry(), primitive, parser);
         }
-        cache2[cacheKey] = { primitive, promise: geometryPromise };
+        cache[cacheKey] = { primitive, promise: geometryPromise };
         pending.push(geometryPromise);
       }
     }
@@ -30048,7 +30377,7 @@ class GLTFParser {
    * @return {Promise<Group|Mesh|SkinnedMesh|Line|Points>}
    */
   loadMesh(meshIndex) {
-    const parser2 = this;
+    const parser = this;
     const json = this.json;
     const extensions = this.extensions;
     const meshDef = json.meshes[meshIndex];
@@ -30058,7 +30387,7 @@ class GLTFParser {
       const material = primitives[i].material === void 0 ? createDefaultMaterial(this.cache) : this.getDependency("material", primitives[i].material);
       pending.push(material);
     }
-    pending.push(parser2.loadGeometries(primitives));
+    pending.push(parser.loadGeometries(primitives));
     return Promise.all(pending).then(function(results) {
       const materials = results.slice(0, results.length - 1);
       const geometries = results[results.length - 1];
@@ -30092,14 +30421,14 @@ class GLTFParser {
         if (Object.keys(mesh.geometry.morphAttributes).length > 0) {
           updateMorphTargets(mesh, meshDef);
         }
-        mesh.name = parser2.createUniqueName(meshDef.name || "mesh_" + meshIndex);
+        mesh.name = parser.createUniqueName(meshDef.name || "mesh_" + meshIndex);
         assignExtrasToUserData(mesh, meshDef);
         if (primitive.extensions) addUnknownExtensionsToUserData(extensions, mesh, primitive);
-        parser2.assignFinalMaterial(mesh);
+        parser.assignFinalMaterial(mesh);
         meshes.push(mesh);
       }
       for (let i = 0, il = meshes.length; i < il; i++) {
-        parser2.associations.set(meshes[i], {
+        parser.associations.set(meshes[i], {
           meshes: meshIndex,
           primitives: i
         });
@@ -30110,7 +30439,7 @@ class GLTFParser {
       }
       const group = new Group();
       if (meshDef.extensions) addUnknownExtensionsToUserData(extensions, group, meshDef);
-      parser2.associations.set(group, { meshes: meshIndex });
+      parser.associations.set(group, { meshes: meshIndex });
       for (let i = 0, il = meshes.length; i < il; i++) {
         group.add(meshes[i]);
       }
@@ -30189,7 +30518,7 @@ class GLTFParser {
    */
   loadAnimation(animationIndex) {
     const json = this.json;
-    const parser2 = this;
+    const parser = this;
     const animationDef = json.animations[animationIndex];
     const animationName = animationDef.name ? animationDef.name : "animation_" + animationIndex;
     const pendingNodes = [];
@@ -30234,7 +30563,7 @@ class GLTFParser {
         if (node.updateMatrix) {
           node.updateMatrix();
         }
-        const createdTracks = parser2._createAnimationTracks(node, inputAccessor, outputAccessor, sampler, target);
+        const createdTracks = parser._createAnimationTracks(node, inputAccessor, outputAccessor, sampler, target);
         if (createdTracks) {
           for (let k = 0; k < createdTracks.length; k++) {
             tracks.push(createdTracks[k]);
@@ -30246,11 +30575,11 @@ class GLTFParser {
   }
   createNodeMesh(nodeIndex) {
     const json = this.json;
-    const parser2 = this;
+    const parser = this;
     const nodeDef = json.nodes[nodeIndex];
     if (nodeDef.mesh === void 0) return null;
-    return parser2.getDependency("mesh", nodeDef.mesh).then(function(mesh) {
-      const node = parser2._getNodeRef(parser2.meshCache, nodeDef.mesh, mesh);
+    return parser.getDependency("mesh", nodeDef.mesh).then(function(mesh) {
+      const node = parser._getNodeRef(parser.meshCache, nodeDef.mesh, mesh);
       if (nodeDef.weights !== void 0) {
         node.traverse(function(o) {
           if (!o.isMesh) return;
@@ -30271,15 +30600,15 @@ class GLTFParser {
    */
   loadNode(nodeIndex) {
     const json = this.json;
-    const parser2 = this;
+    const parser = this;
     const nodeDef = json.nodes[nodeIndex];
-    const nodePending = parser2._loadNodeShallow(nodeIndex);
+    const nodePending = parser._loadNodeShallow(nodeIndex);
     const childPending = [];
     const childrenDef = nodeDef.children || [];
     for (let i = 0, il = childrenDef.length; i < il; i++) {
-      childPending.push(parser2.getDependency("node", childrenDef[i]));
+      childPending.push(parser.getDependency("node", childrenDef[i]));
     }
-    const skeletonPending = nodeDef.skin === void 0 ? Promise.resolve(null) : parser2.getDependency("skin", nodeDef.skin);
+    const skeletonPending = nodeDef.skin === void 0 ? Promise.resolve(null) : parser.getDependency("skin", nodeDef.skin);
     return Promise.all([
       nodePending,
       Promise.all(childPending),
@@ -30305,25 +30634,25 @@ class GLTFParser {
   _loadNodeShallow(nodeIndex) {
     const json = this.json;
     const extensions = this.extensions;
-    const parser2 = this;
+    const parser = this;
     if (this.nodeCache[nodeIndex] !== void 0) {
       return this.nodeCache[nodeIndex];
     }
     const nodeDef = json.nodes[nodeIndex];
-    const nodeName = nodeDef.name ? parser2.createUniqueName(nodeDef.name) : "";
+    const nodeName = nodeDef.name ? parser.createUniqueName(nodeDef.name) : "";
     const pending = [];
-    const meshPromise = parser2._invokeOne(function(ext) {
+    const meshPromise = parser._invokeOne(function(ext) {
       return ext.createNodeMesh && ext.createNodeMesh(nodeIndex);
     });
     if (meshPromise) {
       pending.push(meshPromise);
     }
     if (nodeDef.camera !== void 0) {
-      pending.push(parser2.getDependency("camera", nodeDef.camera).then(function(camera2) {
-        return parser2._getNodeRef(parser2.cameraCache, nodeDef.camera, camera2);
+      pending.push(parser.getDependency("camera", nodeDef.camera).then(function(camera2) {
+        return parser._getNodeRef(parser.cameraCache, nodeDef.camera, camera2);
       }));
     }
-    parser2._invokeAll(function(ext) {
+    parser._invokeAll(function(ext) {
       return ext.createNodeAttachment && ext.createNodeAttachment(nodeIndex);
     }).forEach(function(promise) {
       pending.push(promise);
@@ -30365,10 +30694,10 @@ class GLTFParser {
           node.scale.fromArray(nodeDef.scale);
         }
       }
-      if (!parser2.associations.has(node)) {
-        parser2.associations.set(node, {});
+      if (!parser.associations.has(node)) {
+        parser.associations.set(node, {});
       }
-      parser2.associations.get(node).nodes = nodeIndex;
+      parser.associations.get(node).nodes = nodeIndex;
       return node;
     });
     return this.nodeCache[nodeIndex];
@@ -30383,15 +30712,15 @@ class GLTFParser {
   loadScene(sceneIndex) {
     const extensions = this.extensions;
     const sceneDef = this.json.scenes[sceneIndex];
-    const parser2 = this;
+    const parser = this;
     const scene2 = new Group();
-    if (sceneDef.name) scene2.name = parser2.createUniqueName(sceneDef.name);
+    if (sceneDef.name) scene2.name = parser.createUniqueName(sceneDef.name);
     assignExtrasToUserData(scene2, sceneDef);
     if (sceneDef.extensions) addUnknownExtensionsToUserData(extensions, scene2, sceneDef);
     const nodeIds = sceneDef.nodes || [];
     const pending = [];
     for (let i = 0, il = nodeIds.length; i < il; i++) {
-      pending.push(parser2.getDependency("node", nodeIds[i]));
+      pending.push(parser.getDependency("node", nodeIds[i]));
     }
     return Promise.all(pending).then(function(nodes) {
       for (let i = 0, il = nodes.length; i < il; i++) {
@@ -30399,20 +30728,20 @@ class GLTFParser {
       }
       const reduceAssociations = (node) => {
         const reducedAssociations = /* @__PURE__ */ new Map();
-        for (const [key, value2] of parser2.associations) {
+        for (const [key, value] of parser.associations) {
           if (key instanceof Material || key instanceof Texture) {
-            reducedAssociations.set(key, value2);
+            reducedAssociations.set(key, value);
           }
         }
         node.traverse((node2) => {
-          const mappings = parser2.associations.get(node2);
+          const mappings = parser.associations.get(node2);
           if (mappings != null) {
             reducedAssociations.set(node2, mappings);
           }
         });
         return reducedAssociations;
       };
-      parser2.associations = reduceAssociations(scene2);
+      parser.associations = reduceAssociations(scene2);
       return scene2;
     });
   }
@@ -30490,11 +30819,11 @@ class GLTFParser {
     track.createInterpolant.isInterpolantFactoryMethodGLTFCubicSpline = true;
   }
 }
-function computeBounds(geometry, primitiveDef, parser2) {
+function computeBounds(geometry, primitiveDef, parser) {
   const attributes = primitiveDef.attributes;
   const box = new Box3();
   if (attributes.POSITION !== void 0) {
-    const accessor = parser2.json.accessors[attributes.POSITION];
+    const accessor = parser.json.accessors[attributes.POSITION];
     const min = accessor.min;
     const max = accessor.max;
     if (min !== void 0 && max !== void 0) {
@@ -30521,7 +30850,7 @@ function computeBounds(geometry, primitiveDef, parser2) {
     for (let i = 0, il = targets.length; i < il; i++) {
       const target = targets[i];
       if (target.POSITION !== void 0) {
-        const accessor = parser2.json.accessors[target.POSITION];
+        const accessor = parser.json.accessors[target.POSITION];
         const min = accessor.min;
         const max = accessor.max;
         if (min !== void 0 && max !== void 0) {
@@ -30546,11 +30875,11 @@ function computeBounds(geometry, primitiveDef, parser2) {
   sphere.radius = box.min.distanceTo(box.max) / 2;
   geometry.boundingSphere = sphere;
 }
-function addPrimitiveAttributes(geometry, primitiveDef, parser2) {
+function addPrimitiveAttributes(geometry, primitiveDef, parser) {
   const attributes = primitiveDef.attributes;
   const pending = [];
   function assignAttributeAccessor(accessorIndex, attributeName) {
-    return parser2.getDependency("accessor", accessorIndex).then(function(accessor) {
+    return parser.getDependency("accessor", accessorIndex).then(function(accessor) {
       geometry.setAttribute(attributeName, accessor);
     });
   }
@@ -30560,7 +30889,7 @@ function addPrimitiveAttributes(geometry, primitiveDef, parser2) {
     pending.push(assignAttributeAccessor(attributes[gltfAttributeName], threeAttributeName));
   }
   if (primitiveDef.indices !== void 0 && !geometry.index) {
-    const accessor = parser2.getDependency("accessor", primitiveDef.indices).then(function(accessor2) {
+    const accessor = parser.getDependency("accessor", primitiveDef.indices).then(function(accessor2) {
       geometry.setIndex(accessor2);
     });
     pending.push(accessor);
@@ -30569,9 +30898,9 @@ function addPrimitiveAttributes(geometry, primitiveDef, parser2) {
     console.warn(`THREE.GLTFLoader: Converting vertex colors from "srgb-linear" to "${ColorManagement.workingColorSpace}" not supported.`);
   }
   assignExtrasToUserData(geometry, primitiveDef);
-  computeBounds(geometry, primitiveDef, parser2);
+  computeBounds(geometry, primitiveDef, parser);
   return Promise.all(pending).then(function() {
-    return primitiveDef.targets !== void 0 ? addMorphTargets(geometry, primitiveDef.targets, parser2) : geometry;
+    return primitiveDef.targets !== void 0 ? addMorphTargets(geometry, primitiveDef.targets, parser) : geometry;
   });
 }
 const _changeEvent = { type: "change" };
@@ -31482,13 +31811,13 @@ class DRACOLoader extends Loader {
    * @param {onProgressCallback} onProgress - Executed while the loading is in progress.
    * @param {onErrorCallback} onError - Executed when errors occur.
    */
-  load(url2, onLoad, onProgress, onError) {
+  load(url, onLoad, onProgress, onError) {
     const loader = new FileLoader(this.manager);
     loader.setPath(this.path);
     loader.setResponseType("arraybuffer");
     loader.setRequestHeader(this.requestHeader);
     loader.setWithCredentials(this.withCredentials);
-    loader.load(url2, (buffer) => {
+    loader.load(url, (buffer) => {
       this.parse(buffer, onLoad, onError);
     }, onProgress, onError);
   }
@@ -31575,13 +31904,13 @@ class DRACOLoader extends Loader {
       attribute.setXYZ(i, _color2.r, _color2.g, _color2.b);
     }
   }
-  _loadLibrary(url2, responseType) {
+  _loadLibrary(url, responseType) {
     const loader = new FileLoader(this.manager);
     loader.setPath(this.decoderPath);
     loader.setResponseType(responseType);
     loader.setWithCredentials(this.withCredentials);
     return new Promise((resolve, reject) => {
-      loader.load(url2, resolve, void 0, reject);
+      loader.load(url, resolve, void 0, reject);
     });
   }
   preload() {
@@ -31749,9 +32078,9 @@ function DRACOWorker() {
   function decodeIndex(draco, decoder, dracoGeometry) {
     const numFaces = dracoGeometry.num_faces();
     const numIndices = numFaces * 3;
-    const byteLength2 = numIndices * 4;
-    const ptr = draco._malloc(byteLength2);
-    decoder.GetTrianglesUInt32Array(dracoGeometry, byteLength2, ptr);
+    const byteLength = numIndices * 4;
+    const ptr = draco._malloc(byteLength);
+    decoder.GetTrianglesUInt32Array(dracoGeometry, byteLength, ptr);
     const index = new Uint32Array(draco.HEAPF32.buffer, ptr, numIndices).slice();
     draco._free(ptr);
     return { array: index, itemSize: 1 };
@@ -31760,10 +32089,10 @@ function DRACOWorker() {
     const numComponents = attribute.num_components();
     const numPoints = dracoGeometry.num_points();
     const numValues = numPoints * numComponents;
-    const byteLength2 = numValues * attributeType.BYTES_PER_ELEMENT;
+    const byteLength = numValues * attributeType.BYTES_PER_ELEMENT;
     const dataType = getDracoDataType(draco, attributeType);
-    const ptr = draco._malloc(byteLength2);
-    decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, dataType, byteLength2, ptr);
+    const ptr = draco._malloc(byteLength);
+    decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, dataType, byteLength, ptr);
     const array = new attributeType(draco.HEAPF32.buffer, ptr, numValues).slice();
     draco._free(ptr);
     return {
@@ -31795,7 +32124,9 @@ async function populateRobotDropdown() {
   const robotFileSelect = document.getElementById("robotFileSelect");
   async function fetchAvailableRobots() {
     try {
-      const response = await fetch("/get-available-robots");
+      const response = await fetch(
+        `${BACKEND_BASE_URL}/get-available-robots`
+      );
       const data = await response.json();
       return data.robots;
     } catch (error) {
@@ -31828,10 +32159,17 @@ let statsDisplay;
 let frameCount = 0;
 let lastTime = performance.now();
 let robotObject = null;
-let robotAxes = null;
 let animationStarted = false;
+let detectedObjectsGroup = null;
+let pendingDetectedObjects = null;
 let maxFPS = 30;
 let interval = 1 / maxFPS;
+const robotScaleMatrix = new Matrix4().makeScale(1e3, 1e3, 1e3);
+const robotFinalMatrix = new Matrix4();
+const detectionCylinderRadius = 150;
+const detectionCylinderHeight = 400;
+const detectionLabelOffset = 250;
+const detectionScaleFactor = 1e3;
 function updateStats() {
   const currentTime = performance.now();
   frameCount++;
@@ -31848,65 +32186,195 @@ function updateStats() {
     statsDisplay.textContent = `Verts: ${numVerts} | FPS: ${fps}`;
   }
 }
-function createRobotAxes() {
-  const axesGroup = new Group();
-  const axisLength = 500;
-  const positions = new Float32Array([
-    // X-axis (red)
-    0,
-    0,
-    0,
-    axisLength,
-    0,
-    0,
-    // Y-axis (green)
-    0,
-    0,
-    0,
-    0,
-    axisLength,
-    0,
-    // Z-axis (blue)
-    0,
-    0,
-    0,
-    0,
-    0,
-    axisLength
-  ]);
-  const colors = new Float32Array([
-    // X-axis (red)
-    1,
-    0,
-    0,
-    1,
-    0,
-    0,
-    // Y-axis (green)
-    0,
-    1,
-    0,
-    0,
-    1,
-    0,
-    // Z-axis (blue)
-    0,
-    0,
-    1,
-    0,
-    0,
-    1
-  ]);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  const material = new LineBasicMaterial({
-    vertexColors: true,
-    linewidth: 3
+function disposeObject(object) {
+  object.traverse((node) => {
+    if (node.geometry) {
+      node.geometry.dispose();
+    }
+    if (node.material) {
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (material.map) {
+          material.map.dispose();
+        }
+        material.dispose();
+      }
+    }
   });
-  const axes = new LineSegments(geometry, material);
-  axesGroup.add(axes);
-  return axesGroup;
+}
+function clearDetectedObjectsGroup() {
+  if (!detectedObjectsGroup) {
+    return;
+  }
+  while (detectedObjectsGroup.children.length > 0) {
+    const child = detectedObjectsGroup.children.pop();
+    if (child) {
+      detectedObjectsGroup.remove(child);
+      disposeObject(child);
+    }
+  }
+}
+function getHueFromClassIdentifier(classIdentifier) {
+  if (typeof classIdentifier === "number" && Number.isFinite(classIdentifier)) {
+    const hueDegrees = classIdentifier * 137.5 % 360;
+    return hueDegrees / 360;
+  }
+  const key = String(classIdentifier ?? "detection");
+  let hash = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) % 360;
+  }
+  return hash % 360 / 360;
+}
+function clampConfidence(confidence) {
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
+    return null;
+  }
+  if (confidence < 0) {
+    return 0;
+  }
+  if (confidence > 1) {
+    return 1;
+  }
+  return confidence;
+}
+function normalizeDetectionPosition(position) {
+  if (!Array.isArray(position) || position.length !== 3) {
+    return null;
+  }
+  const numericPosition = position.map((value) => Number(value));
+  if (numericPosition.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+  const fieldCenterX = 8.774125;
+  const fieldCenterZ = 4.025901;
+  return new Vector3(
+    (numericPosition[0] - fieldCenterX) * detectionScaleFactor,
+    (numericPosition[2] - fieldCenterZ) * detectionScaleFactor,
+    numericPosition[1] * detectionScaleFactor
+  );
+}
+function createDetectionMaterial(classIdentifier, normalizedConfidence) {
+  const hue = getHueFromClassIdentifier(classIdentifier);
+  const saturation = 0.7;
+  const baseLightness = 0.45;
+  const lightnessRange = 0.2;
+  const confidenceValue = normalizedConfidence === null ? 0.5 : normalizedConfidence;
+  const materialColor = new Color();
+  materialColor.setHSL(
+    hue,
+    saturation,
+    baseLightness + lightnessRange * (confidenceValue - 0.5)
+  );
+  const opacityBase = 0.35;
+  const opacityRange = 0.35;
+  const materialOpacity = opacityBase + opacityRange * confidenceValue;
+  return new MeshStandardMaterial({
+    color: materialColor,
+    transparent: true,
+    opacity: materialOpacity,
+    depthWrite: false
+  });
+}
+function createDetectionCylinderMesh(classIdentifier, normalizedConfidence) {
+  const geometry = new CylinderGeometry(
+    detectionCylinderRadius,
+    detectionCylinderRadius,
+    detectionCylinderHeight,
+    28
+  );
+  const material = createDetectionMaterial(
+    classIdentifier,
+    normalizedConfidence
+  );
+  const cylinder = new Mesh(geometry, material);
+  cylinder.position.y = detectionCylinderHeight / 2;
+  cylinder.castShadow = false;
+  cylinder.receiveShadow = false;
+  cylinder.excludeFromShadowToggle = true;
+  return cylinder;
+}
+function buildDetectionLabelText(detection, normalizedConfidence) {
+  const classIdentifier = detection.class_name ?? detection.class_id ?? "Detection";
+  const classLabel = String(classIdentifier);
+  if (normalizedConfidence === null) {
+    return classLabel;
+  }
+  const confidencePercent = Math.round(normalizedConfidence * 100);
+  return `${classLabel} ${confidencePercent}%`;
+}
+function createDetectionLabelSprite(labelText) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(20, 20, 20, 0.8)";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#ffffff";
+  context.font = "bold 64px Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(labelText, canvas.width / 2, canvas.height / 2);
+  const texture = new CanvasTexture(canvas);
+  const material = new SpriteMaterial({ map: texture, transparent: true });
+  const sprite = new Sprite(material);
+  const scaleFactor = 0.4;
+  sprite.scale.set(
+    canvas.width * scaleFactor,
+    canvas.height * scaleFactor,
+    1
+  );
+  sprite.center.set(0.5, 0);
+  sprite.renderOrder = 1e3;
+  return sprite;
+}
+function createDetectionGroup(detection) {
+  if (!detection || typeof detection !== "object") {
+    return null;
+  }
+  const positionVector = normalizeDetectionPosition(detection.position_3d);
+  if (!positionVector) {
+    return null;
+  }
+  const normalizedConfidence = clampConfidence(detection.confidence);
+  const classIdentifier = detection.class_id ?? detection.class_name ?? "Detection";
+  const detectionGroup = new Group();
+  detectionGroup.position.copy(positionVector);
+  const cylinder = createDetectionCylinderMesh(
+    classIdentifier,
+    normalizedConfidence
+  );
+  detectionGroup.add(cylinder);
+  const labelText = buildDetectionLabelText(detection, normalizedConfidence);
+  const labelSprite = createDetectionLabelSprite(labelText);
+  if (labelSprite) {
+    labelSprite.position.y = detectionCylinderHeight + detectionLabelOffset;
+    detectionGroup.add(labelSprite);
+  }
+  return detectionGroup;
+}
+function renderDetectedObjects(detections) {
+  if (!detectedObjectsGroup) {
+    return;
+  }
+  clearDetectedObjectsGroup();
+  if (!Array.isArray(detections)) {
+    return;
+  }
+  for (const detection of detections) {
+    const detectionGroup = createDetectionGroup(detection);
+    if (detectionGroup) {
+      detectedObjectsGroup.add(detectionGroup);
+    }
+  }
+}
+function updateDetectedObjects(detections) {
+  pendingDetectedObjects = detections;
+  renderDetectedObjects(detections);
 }
 async function init3DView(modelUrl) {
   const container = document.getElementById("view-3d");
@@ -31920,26 +32388,51 @@ async function init3DView(modelUrl) {
   const scale = 40;
   await populateRobotDropdown();
   if (scene) {
+    clearDetectedObjectsGroup();
     while (scene.children.length > 0) {
       const child = scene.children[0];
       scene.remove(child);
-      if (child.geometry) {
-        child.geometry.dispose();
-      }
-      if (child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach((material) => material.dispose());
-        } else {
-          child.material.dispose();
+      child.traverse((node) => {
+        if (node.geometry) {
+          node.geometry.dispose();
         }
-      }
+        if (node.material) {
+          const materials = Array.isArray(node.material) ? node.material : [node.material];
+          for (const m of materials) {
+            for (const key in m) {
+              const val = m[key];
+              if (val && val.isTexture) {
+                val.dispose();
+              }
+            }
+            m.dispose();
+          }
+        }
+      });
     }
     scene.clear();
     scene = null;
+    detectedObjectsGroup = null;
+    if (renderer) {
+      if (renderer.forceContextLoss) {
+        renderer.forceContextLoss();
+      }
+      renderer.dispose();
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      renderer = null;
+    }
   }
   scene = new Scene();
+  detectedObjectsGroup = new Group();
+  detectedObjectsGroup.excludeFromShadowToggle = true;
+  scene.add(detectedObjectsGroup);
+  if (pendingDetectedObjects) {
+    renderDetectedObjects(pendingDetectedObjects);
+  }
   const dracoLoader = new DRACOLoader();
-  dracoLoader.setDecoderPath("/draco/");
+  dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/`);
   scene.background = new Color(2236962);
   function loadRobot(robotFile) {
     console.log("Loading robot:", robotFile);
@@ -31947,37 +32440,35 @@ async function init3DView(modelUrl) {
       if (robotObject) {
         scene.remove(robotObject);
       }
-      if (robotAxes) {
-        scene.remove(robotAxes);
-        robotAxes = null;
-      }
       const robotLoader = new GLTFLoader();
       robotLoader.setDRACOLoader(dracoLoader);
-      robotLoader.load("/get-robot-file/" + robotFile, (gltf) => {
-        robotObject = gltf.scene;
-        robotObject.scale.set(1e3, 1e3, 1e3);
-        robotObject.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            child.geometry.computeVertexNormals();
-            if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach((material) => {
-                  material.metalness = 0;
-                  material.roughness = 1;
-                });
-              } else {
-                child.material.metalness = 0;
-                child.material.roughness = 1;
+      robotLoader.load(
+        `${BACKEND_BASE_URL}/get-robot-file/${robotFile}`,
+        (gltf) => {
+          robotObject = gltf.scene;
+          robotObject.scale.set(1e3, 1e3, 1e3);
+          robotObject.traverse((child) => {
+            if (child.isMesh) {
+              child.castShadow = false;
+              child.receiveShadow = false;
+              child.excludeFromShadowToggle = true;
+              child.geometry.computeVertexNormals();
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  for (const material of child.material) {
+                    material.metalness = 0;
+                    material.roughness = 1;
+                  }
+                } else {
+                  child.material.metalness = 0;
+                  child.material.roughness = 1;
+                }
               }
             }
-          }
-        });
-        scene.add(robotObject);
-        robotAxes = createRobotAxes();
-        scene.add(robotAxes);
-      });
+          });
+          scene.add(robotObject);
+        }
+      );
     } catch (error) {
       console.error("Error loading robot:", error);
     }
@@ -31997,14 +32488,26 @@ async function init3DView(modelUrl) {
     4e4
   );
   camera.position.set(100 * scale, 100 * scale, 100 * scale);
-  renderer = new WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer = new WebGLRenderer({
+    antialias: true,
+    powerPreference: "high-performance"
+  });
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
   renderer.domElement.style.width = "100%";
   renderer.domElement.style.height = "100%";
   renderer.domElement.style.display = "block";
-  renderer.domElement.classList.add("absolute", "top-0", "left-0", "w-full", "h-full", "rounded-inherit", "-z-10", "block");
+  renderer.domElement.classList.add(
+    "absolute",
+    "top-0",
+    "left-0",
+    "w-full",
+    "h-full",
+    "rounded-inherit",
+    "-z-10",
+    "block"
+  );
   container.appendChild(renderer.domElement);
   new OrbitControls(camera, renderer.domElement);
   scene.add(new AmbientLight(16777215, 0.2));
@@ -32013,8 +32516,8 @@ async function init3DView(modelUrl) {
   directionalLight.castShadow = true;
   directionalLight.shadow.bias = -5e-4;
   directionalLight.shadow.normalBias = -5e-4;
-  directionalLight.shadow.mapSize.width = 1024 * 5;
-  directionalLight.shadow.mapSize.height = 1024 * 5;
+  directionalLight.shadow.mapSize.width = 1024 * 3;
+  directionalLight.shadow.mapSize.height = 1024 * 3;
   directionalLight.shadow.camera.left = -300 * scale;
   directionalLight.shadow.camera.right = 300 * scale;
   directionalLight.shadow.camera.top = 150 * scale;
@@ -32036,11 +32539,14 @@ async function init3DView(modelUrl) {
         }
       });
       scene.add(model);
+      renderer.shadowMap.autoUpdate = false;
+      renderer.shadowMap.needsUpdate = true;
       startAnimationLoop();
     },
     void 0,
     (error) => {
       console.error("Error loading the model:", error);
+      startAnimationLoop();
     }
   );
   const gamePiecePath = modelUrl.split("/").slice(0, -2).join("/") + "/game_pieces/" + modelUrl.split("/").pop().slice(0, 7) + "-GP.glb";
@@ -32056,68 +32562,94 @@ async function init3DView(modelUrl) {
           child.castShadow = true;
           child.receiveShadow = true;
           child.geometry.computeVertexNormals();
+          child.visible = gamePiecesVisible;
           gamePieces.push(child);
         }
       });
       scene.add(model);
-      startAnimationLoop();
     },
     void 0,
     (error) => {
       console.error("Error loading the model:", error);
     }
   );
-  document.getElementById("toggleGamePiecesBtn").addEventListener("click", () => {
-    gamePiecesVisible = !gamePiecesVisible;
-    gamePieces.forEach((gp) => {
-      gp.visible = gamePiecesVisible;
+  if (!globalThis.__eev_gamePiecesToggleAttached) {
+    document.getElementById("toggleGamePiecesBtn").addEventListener("click", () => {
+      gamePiecesVisible = !gamePiecesVisible;
+      for (const gp of gamePieces) {
+        gp.visible = gamePiecesVisible;
+      }
     });
-  });
+    globalThis.__eev_gamePiecesToggleAttached = true;
+  }
   let clock = new Clock();
   let delta = 0;
   function startAnimationLoop() {
-    if (animationStarted) return;
-    animationStarted = true;
-    animate();
-  }
-  function animate() {
-    requestAnimationFrame(animate);
-    delta += clock.getDelta();
-    if (delta >= interval) {
-      renderer.render(scene, camera);
-      updateStats();
-      delta = delta % interval;
+    const container2 = document.getElementById("view-3d");
+    const isViewVisible = container2 && !container2.classList.contains("hidden");
+    if (animationStarted && isViewVisible) return;
+    if (isViewVisible) {
+      animationStarted = true;
+      animate();
     }
   }
-  window.addEventListener("resize", () => {
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-    renderer.setSize(width, height);
-  });
-  document.getElementById("toggleShadowBtn").addEventListener("click", () => {
-    shadowsEnabled = !shadowsEnabled;
-    scene.traverse((object) => {
-      if (object.isMesh) {
-        object.castShadow = shadowsEnabled;
-        object.receiveShadow = shadowsEnabled;
+  function animate() {
+    const container2 = document.getElementById("view-3d");
+    const isViewVisible = container2 && !container2.classList.contains("hidden");
+    if (isViewVisible) {
+      requestAnimationFrame(animate);
+      delta += clock.getDelta();
+      if (delta >= interval) {
+        renderer.render(scene, camera);
+        updateStats();
+        delta = delta % interval;
+      }
+    } else {
+      animationStarted = false;
+    }
+  }
+  if (!globalThis.__eev_resizeAttached) {
+    const onResize = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    };
+    globalThis.addEventListener("resize", onResize);
+    globalThis.__eev_resizeAttached = true;
+  }
+  if (!globalThis.__eev_shadowToggleAttached) {
+    document.getElementById("toggleShadowBtn").addEventListener("click", () => {
+      shadowsEnabled = !shadowsEnabled;
+      scene.traverse((object) => {
+        if (object.isMesh && !object.excludeFromShadowToggle) {
+          object.castShadow = shadowsEnabled;
+          object.receiveShadow = shadowsEnabled;
+        }
+      });
+      directionalLight.castShadow = shadowsEnabled;
+      renderer.shadowMap.enabled = shadowsEnabled;
+      if (shadowsEnabled) {
+        renderer.shadowMap.needsUpdate = true;
       }
     });
-    directionalLight.castShadow = shadowsEnabled;
-    renderer.shadowMap.enabled = shadowsEnabled;
-  });
-  fetch("/frc2025r2.json").then((response) => response.json()).then((json) => {
+    globalThis.__eev_shadowToggleAttached = true;
+  }
+  fetch(`${BACKEND_BASE_URL}/frc2025r2.json`).then((response) => response.json()).then((json) => {
     const textureLoader = new TextureLoader();
-    json.fiducials.forEach((fiducial) => {
+    for (const fiducial of json.fiducials) {
       const tagId = fiducial.id;
       const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
-      const pngPath = `/src/webui/assets/apriltags/${pngName}`;
+      const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
       textureLoader.load(pngPath, (texture) => {
         texture.magFilter = NearestFilter;
         texture.minFilter = NearestFilter;
         texture.generateMipmaps = false;
-        const planeGeometry = new PlaneGeometry(fiducial.size, fiducial.size);
+        const planeGeometry = new PlaneGeometry(
+          fiducial.size,
+          fiducial.size
+        );
         const planeMaterial = new MeshStandardMaterial({
           map: texture
         });
@@ -32153,30 +32685,20 @@ async function init3DView(modelUrl) {
         matrix.extractBasis(new Vector3(), new Vector3(), normal);
         normal.normalize();
         plane.position.add(normal);
-        plane.castShadow = true;
-        plane.receiveShadow = true;
+        plane.castShadow = false;
+        plane.receiveShadow = false;
+        plane.excludeFromShadowToggle = true;
         scene.add(plane);
       });
-    });
+    }
   });
 }
 function updateRobotTransform(transformMatrix) {
   if (robotObject) {
-    const scaleMatrix = new Matrix4();
-    scaleMatrix.makeScale(1e3, 1e3, 1e3);
-    const finalMatrix = new Matrix4();
-    finalMatrix.multiplyMatrices(transformMatrix, scaleMatrix);
+    robotFinalMatrix.multiplyMatrices(transformMatrix, robotScaleMatrix);
     robotObject.matrixAutoUpdate = false;
-    robotObject.matrix.copy(finalMatrix);
+    robotObject.matrix.copy(robotFinalMatrix);
     robotObject.matrixWorldNeedsUpdate = true;
-    if (robotAxes) {
-      robotAxes.matrixAutoUpdate = false;
-      robotAxes.matrix.copy(finalMatrix);
-      robotAxes.matrixWorldNeedsUpdate = true;
-    }
-    if (renderer && scene && camera) {
-      renderer.render(scene, camera);
-    }
   } else {
     console.warn("Robot not initialized yet");
   }
@@ -32242,34 +32764,9 @@ function loadSettings() {
     document.getElementById("maxDistanceInput").value = settings2["ObjectDetectionConstants"]["max_distance"];
   });
 }
-function setupSidebar() {
-  const sidebarItems = document.querySelectorAll(".sidebar li");
-  const views = document.querySelectorAll("[id^='view-']");
-  sidebarItems.forEach((item) => {
-    item.addEventListener("click", () => {
-      sidebarItems.forEach((i) => i.classList.remove("active"));
-      item.classList.add("active");
-      views.forEach((view) => {
-        view.classList.add("hidden");
-      });
-      const targetViewId = item.getAttribute("data-view");
-      const targetView = document.getElementById(targetViewId);
-      if (targetView) {
-        targetView.classList.remove("hidden");
-        const controls = document.querySelectorAll("#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn");
-        controls.forEach((el) => {
-          el.classList.toggle("hidden", targetView.id !== "view-3d");
-        });
-        if (targetView.id === "view-3d") {
-          init3DView("./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb");
-        }
-        if (targetView.id === "view-settings") {
-          loadSettings();
-        }
-      }
-    });
-  });
-}
+let cameraFeedsPaused = false;
+let cameraListPollIntervalId = null;
+let cameraFetchFn = null;
 function setupCameraFeedHandlers() {
   const cameraList = document.getElementById("cameraList");
   const noCamerasMessage = document.getElementById("noCamerasMessage");
@@ -32277,7 +32774,9 @@ function setupCameraFeedHandlers() {
   if (feedControls) {
     feedControls.style.display = "none";
   }
-  const addFeedBackgroundDiv = document.getElementById("addFeedBackgroundDiv");
+  const addFeedBackgroundDiv = document.getElementById(
+    "addFeedBackgroundDiv"
+  );
   if (addFeedBackgroundDiv) {
     addFeedBackgroundDiv.remove();
   }
@@ -32300,11 +32799,11 @@ function setupCameraFeedHandlers() {
   function renderCameras(cameraNames) {
     cameraList.innerHTML = "";
     if (cameraNames.length === 0) {
-      noCamerasMessage.style.display = "block";
+      if (noCamerasMessage) noCamerasMessage.style.display = "block";
       updateGridLayout();
       return;
     }
-    noCamerasMessage.style.display = "none";
+    if (noCamerasMessage) noCamerasMessage.style.display = "none";
     cameraNames.forEach((name) => {
       const cameraBox = document.createElement("div");
       cameraBox.className = "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
@@ -32315,27 +32814,1606 @@ function setupCameraFeedHandlers() {
       cameraBox.appendChild(cameraNameLabel);
       const cameraView = document.createElement("img");
       cameraView.className = "camera-view";
-      cameraView.src = `/feed/${name.replace(/ /g, "_")}`;
+      const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+      if (cameraFeedsPaused) {
+        cameraView.dataset.pausedSrc = feedSrc;
+        cameraView.src = "";
+      } else {
+        cameraView.src = feedSrc;
+      }
       cameraBox.appendChild(cameraView);
       cameraList.appendChild(cameraBox);
     });
     updateGridLayout();
   }
   function fetchAndUpdateCameras() {
-    fetch("/get-available-cameras", {
+    fetch(`${BACKEND_BASE_URL}/get-available-cameras`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json"
       }
     }).then((response) => response.json()).then((data) => {
-      const cameraNames = Object.keys(data);
+      const cameraNames = Object.keys(data || {});
       renderCameras(cameraNames);
     }).catch((error) => {
       console.error("Error fetching cameras:", error);
     });
   }
+  cameraFetchFn = fetchAndUpdateCameras;
   fetchAndUpdateCameras();
-  setInterval(fetchAndUpdateCameras, 5e3);
+  if (cameraListPollIntervalId === null) {
+    cameraListPollIntervalId = setInterval(fetchAndUpdateCameras, 5e3);
+  }
+}
+function pauseCameraFeeds() {
+  cameraFeedsPaused = true;
+  if (cameraListPollIntervalId !== null) {
+    clearInterval(cameraListPollIntervalId);
+    cameraListPollIntervalId = null;
+  }
+  const imageElements = document.querySelectorAll("img.camera-view");
+  imageElements.forEach((img) => {
+    if ((img == null ? void 0 : img.src) && img.src !== "") {
+      img.dataset.pausedSrc = img.src;
+      img.src = "";
+    }
+  });
+}
+function resumeCameraFeeds() {
+  cameraFeedsPaused = false;
+  const imageElements = document.querySelectorAll("img.camera-view");
+  imageElements.forEach((img) => {
+    var _a, _b;
+    if ((_a = img.dataset) == null ? void 0 : _a.pausedSrc) {
+      img.src = img.dataset.pausedSrc;
+      delete img.dataset.pausedSrc;
+    } else if (img && (!img.src || img.src.trim() === "")) {
+      const container = img.closest("[data-camera-name]");
+      if ((_b = container == null ? void 0 : container.dataset) == null ? void 0 : _b.cameraName) {
+        const name = container.dataset.cameraName;
+        img.src = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+      }
+    }
+  });
+  if (cameraListPollIntervalId === null && typeof cameraFetchFn === "function") {
+    cameraFetchFn();
+    cameraListPollIntervalId = setInterval(cameraFetchFn, 5e3);
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(
+    /[&<>"']/g,
+    (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[m]
+  );
+}
+function uid(prefix = "") {
+  return `${prefix}${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+function getIconSVG(name) {
+  {
+    return '<svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 4a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 10a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2zM7 16a1 1 0 110-2 1 1 0 010 2zm6 0a1 1 0 110-2 1 1 0 010 2z"/></svg>';
+  }
+}
+function parseDropPayload(dataTransfer) {
+  try {
+    const json = dataTransfer.getData("application/pipeline") || dataTransfer.getData("text/plain");
+    if (!json) return null;
+    const parsed = JSON.parse(json);
+    if (parsed && (parsed.id || parsed.instanceId)) return parsed;
+    return null;
+  } catch (error) {
+    console.warn("Failed to parse drop payload:", error);
+    return null;
+  }
+}
+let descriptionPopup = null;
+function createDescriptionPopup() {
+  if (descriptionPopup) return;
+  descriptionPopup = document.createElement("div");
+  descriptionPopup.id = "description-popup";
+  descriptionPopup.className = "fixed z-50 bg-[#232323] border-2 border-[#f9c845] rounded-lg p-3 shadow-lg max-w-xs pointer-events-none opacity-0 transition-opacity duration-200";
+  descriptionPopup.style.fontSize = "0.875rem";
+  descriptionPopup.style.lineHeight = "1.25rem";
+  descriptionPopup.style.boxShadow = "4px 4px 12px rgba(0,0,0,0.45), 8px 8px 20px rgba(0,0,0,0.25), 2px 2px 6px rgba(249,196,69,0.06)";
+  document.body.appendChild(descriptionPopup);
+}
+function showDescriptionPopup(name, description, event) {
+  if (!descriptionPopup) createDescriptionPopup();
+  descriptionPopup.innerHTML = `
+        <div class="text-[#f9c845] font-semibold text-sm mb-2 border-b border-[#404040] pb-2">${escapeHtml(name)}</div>
+        <div class="text-white text-xs">${escapeHtml(description)}</div>
+    `;
+  const mouseX = event.clientX;
+  const mouseY = event.clientY;
+  descriptionPopup.style.left = mouseX + 10 + "px";
+  descriptionPopup.style.top = mouseY + 10 + "px";
+  descriptionPopup.classList.remove("opacity-0");
+  descriptionPopup.classList.add("opacity-100");
+}
+function hideDescriptionPopup() {
+  if (!descriptionPopup) return;
+  descriptionPopup.classList.remove("opacity-100");
+  descriptionPopup.classList.add("opacity-0");
+}
+function addHoverListeners(element, name, description) {
+  element.addEventListener("mouseenter", (e) => {
+    showDescriptionPopup(name, description, e);
+  });
+  element.addEventListener("mousemove", (e) => {
+    if (descriptionPopup == null ? void 0 : descriptionPopup.classList.contains("opacity-100")) {
+      descriptionPopup.style.left = e.clientX + 10 + "px";
+      descriptionPopup.style.top = e.clientY + 10 + "px";
+    }
+  });
+  element.addEventListener("mouseleave", () => {
+    hideDescriptionPopup();
+  });
+}
+function renderOperations(operations2, operationsList2, openOperationSettings2, handleDragStart2) {
+  operationsList2.innerHTML = "";
+  operations2.forEach((op, index) => {
+    const el = document.createElement("div");
+    el.draggable = true;
+    el.className = "bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg mb-2 group";
+    el.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(op.type)}</div>
+          <div>
+            <h3 class="font-medium text-white truncate max-w-[190px]">${escapeHtml(op.name)}</h3>
+            ${index === 0 ? '<p class="text-xs text-gray-500 tracking-wider">Hover for description</p>' : ""}
+          </div>
+          <div class="ml-auto">
+            <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
+              <img src="../../../assets/settings.svg" alt="Settings" class="w-4 h-4 icon-grayscale" />
+            </button>
+          </div>
+        </div>
+      `;
+    el.addEventListener(
+      "dragstart",
+      (e) => handleDragStart2(e, op, null, operations2)
+    );
+    el.addEventListener("dragend", (e) => {
+      if (e.currentTarget instanceof HTMLElement) {
+        e.currentTarget.classList.remove("dragging");
+        e.currentTarget.style.opacity = "";
+      }
+    });
+    addHoverListeners(el, op.name, op.description);
+    const settingsBtn = el.querySelector(".op-settings-btn");
+    if (settingsBtn) {
+      settingsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        openOperationSettings2(op);
+      });
+    }
+    operationsList2.appendChild(el);
+  });
+}
+function renderPipeline(pipeline2, pipelineContainer2, pipelinePlaceholder2, callbacks) {
+  pipelineContainer2.innerHTML = "";
+  if (pipeline2.length === 0) {
+    pipelinePlaceholder2.classList.remove("hidden");
+    callbacks.updateRunButton();
+    return;
+  }
+  pipelinePlaceholder2.classList.add("hidden");
+  pipeline2.forEach((item, index) => {
+    const wrapper = document.createElement("div");
+    wrapper.dataset.instanceId = item.instanceId;
+    wrapper.draggable = true;
+    wrapper.className = "pipeline-item group relative bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg";
+    wrapper.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="text-gray-600">${getIconSVG()}</div>
+          <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(item.type)}</div>
+          <div class="flex-1">
+            <h3 class="font-semibold text-white truncate max-w-[230px]">${escapeHtml(item.name)}</h3>
+            <p class="text-xs text-gray-500 tracking-wider">Hover for description</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
+              <img src="../../../assets/settings.svg" alt="Settings" class="w-4 h-4 icon-grayscale" />
+            </button>
+            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
+          </div>
+        </div>
+      `;
+    wrapper.addEventListener(
+      "dragstart",
+      (e) => callbacks.handleDragStart(e, item, index, pipeline2)
+    );
+    wrapper.addEventListener(
+      "dragend",
+      (e) => callbacks.handleDragEnd(e, pipelineContainer2, pipelinePlaceholder2, pipeline2)
+    );
+    addHoverListeners(wrapper, item.name, item.description);
+    const removeBtn = wrapper.querySelector(".remove-btn");
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      callbacks.removeFromPipeline(item.instanceId);
+    });
+    const opSettingsBtn = wrapper.querySelector(".op-settings-btn");
+    if (opSettingsBtn) {
+      opSettingsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        callbacks.openOperationSettings(item);
+      });
+    }
+    pipelineContainer2.appendChild(wrapper);
+    if (index < pipeline2.length - 1) {
+      const connector = document.createElement("div");
+      connector.className = "flex justify-center py-1";
+      connector.innerHTML = `<div class="w-0.5 h-6 bg-[#f9c845]"></div>`;
+      pipelineContainer2.appendChild(connector);
+    }
+  });
+  callbacks.updateRunButton();
+}
+function createDropIndicator() {
+  const div = document.createElement("div");
+  div.className = "h-1 bg-orange-500 rounded-full my-2 animate-pulse";
+  div.style.pointerEvents = "none";
+  return div;
+}
+function removeDropIndicator() {
+  const dropIndicatorElem2 = document.querySelector(".drop-indicator");
+  if (dropIndicatorElem2 == null ? void 0 : dropIndicatorElem2.parentNode) {
+    dropIndicatorElem2.parentNode.removeChild(dropIndicatorElem2);
+  }
+}
+let draggedItem = null;
+let draggedFromIndex = null;
+let dropIndicatorIndex = null;
+let dropIndicatorElem = null;
+let isProcessingDrop = false;
+let pipelineDragDepth = 0;
+let isDragOverScheduled = false;
+let lastDragOverEvent = null;
+function handleDragStart(e, item, operations2, fromIndex = null) {
+  draggedItem = item;
+  draggedFromIndex = fromIndex;
+  e.dataTransfer.effectAllowed = fromIndex !== null ? "move" : "copy";
+  try {
+    const payload = JSON.stringify({
+      id: item.id,
+      instanceId: item.instanceId || null,
+      fromIndex
+    });
+    e.dataTransfer.setData("application/pipeline", payload);
+    e.dataTransfer.setData("text/plain", payload);
+  } catch (err) {
+    console.warn("Failed to set drag data:", err);
+  }
+  if (e.currentTarget instanceof HTMLElement) {
+    e.currentTarget.classList.add("dragging");
+  }
+}
+function handleDragEnd(e, pipelineContainer2, pipelinePlaceholder2, pipeline2) {
+  if (e.currentTarget instanceof HTMLElement) {
+    e.currentTarget.classList.remove("dragging");
+    e.currentTarget.style.opacity = "";
+  }
+  draggedItem = null;
+  draggedFromIndex = null;
+  removeDropIndicator();
+}
+function handleDragEnterPipeline(e) {
+  e.stopPropagation();
+  pipelineDragDepth += 1;
+  const pipelinePlaceholder2 = document.getElementById("pipelinePlaceholder");
+  if (pipelineDragDepth === 1 && pipelinePlaceholder2) {
+    pipelinePlaceholder2.classList.add("hidden");
+  }
+}
+function handleDragOverPipeline(e, pipeline2, pipelineContainer2) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.target === dropIndicatorElem) return;
+  lastDragOverEvent = e;
+  if (isDragOverScheduled) return;
+  isDragOverScheduled = true;
+  requestAnimationFrame(() => {
+    isDragOverScheduled = false;
+    const evt = lastDragOverEvent;
+    if (!evt) return;
+    evt.dataTransfer.dropEffect = draggedFromIndex !== null ? "move" : "copy";
+    const nonDragged = pipeline2.filter(
+      (it) => !(draggedItem && draggedItem.instanceId === it.instanceId)
+    );
+    const mouseY = evt.clientY;
+    let k = nonDragged.length;
+    for (let i = 0; i < nonDragged.length; i++) {
+      const id = nonDragged[i].instanceId;
+      const el = pipelineContainer2.querySelector(
+        `[data-instance-id="${id}"]`
+      );
+      if (!el) continue;
+      const box = el.getBoundingClientRect();
+      if (mouseY < box.top + box.height / 2) {
+        k = i;
+        break;
+      }
+    }
+    if (dropIndicatorIndex === k) return;
+    dropIndicatorIndex = k;
+    removeDropIndicator();
+    dropIndicatorElem = createDropIndicator();
+    dropIndicatorElem.classList.add("drop-indicator");
+    if (nonDragged.length === 0) {
+      pipelineContainer2.appendChild(dropIndicatorElem);
+    } else if (k < nonDragged.length) {
+      const refId = nonDragged[k].instanceId;
+      const refEl = pipelineContainer2.querySelector(
+        `[data-instance-id="${refId}"]`
+      );
+      if (refEl) {
+        pipelineContainer2.insertBefore(dropIndicatorElem, refEl);
+      } else {
+        pipelineContainer2.appendChild(dropIndicatorElem);
+      }
+    } else {
+      pipelineContainer2.appendChild(dropIndicatorElem);
+    }
+  });
+}
+function handleDragLeavePipeline(e, pipeline2, pipelinePlaceholder2) {
+  e.stopPropagation();
+  pipelineDragDepth = Math.max(0, pipelineDragDepth - 1);
+  if (pipelineDragDepth === 0) {
+    removeDropIndicator();
+    dropIndicatorIndex = null;
+    if (pipeline2.length === 0) {
+      pipelinePlaceholder2.classList.remove("hidden");
+    }
+  }
+}
+function handleDropOnPipeline(e, pipeline2, operations2, pipelineContainer2, pipelinePlaceholder2, callbacks) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (isProcessingDrop) return;
+  isProcessingDrop = true;
+  let localDraggedItem = draggedItem;
+  let localFromIndex = draggedFromIndex;
+  if (!localDraggedItem) {
+    const payload = parseDropPayload(e.dataTransfer);
+    if (!payload) {
+      isProcessingDrop = false;
+      return;
+    }
+    if (payload.instanceId) {
+      const idx = pipeline2.findIndex(
+        (it) => it.instanceId === payload.instanceId
+      );
+      if (idx === -1) {
+        isProcessingDrop = false;
+        return;
+      }
+      localDraggedItem = pipeline2[idx];
+      localFromIndex = idx;
+    } else if (payload.id) {
+      const op = operations2.find((o) => o.id === payload.id);
+      if (!op) {
+        isProcessingDrop = false;
+        return;
+      }
+      localDraggedItem = op;
+      localFromIndex = null;
+    } else {
+      isProcessingDrop = false;
+      return;
+    }
+  }
+  let k = 0;
+  if (dropIndicatorElem && dropIndicatorElem.parentNode === pipelineContainer2) {
+    const children = Array.from(pipelineContainer2.childNodes);
+    for (const node of children) {
+      if (node === dropIndicatorElem) break;
+      if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains("pipeline-item")) {
+        k += 1;
+      }
+    }
+  } else {
+    const nonDragged = pipeline2.filter(
+      (it) => !(localDraggedItem && localDraggedItem.instanceId === it.instanceId)
+    );
+    const mouseY = e.clientY;
+    k = nonDragged.length;
+    for (let i = 0; i < nonDragged.length; i++) {
+      const id = nonDragged[i].instanceId;
+      const el = pipelineContainer2.querySelector(
+        `[data-instance-id="${id}"]`
+      );
+      if (!el) continue;
+      const box = el.getBoundingClientRect();
+      if (mouseY < box.top + box.height / 2) {
+        k = i;
+        break;
+      }
+    }
+  }
+  let finalIndex = k;
+  if (localFromIndex !== null) {
+    if (localFromIndex < finalIndex) {
+      finalIndex -= 1;
+    }
+    if (localFromIndex !== finalIndex) {
+      console.log("[DRAGDROP] Reordering item", {
+        localFromIndex,
+        finalIndex,
+        k,
+        instanceId: localDraggedItem.instanceId,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      const removedItem = pipeline2.splice(localFromIndex, 1)[0];
+      const newPipeline = pipeline2.slice();
+      newPipeline.splice(finalIndex, 0, removedItem);
+      pipeline2.length = 0;
+      pipeline2.push(...newPipeline);
+      callbacks.renderPipeline();
+      setTimeout(() => {
+        var _a;
+        if ((_a = window.pipelineCreator) == null ? void 0 : _a.autoSavePipeline) {
+          window.pipelineCreator.autoSavePipeline();
+        }
+      }, 100);
+    }
+  } else {
+    const newItem = {
+      ...localDraggedItem,
+      instanceId: uid(localDraggedItem.id + "-")
+    };
+    const newPipeline = pipeline2.slice();
+    newPipeline.splice(finalIndex, 0, newItem);
+    pipeline2.length = 0;
+    pipeline2.push(...newPipeline);
+    callbacks.renderPipeline();
+    setTimeout(() => {
+      var _a;
+      if ((_a = window.pipelineCreator) == null ? void 0 : _a.autoSavePipeline) {
+        window.pipelineCreator.autoSavePipeline();
+      }
+    }, 100);
+  }
+  removeDropIndicator();
+  draggedItem = null;
+  draggedFromIndex = null;
+  dropIndicatorIndex = null;
+  if (pipeline2.length === 0) {
+    pipelinePlaceholder2.classList.remove("hidden");
+  }
+  isProcessingDrop = false;
+}
+function handleDragStartWithLogging(event, item, fromIndex = null, collection = null) {
+  console.log("[PIPELINE] Drag start initiated", {
+    draggedElement: event.target,
+    itemInstanceId: (item == null ? void 0 : item.instanceId) || null,
+    fromIndex,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return handleDragStart(event, item, collection, fromIndex);
+}
+function handleDragEndWithLogging(event, pipelineContainer2, pipelinePlaceholder2, pipeline2) {
+  console.log("[PIPELINE] Drag end", {
+    draggedElement: event.target,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return handleDragEnd(
+    event
+  );
+}
+function handleDropOnPipelineWithLogging(event, pipeline2, operations2, pipelineContainer2, pipelinePlaceholder2, callbacks) {
+  const pipelineOrderBefore = pipeline2.map((item) => ({
+    id: item.id,
+    name: item.name,
+    instanceId: item.instanceId
+  }));
+  console.log("[PIPELINE] Drop operation started", {
+    pipelineLengthBefore: pipeline2.length,
+    pipelineOrderBefore,
+    dropTarget: event.target,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  const result = handleDropOnPipeline(
+    event,
+    pipeline2,
+    operations2,
+    pipelineContainer2,
+    pipelinePlaceholder2,
+    callbacks
+  );
+  const pipelineOrderAfter = pipeline2.map((item) => ({
+    id: item.id,
+    name: item.name,
+    instanceId: item.instanceId
+  }));
+  console.log("[PIPELINE] Drop operation completed", {
+    pipelineLengthAfter: pipeline2.length,
+    pipelineOrderAfter,
+    orderChanged: JSON.stringify(pipelineOrderBefore.map((p) => p.instanceId)) !== JSON.stringify(pipelineOrderAfter.map((p) => p.instanceId)),
+    lengthChanged: pipelineOrderBefore.length !== pipelineOrderAfter.length,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return result;
+}
+let operations = [];
+let pipeline = [];
+let isInitialized = false;
+let restartRequiredOperations = /* @__PURE__ */ new Map();
+let cameras = [];
+let selectedCamera = null;
+let pipelines = [];
+let selectedPipeline = null;
+let isAutoSaving = false;
+let pendingAutoSave = false;
+let pipelineArea;
+let pipelineContainer;
+let pipelinePlaceholder;
+let operationsList;
+let runButton;
+let cameraSelect;
+let pipelineSelect;
+let newPipelineButton;
+let deletePipelineButton;
+let restartIndicator;
+async function fetchAvailableOperations() {
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get-available-operations`
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    operations = data.operations.map((op) => ({
+      id: op.name,
+      // Use filename as unique ID
+      name: op.name.replaceAll(".py", "").replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+      // Convert filename to readable name
+      type: op.category.toUpperCase(),
+      // Use category as type, convert to uppercase for consistency
+      description: op.description,
+      path: op.path,
+      configDataPath: op.config_data_path,
+      isSecondary: op.is_secondary
+      // Store the secondary operation flag
+    }));
+    console.log("Loaded operations from server:", operations);
+  } catch (error) {
+    console.error("Failed to fetch operations:", error);
+    operations = [];
+  }
+}
+async function fetchAvailableCameras() {
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get-available-cameras`
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    cameras = Object.entries(data).map(([name, urlSafeName]) => ({
+      name,
+      urlSafeName
+    }));
+    console.log("Loaded cameras from server:", cameras);
+  } catch (error) {
+    console.error("Failed to fetch cameras:", error);
+    cameras = [];
+  }
+}
+function populateCameraDropdown() {
+  cameraSelect.innerHTML = "";
+  if (!Array.isArray(cameras) || cameras.length === 0) {
+    const option = document.createElement("option");
+    option.disabled = true;
+    option.selected = true;
+    option.textContent = "No cameras available";
+    cameraSelect.appendChild(option);
+    selectedCamera = null;
+    return;
+  }
+  for (let index = 0; index < cameras.length; index++) {
+    const camera2 = cameras[index];
+    const option = document.createElement("option");
+    option.value = camera2.urlSafeName;
+    option.textContent = camera2.name;
+    if (index === 0) {
+      option.selected = true;
+      selectedCamera = camera2;
+    }
+    cameraSelect.appendChild(option);
+  }
+}
+async function fetchPipelinesForCamera(cameraName) {
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get-pipeline-names-for-camera/${encodeURIComponent(cameraName)}`
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const pipelineNames = await response.json();
+    pipelines = pipelineNames.map((name) => ({
+      name,
+      displayName: name.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
+      // Convert to readable name
+    }));
+    console.log("Loaded pipelines from server:", pipelines);
+  } catch (error) {
+    console.error("Failed to fetch pipelines:", error);
+    pipelines = [];
+  }
+}
+async function fetchPipelineConfig(cameraName, pipelineName) {
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(cameraName)}/${encodeURIComponent(pipelineName)}`
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const pipelineConfig = await response.json();
+    console.log("Loaded pipeline config from server:", pipelineConfig);
+    return pipelineConfig;
+  } catch (error) {
+    console.error("Failed to fetch pipeline config:", error);
+    return [];
+  }
+}
+function populatePipelineDropdown(selectedPipelineName = null) {
+  pipelineSelect.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.disabled = true;
+  defaultOption.textContent = "Select Pipeline";
+  pipelineSelect.appendChild(defaultOption);
+  let foundSelectedPipeline = false;
+  for (let index = 0; index < pipelines.length; index++) {
+    const pipeline2 = pipelines[index];
+    const option = document.createElement("option");
+    option.value = pipeline2.name;
+    option.textContent = pipeline2.displayName;
+    if (selectedPipelineName === pipeline2.name || selectedPipelineName === null && index === 0) {
+      option.selected = true;
+      selectedPipeline = pipeline2;
+      foundSelectedPipeline = true;
+    }
+    pipelineSelect.appendChild(option);
+  }
+  if (selectedPipelineName && !foundSelectedPipeline && pipelines.length > 0) {
+    console.warn(
+      `Pipeline "${selectedPipelineName}" not found in pipelines list, selecting first pipeline`
+    );
+    const firstOption = pipelineSelect.querySelector(
+      "option:not([disabled])"
+    );
+    if (firstOption) {
+      firstOption.selected = true;
+      selectedPipeline = pipelines[0];
+    }
+  }
+  if (pipelines.length === 0) {
+    selectedPipeline = null;
+  }
+}
+async function handleCameraSelection() {
+  const selectedValue = cameraSelect.value;
+  selectedCamera = cameras.find(
+    (camera2) => camera2.urlSafeName === selectedValue
+  );
+  console.log("Selected camera:", selectedCamera);
+  if (selectedCamera) {
+    await fetchPipelinesForCamera(selectedCamera.name);
+    populatePipelineDropdown();
+    await checkAndTriggerAutoFill();
+    updateDeleteButtonVisibility();
+  }
+}
+async function handlePipelineSelection() {
+  const selectedValue = pipelineSelect.value;
+  selectedPipeline = pipelines.find(
+    (pipeline2) => pipeline2.name === selectedValue
+  );
+  console.log("Selected pipeline:", selectedPipeline);
+  if (selectedPipeline && selectedCamera) {
+    await loadPipelineIntoBuilder(
+      selectedCamera.name,
+      selectedPipeline.name
+    );
+  }
+  updateDeleteButtonVisibility();
+}
+async function loadPipelineIntoBuilder(cameraName, pipelineName) {
+  try {
+    if (operations.length === 0) {
+      console.warn("Operations not loaded yet, cannot load pipeline");
+      return;
+    }
+    pipeline = [];
+    const pipelineConfig = await fetchPipelineConfig(
+      cameraName,
+      pipelineName
+    );
+    for (let index = 0; index < pipelineConfig.length; index++) {
+      const configItem = pipelineConfig[index];
+      let operation = operations.find(
+        (op) => op.id === configItem.action_name + ".py"
+      );
+      if (!operation) {
+        operation = operations.find(
+          (op) => op.id === configItem.action_name
+        );
+      }
+      if (!operation) {
+        operation = operations.find(
+          (op) => op.name.toLowerCase().replaceAll(/\s+/g, "_") === configItem.action_name
+        );
+      }
+      if (operation) {
+        const pipelineItem = {
+          ...operation,
+          instanceId: `${operation.id}_${Date.now()}_${index}`,
+          config: configItem.action_params || {},
+          originalConfig: configItem.action_params || {},
+          // Store original config for restart comparison
+          name: operation.name,
+          requiresRestart: false
+          // Initialize restart flag (will be updated if needed)
+        };
+        pipeline.push(pipelineItem);
+      } else {
+        console.warn(
+          `Operation ${configItem.action_name} not found in available operations. Available operations:`,
+          operations.map((op) => op.id)
+        );
+      }
+    }
+    console.log("[PIPELINE] Re-rendering pipeline after loading", {
+      operationCount: pipeline.length,
+      operations: pipeline.map((op) => ({
+        id: op.id,
+        name: op.name,
+        instanceId: op.instanceId
+      })),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+      openOperationSettings,
+      updateRunButton,
+      removeFromPipeline,
+      handleDragStart: handleDragStartWithLogging,
+      handleDragEnd: handleDragEndWithLogging
+    });
+    updateRunButton();
+    console.log("Pipeline loaded:", pipeline);
+  } catch (error) {
+    console.error("Failed to load pipeline:", error);
+  }
+}
+async function checkAndTriggerAutoFill() {
+  try {
+    if (cameraSelect == null ? void 0 : cameraSelect.value) {
+      const selectedCameraValue = cameraSelect.value;
+      const cameraObj = cameras.find(
+        (c) => c.urlSafeName === selectedCameraValue
+      );
+      if (cameraObj) {
+        selectedCamera = cameraObj;
+      }
+    }
+    if (!selectedCamera) {
+      console.log("No camera selected, skipping auto-fill");
+      return;
+    }
+    if (!(pipelineSelect == null ? void 0 : pipelineSelect.value)) {
+      console.log("No pipeline selected, skipping auto-fill");
+      return;
+    }
+    const selectedPipelineName = pipelineSelect.value;
+    const pipelineObj = pipelines.find(
+      (p) => p.name === selectedPipelineName
+    );
+    if (!pipelineObj) {
+      console.log("Selected pipeline not found in pipelines list");
+      return;
+    }
+    selectedPipeline = pipelineObj;
+    console.log(
+      "Both camera and pipeline are pre-selected, triggering auto-fill"
+    );
+    await loadPipelineIntoBuilder(selectedCamera.name, pipelineObj.name);
+  } catch (error) {
+    console.error("Error during auto-fill check:", error);
+  }
+}
+async function removeFromPipeline(instanceId) {
+  const removedOperation = pipeline.find(
+    (item) => item.instanceId === instanceId
+  );
+  console.log("[PIPELINE] Removing operation from pipeline", {
+    removedOperation: removedOperation ? {
+      id: removedOperation.id,
+      name: removedOperation.name,
+      instanceId: removedOperation.instanceId
+    } : null,
+    pipelineLengthBefore: pipeline.length,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
+  console.log("[PIPELINE] Pipeline after removal", {
+    pipelineLengthAfter: pipeline.length,
+    remainingOperations: pipeline.map((op) => ({
+      id: op.id,
+      name: op.name,
+      instanceId: op.instanceId
+    })),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+    openOperationSettings,
+    updateRunButton,
+    removeFromPipeline,
+    handleDragStart: handleDragStartWithLogging,
+    handleDragEnd: handleDragEndWithLogging
+  });
+  autoSavePipeline();
+  console.log("Operation removed from pipeline - requiring backend restart");
+  await updateRestartIndicator(true);
+  restartRequiredOperations.clear();
+}
+function runPipeline() {
+  console.log("Running pipeline:", pipeline);
+  alert("Pipeline run! Check console for details.");
+}
+function openOperationSettings(opOrItem) {
+  const title = `${opOrItem.name || opOrItem.id || "Operation"} Settings`;
+  const operationName = opOrItem.name || opOrItem.id;
+  const isSecondary = opOrItem.isSecondary || false;
+  const initialValues = opOrItem.config || {};
+  if (!opOrItem.originalConfig) {
+    opOrItem.originalConfig = { ...initialValues };
+  }
+  const onSave = (values) => {
+    console.log("Saved settings for", opOrItem, values);
+    const isAutoSave = values._isAutoSave;
+    const requiresRestart = values._requiresRestart;
+    console.log("isAutoSave flag:", isAutoSave);
+    console.log("requiresRestart flag:", requiresRestart);
+    delete values._isAutoSave;
+    delete values._requiresRestart;
+    const previousConfig = { ...opOrItem.config };
+    opOrItem.config = values;
+    opOrItem.requiresRestart = requiresRestart || false;
+    console.log("Updated opOrItem.config:", opOrItem.config);
+    console.log(
+      "Updated opOrItem.requiresRestart:",
+      opOrItem.requiresRestart
+    );
+    console.log("Calling autoSavePipeline...");
+    autoSavePipeline();
+    const changedParams = [];
+    for (const [key, value] of Object.entries(values)) {
+      if (JSON.stringify(previousConfig[key]) !== JSON.stringify(value)) {
+        changedParams.push({ paramName: key, value });
+      }
+    }
+    if (changedParams.length > 0) {
+      for (const { paramName, value } of changedParams) {
+        checkPipelineRestartRequirements(opOrItem, paramName, value);
+      }
+    } else {
+      checkPipelineRestartRequirements();
+    }
+  };
+  const doOpen = () => {
+    try {
+      globalThis.SettingsPopup.open({
+        title,
+        operationName,
+        isSecondary,
+        initialValues,
+        onSave
+      });
+    } catch (err) {
+      console.error("Failed to open SettingsPopup:", err);
+    }
+  };
+  if (globalThis.SettingsPopup) {
+    doOpen();
+    return;
+  }
+  const scriptUrl = "../../js/pipeline/settingsPopup.js";
+  const already = document.querySelector(`script[src="${scriptUrl}"]`);
+  if (already) {
+    already.addEventListener("load", doOpen);
+    return;
+  }
+  const s = document.createElement("script");
+  s.type = "module";
+  s.src = scriptUrl;
+  s.onload = () => {
+    if (!globalThis.SettingsPopup) {
+      console.warn("SettingsPopup loaded but did not register on window");
+      return;
+    }
+    doOpen();
+  };
+  s.onerror = () => console.error("Failed to load settings popup script at", scriptUrl);
+  document.head.appendChild(s);
+}
+function updateRunButton() {
+  if (runButton) {
+    runButton.disabled = pipeline.length === 0;
+  }
+}
+async function autoSavePipeline() {
+  if (!selectedCamera || !selectedPipeline) {
+    console.log("No camera or pipeline selected, skipping auto-save");
+    return;
+  }
+  if (isAutoSaving) {
+    pendingAutoSave = true;
+    return;
+  }
+  isAutoSaving = true;
+  try {
+    const pipelineConfig = pipeline.map((item) => {
+      const configParams = {};
+      if (item.config) {
+        for (const key of Object.keys(item.config)) {
+          const value = item.config[key];
+          if (value !== void 0 && value !== null) {
+            configParams[key] = value;
+          }
+        }
+      }
+      return {
+        action_name: item.id.replaceAll(".py", ""),
+        action_params: configParams
+      };
+    });
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pipelineConfig)
+      }
+    );
+    if (!response.ok)
+      throw new Error(`HTTP error! status: ${response.status}`);
+    await response.json();
+  } catch (error) {
+    console.error("Failed to auto-save pipeline:", error);
+  } finally {
+    isAutoSaving = false;
+    if (pendingAutoSave) {
+      pendingAutoSave = false;
+      autoSavePipeline();
+    }
+  }
+}
+async function createNewPipeline() {
+  if (!selectedCamera) {
+    alert("Please select a camera first.");
+    return;
+  }
+  const newPipelineName = prompt("Enter a name for the new pipeline:");
+  if (!newPipelineName || newPipelineName.trim() === "") {
+    return;
+  }
+  const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
+  const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
+  if (existingPipeline) {
+    if (!confirm(
+      `Pipeline "${newPipelineName}" already exists. Do you want to overwrite it?`
+    )) {
+      return;
+    }
+  }
+  try {
+    pipeline.length = 0;
+    pipeline = [];
+    const newPipelineObj = {
+      name: pipelineFileName,
+      displayName: newPipelineName.trim()
+    };
+    selectedPipeline = newPipelineObj;
+    const existingIndex = pipelines.findIndex(
+      (p) => p.name === pipelineFileName
+    );
+    if (existingIndex >= 0) {
+      pipelines[existingIndex] = newPipelineObj;
+    } else {
+      pipelines.push(newPipelineObj);
+    }
+    populatePipelineDropdown(pipelineFileName);
+    setTimeout(() => {
+      if (pipelineSelect && selectedPipeline) {
+        pipelineSelect.value = selectedPipeline.name;
+        console.log("Dropdown value set to:", selectedPipeline.name);
+      }
+    }, 10);
+    console.log(
+      "[PIPELINE] Re-rendering empty pipeline for new pipeline creation",
+      {
+        pipelineName: newPipelineName,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    );
+    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+      openOperationSettings,
+      updateRunButton,
+      removeFromPipeline,
+      handleDragStart: handleDragStartWithLogging,
+      handleDragEnd: handleDragEndWithLogging
+    });
+    updateRunButton();
+    updateDeleteButtonVisibility();
+    restartRequiredOperations.clear();
+    await updateRestartIndicator(false);
+    console.log("New pipeline created:", newPipelineName);
+    console.log("Pipeline state:", pipeline);
+    console.log("Selected pipeline:", selectedPipeline);
+    console.log("Pipelines list:", pipelines);
+  } catch (error) {
+    console.error("Failed to create new pipeline:", error);
+    alert(
+      "Failed to create new pipeline. Please check the console for details."
+    );
+  }
+}
+async function deleteCurrentPipeline() {
+  if (!selectedPipeline) {
+    alert("No pipeline selected to delete.");
+    return;
+  }
+  if (!selectedCamera) {
+    alert("No camera selected.");
+    return;
+  }
+  const confirmed = confirm(
+    `Are you sure you want to delete the pipeline "${selectedPipeline.displayName}"?
+
+This action cannot be undone.`
+  );
+  if (!confirmed) {
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const result = await response.json();
+    console.log("Pipeline deleted from backend:", result);
+    const pipelineIndex = pipelines.findIndex(
+      (p) => p.name === selectedPipeline.name
+    );
+    if (pipelineIndex === -1) {
+      console.error("Pipeline not found in pipelines array");
+      alert("Failed to delete pipeline. Pipeline not found.");
+      return;
+    }
+    pipelines.splice(pipelineIndex, 1);
+    console.log("Deleted pipeline:", selectedPipeline.name);
+    console.log("Remaining pipelines:", pipelines);
+    pipeline.length = 0;
+    pipeline = [];
+    selectedPipeline = null;
+    populatePipelineDropdown();
+    console.log("[PIPELINE] Re-rendering empty pipeline after deletion", {
+      deletedPipelineName: selectedPipeline.displayName,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+      openOperationSettings,
+      updateRunButton,
+      removeFromPipeline,
+      handleDragStart: handleDragStartWithLogging,
+      handleDragEnd: handleDragEndWithLogging
+    });
+    updateRunButton();
+    updateDeleteButtonVisibility();
+    restartRequiredOperations.clear();
+    await updateRestartIndicator(false);
+    console.log("[PIPELINE] Pipeline deleted successfully", {
+      deletedPipeline: selectedPipeline.displayName,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (error) {
+    console.error("Failed to delete pipeline:", error);
+    alert(
+      "Failed to delete pipeline. Please check the console for details."
+    );
+  }
+}
+function updateDeleteButtonVisibility() {
+  if (deletePipelineButton) {
+    if (selectedPipeline && selectedCamera) {
+      deletePipelineButton.classList.remove("hidden");
+    } else {
+      deletePipelineButton.classList.add("hidden");
+    }
+  }
+}
+async function updateRestartIndicator(show = false) {
+  try {
+    await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ required: show })
+    });
+    console.log(
+      `Backend notified: restart ${show ? "required" : "not required"}`
+    );
+  } catch (error) {
+    console.error(
+      "Failed to notify backend about restart requirement:",
+      error
+    );
+  }
+  if (!restartIndicator) return;
+  const restartMessage = restartIndicator.querySelector(".text-red-100") || restartIndicator.querySelector("span");
+  if (show) {
+    restartIndicator.classList.remove("hidden");
+    if (restartMessage)
+      restartMessage.textContent = "Backend restart required";
+    restartIndicator.classList.add("backend-state-warning");
+  } else {
+    restartIndicator.classList.add("hidden");
+    restartIndicator.classList.remove("backend-state-warning");
+  }
+}
+async function handleRestartBackend() {
+  try {
+    const restartButton = restartIndicator == null ? void 0 : restartIndicator.querySelector(
+      "#restartBackendButton"
+    );
+    if (restartButton) {
+      restartButton.disabled = true;
+      restartButton.textContent = "Restarting...";
+    }
+    try {
+      await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
+        method: "POST"
+      });
+    } catch (error) {
+      console.warn("Failed to send restart request:", error);
+    }
+    console.log("Backend restarted successfully");
+    restartRequiredOperations.clear();
+    globalThis.location.reload();
+  } catch (error) {
+    console.error("Failed to restart backend:", error);
+  }
+}
+async function checkBackendRestartStatus() {
+  try {
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get_restart_required`
+    );
+    if (response.ok) {
+      const data = await response.json();
+      const restartRequired = data.restart_required || false;
+      if (restartRequired) {
+        console.log(
+          "Backend indicates restart is required - showing indicator"
+        );
+        await updateRestartIndicator(true);
+      } else {
+        console.log("Backend indicates no restart required");
+      }
+    } else {
+      console.warn(
+        "Failed to get restart status from backend:",
+        response.status
+      );
+    }
+  } catch (error) {
+    console.error("Error checking backend restart status:", error);
+  }
+}
+async function checkPipelineRestartRequirements(operationItem = null, changedParamName = null, changedValue = null) {
+  const restartIndicator2 = document.getElementById("restartIndicator");
+  if (restartIndicator2 && !restartIndicator2.classList.contains("hidden") && restartIndicator2.classList.contains("backend-state-warning")) {
+    return;
+  }
+  if (operationItem && changedParamName !== null && changedValue !== null) {
+    await checkSpecificParameterRestart(
+      operationItem,
+      changedParamName,
+      changedValue
+    );
+  } else if (operationItem) {
+    await checkOperationRestartRequirements(operationItem);
+  }
+  const hasRestartRequirements = restartRequiredOperations.size > 0;
+  await updateRestartIndicator(hasRestartRequirements);
+}
+async function checkSpecificParameterRestart(operationItem, paramName, currentValue) {
+  try {
+    const isSecondary = operationItem.isSecondary || false;
+    const response = await fetch(
+      `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(operationItem.id)}/${isSecondary ? 1 : 0}`
+    );
+    if (response.ok) {
+      const configData = await response.json();
+      const params = configData.parameters || {};
+      const paramDef = params[paramName];
+      if (paramDef == null ? void 0 : paramDef.restart_for_change) {
+        const originalValue = operationItem.originalConfig[paramName];
+        const requiresRestart = currentValue !== void 0 && currentValue !== null && originalValue !== void 0 && originalValue !== null && JSON.stringify(currentValue) !== JSON.stringify(originalValue);
+        const instanceId = operationItem.instanceId;
+        if (!restartRequiredOperations.has(instanceId)) {
+          restartRequiredOperations.set(instanceId, /* @__PURE__ */ new Set());
+        }
+        const paramSet = restartRequiredOperations.get(instanceId);
+        if (requiresRestart) {
+          paramSet.add(paramName);
+          console.log(
+            `Operation ${operationItem.name} parameter ${paramName} requires restart (current: ${JSON.stringify(currentValue)}, original: ${JSON.stringify(originalValue)})`
+          );
+        } else {
+          paramSet.delete(paramName);
+          if (paramSet.size === 0) {
+            restartRequiredOperations.delete(instanceId);
+          }
+        }
+        operationItem.requiresRestart = paramSet.size > 0;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `Failed to check restart requirements for ${operationItem.name} parameter ${paramName}:`,
+      error
+    );
+  }
+}
+async function checkOperationRestartRequirements(operationItem) {
+  for (const [paramName, value] of Object.entries(
+    operationItem.config || {}
+  )) {
+    await checkSpecificParameterRestart(operationItem, paramName, value);
+  }
+}
+async function refreshPipelineCreator$1() {
+  try {
+    console.log(
+      "[PIPELINE] Refreshing pipeline creator after reconnection"
+    );
+    await fetchAvailableOperations();
+    if (operationsList && operations.length > 0) {
+      renderOperations(
+        operations,
+        operationsList,
+        openOperationSettings,
+        handleDragStartWithLogging
+      );
+    }
+    await fetchAvailableCameras();
+    populateCameraDropdown();
+    if (selectedCamera) {
+      await fetchPipelinesForCamera(selectedCamera.name);
+      populatePipelineDropdown();
+      if (selectedPipeline) {
+        await loadPipelineIntoBuilder(
+          selectedCamera.name,
+          selectedPipeline.name
+        );
+      }
+    }
+    updateDeleteButtonVisibility();
+    await checkBackendRestartStatus();
+    console.log("[PIPELINE] Pipeline creator refreshed successfully");
+  } catch (error) {
+    console.error("[PIPELINE] Error refreshing pipeline creator:", error);
+  }
+}
+async function initPipelineCreator() {
+  if (isInitialized) return;
+  pipelineArea = document.getElementById("pipelineArea");
+  pipelineContainer = document.getElementById("pipelineContainer");
+  pipelinePlaceholder = document.getElementById("pipelinePlaceholder");
+  operationsList = document.getElementById("operationsList");
+  runButton = document.getElementById("runButton");
+  cameraSelect = document.getElementById("cameraSelect");
+  pipelineSelect = document.getElementById("pipelineSelect");
+  newPipelineButton = document.getElementById("newPipelineButton");
+  deletePipelineButton = document.getElementById("deletePipelineButton");
+  restartIndicator = document.getElementById("restartIndicator");
+  createDescriptionPopup();
+  const styleElementId = "pipeline-creator-styles";
+  if (!document.getElementById(styleElementId)) {
+    const styleEl = document.createElement("style");
+    styleEl.id = styleElementId;
+    styleEl.textContent = `
+.op-settings-btn, .remove-btn { display: none !important; }
+#pipelineArea .op-settings-btn, #pipelineArea .remove-btn { display: inline-flex !important; }
+.icon-grayscale { filter: grayscale(100%); transition: filter .15s ease-in-out; }
+#pipelineArea .group:hover .icon-grayscale, #pipelineArea .group:focus-within .icon-grayscale { filter: none; }
+`;
+    document.head.appendChild(styleEl);
+  }
+  await fetchAvailableOperations();
+  await fetchAvailableCameras();
+  populateCameraDropdown();
+  if (cameraSelect) {
+    cameraSelect.addEventListener("change", handleCameraSelection);
+  }
+  if (pipelineSelect) {
+    pipelineSelect.addEventListener("change", handlePipelineSelection);
+  }
+  if (selectedCamera) {
+    await fetchPipelinesForCamera(selectedCamera.name);
+    populatePipelineDropdown();
+  }
+  await checkAndTriggerAutoFill();
+  updateDeleteButtonVisibility();
+  const setupDragDrop = (element) => {
+    element.addEventListener(
+      "dragenter",
+      (e) => handleDragEnterPipeline(e)
+    );
+    element.addEventListener("dragover", (e) => {
+      if (!selectedPipeline) {
+        e.preventDefault();
+        return;
+      }
+      handleDragOverPipeline(e, pipeline, pipelineContainer);
+    });
+    element.addEventListener(
+      "dragleave",
+      (e) => handleDragLeavePipeline(e, pipeline, pipelinePlaceholder)
+    );
+    element.addEventListener("drop", async (e) => {
+      if (!selectedPipeline) {
+        console.log("[PIPELINE] Cannot drop operations: no pipeline selected");
+        e.preventDefault();
+        return;
+      }
+      const pipelineLengthBefore = pipeline.length;
+      const pipelineOrderBefore = pipeline.map((item) => item.instanceId).join(",");
+      console.log("[PIPELINE] Processing drop event", {
+        pipelineLengthBefore,
+        pipelineOrderBefore: pipelineOrderBefore.split(","),
+        elementType: element.tagName,
+        elementId: element.id,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      await handleDropOnPipelineWithLogging(
+        e,
+        pipeline,
+        operations,
+        pipelineContainer,
+        pipelinePlaceholder,
+        {
+          renderPipeline: () => renderPipeline(
+            pipeline,
+            pipelineContainer,
+            pipelinePlaceholder,
+            {
+              updateRunButton,
+              handleDragStart: handleDragStartWithLogging,
+              handleDragEnd: handleDragEndWithLogging,
+              removeFromPipeline,
+              openOperationSettings
+            }
+          ),
+          updateRunButton,
+          openOperationSettings
+        }
+      );
+      const pipelineOrderAfter = pipeline.map((item) => item.instanceId).join(",");
+      const structureChanged = pipeline.length !== pipelineLengthBefore || pipelineOrderBefore !== pipelineOrderAfter;
+      console.log("[PIPELINE] Structure change analysis", {
+        pipelineLengthAfter: pipeline.length,
+        pipelineOrderAfter: pipelineOrderAfter.split(","),
+        structureChanged,
+        operationType: structureChanged ? pipeline.length > pipelineLengthBefore ? "ADDED" : pipeline.length < pipelineLengthBefore ? "REMOVED" : "REORDERED" : "UNCHANGED",
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      if (structureChanged) {
+        console.log(
+          "[PIPELINE] Pipeline structure changed - requiring backend restart"
+        );
+        await updateRestartIndicator(true);
+        restartRequiredOperations.clear();
+        autoSavePipeline();
+      } else if (pipeline.length > pipelineLengthBefore) {
+        console.log(
+          "[PIPELINE] New operations added, checking restart requirements"
+        );
+        for (const item of pipeline) {
+          checkPipelineRestartRequirements(item);
+        }
+        autoSavePipeline();
+      } else {
+        console.log("[PIPELINE] No structure changes detected");
+      }
+    });
+  };
+  setupDragDrop(pipelineArea);
+  setupDragDrop(pipelineContainer);
+  setupDragDrop(pipelinePlaceholder);
+  if (runButton) {
+    runButton.addEventListener("click", runPipeline);
+  }
+  if (newPipelineButton) {
+    newPipelineButton.addEventListener("click", createNewPipeline);
+  }
+  if (deletePipelineButton) {
+    deletePipelineButton.addEventListener("click", deleteCurrentPipeline);
+  }
+  if (restartIndicator) {
+    const restartButton = restartIndicator.querySelector(
+      "#restartBackendButton"
+    );
+    if (restartButton) {
+      restartButton.addEventListener("click", handleRestartBackend);
+    }
+  }
+  console.log("[PIPELINE] Initial render of operations and pipeline", {
+    operationsCount: operations.length,
+    pipelineLength: pipeline.length,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  renderOperations(
+    operations,
+    operationsList,
+    openOperationSettings,
+    handleDragStartWithLogging
+  );
+  renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
+    openOperationSettings,
+    updateRunButton,
+    removeFromPipeline,
+    handleDragStart: handleDragStartWithLogging,
+    handleDragEnd: handleDragEndWithLogging
+  });
+  await checkBackendRestartStatus();
+  isInitialized = true;
+  if (globalThis.showBackendRestartIndicator) {
+    globalThis.showBackendRestartIndicator();
+  }
+  globalThis.pipelineCreator = {
+    autoSavePipeline,
+    updateRestartIndicator,
+    checkPipelineRestartRequirements,
+    checkBackendRestartStatus,
+    restartIndicator,
+    refreshPipelineCreator: refreshPipelineCreator$1
+  };
+}
+const VIEWS = {
+  THREE_D: "view-3d",
+  CAMERA: "view-views",
+  SETTINGS: "view-settings",
+  PIPELINE: "view-pipeline"
+};
+const FIELD_ASSETS = {
+  FIELD_2025_DEFAULT: "./assets/fields/2025/field_files/FE-2025-NGP-Simple.glb"
+};
+class ViewManager {
+  constructor() {
+    this.sidebarItems = document.querySelectorAll(".sidebar li");
+    this.views = document.querySelectorAll("[id^='view-']");
+    this.controls = document.querySelectorAll(
+      "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn"
+    );
+  }
+  activateView(targetViewId) {
+    this.updateActiveSidebarItem(targetViewId);
+    this.showTargetView(targetViewId);
+    this.toggleControlsVisibility(targetViewId);
+    this.handleViewSpecificBehavior(targetViewId);
+  }
+  updateActiveSidebarItem(targetViewId) {
+    for (const sidebarItem of this.sidebarItems) {
+      sidebarItem.classList.toggle(
+        "active",
+        sidebarItem.dataset.view === targetViewId
+      );
+    }
+  }
+  showTargetView(targetViewId) {
+    for (const view of this.views) {
+      view.classList.add("hidden");
+    }
+    const targetView = document.getElementById(targetViewId);
+    if (!targetView) {
+      return;
+    }
+    targetView.classList.remove("hidden");
+  }
+  toggleControlsVisibility(targetViewId) {
+    for (const element of this.controls) {
+      element.classList.toggle("hidden", targetViewId !== VIEWS.THREE_D);
+    }
+  }
+  handleViewSpecificBehavior(viewId) {
+    var _a;
+    switch (viewId) {
+      case VIEWS.THREE_D:
+        init3DView(FIELD_ASSETS.FIELD_2025_DEFAULT);
+        pauseCameraFeeds();
+        break;
+      case VIEWS.CAMERA:
+        resumeCameraFeeds();
+        break;
+      case VIEWS.SETTINGS:
+        loadSettings();
+        break;
+      case VIEWS.PIPELINE:
+        if ((_a = globalThis.pipelineCreator) == null ? void 0 : _a.refreshPipelineCreator) {
+          globalThis.pipelineCreator.refreshPipelineCreator();
+        } else {
+          initPipelineCreator();
+        }
+        break;
+      default:
+        pauseCameraFeeds();
+    }
+  }
+}
+class URLManager {
+  updateTab(viewId) {
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set("tab", viewId);
+    globalThis.history.replaceState({}, "", url.toString());
+  }
+  getInitialTab() {
+    const url = new URL(globalThis.location.href);
+    return url.searchParams.get("tab");
+  }
+}
+function setupSidebar() {
+  const viewManager = new ViewManager();
+  const urlManager = new URLManager();
+  const sidebarItems = document.querySelectorAll(".sidebar li");
+  function handleSidebarItemClick(targetViewId) {
+    if (!targetViewId) {
+      return;
+    }
+    viewManager.activateView(targetViewId);
+    urlManager.updateTab(targetViewId);
+  }
+  for (const item of sidebarItems) {
+    item.addEventListener("click", () => {
+      const targetViewId = item.dataset.view;
+      handleSidebarItemClick(targetViewId);
+    });
+  }
+  const initialTab = urlManager.getInitialTab();
+  if (initialTab && document.getElementById(initialTab)) {
+    viewManager.activateView(initialTab);
+    urlManager.updateTab(initialTab);
+    return;
+  }
+  const firstItem = sidebarItems[0];
+  if (firstItem) {
+    const defaultViewId = firstItem.dataset.view;
+    if (defaultViewId) {
+      viewManager.activateView(defaultViewId);
+      urlManager.updateTab(defaultViewId);
+    }
+  }
 }
 function saveSettings() {
   document.getElementById("saveSettingsBtn").addEventListener("click", () => {
@@ -32394,3308 +34472,41 @@ function saveSettings() {
     });
   });
 }
-const PACKET_TYPES = /* @__PURE__ */ Object.create(null);
-PACKET_TYPES["open"] = "0";
-PACKET_TYPES["close"] = "1";
-PACKET_TYPES["ping"] = "2";
-PACKET_TYPES["pong"] = "3";
-PACKET_TYPES["message"] = "4";
-PACKET_TYPES["upgrade"] = "5";
-PACKET_TYPES["noop"] = "6";
-const PACKET_TYPES_REVERSE = /* @__PURE__ */ Object.create(null);
-Object.keys(PACKET_TYPES).forEach((key) => {
-  PACKET_TYPES_REVERSE[PACKET_TYPES[key]] = key;
-});
-const ERROR_PACKET = { type: "error", data: "parser error" };
-const withNativeBlob$1 = typeof Blob === "function" || typeof Blob !== "undefined" && Object.prototype.toString.call(Blob) === "[object BlobConstructor]";
-const withNativeArrayBuffer$2 = typeof ArrayBuffer === "function";
-const isView$1 = (obj) => {
-  return typeof ArrayBuffer.isView === "function" ? ArrayBuffer.isView(obj) : obj && obj.buffer instanceof ArrayBuffer;
-};
-const encodePacket = ({ type, data }, supportsBinary, callback) => {
-  if (withNativeBlob$1 && data instanceof Blob) {
-    if (supportsBinary) {
-      return callback(data);
-    } else {
-      return encodeBlobAsBase64(data, callback);
-    }
-  } else if (withNativeArrayBuffer$2 && (data instanceof ArrayBuffer || isView$1(data))) {
-    if (supportsBinary) {
-      return callback(data);
-    } else {
-      return encodeBlobAsBase64(new Blob([data]), callback);
-    }
-  }
-  return callback(PACKET_TYPES[type] + (data || ""));
-};
-const encodeBlobAsBase64 = (data, callback) => {
-  const fileReader = new FileReader();
-  fileReader.onload = function() {
-    const content = fileReader.result.split(",")[1];
-    callback("b" + (content || ""));
-  };
-  return fileReader.readAsDataURL(data);
-};
-function toArray(data) {
-  if (data instanceof Uint8Array) {
-    return data;
-  } else if (data instanceof ArrayBuffer) {
-    return new Uint8Array(data);
-  } else {
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  }
-}
-let TEXT_ENCODER;
-function encodePacketToBinary(packet, callback) {
-  if (withNativeBlob$1 && packet.data instanceof Blob) {
-    return packet.data.arrayBuffer().then(toArray).then(callback);
-  } else if (withNativeArrayBuffer$2 && (packet.data instanceof ArrayBuffer || isView$1(packet.data))) {
-    return callback(toArray(packet.data));
-  }
-  encodePacket(packet, false, (encoded) => {
-    if (!TEXT_ENCODER) {
-      TEXT_ENCODER = new TextEncoder();
-    }
-    callback(TEXT_ENCODER.encode(encoded));
-  });
-}
-const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const lookup$1 = typeof Uint8Array === "undefined" ? [] : new Uint8Array(256);
-for (let i = 0; i < chars.length; i++) {
-  lookup$1[chars.charCodeAt(i)] = i;
-}
-const decode$1 = (base64) => {
-  let bufferLength = base64.length * 0.75, len = base64.length, i, p = 0, encoded1, encoded2, encoded3, encoded4;
-  if (base64[base64.length - 1] === "=") {
-    bufferLength--;
-    if (base64[base64.length - 2] === "=") {
-      bufferLength--;
-    }
-  }
-  const arraybuffer = new ArrayBuffer(bufferLength), bytes = new Uint8Array(arraybuffer);
-  for (i = 0; i < len; i += 4) {
-    encoded1 = lookup$1[base64.charCodeAt(i)];
-    encoded2 = lookup$1[base64.charCodeAt(i + 1)];
-    encoded3 = lookup$1[base64.charCodeAt(i + 2)];
-    encoded4 = lookup$1[base64.charCodeAt(i + 3)];
-    bytes[p++] = encoded1 << 2 | encoded2 >> 4;
-    bytes[p++] = (encoded2 & 15) << 4 | encoded3 >> 2;
-    bytes[p++] = (encoded3 & 3) << 6 | encoded4 & 63;
-  }
-  return arraybuffer;
-};
-const withNativeArrayBuffer$1 = typeof ArrayBuffer === "function";
-const decodePacket = (encodedPacket, binaryType) => {
-  if (typeof encodedPacket !== "string") {
-    return {
-      type: "message",
-      data: mapBinary(encodedPacket, binaryType)
-    };
-  }
-  const type = encodedPacket.charAt(0);
-  if (type === "b") {
-    return {
-      type: "message",
-      data: decodeBase64Packet(encodedPacket.substring(1), binaryType)
-    };
-  }
-  const packetType = PACKET_TYPES_REVERSE[type];
-  if (!packetType) {
-    return ERROR_PACKET;
-  }
-  return encodedPacket.length > 1 ? {
-    type: PACKET_TYPES_REVERSE[type],
-    data: encodedPacket.substring(1)
-  } : {
-    type: PACKET_TYPES_REVERSE[type]
-  };
-};
-const decodeBase64Packet = (data, binaryType) => {
-  if (withNativeArrayBuffer$1) {
-    const decoded = decode$1(data);
-    return mapBinary(decoded, binaryType);
-  } else {
-    return { base64: true, data };
-  }
-};
-const mapBinary = (data, binaryType) => {
-  switch (binaryType) {
-    case "blob":
-      if (data instanceof Blob) {
-        return data;
-      } else {
-        return new Blob([data]);
-      }
-    case "arraybuffer":
-    default:
-      if (data instanceof ArrayBuffer) {
-        return data;
-      } else {
-        return data.buffer;
-      }
-  }
-};
-const SEPARATOR = String.fromCharCode(30);
-const encodePayload = (packets, callback) => {
-  const length = packets.length;
-  const encodedPackets = new Array(length);
-  let count = 0;
-  packets.forEach((packet, i) => {
-    encodePacket(packet, false, (encodedPacket) => {
-      encodedPackets[i] = encodedPacket;
-      if (++count === length) {
-        callback(encodedPackets.join(SEPARATOR));
-      }
-    });
-  });
-};
-const decodePayload = (encodedPayload, binaryType) => {
-  const encodedPackets = encodedPayload.split(SEPARATOR);
-  const packets = [];
-  for (let i = 0; i < encodedPackets.length; i++) {
-    const decodedPacket = decodePacket(encodedPackets[i], binaryType);
-    packets.push(decodedPacket);
-    if (decodedPacket.type === "error") {
-      break;
-    }
-  }
-  return packets;
-};
-function createPacketEncoderStream() {
-  return new TransformStream({
-    transform(packet, controller) {
-      encodePacketToBinary(packet, (encodedPacket) => {
-        const payloadLength = encodedPacket.length;
-        let header;
-        if (payloadLength < 126) {
-          header = new Uint8Array(1);
-          new DataView(header.buffer).setUint8(0, payloadLength);
-        } else if (payloadLength < 65536) {
-          header = new Uint8Array(3);
-          const view = new DataView(header.buffer);
-          view.setUint8(0, 126);
-          view.setUint16(1, payloadLength);
-        } else {
-          header = new Uint8Array(9);
-          const view = new DataView(header.buffer);
-          view.setUint8(0, 127);
-          view.setBigUint64(1, BigInt(payloadLength));
-        }
-        if (packet.data && typeof packet.data !== "string") {
-          header[0] |= 128;
-        }
-        controller.enqueue(header);
-        controller.enqueue(encodedPacket);
-      });
-    }
-  });
-}
-let TEXT_DECODER;
-function totalLength(chunks) {
-  return chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-}
-function concatChunks(chunks, size) {
-  if (chunks[0].length === size) {
-    return chunks.shift();
-  }
-  const buffer = new Uint8Array(size);
-  let j = 0;
-  for (let i = 0; i < size; i++) {
-    buffer[i] = chunks[0][j++];
-    if (j === chunks[0].length) {
-      chunks.shift();
-      j = 0;
-    }
-  }
-  if (chunks.length && j < chunks[0].length) {
-    chunks[0] = chunks[0].slice(j);
-  }
-  return buffer;
-}
-function createPacketDecoderStream(maxPayload, binaryType) {
-  if (!TEXT_DECODER) {
-    TEXT_DECODER = new TextDecoder();
-  }
-  const chunks = [];
-  let state = 0;
-  let expectedLength = -1;
-  let isBinary2 = false;
-  return new TransformStream({
-    transform(chunk, controller) {
-      chunks.push(chunk);
-      while (true) {
-        if (state === 0) {
-          if (totalLength(chunks) < 1) {
-            break;
-          }
-          const header = concatChunks(chunks, 1);
-          isBinary2 = (header[0] & 128) === 128;
-          expectedLength = header[0] & 127;
-          if (expectedLength < 126) {
-            state = 3;
-          } else if (expectedLength === 126) {
-            state = 1;
-          } else {
-            state = 2;
-          }
-        } else if (state === 1) {
-          if (totalLength(chunks) < 2) {
-            break;
-          }
-          const headerArray = concatChunks(chunks, 2);
-          expectedLength = new DataView(headerArray.buffer, headerArray.byteOffset, headerArray.length).getUint16(0);
-          state = 3;
-        } else if (state === 2) {
-          if (totalLength(chunks) < 8) {
-            break;
-          }
-          const headerArray = concatChunks(chunks, 8);
-          const view = new DataView(headerArray.buffer, headerArray.byteOffset, headerArray.length);
-          const n = view.getUint32(0);
-          if (n > Math.pow(2, 53 - 32) - 1) {
-            controller.enqueue(ERROR_PACKET);
-            break;
-          }
-          expectedLength = n * Math.pow(2, 32) + view.getUint32(4);
-          state = 3;
-        } else {
-          if (totalLength(chunks) < expectedLength) {
-            break;
-          }
-          const data = concatChunks(chunks, expectedLength);
-          controller.enqueue(decodePacket(isBinary2 ? data : TEXT_DECODER.decode(data), binaryType));
-          state = 0;
-        }
-        if (expectedLength === 0 || expectedLength > maxPayload) {
-          controller.enqueue(ERROR_PACKET);
-          break;
-        }
-      }
-    }
-  });
-}
-const protocol$1 = 4;
-function Emitter(obj) {
-  if (obj) return mixin(obj);
-}
-function mixin(obj) {
-  for (var key in Emitter.prototype) {
-    obj[key] = Emitter.prototype[key];
-  }
-  return obj;
-}
-Emitter.prototype.on = Emitter.prototype.addEventListener = function(event, fn) {
-  this._callbacks = this._callbacks || {};
-  (this._callbacks["$" + event] = this._callbacks["$" + event] || []).push(fn);
-  return this;
-};
-Emitter.prototype.once = function(event, fn) {
-  function on2() {
-    this.off(event, on2);
-    fn.apply(this, arguments);
-  }
-  on2.fn = fn;
-  this.on(event, on2);
-  return this;
-};
-Emitter.prototype.off = Emitter.prototype.removeListener = Emitter.prototype.removeAllListeners = Emitter.prototype.removeEventListener = function(event, fn) {
-  this._callbacks = this._callbacks || {};
-  if (0 == arguments.length) {
-    this._callbacks = {};
-    return this;
-  }
-  var callbacks = this._callbacks["$" + event];
-  if (!callbacks) return this;
-  if (1 == arguments.length) {
-    delete this._callbacks["$" + event];
-    return this;
-  }
-  var cb;
-  for (var i = 0; i < callbacks.length; i++) {
-    cb = callbacks[i];
-    if (cb === fn || cb.fn === fn) {
-      callbacks.splice(i, 1);
-      break;
-    }
-  }
-  if (callbacks.length === 0) {
-    delete this._callbacks["$" + event];
-  }
-  return this;
-};
-Emitter.prototype.emit = function(event) {
-  this._callbacks = this._callbacks || {};
-  var args = new Array(arguments.length - 1), callbacks = this._callbacks["$" + event];
-  for (var i = 1; i < arguments.length; i++) {
-    args[i - 1] = arguments[i];
-  }
-  if (callbacks) {
-    callbacks = callbacks.slice(0);
-    for (var i = 0, len = callbacks.length; i < len; ++i) {
-      callbacks[i].apply(this, args);
-    }
-  }
-  return this;
-};
-Emitter.prototype.emitReserved = Emitter.prototype.emit;
-Emitter.prototype.listeners = function(event) {
-  this._callbacks = this._callbacks || {};
-  return this._callbacks["$" + event] || [];
-};
-Emitter.prototype.hasListeners = function(event) {
-  return !!this.listeners(event).length;
-};
-const nextTick = (() => {
-  const isPromiseAvailable = typeof Promise === "function" && typeof Promise.resolve === "function";
-  if (isPromiseAvailable) {
-    return (cb) => Promise.resolve().then(cb);
-  } else {
-    return (cb, setTimeoutFn) => setTimeoutFn(cb, 0);
-  }
-})();
-const globalThisShim = (() => {
-  if (typeof self !== "undefined") {
-    return self;
-  } else if (typeof window !== "undefined") {
-    return window;
-  } else {
-    return Function("return this")();
-  }
-})();
-const defaultBinaryType = "arraybuffer";
-function createCookieJar() {
-}
-function pick(obj, ...attr) {
-  return attr.reduce((acc, k) => {
-    if (obj.hasOwnProperty(k)) {
-      acc[k] = obj[k];
-    }
-    return acc;
-  }, {});
-}
-const NATIVE_SET_TIMEOUT = globalThisShim.setTimeout;
-const NATIVE_CLEAR_TIMEOUT = globalThisShim.clearTimeout;
-function installTimerFunctions(obj, opts) {
-  if (opts.useNativeTimers) {
-    obj.setTimeoutFn = NATIVE_SET_TIMEOUT.bind(globalThisShim);
-    obj.clearTimeoutFn = NATIVE_CLEAR_TIMEOUT.bind(globalThisShim);
-  } else {
-    obj.setTimeoutFn = globalThisShim.setTimeout.bind(globalThisShim);
-    obj.clearTimeoutFn = globalThisShim.clearTimeout.bind(globalThisShim);
-  }
-}
-const BASE64_OVERHEAD = 1.33;
-function byteLength(obj) {
-  if (typeof obj === "string") {
-    return utf8Length(obj);
-  }
-  return Math.ceil((obj.byteLength || obj.size) * BASE64_OVERHEAD);
-}
-function utf8Length(str) {
-  let c = 0, length = 0;
-  for (let i = 0, l = str.length; i < l; i++) {
-    c = str.charCodeAt(i);
-    if (c < 128) {
-      length += 1;
-    } else if (c < 2048) {
-      length += 2;
-    } else if (c < 55296 || c >= 57344) {
-      length += 3;
-    } else {
-      i++;
-      length += 4;
-    }
-  }
-  return length;
-}
-function randomString() {
-  return Date.now().toString(36).substring(3) + Math.random().toString(36).substring(2, 5);
-}
-function encode(obj) {
-  let str = "";
-  for (let i in obj) {
-    if (obj.hasOwnProperty(i)) {
-      if (str.length)
-        str += "&";
-      str += encodeURIComponent(i) + "=" + encodeURIComponent(obj[i]);
-    }
-  }
-  return str;
-}
-function decode(qs) {
-  let qry = {};
-  let pairs = qs.split("&");
-  for (let i = 0, l = pairs.length; i < l; i++) {
-    let pair = pairs[i].split("=");
-    qry[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
-  }
-  return qry;
-}
-class TransportError extends Error {
-  constructor(reason, description, context) {
-    super(reason);
-    this.description = description;
-    this.context = context;
-    this.type = "TransportError";
-  }
-}
-class Transport extends Emitter {
-  /**
-   * Transport abstract constructor.
-   *
-   * @param {Object} opts - options
-   * @protected
-   */
-  constructor(opts) {
-    super();
-    this.writable = false;
-    installTimerFunctions(this, opts);
-    this.opts = opts;
-    this.query = opts.query;
-    this.socket = opts.socket;
-    this.supportsBinary = !opts.forceBase64;
-  }
-  /**
-   * Emits an error.
-   *
-   * @param {String} reason
-   * @param description
-   * @param context - the error context
-   * @return {Transport} for chaining
-   * @protected
-   */
-  onError(reason, description, context) {
-    super.emitReserved("error", new TransportError(reason, description, context));
-    return this;
-  }
-  /**
-   * Opens the transport.
-   */
-  open() {
-    this.readyState = "opening";
-    this.doOpen();
-    return this;
-  }
-  /**
-   * Closes the transport.
-   */
-  close() {
-    if (this.readyState === "opening" || this.readyState === "open") {
-      this.doClose();
-      this.onClose();
-    }
-    return this;
-  }
-  /**
-   * Sends multiple packets.
-   *
-   * @param {Array} packets
-   */
-  send(packets) {
-    if (this.readyState === "open") {
-      this.write(packets);
-    }
-  }
-  /**
-   * Called upon open
-   *
-   * @protected
-   */
-  onOpen() {
-    this.readyState = "open";
-    this.writable = true;
-    super.emitReserved("open");
-  }
-  /**
-   * Called with data.
-   *
-   * @param {String} data
-   * @protected
-   */
-  onData(data) {
-    const packet = decodePacket(data, this.socket.binaryType);
-    this.onPacket(packet);
-  }
-  /**
-   * Called with a decoded packet.
-   *
-   * @protected
-   */
-  onPacket(packet) {
-    super.emitReserved("packet", packet);
-  }
-  /**
-   * Called upon close.
-   *
-   * @protected
-   */
-  onClose(details) {
-    this.readyState = "closed";
-    super.emitReserved("close", details);
-  }
-  /**
-   * Pauses the transport, in order not to lose packets during an upgrade.
-   *
-   * @param onPause
-   */
-  pause(onPause) {
-  }
-  createUri(schema, query = {}) {
-    return schema + "://" + this._hostname() + this._port() + this.opts.path + this._query(query);
-  }
-  _hostname() {
-    const hostname = this.opts.hostname;
-    return hostname.indexOf(":") === -1 ? hostname : "[" + hostname + "]";
-  }
-  _port() {
-    if (this.opts.port && (this.opts.secure && Number(this.opts.port !== 443) || !this.opts.secure && Number(this.opts.port) !== 80)) {
-      return ":" + this.opts.port;
-    } else {
-      return "";
-    }
-  }
-  _query(query) {
-    const encodedQuery = encode(query);
-    return encodedQuery.length ? "?" + encodedQuery : "";
-  }
-}
-class Polling extends Transport {
-  constructor() {
-    super(...arguments);
-    this._polling = false;
-  }
-  get name() {
-    return "polling";
-  }
-  /**
-   * Opens the socket (triggers polling). We write a PING message to determine
-   * when the transport is open.
-   *
-   * @protected
-   */
-  doOpen() {
-    this._poll();
-  }
-  /**
-   * Pauses polling.
-   *
-   * @param {Function} onPause - callback upon buffers are flushed and transport is paused
-   * @package
-   */
-  pause(onPause) {
-    this.readyState = "pausing";
-    const pause = () => {
-      this.readyState = "paused";
-      onPause();
-    };
-    if (this._polling || !this.writable) {
-      let total = 0;
-      if (this._polling) {
-        total++;
-        this.once("pollComplete", function() {
-          --total || pause();
-        });
-      }
-      if (!this.writable) {
-        total++;
-        this.once("drain", function() {
-          --total || pause();
-        });
-      }
-    } else {
-      pause();
-    }
-  }
-  /**
-   * Starts polling cycle.
-   *
-   * @private
-   */
-  _poll() {
-    this._polling = true;
-    this.doPoll();
-    this.emitReserved("poll");
-  }
-  /**
-   * Overloads onData to detect payloads.
-   *
-   * @protected
-   */
-  onData(data) {
-    const callback = (packet) => {
-      if ("opening" === this.readyState && packet.type === "open") {
-        this.onOpen();
-      }
-      if ("close" === packet.type) {
-        this.onClose({ description: "transport closed by the server" });
-        return false;
-      }
-      this.onPacket(packet);
-    };
-    decodePayload(data, this.socket.binaryType).forEach(callback);
-    if ("closed" !== this.readyState) {
-      this._polling = false;
-      this.emitReserved("pollComplete");
-      if ("open" === this.readyState) {
-        this._poll();
-      }
-    }
-  }
-  /**
-   * For polling, send a close packet.
-   *
-   * @protected
-   */
-  doClose() {
-    const close = () => {
-      this.write([{ type: "close" }]);
-    };
-    if ("open" === this.readyState) {
-      close();
-    } else {
-      this.once("open", close);
-    }
-  }
-  /**
-   * Writes a packets payload.
-   *
-   * @param {Array} packets - data packets
-   * @protected
-   */
-  write(packets) {
-    this.writable = false;
-    encodePayload(packets, (data) => {
-      this.doWrite(data, () => {
-        this.writable = true;
-        this.emitReserved("drain");
-      });
-    });
-  }
-  /**
-   * Generates uri for connection.
-   *
-   * @private
-   */
-  uri() {
-    const schema = this.opts.secure ? "https" : "http";
-    const query = this.query || {};
-    if (false !== this.opts.timestampRequests) {
-      query[this.opts.timestampParam] = randomString();
-    }
-    if (!this.supportsBinary && !query.sid) {
-      query.b64 = 1;
-    }
-    return this.createUri(schema, query);
-  }
-}
-let value = false;
-try {
-  value = typeof XMLHttpRequest !== "undefined" && "withCredentials" in new XMLHttpRequest();
-} catch (err) {
-}
-const hasCORS = value;
-function empty() {
-}
-class BaseXHR extends Polling {
-  /**
-   * XHR Polling constructor.
-   *
-   * @param {Object} opts
-   * @package
-   */
-  constructor(opts) {
-    super(opts);
-    if (typeof location !== "undefined") {
-      const isSSL = "https:" === location.protocol;
-      let port = location.port;
-      if (!port) {
-        port = isSSL ? "443" : "80";
-      }
-      this.xd = typeof location !== "undefined" && opts.hostname !== location.hostname || port !== opts.port;
-    }
-  }
-  /**
-   * Sends data.
-   *
-   * @param {String} data to send.
-   * @param {Function} called upon flush.
-   * @private
-   */
-  doWrite(data, fn) {
-    const req = this.request({
-      method: "POST",
-      data
-    });
-    req.on("success", fn);
-    req.on("error", (xhrStatus, context) => {
-      this.onError("xhr post error", xhrStatus, context);
-    });
-  }
-  /**
-   * Starts a poll cycle.
-   *
-   * @private
-   */
-  doPoll() {
-    const req = this.request();
-    req.on("data", this.onData.bind(this));
-    req.on("error", (xhrStatus, context) => {
-      this.onError("xhr poll error", xhrStatus, context);
-    });
-    this.pollXhr = req;
-  }
-}
-let Request$1 = class Request2 extends Emitter {
-  /**
-   * Request constructor
-   *
-   * @param {Object} options
-   * @package
-   */
-  constructor(createRequest, uri, opts) {
-    super();
-    this.createRequest = createRequest;
-    installTimerFunctions(this, opts);
-    this._opts = opts;
-    this._method = opts.method || "GET";
-    this._uri = uri;
-    this._data = void 0 !== opts.data ? opts.data : null;
-    this._create();
-  }
-  /**
-   * Creates the XHR object and sends the request.
-   *
-   * @private
-   */
-  _create() {
-    var _a;
-    const opts = pick(this._opts, "agent", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "autoUnref");
-    opts.xdomain = !!this._opts.xd;
-    const xhr = this._xhr = this.createRequest(opts);
-    try {
-      xhr.open(this._method, this._uri, true);
-      try {
-        if (this._opts.extraHeaders) {
-          xhr.setDisableHeaderCheck && xhr.setDisableHeaderCheck(true);
-          for (let i in this._opts.extraHeaders) {
-            if (this._opts.extraHeaders.hasOwnProperty(i)) {
-              xhr.setRequestHeader(i, this._opts.extraHeaders[i]);
-            }
-          }
-        }
-      } catch (e) {
-      }
-      if ("POST" === this._method) {
-        try {
-          xhr.setRequestHeader("Content-type", "text/plain;charset=UTF-8");
-        } catch (e) {
-        }
-      }
-      try {
-        xhr.setRequestHeader("Accept", "*/*");
-      } catch (e) {
-      }
-      (_a = this._opts.cookieJar) === null || _a === void 0 ? void 0 : _a.addCookies(xhr);
-      if ("withCredentials" in xhr) {
-        xhr.withCredentials = this._opts.withCredentials;
-      }
-      if (this._opts.requestTimeout) {
-        xhr.timeout = this._opts.requestTimeout;
-      }
-      xhr.onreadystatechange = () => {
-        var _a2;
-        if (xhr.readyState === 3) {
-          (_a2 = this._opts.cookieJar) === null || _a2 === void 0 ? void 0 : _a2.parseCookies(
-            // @ts-ignore
-            xhr.getResponseHeader("set-cookie")
-          );
-        }
-        if (4 !== xhr.readyState)
-          return;
-        if (200 === xhr.status || 1223 === xhr.status) {
-          this._onLoad();
-        } else {
-          this.setTimeoutFn(() => {
-            this._onError(typeof xhr.status === "number" ? xhr.status : 0);
-          }, 0);
-        }
-      };
-      xhr.send(this._data);
-    } catch (e) {
-      this.setTimeoutFn(() => {
-        this._onError(e);
-      }, 0);
-      return;
-    }
-    if (typeof document !== "undefined") {
-      this._index = Request2.requestsCount++;
-      Request2.requests[this._index] = this;
-    }
-  }
-  /**
-   * Called upon error.
-   *
-   * @private
-   */
-  _onError(err) {
-    this.emitReserved("error", err, this._xhr);
-    this._cleanup(true);
-  }
-  /**
-   * Cleans up house.
-   *
-   * @private
-   */
-  _cleanup(fromError) {
-    if ("undefined" === typeof this._xhr || null === this._xhr) {
-      return;
-    }
-    this._xhr.onreadystatechange = empty;
-    if (fromError) {
-      try {
-        this._xhr.abort();
-      } catch (e) {
-      }
-    }
-    if (typeof document !== "undefined") {
-      delete Request2.requests[this._index];
-    }
-    this._xhr = null;
-  }
-  /**
-   * Called upon load.
-   *
-   * @private
-   */
-  _onLoad() {
-    const data = this._xhr.responseText;
-    if (data !== null) {
-      this.emitReserved("data", data);
-      this.emitReserved("success");
-      this._cleanup();
-    }
-  }
-  /**
-   * Aborts the request.
-   *
-   * @package
-   */
-  abort() {
-    this._cleanup();
-  }
-};
-Request$1.requestsCount = 0;
-Request$1.requests = {};
-if (typeof document !== "undefined") {
-  if (typeof attachEvent === "function") {
-    attachEvent("onunload", unloadHandler);
-  } else if (typeof addEventListener === "function") {
-    const terminationEvent = "onpagehide" in globalThisShim ? "pagehide" : "unload";
-    addEventListener(terminationEvent, unloadHandler, false);
-  }
-}
-function unloadHandler() {
-  for (let i in Request$1.requests) {
-    if (Request$1.requests.hasOwnProperty(i)) {
-      Request$1.requests[i].abort();
-    }
-  }
-}
-const hasXHR2 = function() {
-  const xhr = newRequest({
-    xdomain: false
-  });
-  return xhr && xhr.responseType !== null;
-}();
-class XHR extends BaseXHR {
-  constructor(opts) {
-    super(opts);
-    const forceBase64 = opts && opts.forceBase64;
-    this.supportsBinary = hasXHR2 && !forceBase64;
-  }
-  request(opts = {}) {
-    Object.assign(opts, { xd: this.xd }, this.opts);
-    return new Request$1(newRequest, this.uri(), opts);
-  }
-}
-function newRequest(opts) {
-  const xdomain = opts.xdomain;
-  try {
-    if ("undefined" !== typeof XMLHttpRequest && (!xdomain || hasCORS)) {
-      return new XMLHttpRequest();
-    }
-  } catch (e) {
-  }
-  if (!xdomain) {
-    try {
-      return new globalThisShim[["Active"].concat("Object").join("X")]("Microsoft.XMLHTTP");
-    } catch (e) {
-    }
-  }
-}
-const isReactNative = typeof navigator !== "undefined" && typeof navigator.product === "string" && navigator.product.toLowerCase() === "reactnative";
-class BaseWS extends Transport {
-  get name() {
-    return "websocket";
-  }
-  doOpen() {
-    const uri = this.uri();
-    const protocols = this.opts.protocols;
-    const opts = isReactNative ? {} : pick(this.opts, "agent", "perMessageDeflate", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "localAddress", "protocolVersion", "origin", "maxPayload", "family", "checkServerIdentity");
-    if (this.opts.extraHeaders) {
-      opts.headers = this.opts.extraHeaders;
-    }
-    try {
-      this.ws = this.createSocket(uri, protocols, opts);
-    } catch (err) {
-      return this.emitReserved("error", err);
-    }
-    this.ws.binaryType = this.socket.binaryType;
-    this.addEventListeners();
-  }
-  /**
-   * Adds event listeners to the socket
-   *
-   * @private
-   */
-  addEventListeners() {
-    this.ws.onopen = () => {
-      if (this.opts.autoUnref) {
-        this.ws._socket.unref();
-      }
-      this.onOpen();
-    };
-    this.ws.onclose = (closeEvent) => this.onClose({
-      description: "websocket connection closed",
-      context: closeEvent
-    });
-    this.ws.onmessage = (ev) => this.onData(ev.data);
-    this.ws.onerror = (e) => this.onError("websocket error", e);
-  }
-  write(packets) {
-    this.writable = false;
-    for (let i = 0; i < packets.length; i++) {
-      const packet = packets[i];
-      const lastPacket = i === packets.length - 1;
-      encodePacket(packet, this.supportsBinary, (data) => {
-        try {
-          this.doWrite(packet, data);
-        } catch (e) {
-        }
-        if (lastPacket) {
-          nextTick(() => {
-            this.writable = true;
-            this.emitReserved("drain");
-          }, this.setTimeoutFn);
-        }
-      });
-    }
-  }
-  doClose() {
-    if (typeof this.ws !== "undefined") {
-      this.ws.onerror = () => {
-      };
-      this.ws.close();
-      this.ws = null;
-    }
-  }
-  /**
-   * Generates uri for connection.
-   *
-   * @private
-   */
-  uri() {
-    const schema = this.opts.secure ? "wss" : "ws";
-    const query = this.query || {};
-    if (this.opts.timestampRequests) {
-      query[this.opts.timestampParam] = randomString();
-    }
-    if (!this.supportsBinary) {
-      query.b64 = 1;
-    }
-    return this.createUri(schema, query);
-  }
-}
-const WebSocketCtor = globalThisShim.WebSocket || globalThisShim.MozWebSocket;
-class WS extends BaseWS {
-  createSocket(uri, protocols, opts) {
-    return !isReactNative ? protocols ? new WebSocketCtor(uri, protocols) : new WebSocketCtor(uri) : new WebSocketCtor(uri, protocols, opts);
-  }
-  doWrite(_packet, data) {
-    this.ws.send(data);
-  }
-}
-class WT extends Transport {
-  get name() {
-    return "webtransport";
-  }
-  doOpen() {
-    try {
-      this._transport = new WebTransport(this.createUri("https"), this.opts.transportOptions[this.name]);
-    } catch (err) {
-      return this.emitReserved("error", err);
-    }
-    this._transport.closed.then(() => {
-      this.onClose();
-    }).catch((err) => {
-      this.onError("webtransport error", err);
-    });
-    this._transport.ready.then(() => {
-      this._transport.createBidirectionalStream().then((stream) => {
-        const decoderStream = createPacketDecoderStream(Number.MAX_SAFE_INTEGER, this.socket.binaryType);
-        const reader = stream.readable.pipeThrough(decoderStream).getReader();
-        const encoderStream = createPacketEncoderStream();
-        encoderStream.readable.pipeTo(stream.writable);
-        this._writer = encoderStream.writable.getWriter();
-        const read = () => {
-          reader.read().then(({ done, value: value2 }) => {
-            if (done) {
-              return;
-            }
-            this.onPacket(value2);
-            read();
-          }).catch((err) => {
-          });
-        };
-        read();
-        const packet = { type: "open" };
-        if (this.query.sid) {
-          packet.data = `{"sid":"${this.query.sid}"}`;
-        }
-        this._writer.write(packet).then(() => this.onOpen());
-      });
-    });
-  }
-  write(packets) {
-    this.writable = false;
-    for (let i = 0; i < packets.length; i++) {
-      const packet = packets[i];
-      const lastPacket = i === packets.length - 1;
-      this._writer.write(packet).then(() => {
-        if (lastPacket) {
-          nextTick(() => {
-            this.writable = true;
-            this.emitReserved("drain");
-          }, this.setTimeoutFn);
-        }
-      });
-    }
-  }
-  doClose() {
-    var _a;
-    (_a = this._transport) === null || _a === void 0 ? void 0 : _a.close();
-  }
-}
-const transports = {
-  websocket: WS,
-  webtransport: WT,
-  polling: XHR
-};
-const re = /^(?:(?![^:@\/?#]+:[^:@\/]*@)(http|https|ws|wss):\/\/)?((?:(([^:@\/?#]*)(?::([^:@\/?#]*))?)?@)?((?:[a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}|[^:\/?#]*)(?::(\d*))?)(((\/(?:[^?#](?![^?#\/]*\.[^?#\/.]+(?:[?#]|$)))*\/?)?([^?#\/]*))(?:\?([^#]*))?(?:#(.*))?)/;
-const parts = [
-  "source",
-  "protocol",
-  "authority",
-  "userInfo",
-  "user",
-  "password",
-  "host",
-  "port",
-  "relative",
-  "path",
-  "directory",
-  "file",
-  "query",
-  "anchor"
-];
-function parse(str) {
-  if (str.length > 8e3) {
-    throw "URI too long";
-  }
-  const src = str, b = str.indexOf("["), e = str.indexOf("]");
-  if (b != -1 && e != -1) {
-    str = str.substring(0, b) + str.substring(b, e).replace(/:/g, ";") + str.substring(e, str.length);
-  }
-  let m = re.exec(str || ""), uri = {}, i = 14;
-  while (i--) {
-    uri[parts[i]] = m[i] || "";
-  }
-  if (b != -1 && e != -1) {
-    uri.source = src;
-    uri.host = uri.host.substring(1, uri.host.length - 1).replace(/;/g, ":");
-    uri.authority = uri.authority.replace("[", "").replace("]", "").replace(/;/g, ":");
-    uri.ipv6uri = true;
-  }
-  uri.pathNames = pathNames(uri, uri["path"]);
-  uri.queryKey = queryKey(uri, uri["query"]);
-  return uri;
-}
-function pathNames(obj, path) {
-  const regx = /\/{2,9}/g, names = path.replace(regx, "/").split("/");
-  if (path.slice(0, 1) == "/" || path.length === 0) {
-    names.splice(0, 1);
-  }
-  if (path.slice(-1) == "/") {
-    names.splice(names.length - 1, 1);
-  }
-  return names;
-}
-function queryKey(uri, query) {
-  const data = {};
-  query.replace(/(?:^|&)([^&=]*)=?([^&]*)/g, function($0, $1, $2) {
-    if ($1) {
-      data[$1] = $2;
-    }
-  });
-  return data;
-}
-const withEventListeners = typeof addEventListener === "function" && typeof removeEventListener === "function";
-const OFFLINE_EVENT_LISTENERS = [];
-if (withEventListeners) {
-  addEventListener("offline", () => {
-    OFFLINE_EVENT_LISTENERS.forEach((listener) => listener());
-  }, false);
-}
-class SocketWithoutUpgrade extends Emitter {
-  /**
-   * Socket constructor.
-   *
-   * @param {String|Object} uri - uri or options
-   * @param {Object} opts - options
-   */
-  constructor(uri, opts) {
-    super();
-    this.binaryType = defaultBinaryType;
-    this.writeBuffer = [];
-    this._prevBufferLen = 0;
-    this._pingInterval = -1;
-    this._pingTimeout = -1;
-    this._maxPayload = -1;
-    this._pingTimeoutTime = Infinity;
-    if (uri && "object" === typeof uri) {
-      opts = uri;
-      uri = null;
-    }
-    if (uri) {
-      const parsedUri = parse(uri);
-      opts.hostname = parsedUri.host;
-      opts.secure = parsedUri.protocol === "https" || parsedUri.protocol === "wss";
-      opts.port = parsedUri.port;
-      if (parsedUri.query)
-        opts.query = parsedUri.query;
-    } else if (opts.host) {
-      opts.hostname = parse(opts.host).host;
-    }
-    installTimerFunctions(this, opts);
-    this.secure = null != opts.secure ? opts.secure : typeof location !== "undefined" && "https:" === location.protocol;
-    if (opts.hostname && !opts.port) {
-      opts.port = this.secure ? "443" : "80";
-    }
-    this.hostname = opts.hostname || (typeof location !== "undefined" ? location.hostname : "localhost");
-    this.port = opts.port || (typeof location !== "undefined" && location.port ? location.port : this.secure ? "443" : "80");
-    this.transports = [];
-    this._transportsByName = {};
-    opts.transports.forEach((t) => {
-      const transportName = t.prototype.name;
-      this.transports.push(transportName);
-      this._transportsByName[transportName] = t;
-    });
-    this.opts = Object.assign({
-      path: "/engine.io",
-      agent: false,
-      withCredentials: false,
-      upgrade: true,
-      timestampParam: "t",
-      rememberUpgrade: false,
-      addTrailingSlash: true,
-      rejectUnauthorized: true,
-      perMessageDeflate: {
-        threshold: 1024
-      },
-      transportOptions: {},
-      closeOnBeforeunload: false
-    }, opts);
-    this.opts.path = this.opts.path.replace(/\/$/, "") + (this.opts.addTrailingSlash ? "/" : "");
-    if (typeof this.opts.query === "string") {
-      this.opts.query = decode(this.opts.query);
-    }
-    if (withEventListeners) {
-      if (this.opts.closeOnBeforeunload) {
-        this._beforeunloadEventListener = () => {
-          if (this.transport) {
-            this.transport.removeAllListeners();
-            this.transport.close();
-          }
-        };
-        addEventListener("beforeunload", this._beforeunloadEventListener, false);
-      }
-      if (this.hostname !== "localhost") {
-        this._offlineEventListener = () => {
-          this._onClose("transport close", {
-            description: "network connection lost"
-          });
-        };
-        OFFLINE_EVENT_LISTENERS.push(this._offlineEventListener);
-      }
-    }
-    if (this.opts.withCredentials) {
-      this._cookieJar = createCookieJar();
-    }
-    this._open();
-  }
-  /**
-   * Creates transport of the given type.
-   *
-   * @param {String} name - transport name
-   * @return {Transport}
-   * @private
-   */
-  createTransport(name) {
-    const query = Object.assign({}, this.opts.query);
-    query.EIO = protocol$1;
-    query.transport = name;
-    if (this.id)
-      query.sid = this.id;
-    const opts = Object.assign({}, this.opts, {
-      query,
-      socket: this,
-      hostname: this.hostname,
-      secure: this.secure,
-      port: this.port
-    }, this.opts.transportOptions[name]);
-    return new this._transportsByName[name](opts);
-  }
-  /**
-   * Initializes transport to use and starts probe.
-   *
-   * @private
-   */
-  _open() {
-    if (this.transports.length === 0) {
-      this.setTimeoutFn(() => {
-        this.emitReserved("error", "No transports available");
-      }, 0);
-      return;
-    }
-    const transportName = this.opts.rememberUpgrade && SocketWithoutUpgrade.priorWebsocketSuccess && this.transports.indexOf("websocket") !== -1 ? "websocket" : this.transports[0];
-    this.readyState = "opening";
-    const transport = this.createTransport(transportName);
-    transport.open();
-    this.setTransport(transport);
-  }
-  /**
-   * Sets the current transport. Disables the existing one (if any).
-   *
-   * @private
-   */
-  setTransport(transport) {
-    if (this.transport) {
-      this.transport.removeAllListeners();
-    }
-    this.transport = transport;
-    transport.on("drain", this._onDrain.bind(this)).on("packet", this._onPacket.bind(this)).on("error", this._onError.bind(this)).on("close", (reason) => this._onClose("transport close", reason));
-  }
-  /**
-   * Called when connection is deemed open.
-   *
-   * @private
-   */
-  onOpen() {
-    this.readyState = "open";
-    SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === this.transport.name;
-    this.emitReserved("open");
-    this.flush();
-  }
-  /**
-   * Handles a packet.
-   *
-   * @private
-   */
-  _onPacket(packet) {
-    if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-      this.emitReserved("packet", packet);
-      this.emitReserved("heartbeat");
-      switch (packet.type) {
-        case "open":
-          this.onHandshake(JSON.parse(packet.data));
-          break;
-        case "ping":
-          this._sendPacket("pong");
-          this.emitReserved("ping");
-          this.emitReserved("pong");
-          this._resetPingTimeout();
-          break;
-        case "error":
-          const err = new Error("server error");
-          err.code = packet.data;
-          this._onError(err);
-          break;
-        case "message":
-          this.emitReserved("data", packet.data);
-          this.emitReserved("message", packet.data);
-          break;
-      }
-    }
-  }
-  /**
-   * Called upon handshake completion.
-   *
-   * @param {Object} data - handshake obj
-   * @private
-   */
-  onHandshake(data) {
-    this.emitReserved("handshake", data);
-    this.id = data.sid;
-    this.transport.query.sid = data.sid;
-    this._pingInterval = data.pingInterval;
-    this._pingTimeout = data.pingTimeout;
-    this._maxPayload = data.maxPayload;
-    this.onOpen();
-    if ("closed" === this.readyState)
-      return;
-    this._resetPingTimeout();
-  }
-  /**
-   * Sets and resets ping timeout timer based on server pings.
-   *
-   * @private
-   */
-  _resetPingTimeout() {
-    this.clearTimeoutFn(this._pingTimeoutTimer);
-    const delay = this._pingInterval + this._pingTimeout;
-    this._pingTimeoutTime = Date.now() + delay;
-    this._pingTimeoutTimer = this.setTimeoutFn(() => {
-      this._onClose("ping timeout");
-    }, delay);
-    if (this.opts.autoUnref) {
-      this._pingTimeoutTimer.unref();
-    }
-  }
-  /**
-   * Called on `drain` event
-   *
-   * @private
-   */
-  _onDrain() {
-    this.writeBuffer.splice(0, this._prevBufferLen);
-    this._prevBufferLen = 0;
-    if (0 === this.writeBuffer.length) {
-      this.emitReserved("drain");
-    } else {
-      this.flush();
-    }
-  }
-  /**
-   * Flush write buffers.
-   *
-   * @private
-   */
-  flush() {
-    if ("closed" !== this.readyState && this.transport.writable && !this.upgrading && this.writeBuffer.length) {
-      const packets = this._getWritablePackets();
-      this.transport.send(packets);
-      this._prevBufferLen = packets.length;
-      this.emitReserved("flush");
-    }
-  }
-  /**
-   * Ensure the encoded size of the writeBuffer is below the maxPayload value sent by the server (only for HTTP
-   * long-polling)
-   *
-   * @private
-   */
-  _getWritablePackets() {
-    const shouldCheckPayloadSize = this._maxPayload && this.transport.name === "polling" && this.writeBuffer.length > 1;
-    if (!shouldCheckPayloadSize) {
-      return this.writeBuffer;
-    }
-    let payloadSize = 1;
-    for (let i = 0; i < this.writeBuffer.length; i++) {
-      const data = this.writeBuffer[i].data;
-      if (data) {
-        payloadSize += byteLength(data);
-      }
-      if (i > 0 && payloadSize > this._maxPayload) {
-        return this.writeBuffer.slice(0, i);
-      }
-      payloadSize += 2;
-    }
-    return this.writeBuffer;
-  }
-  /**
-   * Checks whether the heartbeat timer has expired but the socket has not yet been notified.
-   *
-   * Note: this method is private for now because it does not really fit the WebSocket API, but if we put it in the
-   * `write()` method then the message would not be buffered by the Socket.IO client.
-   *
-   * @return {boolean}
-   * @private
-   */
-  /* private */
-  _hasPingExpired() {
-    if (!this._pingTimeoutTime)
-      return true;
-    const hasExpired = Date.now() > this._pingTimeoutTime;
-    if (hasExpired) {
-      this._pingTimeoutTime = 0;
-      nextTick(() => {
-        this._onClose("ping timeout");
-      }, this.setTimeoutFn);
-    }
-    return hasExpired;
-  }
-  /**
-   * Sends a message.
-   *
-   * @param {String} msg - message.
-   * @param {Object} options.
-   * @param {Function} fn - callback function.
-   * @return {Socket} for chaining.
-   */
-  write(msg, options, fn) {
-    this._sendPacket("message", msg, options, fn);
-    return this;
-  }
-  /**
-   * Sends a message. Alias of {@link Socket#write}.
-   *
-   * @param {String} msg - message.
-   * @param {Object} options.
-   * @param {Function} fn - callback function.
-   * @return {Socket} for chaining.
-   */
-  send(msg, options, fn) {
-    this._sendPacket("message", msg, options, fn);
-    return this;
-  }
-  /**
-   * Sends a packet.
-   *
-   * @param {String} type: packet type.
-   * @param {String} data.
-   * @param {Object} options.
-   * @param {Function} fn - callback function.
-   * @private
-   */
-  _sendPacket(type, data, options, fn) {
-    if ("function" === typeof data) {
-      fn = data;
-      data = void 0;
-    }
-    if ("function" === typeof options) {
-      fn = options;
-      options = null;
-    }
-    if ("closing" === this.readyState || "closed" === this.readyState) {
-      return;
-    }
-    options = options || {};
-    options.compress = false !== options.compress;
-    const packet = {
-      type,
-      data,
-      options
-    };
-    this.emitReserved("packetCreate", packet);
-    this.writeBuffer.push(packet);
-    if (fn)
-      this.once("flush", fn);
-    this.flush();
-  }
-  /**
-   * Closes the connection.
-   */
-  close() {
-    const close = () => {
-      this._onClose("forced close");
-      this.transport.close();
-    };
-    const cleanupAndClose = () => {
-      this.off("upgrade", cleanupAndClose);
-      this.off("upgradeError", cleanupAndClose);
-      close();
-    };
-    const waitForUpgrade = () => {
-      this.once("upgrade", cleanupAndClose);
-      this.once("upgradeError", cleanupAndClose);
-    };
-    if ("opening" === this.readyState || "open" === this.readyState) {
-      this.readyState = "closing";
-      if (this.writeBuffer.length) {
-        this.once("drain", () => {
-          if (this.upgrading) {
-            waitForUpgrade();
-          } else {
-            close();
-          }
-        });
-      } else if (this.upgrading) {
-        waitForUpgrade();
-      } else {
-        close();
-      }
-    }
-    return this;
-  }
-  /**
-   * Called upon transport error
-   *
-   * @private
-   */
-  _onError(err) {
-    SocketWithoutUpgrade.priorWebsocketSuccess = false;
-    if (this.opts.tryAllTransports && this.transports.length > 1 && this.readyState === "opening") {
-      this.transports.shift();
-      return this._open();
-    }
-    this.emitReserved("error", err);
-    this._onClose("transport error", err);
-  }
-  /**
-   * Called upon transport close.
-   *
-   * @private
-   */
-  _onClose(reason, description) {
-    if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-      this.clearTimeoutFn(this._pingTimeoutTimer);
-      this.transport.removeAllListeners("close");
-      this.transport.close();
-      this.transport.removeAllListeners();
-      if (withEventListeners) {
-        if (this._beforeunloadEventListener) {
-          removeEventListener("beforeunload", this._beforeunloadEventListener, false);
-        }
-        if (this._offlineEventListener) {
-          const i = OFFLINE_EVENT_LISTENERS.indexOf(this._offlineEventListener);
-          if (i !== -1) {
-            OFFLINE_EVENT_LISTENERS.splice(i, 1);
-          }
-        }
-      }
-      this.readyState = "closed";
-      this.id = null;
-      this.emitReserved("close", reason, description);
-      this.writeBuffer = [];
-      this._prevBufferLen = 0;
-    }
-  }
-}
-SocketWithoutUpgrade.protocol = protocol$1;
-class SocketWithUpgrade extends SocketWithoutUpgrade {
-  constructor() {
-    super(...arguments);
-    this._upgrades = [];
-  }
-  onOpen() {
-    super.onOpen();
-    if ("open" === this.readyState && this.opts.upgrade) {
-      for (let i = 0; i < this._upgrades.length; i++) {
-        this._probe(this._upgrades[i]);
-      }
-    }
-  }
-  /**
-   * Probes a transport.
-   *
-   * @param {String} name - transport name
-   * @private
-   */
-  _probe(name) {
-    let transport = this.createTransport(name);
-    let failed = false;
-    SocketWithoutUpgrade.priorWebsocketSuccess = false;
-    const onTransportOpen = () => {
-      if (failed)
-        return;
-      transport.send([{ type: "ping", data: "probe" }]);
-      transport.once("packet", (msg) => {
-        if (failed)
-          return;
-        if ("pong" === msg.type && "probe" === msg.data) {
-          this.upgrading = true;
-          this.emitReserved("upgrading", transport);
-          if (!transport)
-            return;
-          SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === transport.name;
-          this.transport.pause(() => {
-            if (failed)
-              return;
-            if ("closed" === this.readyState)
-              return;
-            cleanup();
-            this.setTransport(transport);
-            transport.send([{ type: "upgrade" }]);
-            this.emitReserved("upgrade", transport);
-            transport = null;
-            this.upgrading = false;
-            this.flush();
-          });
-        } else {
-          const err = new Error("probe error");
-          err.transport = transport.name;
-          this.emitReserved("upgradeError", err);
-        }
-      });
-    };
-    function freezeTransport() {
-      if (failed)
-        return;
-      failed = true;
-      cleanup();
-      transport.close();
-      transport = null;
-    }
-    const onerror = (err) => {
-      const error = new Error("probe error: " + err);
-      error.transport = transport.name;
-      freezeTransport();
-      this.emitReserved("upgradeError", error);
-    };
-    function onTransportClose() {
-      onerror("transport closed");
-    }
-    function onclose() {
-      onerror("socket closed");
-    }
-    function onupgrade(to) {
-      if (transport && to.name !== transport.name) {
-        freezeTransport();
-      }
-    }
-    const cleanup = () => {
-      transport.removeListener("open", onTransportOpen);
-      transport.removeListener("error", onerror);
-      transport.removeListener("close", onTransportClose);
-      this.off("close", onclose);
-      this.off("upgrading", onupgrade);
-    };
-    transport.once("open", onTransportOpen);
-    transport.once("error", onerror);
-    transport.once("close", onTransportClose);
-    this.once("close", onclose);
-    this.once("upgrading", onupgrade);
-    if (this._upgrades.indexOf("webtransport") !== -1 && name !== "webtransport") {
-      this.setTimeoutFn(() => {
-        if (!failed) {
-          transport.open();
-        }
-      }, 200);
-    } else {
-      transport.open();
-    }
-  }
-  onHandshake(data) {
-    this._upgrades = this._filterUpgrades(data.upgrades);
-    super.onHandshake(data);
-  }
-  /**
-   * Filters upgrades, returning only those matching client transports.
-   *
-   * @param {Array} upgrades - server upgrades
-   * @private
-   */
-  _filterUpgrades(upgrades) {
-    const filteredUpgrades = [];
-    for (let i = 0; i < upgrades.length; i++) {
-      if (~this.transports.indexOf(upgrades[i]))
-        filteredUpgrades.push(upgrades[i]);
-    }
-    return filteredUpgrades;
-  }
-}
-let Socket$1 = class Socket extends SocketWithUpgrade {
-  constructor(uri, opts = {}) {
-    const o = typeof uri === "object" ? uri : opts;
-    if (!o.transports || o.transports && typeof o.transports[0] === "string") {
-      o.transports = (o.transports || ["polling", "websocket", "webtransport"]).map((transportName) => transports[transportName]).filter((t) => !!t);
-    }
-    super(uri, o);
-  }
-};
-function url(uri, path = "", loc) {
-  let obj = uri;
-  loc = loc || typeof location !== "undefined" && location;
-  if (null == uri)
-    uri = loc.protocol + "//" + loc.host;
-  if (typeof uri === "string") {
-    if ("/" === uri.charAt(0)) {
-      if ("/" === uri.charAt(1)) {
-        uri = loc.protocol + uri;
-      } else {
-        uri = loc.host + uri;
-      }
-    }
-    if (!/^(https?|wss?):\/\//.test(uri)) {
-      if ("undefined" !== typeof loc) {
-        uri = loc.protocol + "//" + uri;
-      } else {
-        uri = "https://" + uri;
-      }
-    }
-    obj = parse(uri);
-  }
-  if (!obj.port) {
-    if (/^(http|ws)$/.test(obj.protocol)) {
-      obj.port = "80";
-    } else if (/^(http|ws)s$/.test(obj.protocol)) {
-      obj.port = "443";
-    }
-  }
-  obj.path = obj.path || "/";
-  const ipv6 = obj.host.indexOf(":") !== -1;
-  const host = ipv6 ? "[" + obj.host + "]" : obj.host;
-  obj.id = obj.protocol + "://" + host + ":" + obj.port + path;
-  obj.href = obj.protocol + "://" + host + (loc && loc.port === obj.port ? "" : ":" + obj.port);
-  return obj;
-}
-const withNativeArrayBuffer = typeof ArrayBuffer === "function";
-const isView = (obj) => {
-  return typeof ArrayBuffer.isView === "function" ? ArrayBuffer.isView(obj) : obj.buffer instanceof ArrayBuffer;
-};
-const toString = Object.prototype.toString;
-const withNativeBlob = typeof Blob === "function" || typeof Blob !== "undefined" && toString.call(Blob) === "[object BlobConstructor]";
-const withNativeFile = typeof File === "function" || typeof File !== "undefined" && toString.call(File) === "[object FileConstructor]";
-function isBinary(obj) {
-  return withNativeArrayBuffer && (obj instanceof ArrayBuffer || isView(obj)) || withNativeBlob && obj instanceof Blob || withNativeFile && obj instanceof File;
-}
-function hasBinary(obj, toJSON) {
-  if (!obj || typeof obj !== "object") {
-    return false;
-  }
-  if (Array.isArray(obj)) {
-    for (let i = 0, l = obj.length; i < l; i++) {
-      if (hasBinary(obj[i])) {
-        return true;
-      }
-    }
-    return false;
-  }
-  if (isBinary(obj)) {
-    return true;
-  }
-  if (obj.toJSON && typeof obj.toJSON === "function" && arguments.length === 1) {
-    return hasBinary(obj.toJSON(), true);
-  }
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key) && hasBinary(obj[key])) {
-      return true;
-    }
-  }
-  return false;
-}
-function deconstructPacket(packet) {
-  const buffers = [];
-  const packetData = packet.data;
-  const pack = packet;
-  pack.data = _deconstructPacket(packetData, buffers);
-  pack.attachments = buffers.length;
-  return { packet: pack, buffers };
-}
-function _deconstructPacket(data, buffers) {
-  if (!data)
-    return data;
-  if (isBinary(data)) {
-    const placeholder = { _placeholder: true, num: buffers.length };
-    buffers.push(data);
-    return placeholder;
-  } else if (Array.isArray(data)) {
-    const newData = new Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      newData[i] = _deconstructPacket(data[i], buffers);
-    }
-    return newData;
-  } else if (typeof data === "object" && !(data instanceof Date)) {
-    const newData = {};
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        newData[key] = _deconstructPacket(data[key], buffers);
-      }
-    }
-    return newData;
-  }
-  return data;
-}
-function reconstructPacket(packet, buffers) {
-  packet.data = _reconstructPacket(packet.data, buffers);
-  delete packet.attachments;
-  return packet;
-}
-function _reconstructPacket(data, buffers) {
-  if (!data)
-    return data;
-  if (data && data._placeholder === true) {
-    const isIndexValid = typeof data.num === "number" && data.num >= 0 && data.num < buffers.length;
-    if (isIndexValid) {
-      return buffers[data.num];
-    } else {
-      throw new Error("illegal attachments");
-    }
-  } else if (Array.isArray(data)) {
-    for (let i = 0; i < data.length; i++) {
-      data[i] = _reconstructPacket(data[i], buffers);
-    }
-  } else if (typeof data === "object") {
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        data[key] = _reconstructPacket(data[key], buffers);
-      }
-    }
-  }
-  return data;
-}
-const RESERVED_EVENTS$1 = [
-  "connect",
-  "connect_error",
-  "disconnect",
-  "disconnecting",
-  "newListener",
-  "removeListener"
-  // used by the Node.js EventEmitter
-];
-const protocol = 5;
-var PacketType;
-(function(PacketType2) {
-  PacketType2[PacketType2["CONNECT"] = 0] = "CONNECT";
-  PacketType2[PacketType2["DISCONNECT"] = 1] = "DISCONNECT";
-  PacketType2[PacketType2["EVENT"] = 2] = "EVENT";
-  PacketType2[PacketType2["ACK"] = 3] = "ACK";
-  PacketType2[PacketType2["CONNECT_ERROR"] = 4] = "CONNECT_ERROR";
-  PacketType2[PacketType2["BINARY_EVENT"] = 5] = "BINARY_EVENT";
-  PacketType2[PacketType2["BINARY_ACK"] = 6] = "BINARY_ACK";
-})(PacketType || (PacketType = {}));
-class Encoder {
-  /**
-   * Encoder constructor
-   *
-   * @param {function} replacer - custom replacer to pass down to JSON.parse
-   */
-  constructor(replacer) {
-    this.replacer = replacer;
-  }
-  /**
-   * Encode a packet as a single string if non-binary, or as a
-   * buffer sequence, depending on packet type.
-   *
-   * @param {Object} obj - packet object
-   */
-  encode(obj) {
-    if (obj.type === PacketType.EVENT || obj.type === PacketType.ACK) {
-      if (hasBinary(obj)) {
-        return this.encodeAsBinary({
-          type: obj.type === PacketType.EVENT ? PacketType.BINARY_EVENT : PacketType.BINARY_ACK,
-          nsp: obj.nsp,
-          data: obj.data,
-          id: obj.id
-        });
-      }
-    }
-    return [this.encodeAsString(obj)];
-  }
-  /**
-   * Encode packet as string.
-   */
-  encodeAsString(obj) {
-    let str = "" + obj.type;
-    if (obj.type === PacketType.BINARY_EVENT || obj.type === PacketType.BINARY_ACK) {
-      str += obj.attachments + "-";
-    }
-    if (obj.nsp && "/" !== obj.nsp) {
-      str += obj.nsp + ",";
-    }
-    if (null != obj.id) {
-      str += obj.id;
-    }
-    if (null != obj.data) {
-      str += JSON.stringify(obj.data, this.replacer);
-    }
-    return str;
-  }
-  /**
-   * Encode packet as 'buffer sequence' by removing blobs, and
-   * deconstructing packet into object with placeholders and
-   * a list of buffers.
-   */
-  encodeAsBinary(obj) {
-    const deconstruction = deconstructPacket(obj);
-    const pack = this.encodeAsString(deconstruction.packet);
-    const buffers = deconstruction.buffers;
-    buffers.unshift(pack);
-    return buffers;
-  }
-}
-function isObject(value2) {
-  return Object.prototype.toString.call(value2) === "[object Object]";
-}
-class Decoder extends Emitter {
-  /**
-   * Decoder constructor
-   *
-   * @param {function} reviver - custom reviver to pass down to JSON.stringify
-   */
-  constructor(reviver) {
-    super();
-    this.reviver = reviver;
-  }
-  /**
-   * Decodes an encoded packet string into packet JSON.
-   *
-   * @param {String} obj - encoded packet
-   */
-  add(obj) {
-    let packet;
-    if (typeof obj === "string") {
-      if (this.reconstructor) {
-        throw new Error("got plaintext data when reconstructing a packet");
-      }
-      packet = this.decodeString(obj);
-      const isBinaryEvent = packet.type === PacketType.BINARY_EVENT;
-      if (isBinaryEvent || packet.type === PacketType.BINARY_ACK) {
-        packet.type = isBinaryEvent ? PacketType.EVENT : PacketType.ACK;
-        this.reconstructor = new BinaryReconstructor(packet);
-        if (packet.attachments === 0) {
-          super.emitReserved("decoded", packet);
-        }
-      } else {
-        super.emitReserved("decoded", packet);
-      }
-    } else if (isBinary(obj) || obj.base64) {
-      if (!this.reconstructor) {
-        throw new Error("got binary data when not reconstructing a packet");
-      } else {
-        packet = this.reconstructor.takeBinaryData(obj);
-        if (packet) {
-          this.reconstructor = null;
-          super.emitReserved("decoded", packet);
-        }
-      }
-    } else {
-      throw new Error("Unknown type: " + obj);
-    }
-  }
-  /**
-   * Decode a packet String (JSON data)
-   *
-   * @param {String} str
-   * @return {Object} packet
-   */
-  decodeString(str) {
-    let i = 0;
-    const p = {
-      type: Number(str.charAt(0))
-    };
-    if (PacketType[p.type] === void 0) {
-      throw new Error("unknown packet type " + p.type);
-    }
-    if (p.type === PacketType.BINARY_EVENT || p.type === PacketType.BINARY_ACK) {
-      const start = i + 1;
-      while (str.charAt(++i) !== "-" && i != str.length) {
-      }
-      const buf = str.substring(start, i);
-      if (buf != Number(buf) || str.charAt(i) !== "-") {
-        throw new Error("Illegal attachments");
-      }
-      p.attachments = Number(buf);
-    }
-    if ("/" === str.charAt(i + 1)) {
-      const start = i + 1;
-      while (++i) {
-        const c = str.charAt(i);
-        if ("," === c)
-          break;
-        if (i === str.length)
-          break;
-      }
-      p.nsp = str.substring(start, i);
-    } else {
-      p.nsp = "/";
-    }
-    const next = str.charAt(i + 1);
-    if ("" !== next && Number(next) == next) {
-      const start = i + 1;
-      while (++i) {
-        const c = str.charAt(i);
-        if (null == c || Number(c) != c) {
-          --i;
-          break;
-        }
-        if (i === str.length)
-          break;
-      }
-      p.id = Number(str.substring(start, i + 1));
-    }
-    if (str.charAt(++i)) {
-      const payload = this.tryParse(str.substr(i));
-      if (Decoder.isPayloadValid(p.type, payload)) {
-        p.data = payload;
-      } else {
-        throw new Error("invalid payload");
-      }
-    }
-    return p;
-  }
-  tryParse(str) {
-    try {
-      return JSON.parse(str, this.reviver);
-    } catch (e) {
-      return false;
-    }
-  }
-  static isPayloadValid(type, payload) {
-    switch (type) {
-      case PacketType.CONNECT:
-        return isObject(payload);
-      case PacketType.DISCONNECT:
-        return payload === void 0;
-      case PacketType.CONNECT_ERROR:
-        return typeof payload === "string" || isObject(payload);
-      case PacketType.EVENT:
-      case PacketType.BINARY_EVENT:
-        return Array.isArray(payload) && (typeof payload[0] === "number" || typeof payload[0] === "string" && RESERVED_EVENTS$1.indexOf(payload[0]) === -1);
-      case PacketType.ACK:
-      case PacketType.BINARY_ACK:
-        return Array.isArray(payload);
-    }
-  }
-  /**
-   * Deallocates a parser's resources
-   */
-  destroy() {
-    if (this.reconstructor) {
-      this.reconstructor.finishedReconstruction();
-      this.reconstructor = null;
-    }
-  }
-}
-class BinaryReconstructor {
-  constructor(packet) {
-    this.packet = packet;
-    this.buffers = [];
-    this.reconPack = packet;
-  }
-  /**
-   * Method to be called when binary data received from connection
-   * after a BINARY_EVENT packet.
-   *
-   * @param {Buffer | ArrayBuffer} binData - the raw binary data received
-   * @return {null | Object} returns null if more binary data is expected or
-   *   a reconstructed packet object if all buffers have been received.
-   */
-  takeBinaryData(binData) {
-    this.buffers.push(binData);
-    if (this.buffers.length === this.reconPack.attachments) {
-      const packet = reconstructPacket(this.reconPack, this.buffers);
-      this.finishedReconstruction();
-      return packet;
-    }
-    return null;
-  }
-  /**
-   * Cleans up binary packet reconstruction variables.
-   */
-  finishedReconstruction() {
-    this.reconPack = null;
-    this.buffers = [];
-  }
-}
-const parser = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
-  __proto__: null,
-  Decoder,
-  Encoder,
-  get PacketType() {
-    return PacketType;
-  },
-  protocol
-}, Symbol.toStringTag, { value: "Module" }));
-function on(obj, ev, fn) {
-  obj.on(ev, fn);
-  return function subDestroy() {
-    obj.off(ev, fn);
-  };
-}
-const RESERVED_EVENTS = Object.freeze({
-  connect: 1,
-  connect_error: 1,
-  disconnect: 1,
-  disconnecting: 1,
-  // EventEmitter reserved events: https://nodejs.org/api/events.html#events_event_newlistener
-  newListener: 1,
-  removeListener: 1
-});
-class Socket2 extends Emitter {
-  /**
-   * `Socket` constructor.
-   */
-  constructor(io, nsp, opts) {
-    super();
-    this.connected = false;
-    this.recovered = false;
-    this.receiveBuffer = [];
-    this.sendBuffer = [];
-    this._queue = [];
-    this._queueSeq = 0;
-    this.ids = 0;
-    this.acks = {};
-    this.flags = {};
-    this.io = io;
-    this.nsp = nsp;
-    if (opts && opts.auth) {
-      this.auth = opts.auth;
-    }
-    this._opts = Object.assign({}, opts);
-    if (this.io._autoConnect)
-      this.open();
-  }
-  /**
-   * Whether the socket is currently disconnected
-   *
-   * @example
-   * const socket = io();
-   *
-   * socket.on("connect", () => {
-   *   console.log(socket.disconnected); // false
-   * });
-   *
-   * socket.on("disconnect", () => {
-   *   console.log(socket.disconnected); // true
-   * });
-   */
-  get disconnected() {
-    return !this.connected;
-  }
-  /**
-   * Subscribe to open, close and packet events
-   *
-   * @private
-   */
-  subEvents() {
-    if (this.subs)
-      return;
-    const io = this.io;
-    this.subs = [
-      on(io, "open", this.onopen.bind(this)),
-      on(io, "packet", this.onpacket.bind(this)),
-      on(io, "error", this.onerror.bind(this)),
-      on(io, "close", this.onclose.bind(this))
-    ];
-  }
-  /**
-   * Whether the Socket will try to reconnect when its Manager connects or reconnects.
-   *
-   * @example
-   * const socket = io();
-   *
-   * console.log(socket.active); // true
-   *
-   * socket.on("disconnect", (reason) => {
-   *   if (reason === "io server disconnect") {
-   *     // the disconnection was initiated by the server, you need to manually reconnect
-   *     console.log(socket.active); // false
-   *   }
-   *   // else the socket will automatically try to reconnect
-   *   console.log(socket.active); // true
-   * });
-   */
-  get active() {
-    return !!this.subs;
-  }
-  /**
-   * "Opens" the socket.
-   *
-   * @example
-   * const socket = io({
-   *   autoConnect: false
-   * });
-   *
-   * socket.connect();
-   */
-  connect() {
-    if (this.connected)
-      return this;
-    this.subEvents();
-    if (!this.io["_reconnecting"])
-      this.io.open();
-    if ("open" === this.io._readyState)
-      this.onopen();
-    return this;
-  }
-  /**
-   * Alias for {@link connect()}.
-   */
-  open() {
-    return this.connect();
-  }
-  /**
-   * Sends a `message` event.
-   *
-   * This method mimics the WebSocket.send() method.
-   *
-   * @see https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/send
-   *
-   * @example
-   * socket.send("hello");
-   *
-   * // this is equivalent to
-   * socket.emit("message", "hello");
-   *
-   * @return self
-   */
-  send(...args) {
-    args.unshift("message");
-    this.emit.apply(this, args);
-    return this;
-  }
-  /**
-   * Override `emit`.
-   * If the event is in `events`, it's emitted normally.
-   *
-   * @example
-   * socket.emit("hello", "world");
-   *
-   * // all serializable datastructures are supported (no need to call JSON.stringify)
-   * socket.emit("hello", 1, "2", { 3: ["4"], 5: Uint8Array.from([6]) });
-   *
-   * // with an acknowledgement from the server
-   * socket.emit("hello", "world", (val) => {
-   *   // ...
-   * });
-   *
-   * @return self
-   */
-  emit(ev, ...args) {
-    var _a, _b, _c;
-    if (RESERVED_EVENTS.hasOwnProperty(ev)) {
-      throw new Error('"' + ev.toString() + '" is a reserved event name');
-    }
-    args.unshift(ev);
-    if (this._opts.retries && !this.flags.fromQueue && !this.flags.volatile) {
-      this._addToQueue(args);
-      return this;
-    }
-    const packet = {
-      type: PacketType.EVENT,
-      data: args
-    };
-    packet.options = {};
-    packet.options.compress = this.flags.compress !== false;
-    if ("function" === typeof args[args.length - 1]) {
-      const id = this.ids++;
-      const ack = args.pop();
-      this._registerAckCallback(id, ack);
-      packet.id = id;
-    }
-    const isTransportWritable = (_b = (_a = this.io.engine) === null || _a === void 0 ? void 0 : _a.transport) === null || _b === void 0 ? void 0 : _b.writable;
-    const isConnected = this.connected && !((_c = this.io.engine) === null || _c === void 0 ? void 0 : _c._hasPingExpired());
-    const discardPacket = this.flags.volatile && !isTransportWritable;
-    if (discardPacket) ;
-    else if (isConnected) {
-      this.notifyOutgoingListeners(packet);
-      this.packet(packet);
-    } else {
-      this.sendBuffer.push(packet);
-    }
-    this.flags = {};
-    return this;
-  }
-  /**
-   * @private
-   */
-  _registerAckCallback(id, ack) {
-    var _a;
-    const timeout = (_a = this.flags.timeout) !== null && _a !== void 0 ? _a : this._opts.ackTimeout;
-    if (timeout === void 0) {
-      this.acks[id] = ack;
-      return;
-    }
-    const timer = this.io.setTimeoutFn(() => {
-      delete this.acks[id];
-      for (let i = 0; i < this.sendBuffer.length; i++) {
-        if (this.sendBuffer[i].id === id) {
-          this.sendBuffer.splice(i, 1);
-        }
-      }
-      ack.call(this, new Error("operation has timed out"));
-    }, timeout);
-    const fn = (...args) => {
-      this.io.clearTimeoutFn(timer);
-      ack.apply(this, args);
-    };
-    fn.withError = true;
-    this.acks[id] = fn;
-  }
-  /**
-   * Emits an event and waits for an acknowledgement
-   *
-   * @example
-   * // without timeout
-   * const response = await socket.emitWithAck("hello", "world");
-   *
-   * // with a specific timeout
-   * try {
-   *   const response = await socket.timeout(1000).emitWithAck("hello", "world");
-   * } catch (err) {
-   *   // the server did not acknowledge the event in the given delay
-   * }
-   *
-   * @return a Promise that will be fulfilled when the server acknowledges the event
-   */
-  emitWithAck(ev, ...args) {
-    return new Promise((resolve, reject) => {
-      const fn = (arg1, arg2) => {
-        return arg1 ? reject(arg1) : resolve(arg2);
-      };
-      fn.withError = true;
-      args.push(fn);
-      this.emit(ev, ...args);
-    });
-  }
-  /**
-   * Add the packet to the queue.
-   * @param args
-   * @private
-   */
-  _addToQueue(args) {
-    let ack;
-    if (typeof args[args.length - 1] === "function") {
-      ack = args.pop();
-    }
-    const packet = {
-      id: this._queueSeq++,
-      tryCount: 0,
-      pending: false,
-      args,
-      flags: Object.assign({ fromQueue: true }, this.flags)
-    };
-    args.push((err, ...responseArgs) => {
-      if (packet !== this._queue[0]) {
-        return;
-      }
-      const hasError = err !== null;
-      if (hasError) {
-        if (packet.tryCount > this._opts.retries) {
-          this._queue.shift();
-          if (ack) {
-            ack(err);
-          }
-        }
-      } else {
-        this._queue.shift();
-        if (ack) {
-          ack(null, ...responseArgs);
-        }
-      }
-      packet.pending = false;
-      return this._drainQueue();
-    });
-    this._queue.push(packet);
-    this._drainQueue();
-  }
-  /**
-   * Send the first packet of the queue, and wait for an acknowledgement from the server.
-   * @param force - whether to resend a packet that has not been acknowledged yet
-   *
-   * @private
-   */
-  _drainQueue(force = false) {
-    if (!this.connected || this._queue.length === 0) {
-      return;
-    }
-    const packet = this._queue[0];
-    if (packet.pending && !force) {
-      return;
-    }
-    packet.pending = true;
-    packet.tryCount++;
-    this.flags = packet.flags;
-    this.emit.apply(this, packet.args);
-  }
-  /**
-   * Sends a packet.
-   *
-   * @param packet
-   * @private
-   */
-  packet(packet) {
-    packet.nsp = this.nsp;
-    this.io._packet(packet);
-  }
-  /**
-   * Called upon engine `open`.
-   *
-   * @private
-   */
-  onopen() {
-    if (typeof this.auth == "function") {
-      this.auth((data) => {
-        this._sendConnectPacket(data);
-      });
-    } else {
-      this._sendConnectPacket(this.auth);
-    }
-  }
-  /**
-   * Sends a CONNECT packet to initiate the Socket.IO session.
-   *
-   * @param data
-   * @private
-   */
-  _sendConnectPacket(data) {
-    this.packet({
-      type: PacketType.CONNECT,
-      data: this._pid ? Object.assign({ pid: this._pid, offset: this._lastOffset }, data) : data
-    });
-  }
-  /**
-   * Called upon engine or manager `error`.
-   *
-   * @param err
-   * @private
-   */
-  onerror(err) {
-    if (!this.connected) {
-      this.emitReserved("connect_error", err);
-    }
-  }
-  /**
-   * Called upon engine `close`.
-   *
-   * @param reason
-   * @param description
-   * @private
-   */
-  onclose(reason, description) {
-    this.connected = false;
-    delete this.id;
-    this.emitReserved("disconnect", reason, description);
-    this._clearAcks();
-  }
-  /**
-   * Clears the acknowledgement handlers upon disconnection, since the client will never receive an acknowledgement from
-   * the server.
-   *
-   * @private
-   */
-  _clearAcks() {
-    Object.keys(this.acks).forEach((id) => {
-      const isBuffered = this.sendBuffer.some((packet) => String(packet.id) === id);
-      if (!isBuffered) {
-        const ack = this.acks[id];
-        delete this.acks[id];
-        if (ack.withError) {
-          ack.call(this, new Error("socket has been disconnected"));
-        }
-      }
-    });
-  }
-  /**
-   * Called with socket packet.
-   *
-   * @param packet
-   * @private
-   */
-  onpacket(packet) {
-    const sameNamespace = packet.nsp === this.nsp;
-    if (!sameNamespace)
-      return;
-    switch (packet.type) {
-      case PacketType.CONNECT:
-        if (packet.data && packet.data.sid) {
-          this.onconnect(packet.data.sid, packet.data.pid);
-        } else {
-          this.emitReserved("connect_error", new Error("It seems you are trying to reach a Socket.IO server in v2.x with a v3.x client, but they are not compatible (more information here: https://socket.io/docs/v3/migrating-from-2-x-to-3-0/)"));
-        }
-        break;
-      case PacketType.EVENT:
-      case PacketType.BINARY_EVENT:
-        this.onevent(packet);
-        break;
-      case PacketType.ACK:
-      case PacketType.BINARY_ACK:
-        this.onack(packet);
-        break;
-      case PacketType.DISCONNECT:
-        this.ondisconnect();
-        break;
-      case PacketType.CONNECT_ERROR:
-        this.destroy();
-        const err = new Error(packet.data.message);
-        err.data = packet.data.data;
-        this.emitReserved("connect_error", err);
-        break;
-    }
-  }
-  /**
-   * Called upon a server event.
-   *
-   * @param packet
-   * @private
-   */
-  onevent(packet) {
-    const args = packet.data || [];
-    if (null != packet.id) {
-      args.push(this.ack(packet.id));
-    }
-    if (this.connected) {
-      this.emitEvent(args);
-    } else {
-      this.receiveBuffer.push(Object.freeze(args));
-    }
-  }
-  emitEvent(args) {
-    if (this._anyListeners && this._anyListeners.length) {
-      const listeners = this._anyListeners.slice();
-      for (const listener of listeners) {
-        listener.apply(this, args);
-      }
-    }
-    super.emit.apply(this, args);
-    if (this._pid && args.length && typeof args[args.length - 1] === "string") {
-      this._lastOffset = args[args.length - 1];
-    }
-  }
-  /**
-   * Produces an ack callback to emit with an event.
-   *
-   * @private
-   */
-  ack(id) {
-    const self2 = this;
-    let sent = false;
-    return function(...args) {
-      if (sent)
-        return;
-      sent = true;
-      self2.packet({
-        type: PacketType.ACK,
-        id,
-        data: args
-      });
-    };
-  }
-  /**
-   * Called upon a server acknowledgement.
-   *
-   * @param packet
-   * @private
-   */
-  onack(packet) {
-    const ack = this.acks[packet.id];
-    if (typeof ack !== "function") {
-      return;
-    }
-    delete this.acks[packet.id];
-    if (ack.withError) {
-      packet.data.unshift(null);
-    }
-    ack.apply(this, packet.data);
-  }
-  /**
-   * Called upon server connect.
-   *
-   * @private
-   */
-  onconnect(id, pid) {
-    this.id = id;
-    this.recovered = pid && this._pid === pid;
-    this._pid = pid;
-    this.connected = true;
-    this.emitBuffered();
-    this.emitReserved("connect");
-    this._drainQueue(true);
-  }
-  /**
-   * Emit buffered events (received and emitted).
-   *
-   * @private
-   */
-  emitBuffered() {
-    this.receiveBuffer.forEach((args) => this.emitEvent(args));
-    this.receiveBuffer = [];
-    this.sendBuffer.forEach((packet) => {
-      this.notifyOutgoingListeners(packet);
-      this.packet(packet);
-    });
-    this.sendBuffer = [];
-  }
-  /**
-   * Called upon server disconnect.
-   *
-   * @private
-   */
-  ondisconnect() {
-    this.destroy();
-    this.onclose("io server disconnect");
-  }
-  /**
-   * Called upon forced client/server side disconnections,
-   * this method ensures the manager stops tracking us and
-   * that reconnections don't get triggered for this.
-   *
-   * @private
-   */
-  destroy() {
-    if (this.subs) {
-      this.subs.forEach((subDestroy) => subDestroy());
-      this.subs = void 0;
-    }
-    this.io["_destroy"](this);
-  }
-  /**
-   * Disconnects the socket manually. In that case, the socket will not try to reconnect.
-   *
-   * If this is the last active Socket instance of the {@link Manager}, the low-level connection will be closed.
-   *
-   * @example
-   * const socket = io();
-   *
-   * socket.on("disconnect", (reason) => {
-   *   // console.log(reason); prints "io client disconnect"
-   * });
-   *
-   * socket.disconnect();
-   *
-   * @return self
-   */
-  disconnect() {
-    if (this.connected) {
-      this.packet({ type: PacketType.DISCONNECT });
-    }
-    this.destroy();
-    if (this.connected) {
-      this.onclose("io client disconnect");
-    }
-    return this;
-  }
-  /**
-   * Alias for {@link disconnect()}.
-   *
-   * @return self
-   */
-  close() {
-    return this.disconnect();
-  }
-  /**
-   * Sets the compress flag.
-   *
-   * @example
-   * socket.compress(false).emit("hello");
-   *
-   * @param compress - if `true`, compresses the sending data
-   * @return self
-   */
-  compress(compress) {
-    this.flags.compress = compress;
-    return this;
-  }
-  /**
-   * Sets a modifier for a subsequent event emission that the event message will be dropped when this socket is not
-   * ready to send messages.
-   *
-   * @example
-   * socket.volatile.emit("hello"); // the server may or may not receive it
-   *
-   * @returns self
-   */
-  get volatile() {
-    this.flags.volatile = true;
-    return this;
-  }
-  /**
-   * Sets a modifier for a subsequent event emission that the callback will be called with an error when the
-   * given number of milliseconds have elapsed without an acknowledgement from the server:
-   *
-   * @example
-   * socket.timeout(5000).emit("my-event", (err) => {
-   *   if (err) {
-   *     // the server did not acknowledge the event in the given delay
-   *   }
-   * });
-   *
-   * @returns self
-   */
-  timeout(timeout) {
-    this.flags.timeout = timeout;
-    return this;
-  }
-  /**
-   * Adds a listener that will be fired when any event is emitted. The event name is passed as the first argument to the
-   * callback.
-   *
-   * @example
-   * socket.onAny((event, ...args) => {
-   *   console.log(`got ${event}`);
-   * });
-   *
-   * @param listener
-   */
-  onAny(listener) {
-    this._anyListeners = this._anyListeners || [];
-    this._anyListeners.push(listener);
-    return this;
-  }
-  /**
-   * Adds a listener that will be fired when any event is emitted. The event name is passed as the first argument to the
-   * callback. The listener is added to the beginning of the listeners array.
-   *
-   * @example
-   * socket.prependAny((event, ...args) => {
-   *   console.log(`got event ${event}`);
-   * });
-   *
-   * @param listener
-   */
-  prependAny(listener) {
-    this._anyListeners = this._anyListeners || [];
-    this._anyListeners.unshift(listener);
-    return this;
-  }
-  /**
-   * Removes the listener that will be fired when any event is emitted.
-   *
-   * @example
-   * const catchAllListener = (event, ...args) => {
-   *   console.log(`got event ${event}`);
-   * }
-   *
-   * socket.onAny(catchAllListener);
-   *
-   * // remove a specific listener
-   * socket.offAny(catchAllListener);
-   *
-   * // or remove all listeners
-   * socket.offAny();
-   *
-   * @param listener
-   */
-  offAny(listener) {
-    if (!this._anyListeners) {
-      return this;
-    }
-    if (listener) {
-      const listeners = this._anyListeners;
-      for (let i = 0; i < listeners.length; i++) {
-        if (listener === listeners[i]) {
-          listeners.splice(i, 1);
-          return this;
-        }
-      }
-    } else {
-      this._anyListeners = [];
-    }
-    return this;
-  }
-  /**
-   * Returns an array of listeners that are listening for any event that is specified. This array can be manipulated,
-   * e.g. to remove listeners.
-   */
-  listenersAny() {
-    return this._anyListeners || [];
-  }
-  /**
-   * Adds a listener that will be fired when any event is emitted. The event name is passed as the first argument to the
-   * callback.
-   *
-   * Note: acknowledgements sent to the server are not included.
-   *
-   * @example
-   * socket.onAnyOutgoing((event, ...args) => {
-   *   console.log(`sent event ${event}`);
-   * });
-   *
-   * @param listener
-   */
-  onAnyOutgoing(listener) {
-    this._anyOutgoingListeners = this._anyOutgoingListeners || [];
-    this._anyOutgoingListeners.push(listener);
-    return this;
-  }
-  /**
-   * Adds a listener that will be fired when any event is emitted. The event name is passed as the first argument to the
-   * callback. The listener is added to the beginning of the listeners array.
-   *
-   * Note: acknowledgements sent to the server are not included.
-   *
-   * @example
-   * socket.prependAnyOutgoing((event, ...args) => {
-   *   console.log(`sent event ${event}`);
-   * });
-   *
-   * @param listener
-   */
-  prependAnyOutgoing(listener) {
-    this._anyOutgoingListeners = this._anyOutgoingListeners || [];
-    this._anyOutgoingListeners.unshift(listener);
-    return this;
-  }
-  /**
-   * Removes the listener that will be fired when any event is emitted.
-   *
-   * @example
-   * const catchAllListener = (event, ...args) => {
-   *   console.log(`sent event ${event}`);
-   * }
-   *
-   * socket.onAnyOutgoing(catchAllListener);
-   *
-   * // remove a specific listener
-   * socket.offAnyOutgoing(catchAllListener);
-   *
-   * // or remove all listeners
-   * socket.offAnyOutgoing();
-   *
-   * @param [listener] - the catch-all listener (optional)
-   */
-  offAnyOutgoing(listener) {
-    if (!this._anyOutgoingListeners) {
-      return this;
-    }
-    if (listener) {
-      const listeners = this._anyOutgoingListeners;
-      for (let i = 0; i < listeners.length; i++) {
-        if (listener === listeners[i]) {
-          listeners.splice(i, 1);
-          return this;
-        }
-      }
-    } else {
-      this._anyOutgoingListeners = [];
-    }
-    return this;
-  }
-  /**
-   * Returns an array of listeners that are listening for any event that is specified. This array can be manipulated,
-   * e.g. to remove listeners.
-   */
-  listenersAnyOutgoing() {
-    return this._anyOutgoingListeners || [];
-  }
-  /**
-   * Notify the listeners for each packet sent
-   *
-   * @param packet
-   *
-   * @private
-   */
-  notifyOutgoingListeners(packet) {
-    if (this._anyOutgoingListeners && this._anyOutgoingListeners.length) {
-      const listeners = this._anyOutgoingListeners.slice();
-      for (const listener of listeners) {
-        listener.apply(this, packet.data);
-      }
-    }
-  }
-}
-function Backoff(opts) {
-  opts = opts || {};
-  this.ms = opts.min || 100;
-  this.max = opts.max || 1e4;
-  this.factor = opts.factor || 2;
-  this.jitter = opts.jitter > 0 && opts.jitter <= 1 ? opts.jitter : 0;
-  this.attempts = 0;
-}
-Backoff.prototype.duration = function() {
-  var ms = this.ms * Math.pow(this.factor, this.attempts++);
-  if (this.jitter) {
-    var rand = Math.random();
-    var deviation = Math.floor(rand * this.jitter * ms);
-    ms = (Math.floor(rand * 10) & 1) == 0 ? ms - deviation : ms + deviation;
-  }
-  return Math.min(ms, this.max) | 0;
-};
-Backoff.prototype.reset = function() {
-  this.attempts = 0;
-};
-Backoff.prototype.setMin = function(min) {
-  this.ms = min;
-};
-Backoff.prototype.setMax = function(max) {
-  this.max = max;
-};
-Backoff.prototype.setJitter = function(jitter) {
-  this.jitter = jitter;
-};
-class Manager extends Emitter {
-  constructor(uri, opts) {
-    var _a;
-    super();
-    this.nsps = {};
-    this.subs = [];
-    if (uri && "object" === typeof uri) {
-      opts = uri;
-      uri = void 0;
-    }
-    opts = opts || {};
-    opts.path = opts.path || "/socket.io";
-    this.opts = opts;
-    installTimerFunctions(this, opts);
-    this.reconnection(opts.reconnection !== false);
-    this.reconnectionAttempts(opts.reconnectionAttempts || Infinity);
-    this.reconnectionDelay(opts.reconnectionDelay || 1e3);
-    this.reconnectionDelayMax(opts.reconnectionDelayMax || 5e3);
-    this.randomizationFactor((_a = opts.randomizationFactor) !== null && _a !== void 0 ? _a : 0.5);
-    this.backoff = new Backoff({
-      min: this.reconnectionDelay(),
-      max: this.reconnectionDelayMax(),
-      jitter: this.randomizationFactor()
-    });
-    this.timeout(null == opts.timeout ? 2e4 : opts.timeout);
-    this._readyState = "closed";
-    this.uri = uri;
-    const _parser = opts.parser || parser;
-    this.encoder = new _parser.Encoder();
-    this.decoder = new _parser.Decoder();
-    this._autoConnect = opts.autoConnect !== false;
-    if (this._autoConnect)
-      this.open();
-  }
-  reconnection(v) {
-    if (!arguments.length)
-      return this._reconnection;
-    this._reconnection = !!v;
-    if (!v) {
-      this.skipReconnect = true;
-    }
-    return this;
-  }
-  reconnectionAttempts(v) {
-    if (v === void 0)
-      return this._reconnectionAttempts;
-    this._reconnectionAttempts = v;
-    return this;
-  }
-  reconnectionDelay(v) {
-    var _a;
-    if (v === void 0)
-      return this._reconnectionDelay;
-    this._reconnectionDelay = v;
-    (_a = this.backoff) === null || _a === void 0 ? void 0 : _a.setMin(v);
-    return this;
-  }
-  randomizationFactor(v) {
-    var _a;
-    if (v === void 0)
-      return this._randomizationFactor;
-    this._randomizationFactor = v;
-    (_a = this.backoff) === null || _a === void 0 ? void 0 : _a.setJitter(v);
-    return this;
-  }
-  reconnectionDelayMax(v) {
-    var _a;
-    if (v === void 0)
-      return this._reconnectionDelayMax;
-    this._reconnectionDelayMax = v;
-    (_a = this.backoff) === null || _a === void 0 ? void 0 : _a.setMax(v);
-    return this;
-  }
-  timeout(v) {
-    if (!arguments.length)
-      return this._timeout;
-    this._timeout = v;
-    return this;
-  }
-  /**
-   * Starts trying to reconnect if reconnection is enabled and we have not
-   * started reconnecting yet
-   *
-   * @private
-   */
-  maybeReconnectOnOpen() {
-    if (!this._reconnecting && this._reconnection && this.backoff.attempts === 0) {
-      this.reconnect();
-    }
-  }
-  /**
-   * Sets the current transport `socket`.
-   *
-   * @param {Function} fn - optional, callback
-   * @return self
-   * @public
-   */
-  open(fn) {
-    if (~this._readyState.indexOf("open"))
-      return this;
-    this.engine = new Socket$1(this.uri, this.opts);
-    const socket = this.engine;
-    const self2 = this;
-    this._readyState = "opening";
-    this.skipReconnect = false;
-    const openSubDestroy = on(socket, "open", function() {
-      self2.onopen();
-      fn && fn();
-    });
-    const onError = (err) => {
-      this.cleanup();
-      this._readyState = "closed";
-      this.emitReserved("error", err);
-      if (fn) {
-        fn(err);
-      } else {
-        this.maybeReconnectOnOpen();
-      }
-    };
-    const errorSub = on(socket, "error", onError);
-    if (false !== this._timeout) {
-      const timeout = this._timeout;
-      const timer = this.setTimeoutFn(() => {
-        openSubDestroy();
-        onError(new Error("timeout"));
-        socket.close();
-      }, timeout);
-      if (this.opts.autoUnref) {
-        timer.unref();
-      }
-      this.subs.push(() => {
-        this.clearTimeoutFn(timer);
-      });
-    }
-    this.subs.push(openSubDestroy);
-    this.subs.push(errorSub);
-    return this;
-  }
-  /**
-   * Alias for open()
-   *
-   * @return self
-   * @public
-   */
-  connect(fn) {
-    return this.open(fn);
-  }
-  /**
-   * Called upon transport open.
-   *
-   * @private
-   */
-  onopen() {
-    this.cleanup();
-    this._readyState = "open";
-    this.emitReserved("open");
-    const socket = this.engine;
-    this.subs.push(
-      on(socket, "ping", this.onping.bind(this)),
-      on(socket, "data", this.ondata.bind(this)),
-      on(socket, "error", this.onerror.bind(this)),
-      on(socket, "close", this.onclose.bind(this)),
-      // @ts-ignore
-      on(this.decoder, "decoded", this.ondecoded.bind(this))
-    );
-  }
-  /**
-   * Called upon a ping.
-   *
-   * @private
-   */
-  onping() {
-    this.emitReserved("ping");
-  }
-  /**
-   * Called with data.
-   *
-   * @private
-   */
-  ondata(data) {
-    try {
-      this.decoder.add(data);
-    } catch (e) {
-      this.onclose("parse error", e);
-    }
-  }
-  /**
-   * Called when parser fully decodes a packet.
-   *
-   * @private
-   */
-  ondecoded(packet) {
-    nextTick(() => {
-      this.emitReserved("packet", packet);
-    }, this.setTimeoutFn);
-  }
-  /**
-   * Called upon socket error.
-   *
-   * @private
-   */
-  onerror(err) {
-    this.emitReserved("error", err);
-  }
-  /**
-   * Creates a new socket for the given `nsp`.
-   *
-   * @return {Socket}
-   * @public
-   */
-  socket(nsp, opts) {
-    let socket = this.nsps[nsp];
-    if (!socket) {
-      socket = new Socket2(this, nsp, opts);
-      this.nsps[nsp] = socket;
-    } else if (this._autoConnect && !socket.active) {
-      socket.connect();
-    }
-    return socket;
-  }
-  /**
-   * Called upon a socket close.
-   *
-   * @param socket
-   * @private
-   */
-  _destroy(socket) {
-    const nsps = Object.keys(this.nsps);
-    for (const nsp of nsps) {
-      const socket2 = this.nsps[nsp];
-      if (socket2.active) {
-        return;
-      }
-    }
-    this._close();
-  }
-  /**
-   * Writes a packet.
-   *
-   * @param packet
-   * @private
-   */
-  _packet(packet) {
-    const encodedPackets = this.encoder.encode(packet);
-    for (let i = 0; i < encodedPackets.length; i++) {
-      this.engine.write(encodedPackets[i], packet.options);
-    }
-  }
-  /**
-   * Clean up transport subscriptions and packet buffer.
-   *
-   * @private
-   */
-  cleanup() {
-    this.subs.forEach((subDestroy) => subDestroy());
-    this.subs.length = 0;
-    this.decoder.destroy();
-  }
-  /**
-   * Close the current socket.
-   *
-   * @private
-   */
-  _close() {
-    this.skipReconnect = true;
-    this._reconnecting = false;
-    this.onclose("forced close");
-  }
-  /**
-   * Alias for close()
-   *
-   * @private
-   */
-  disconnect() {
-    return this._close();
-  }
-  /**
-   * Called when:
-   *
-   * - the low-level engine is closed
-   * - the parser encountered a badly formatted packet
-   * - all sockets are disconnected
-   *
-   * @private
-   */
-  onclose(reason, description) {
-    var _a;
-    this.cleanup();
-    (_a = this.engine) === null || _a === void 0 ? void 0 : _a.close();
-    this.backoff.reset();
-    this._readyState = "closed";
-    this.emitReserved("close", reason, description);
-    if (this._reconnection && !this.skipReconnect) {
-      this.reconnect();
-    }
-  }
-  /**
-   * Attempt a reconnection.
-   *
-   * @private
-   */
-  reconnect() {
-    if (this._reconnecting || this.skipReconnect)
-      return this;
-    const self2 = this;
-    if (this.backoff.attempts >= this._reconnectionAttempts) {
-      this.backoff.reset();
-      this.emitReserved("reconnect_failed");
-      this._reconnecting = false;
-    } else {
-      const delay = this.backoff.duration();
-      this._reconnecting = true;
-      const timer = this.setTimeoutFn(() => {
-        if (self2.skipReconnect)
-          return;
-        this.emitReserved("reconnect_attempt", self2.backoff.attempts);
-        if (self2.skipReconnect)
-          return;
-        self2.open((err) => {
-          if (err) {
-            self2._reconnecting = false;
-            self2.reconnect();
-            this.emitReserved("reconnect_error", err);
-          } else {
-            self2.onreconnect();
-          }
-        });
-      }, delay);
-      if (this.opts.autoUnref) {
-        timer.unref();
-      }
-      this.subs.push(() => {
-        this.clearTimeoutFn(timer);
-      });
-    }
-  }
-  /**
-   * Called upon successful reconnect.
-   *
-   * @private
-   */
-  onreconnect() {
-    const attempt = this.backoff.attempts;
-    this._reconnecting = false;
-    this.backoff.reset();
-    this.emitReserved("reconnect", attempt);
-  }
-}
-const cache = {};
-function lookup(uri, opts) {
-  if (typeof uri === "object") {
-    opts = uri;
-    uri = void 0;
-  }
-  opts = opts || {};
-  const parsed = url(uri, opts.path || "/socket.io");
-  const source = parsed.source;
-  const id = parsed.id;
-  const path = parsed.path;
-  const sameNamespace = cache[id] && path in cache[id]["nsps"];
-  const newConnection = opts.forceNew || opts["force new connection"] || false === opts.multiplex || sameNamespace;
-  let io;
-  if (newConnection) {
-    io = new Manager(source, opts);
-  } else {
-    if (!cache[id]) {
-      cache[id] = new Manager(source, opts);
-    }
-    io = cache[id];
-  }
-  if (parsed.query && !opts.query) {
-    opts.query = parsed.queryKey;
-  }
-  return io.socket(parsed.path, opts);
-}
-Object.assign(lookup, {
-  Manager,
-  Socket: Socket2,
-  io: lookup,
-  connect: lookup
-});
 const mmToM = 1e3;
+function getCurrentViewId() {
+  const url = new URL(globalThis.location.href);
+  const tabParam = url.searchParams.get("tab");
+  if (tabParam && document.getElementById(tabParam)) {
+    return tabParam;
+  }
+  const views = document.querySelectorAll("[id^='view-']");
+  for (const view of views) {
+    if (!view.classList.contains("hidden")) {
+      return view.id;
+    }
+  }
+  return "view-views";
+}
+async function refreshViewsOnReconnection(currentViewId) {
+  console.log("Refreshing views after reconnection");
+  try {
+    if (currentViewId === "view-pipeline") {
+      console.log("Refreshing pipeline builder");
+      await refreshPipelineCreator();
+    }
+    console.log("Views refreshed successfully after reconnection");
+  } catch (error) {
+    console.error("Error refreshing views after reconnection:", error);
+  }
+}
+async function refreshPipelineCreator() {
+  var _a;
+  if ((_a = globalThis.pipelineCreator) == null ? void 0 : _a.refreshPipelineCreator) {
+    await globalThis.pipelineCreator.refreshPipelineCreator();
+  } else {
+    console.warn("Pipeline creator refresh function not available");
+  }
+}
 const convertDataToFieldSpace = (data) => {
   const transform = data.transform_matrix;
   const resultMatrix = new Matrix4();
@@ -35719,15 +34530,19 @@ const convertDataToFieldSpace = (data) => {
   );
   return resultMatrix;
 };
-window.onload = () => {
+window.onload = async () => {
   populateFieldDropdown();
   setupSidebar();
   setupCameraFeedHandlers();
   saveSettings();
   const showConnectionLostOverlay = () => {
+    var _a;
     const overlay = document.getElementById("connection-lost-overlay");
     if (overlay) {
       overlay.classList.remove("hidden");
+    }
+    if ((_a = globalThis.SettingsPopup) == null ? void 0 : _a.close) {
+      globalThis.SettingsPopup.close();
     }
   };
   const hideConnectionLostOverlay = () => {
@@ -35736,49 +34551,82 @@ window.onload = () => {
       overlay.classList.add("hidden");
     }
   };
-  const socket = lookup({
-    transports: ["websocket"],
-    upgrade: false,
-    rememberUpgrade: false,
-    timeout: 5e3,
-    forceNew: true
+  const es = new EventSource(`${BACKEND_BASE_URL}/sse/stream`);
+  let lastHeartbeat = Date.now();
+  let wasDisconnected = false;
+  const HEARTBEAT_TIMEOUT_MS = 15e3;
+  es.addEventListener("open", () => {
+    console.log(
+      `SSE connection established at ${(/* @__PURE__ */ new Date()).toISOString()}`
+    );
+    hideConnectionLostOverlay();
+    if (wasDisconnected) {
+      console.log("SSE reconnected after disconnection");
+      setTimeout(async () => {
+        wasDisconnected = false;
+        const currentViewId = getCurrentViewId();
+        await refreshViewsOnReconnection(currentViewId);
+      }, 500);
+    }
   });
-  socket.on("connect", () => {
-    console.log("Socket connected");
+  es.addEventListener("heartbeat", (e) => {
+    lastHeartbeat = Date.now();
     hideConnectionLostOverlay();
   });
-  socket.on("disconnect", () => {
-    console.log("Socket disconnected");
-    showConnectionLostOverlay();
-  });
-  socket.on("connect_error", (error) => {
-    console.error("Connection error:", error);
-    showConnectionLostOverlay();
-  });
-  socket.on("reconnect", () => {
-    console.log("Socket reconnected");
-    hideConnectionLostOverlay();
-  });
-  socket.on("reconnect_error", (error) => {
-    console.error("Reconnection error:", error);
-    showConnectionLostOverlay();
-  });
-  socket.on("update_robot_transform", (data) => {
-    if ((data == null ? void 0 : data.transform_matrix) && Array.isArray(data.transform_matrix) && data.transform_matrix.length === 4) {
-      const isValid4x4Matrix = data.transform_matrix.every(
-        (row) => Array.isArray(row) && row.length === 4
-      );
-      if (isValid4x4Matrix) {
-        const fieldSpaceTransform = convertDataToFieldSpace(data);
-        updateRobotTransform(fieldSpaceTransform);
+  es.addEventListener("update_robot_transform", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if ((data == null ? void 0 : data.transform_matrix) && Array.isArray(data.transform_matrix) && data.transform_matrix.length === 4) {
+        const isValid4x4Matrix = data.transform_matrix.every(
+          (row) => Array.isArray(row) && row.length === 4
+        );
+        if (isValid4x4Matrix) {
+          const fieldSpaceTransform = convertDataToFieldSpace(data);
+          updateRobotTransform(fieldSpaceTransform);
+        } else {
+          console.warn(
+            "Invalid transformation matrix format received:",
+            data
+          );
+        }
       } else {
         console.warn(
-          "Invalid transformation matrix format received:",
+          "Invalid camera transformation data received:",
           data
         );
       }
-    } else {
-      console.warn("Invalid camera transformation data received:", data);
+    } catch (err) {
+      console.warn(
+        "Failed to parse SSE update_robot_transform event",
+        err
+      );
     }
   });
+  es.addEventListener("update_detected_objects", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if ((data == null ? void 0 : data.detections) && Array.isArray(data.detections)) {
+        updateDetectedObjects(data.detections);
+      } else {
+        updateDetectedObjects([]);
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to parse SSE update_detected_objects event",
+        err
+      );
+    }
+  });
+  es.onerror = () => {
+    console.warn("SSE connection error or lost");
+    showConnectionLostOverlay();
+    wasDisconnected = true;
+  };
+  setInterval(() => {
+    if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      console.warn("SSE connection lost - heartbeat timeout");
+      wasDisconnected = true;
+      showConnectionLostOverlay();
+    }
+  }, 2e3);
 };

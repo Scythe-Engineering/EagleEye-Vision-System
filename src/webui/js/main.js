@@ -2,7 +2,7 @@ import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings } from "./settings/saveSettings.js";
-import { updateRobotTransform } from "./init3DView.js";
+import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import "../style.css";
 import { Matrix4 } from "three";
@@ -162,6 +162,22 @@ window.onload = async () => {
         } catch (err) {
             console.warn(
                 "Failed to parse SSE update_robot_transform event",
+                err,
+            );
+        }
+    });
+
+    es.addEventListener("update_detected_objects", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            if (data?.detections && Array.isArray(data.detections)) {
+                updateDetectedObjects(data.detections);
+            } else {
+                updateDetectedObjects([]);
+            }
+        } catch (err) {
+            console.warn(
+                "Failed to parse SSE update_detected_objects event",
                 err,
             );
         }

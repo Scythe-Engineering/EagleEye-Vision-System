@@ -1,0 +1,6 @@
+{
+    "class_name": "ExtractPose",
+    "description": "Extracts 2D pose data (x, y, rotation) from a 4x4 transformation matrix",
+    "category": "proc",
+    "parameters": {}
+}

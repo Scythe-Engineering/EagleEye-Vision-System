@@ -1,0 +1,21 @@
+{
+    "class_name": "PublishToNetworktables",
+    "description": "Publishes values from upstream pipeline data to NetworkTables entries with automatic type handling",
+    "category": "net",
+    "parameters": {
+        "target_key": {
+            "type": "str",
+            "description": "Entry key under which the value will be published in NetworkTables",
+            "default": "",
+            "required": true,
+            "restart_for_change": false
+        },
+        "data_path": {
+            "type": "list",
+            "description": "Optional path of keys or indices used to select a nested value from the pipeline data",
+            "default": [],
+            "required": false,
+            "restart_for_change": false
+        }
+    }
+}
