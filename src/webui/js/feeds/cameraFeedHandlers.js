@@ -52,6 +52,7 @@ export function setupCameraFeedHandlers() {
             const cameraBox = document.createElement("div");
             cameraBox.className =
                 "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
+            cameraBox.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
             cameraBox.dataset.cameraName = name;
 
             const cameraNameLabel = document.createElement("div");
