@@ -113,14 +113,6 @@ def main() -> None:
             "Perspective factor (0.0-0.001, press Enter for 0.0): "
         ).strip()
         perspective = 0.0 if not perspective_input else float(perspective_input)
-    else:
-        # Default augmentation settings (minimal)
-        hsv_h = 0.015
-        degrees = 0.0
-        translate = 0.1
-        scale = 0.5
-        shear = 0.0
-        perspective = 0.0
 
     # Validate inputs
     if not os.path.exists(data_dir):
@@ -145,13 +137,16 @@ def main() -> None:
     if img_size:
         print(f"  Image size: {img_size}x{img_size}")
 
-    print("\n  Augmentation:")
-    print(f"    HSV Hue: {hsv_h}")
-    print(f"    Rotation: {degrees}°")
-    print(f"    Translation: {translate}")
-    print(f"    Scale: {scale}")
-    print(f"    Shear: {shear}°")
-    print(f"    Perspective: {perspective}")
+    if enable_augmentation:
+        print("\n  Augmentation:")
+        print(f"    HSV Hue: {hsv_h}")
+        print(f"    Rotation: {degrees}°")
+        print(f"    Translation: {translate}")
+        print(f"    Scale: {scale}")
+        print(f"    Shear: {shear}°")
+        print(f"    Perspective: {perspective}")
+    else:
+        print("\n  Augmentation: Disabled")
 
     # Load model
     model = YOLO(model_name)
@@ -173,13 +168,19 @@ def main() -> None:
         "project": "eagleeye_training",
         "name": run_name,
         "augment": enable_augmentation,
-        "hsv_h": hsv_h,
-        "degrees": degrees,
-        "translate": translate,
-        "scale": scale,
-        "shear": shear,
-        "perspective": perspective,
     }
+
+    if enable_augmentation:
+        train_kwargs.update(
+            {
+                "hsv_h": hsv_h,
+                "degrees": degrees,
+                "translate": translate,
+                "scale": scale,
+                "shear": shear,
+                "perspective": perspective,
+            }
+        )
 
     if batch_size:
         train_kwargs["batch"] = batch_size
