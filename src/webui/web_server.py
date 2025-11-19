@@ -51,24 +51,25 @@ class EagleEyeInterface:
             log (Callable | None): Optional logging function.
         """
         if log is None:
-
+            self.log = print
+        else:
             def colored_log(*messages: object) -> None:
                 """Log function with automatic color coding based on message content."""
                 message = " ".join(str(m) for m in messages)
                 if any(
                     word in message.lower() for word in ["error", "failed", "exception"]
                 ):
-                    print(f"{Colors.RED}{message}{Colors.RESET}")
+                    log(f"{Colors.RED}{message}{Colors.RESET}")
                 elif any(
                     word in message.lower()
                     for word in ["success", "added", "updated", "started"]
                 ):
-                    print(f"{Colors.GREEN}{message}{Colors.RESET}")
+                    log(f"{Colors.GREEN}{message}{Colors.RESET}")
                 elif any(
                     word in message.lower()
                     for word in ["warning", "skipping", "queue full"]
                 ):
-                    print(f"{Colors.YELLOW}{message}{Colors.RESET}")
+                    log(f"{Colors.YELLOW}{message}{Colors.RESET}")
                 elif any(
                     word in message.lower()
                     for word in [
@@ -79,13 +80,10 @@ class EagleEyeInterface:
                         "removed",
                     ]
                 ):
-                    print(f"{Colors.CYAN}{message}{Colors.RESET}")
+                    log(f"{Colors.CYAN}{message}{Colors.RESET}")
                 else:
-                    print(message)
-
+                    log(message)
             self.log = colored_log
-        else:
-            self.log = log
 
         self.restart_callback = restart_callback
         self.pipeline_objects_callback = pipeline_objects_callback
@@ -1066,10 +1064,12 @@ class EagleEyeInterface:
 
 
 if __name__ == "__main__":
-    interface = EagleEyeInterface(dev_mode=False)
+    from src.utils.logging.logger import Logger  # noqa: E402
+    logger = Logger()
+    interface = EagleEyeInterface(dev_mode=False, log=logger.log)
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print(f"{Colors.CYAN}Program terminated.{Colors.RESET}")
+        logger.log(f"{Colors.CYAN}Program terminated.{Colors.RESET}")

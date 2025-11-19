@@ -15,6 +15,7 @@ def check_and_add_new_cameras(
     web_interface: EagleEyeInterface,
     camera_manager: CameraThreadManager,
     known_cameras: Set[str],
+    logger=None,
 ) -> Set[str]:
     """
     Check for new cameras and add them to the system.
@@ -42,9 +43,14 @@ def check_and_add_new_cameras(
             new_cameras[camera_name]["name"] = camera_name
 
     if new_cameras:
-        print(
-            f"{Colors.CYAN}{spacer}Found {len(new_cameras)} new cameras: {list(camera_info['name'] for camera_info in new_cameras.values())}{Colors.RESET}"
-        )
+        if logger:
+            logger.log(
+                f"{Colors.CYAN}{spacer}Found {len(new_cameras)} new cameras: {list(camera_info['name'] for camera_info in new_cameras.values())}{Colors.RESET}"
+            )
+        else:
+            print(
+                f"{Colors.CYAN}{spacer}Found {len(new_cameras)} new cameras: {list(camera_info['name'] for camera_info in new_cameras.values())}{Colors.RESET}"
+            )
 
         for camera_name, camera_info in new_cameras.items():
             calibration_folder = os.path.join(
@@ -55,21 +61,36 @@ def check_and_add_new_cameras(
                 calibration_folder = None
 
             web_interface.add_camera(camera_name, camera_info["index"])
-            print(
-                f"{Colors.GREEN}{spacer}Added new camera to web interface: {camera_name} (index: {camera_info['index']}){Colors.RESET}"
-            )
+            if logger:
+                logger.log(
+                    f"{Colors.GREEN}{spacer}Added new camera to web interface: {camera_name} (index: {camera_info['index']}){Colors.RESET}"
+                )
+            else:
+                print(
+                    f"{Colors.GREEN}{spacer}Added new camera to web interface: {camera_name} (index: {camera_info['index']}){Colors.RESET}"
+                )
 
             if camera_manager.start_camera_thread(
                 camera_name, calibration_folder, camera_index=camera_info["index"]
             ):
                 known_cameras.add(camera_name)
-                print(
-                    f"{Colors.GREEN}{spacer}Successfully started thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
-                )
+                if logger:
+                    logger.log(
+                        f"{Colors.GREEN}{spacer}Successfully started thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
+                    )
+                else:
+                    print(
+                        f"{Colors.GREEN}{spacer}Successfully started thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
+                    )
             else:
                 web_interface.remove_camera(camera_name)
-                print(
-                    f"{Colors.RED}{spacer}Failed to start thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
-                )
+                if logger:
+                    logger.log(
+                        f"{Colors.RED}{spacer}Failed to start thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
+                    )
+                else:
+                    print(
+                        f"{Colors.RED}{spacer}Failed to start thread for new camera: {camera_name} (bus: {camera_info['bus_value']}){Colors.RESET}"
+                    )
 
     return known_cameras

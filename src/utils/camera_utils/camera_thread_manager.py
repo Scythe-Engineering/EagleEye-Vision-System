@@ -9,19 +9,22 @@ from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
 from src.webui.web_server import EagleEyeInterface
+from src.utils.logging.logger import Logger
 
 
 class CameraThreadManager:
     """Manages camera threads and serves them to the web interface."""
 
-    def __init__(self, web_interface: EagleEyeInterface) -> None:
+    def __init__(self, web_interface: EagleEyeInterface, logger: Logger) -> None:
         """
         Initialize the camera thread manager.
 
         Args:
             web_interface: The web interface to serve camera feeds to.
+            logger: Logger instance for logging.
         """
         self.web_interface = web_interface
+        self.logger = logger
         self.camera_threads: Dict[str, threading.Thread] = {}
         self.camera_objects: Dict[str, Union[PhysicalCamera, VideoFileCamera]] = {}
         self.running_cameras: Dict[str, bool] = {}
@@ -38,7 +41,7 @@ class CameraThreadManager:
             camera_name: The name of the camera.
             camera: The PhysicalCamera instance.
         """
-        print(
+        self.logger.log(
             f"{Colors.CYAN}Starting camera feed worker for {camera_name}{Colors.RESET}"
         )
 
@@ -50,7 +53,7 @@ class CameraThreadManager:
         target_frame_time = (
             1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
         )  # 30 fps default + (5 fps buffer)
-        print(
+        self.logger.log(
             f"{Colors.CYAN}Camera thread for {camera_name} is running at {camera_fps} target fps{Colors.RESET}"
         )
 
@@ -81,7 +84,7 @@ class CameraThreadManager:
                             timestamp_from_start,
                         )
                     if consecutive_failures <= 3:
-                        print(
+                        self.logger.log(
                             f"{Colors.YELLOW}Failed to get frame from {camera_name} ({consecutive_failures}){Colors.RESET}"
                         )
                     time.sleep(0.001)
@@ -91,25 +94,25 @@ class CameraThreadManager:
                     time.sleep(time_to_sleep)
 
                 if consecutive_failures >= max_consecutive_failures:
-                    print(
+                    self.logger.log(
                         f"{Colors.RED}Too many consecutive failures from {camera_name}, stopping worker{Colors.RESET}"
                     )
                     break
 
             except Exception as camera_error:
-                print(
+                self.logger.log(
                     f"{Colors.RED}Error in camera feed worker for {camera_name}: {camera_error}{Colors.RESET}"
                 )
                 consecutive_failures += 1
                 time.sleep(0.01)
 
                 if consecutive_failures >= max_consecutive_failures:
-                    print(
+                    self.logger.log(
                         f"{Colors.RED}Too many errors from {camera_name}, stopping worker{Colors.RESET}"
                     )
                     break
 
-        print(
+        self.logger.log(
             f"{Colors.CYAN}Camera feed worker for {camera_name} stopped{Colors.RESET}"
         )
 
@@ -134,13 +137,13 @@ class CameraThreadManager:
         try:
             if video_file_path:
                 camera = VideoFileCamera(
-                    camera_name, camera_calibration_folder, video_file_path, print
+                    camera_name, camera_calibration_folder, video_file_path, self.logger.log
                 )
             else:
                 if camera_index is None:
                     raise ValueError("Camera index is required for physical cameras")
                 camera = PhysicalCamera(
-                    camera_name, camera_index, camera_calibration_folder, print
+                    camera_name, camera_index, camera_calibration_folder, self.logger.log
                 )
 
             self.camera_objects[camera_name] = camera
@@ -156,16 +159,16 @@ class CameraThreadManager:
             self.camera_threads[camera_name] = camera_thread
             camera_thread.start()
 
-            print(
+            self.logger.log(
                 f"{Colors.GREEN}Successfully started camera thread for {camera_name} (index: {camera_index}){Colors.RESET}"
             )
             return True
 
         except Exception as start_error:
-            print(
+            self.logger.log(
                 f"{Colors.RED}Failed to start camera thread for {camera_name}: {start_error}{Colors.RESET}"
             )
-            print(f"{Colors.RED}Full traceback: {traceback.format_exc()}{Colors.RESET}")
+            self.logger.log(f"{Colors.RED}Full traceback: {traceback.format_exc()}{Colors.RESET}")
             self.running_cameras[camera_name] = False
             return False
 
@@ -177,7 +180,7 @@ class CameraThreadManager:
             camera_name: The name of the camera to stop.
         """
         if camera_name in self.running_cameras:
-            print(
+            self.logger.log(
                 f"{Colors.CYAN}Stopping camera thread for {camera_name}{Colors.RESET}"
             )
             self.running_cameras[camera_name] = False
@@ -194,11 +197,11 @@ class CameraThreadManager:
 
     def stop_all_cameras(self) -> None:
         """Stop all camera threads."""
-        print(f"{Colors.CYAN}Stopping all camera threads...{Colors.RESET}")
+        self.logger.log(f"{Colors.CYAN}Stopping all camera threads...{Colors.RESET}")
         camera_names = list(self.running_cameras.keys())
         for camera_name in camera_names:
             self.stop_camera_thread(camera_name)
-        print(f"{Colors.CYAN}All camera threads stopped{Colors.RESET}")
+        self.logger.log(f"{Colors.CYAN}All camera threads stopped{Colors.RESET}")
 
     def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
         """

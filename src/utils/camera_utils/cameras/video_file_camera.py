@@ -32,7 +32,7 @@ class VideoFileCamera(Camera):
 
     def load_frames(self) -> list[np.ndarray]:
         """Load all frames from the video into a list."""
-        print(
+        self.log(
             f"{Colors.CYAN}Loading frames (will init after frames are loaded into ram)...{Colors.RESET}"
         )
         frames = []
@@ -42,7 +42,7 @@ class VideoFileCamera(Camera):
             if not ret:
                 break
             frames.append(imutils.rotate_bound(frame, angle=self.frame_rotation))
-        print(f"{Colors.GREEN}Frames loaded.{Colors.RESET}")
+        self.log(f"{Colors.GREEN}Frames loaded.{Colors.RESET}")
         self.camera_ready = True
         return frames
 

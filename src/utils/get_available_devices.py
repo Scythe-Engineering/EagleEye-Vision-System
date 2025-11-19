@@ -28,7 +28,7 @@ def get_cpu_name():
         return "Unknown CPU"
 
 
-def get_gpu_devices() -> list[str]:
+def get_gpu_devices(logger=None) -> list[str]:
     """Get available GPU devices using PyTorch."""
     gpu_devices = []
     try:
@@ -37,7 +37,10 @@ def get_gpu_devices() -> list[str]:
             for i in range(gpu_count):
                 gpu_devices.append(torch.cuda.get_device_name(i))
     except Exception as e:
-        print(f"{Colors.RED}Error detecting CUDA devices: {e}{Colors.RESET}")
+        if logger:
+            logger.log(f"{Colors.RED}Error detecting CUDA devices: {e}{Colors.RESET}")
+        else:
+            print(f"{Colors.RED}Error detecting CUDA devices: {e}{Colors.RESET}")
         return []
     return gpu_devices
 
@@ -89,11 +92,11 @@ def get_tpu_devices() -> list[str]:
     return tpu_devices
 
 
-def get_available_devices():
+def get_available_devices(logger=None):
     """Get all available compute devices."""
     devices = {
         "CPU": [get_cpu_name()],
-        "GPU": get_gpu_devices(),
+        "GPU": get_gpu_devices(logger=logger),
         "TPU": get_tpu_devices(),
     }
     return devices

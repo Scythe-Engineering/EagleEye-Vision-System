@@ -6,10 +6,25 @@ import time
 import onnxruntime as ort
 from threading import Condition
 
-print(f"{Colors.YELLOW}Initializing MX3 Library{Colors.RESET}")
+# Global logger that can be set from main_backend.py
+_mx3_logger = None
+
+def set_mx3_logger(logger):
+    """Set the logger for MX3 module-level logging."""
+    global _mx3_logger
+    _mx3_logger = logger
+
+def _mx3_log(message: str):
+    """Log a message using the global logger if available, otherwise print."""
+    if _mx3_logger:
+        _mx3_logger.log(message)
+    else:
+        print(message)
+
+_mx3_log(f"{Colors.YELLOW}Initializing MX3 Library{Colors.RESET}")
 from memryx import MultiStreamAsyncAccl  # type: ignore  # noqa: E402
 
-print(f"{Colors.GREEN}MX3 Library initialized{Colors.RESET}")
+_mx3_log(f"{Colors.GREEN}MX3 Library initialized{Colors.RESET}")
 
 POLL_INTERVAL_S = 0.001
 
@@ -165,15 +180,17 @@ class MX3ModelIO:
 
 
 class MX3Accelerator(ComputeDevice):
-    def __init__(self, device_id: str = "MX3_001"):
+    def __init__(self, device_id: str = "MX3_001", logger=None):
         """
         Initializes the MX3 accelerator.
 
         Args:
             device_id (str): A unique identifier for the MX3 accelerator.
+            logger: Logger instance for logging.
         """
         super().__init__(device_id=device_id, device_type="MX3")
 
+        self.logger = logger
         self.models = {}
         self.model_io_objects = {}
 
