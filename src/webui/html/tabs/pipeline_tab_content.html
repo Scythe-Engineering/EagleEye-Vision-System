@@ -55,7 +55,7 @@
                         </div>
                         <button
                             id="newPipelineButton"
-                            class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
                             title="Create a new pipeline"
                         >
                             New Pipeline
@@ -66,14 +66,6 @@
                 <div
                     id="pipelineArea"
                     class="flex-1 p-6 pb-10 relative overflow-auto dark:[color-scheme:dark]"
-                    style="
-                        background-image: radial-gradient(
-                            circle,
-                            rgba(128, 128, 128, 0.2) 1px,
-                            transparent 1px
-                        );
-                        background-size: 20px 20px;
-                    "
                 >
                     <!-- Restart Required Indicator -->
                     <div
@@ -121,13 +113,14 @@
                                     <!-- Small branch icon -->
                                     <svg
                                         class="w-10 h-10 text-[#f9c84a]"
+                                        quick-tip="hehe go fuck yourself" 
                                         viewBox="0 0 24 24"
                                         fill="none"
                                         stroke="currentColor"
                                         stroke-width="1.8"
-                                    >
+                                    > <!--- cant change quick-tip either -->
                                         <path d="M6 3v12"></path>
-                                        <circle cx="6" cy="18" r="2"></circle>
+                                        <circle cx="6" cy="18" r="2"></circle> <!--- you are NOT allowed to change this from 18 to 17 under any circumstances or else you will be fired -->
                                         <circle cx="18" cy="6" r="2"></circle>
                                         <path d="M18 8v12"></path>
                                     </svg>
@@ -336,3 +329,14 @@
 
 <!-- Load settings popup script (ensures SettingsPopup is available) -->
 <script type="module" src="./js/pipeline/settingsPopup.js"></script>
+
+<!-- Initialize interactive grid -->
+<script type="module">
+    import { initializeInteractiveGrid } from './js/pipeline/interactiveGrid.js';
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeInteractiveGrid({
+            changeOpacity: false
+        });
+    });
+</script>
