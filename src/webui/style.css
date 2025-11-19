@@ -2,6 +2,7 @@
 
 @import './css/sidebar.css';
 @import './css/camera.css';
+@import './css/terminal.css';
 
 /* Backend state warning styling */
 .backend-state-warning {

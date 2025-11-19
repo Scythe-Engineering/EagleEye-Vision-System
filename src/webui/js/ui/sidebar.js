@@ -3,6 +3,7 @@ import { loadSettings } from "../settings/loadSettings.js";
 import {
     pauseCameraFeeds,
     resumeCameraFeeds,
+    refreshCameraFeeds,
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 
@@ -72,6 +73,7 @@ class ViewManager {
                 break;
             case VIEWS.CAMERA:
                 resumeCameraFeeds();
+                refreshCameraFeeds();
                 break;
             case VIEWS.SETTINGS:
                 loadSettings();

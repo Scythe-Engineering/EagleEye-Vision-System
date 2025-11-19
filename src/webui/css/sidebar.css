@@ -12,6 +12,7 @@
     user-select: none;
     border-radius: 4px;
     transition: background-color 0.2s;
+    border-bottom: 2px solid transparent;
 }
 
 .sidebar li:hover {
@@ -26,4 +27,10 @@
     color: #f9c84a;
     font-weight: bold;
     background-color: #2b2b2b;
+    border-bottom: 2px solid #f9c84a;
+    transition: border-bottom 0.3s ease;
+}
+
+.sidebar li.active:hover {
+    border-bottom: 4px solid #f9c84a;
 }

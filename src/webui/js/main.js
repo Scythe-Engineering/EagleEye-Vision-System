@@ -2,6 +2,7 @@ import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings } from "./settings/saveSettings.js";
+import { initializeTerminalHandlers } from "./settings/terminalHandler.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import "../style.css";
@@ -86,6 +87,7 @@ window.onload = async () => {
     populateFieldDropdown();
     setupSidebar();
     setupCameraFeedHandlers();
+    initializeTerminalHandlers();
     saveSettings();
 
     const showConnectionLostOverlay = () => {

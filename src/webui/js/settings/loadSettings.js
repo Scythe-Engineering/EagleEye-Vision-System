@@ -14,8 +14,11 @@ export function loadSettings() {
     settings.then((settings) => {
         document.getElementById("logCheckbox").checked =
             settings["Constants"]["log"];
-        document.getElementById("printTerminalCheckbox").checked =
-            settings["Constants"]["print_terminal"];
+        const terminalCheckbox = document.getElementById("printTerminalCheckbox");
+        if (terminalCheckbox) {
+            terminalCheckbox.checked = settings["Constants"]["print_terminal"];
+            terminalCheckbox.dispatchEvent(new Event("change"));
+        }
         document.getElementById("detectionLoggingCheckbox").checked =
             settings["Constants"]["detection_logging"];
         document.getElementById("simulationModeCheckbox").checked =

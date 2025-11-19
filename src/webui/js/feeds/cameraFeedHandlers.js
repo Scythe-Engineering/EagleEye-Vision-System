@@ -48,22 +48,23 @@ export function setupCameraFeedHandlers() {
 
         if (noCamerasMessage) noCamerasMessage.style.display = "none";
 
-        cameraNames.forEach((name) => {
+        for (const name of cameraNames) {
             const cameraBox = document.createElement("div");
             cameraBox.className =
-                "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
+                "relative flex items-center justify-center min-h-[100px] bg-[#1E1E1E] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
             cameraBox.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
             cameraBox.dataset.cameraName = name;
 
             const cameraNameLabel = document.createElement("div");
             cameraNameLabel.className =
-                "absolute top-2 left-3 bg-[#111]/90 text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
+                "absolute top-2 left-3 bg-[#1E1E1E] text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
             cameraNameLabel.textContent = name;
+            cameraNameLabel.style.boxShadow = "2px 2px 4px rgba(0, 0, 0, 0.4)";
             cameraBox.appendChild(cameraNameLabel);
 
             const cameraView = document.createElement("img");
-            cameraView.className = "camera-view";
-            const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+            cameraView.className = "camera-view rounded-lg";
+            const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replaceAll(' ', "_")}`;
             if (cameraFeedsPaused) {
                 cameraView.dataset.pausedSrc = feedSrc;
                 cameraView.src = "";
@@ -73,7 +74,7 @@ export function setupCameraFeedHandlers() {
             cameraBox.appendChild(cameraView);
 
             cameraList.appendChild(cameraBox);
-        });
+        }
 
         updateGridLayout();
     }
@@ -97,13 +98,7 @@ export function setupCameraFeedHandlers() {
 
     cameraFetchFn = fetchAndUpdateCameras;
 
-    // Initial fetch
     fetchAndUpdateCameras();
-
-    // Poll every 5 seconds and keep interval id so we can stop/start
-    if (cameraListPollIntervalId === null) {
-        cameraListPollIntervalId = setInterval(fetchAndUpdateCameras, 5000);
-    }
 }
 
 export function pauseCameraFeeds() {
@@ -114,19 +109,19 @@ export function pauseCameraFeeds() {
     }
 
     const imageElements = document.querySelectorAll("img.camera-view");
-    imageElements.forEach((img) => {
+    for (const img of imageElements) {
         if (img?.src && img.src !== "") {
             img.dataset.pausedSrc = img.src;
             img.src = "";
         }
-    });
+    }
 }
 
 export function resumeCameraFeeds() {
     cameraFeedsPaused = false;
 
     const imageElements = document.querySelectorAll("img.camera-view");
-    imageElements.forEach((img) => {
+    for (const img of imageElements) {
         if (img.dataset?.pausedSrc) {
             img.src = img.dataset.pausedSrc;
             delete img.dataset.pausedSrc;
@@ -134,16 +129,14 @@ export function resumeCameraFeeds() {
             const container = img.closest("[data-camera-name]");
             if (container?.dataset?.cameraName) {
                 const name = container.dataset.cameraName;
-                img.src = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+                img.src = `${BACKEND_BASE_URL}/feed/${name.replaceAll(' ', "_")}`;
             }
         }
-    });
+    }
+}
 
-    if (
-        cameraListPollIntervalId === null &&
-        typeof cameraFetchFn === "function"
-    ) {
+export function refreshCameraFeeds() {
+    if (typeof cameraFetchFn === "function") {
         cameraFetchFn();
-        cameraListPollIntervalId = setInterval(cameraFetchFn, 5000);
     }
 }
