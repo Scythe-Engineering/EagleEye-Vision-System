@@ -1,105 +1,143 @@
 <!-- Settings view -->
-<div id="view-settings" class="view hidden">
-    <div
-        class="text-gray-200 bg-[#1f1f1f] max-w-[400px] mx-auto p-5 rounded-[15px] border-2 border-[#414141]"
-    >
-        <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
-            Backend Settings (scrollable)
-        </h2>
-        <form
-            id="settingsForm"
-            class="[&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:text-[#f9c84a] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded max-h-[70vh] overflow-y-auto"
+<div id="view-settings" class="view hidden p-4 h-full relative" style="overflow: visible">
+    <div class="settings-container flex gap-4 h-full w-full">
+        <!-- Settings Panel -->
+        <div
+            id="settingsPanel"
+            class="settings-panel text-gray-200 bg-[#1f1f1f] w-[400px] flex-shrink-0 p-5 rounded-[15px] border-2 border-[#414141] transition-all duration-500 ease-in-out self-start"
+            style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
         >
-            <fieldset>
-                <legend>General</legend>
-                <label>
-                    <span>Enable Logging</span>
-                    <input
-                        type="checkbox"
-                        id="logCheckbox"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Print to Terminal</span>
-                    <input
-                        type="checkbox"
-                        id="printTerminalCheckbox"
-                        checked
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Detection Logging</span>
-                    <input
-                        type="checkbox"
-                        id="detectionLoggingCheckbox"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Simulation Mode</span>
-                    <input
-                        type="checkbox"
-                        id="simulationModeCheckbox"
-                        checked
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-            </fieldset>
-            <fieldset>
-                <legend>Network Table</legend>
-                <label>
-                    <span>Server Address:</span>
-                    <input
-                        type="text"
-                        id="serverAddressInput"
-                        value="10.0.0.62"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Robot Position Key:</span>
-                    <input
-                        type="text"
-                        id="robotPositionKeyInput"
-                        value="robot_position"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Robot Rotation Key:</span>
-                    <input
-                        type="text"
-                        id="robotRotationKeyInput"
-                        value="robot_rotation"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-            </fieldset>
+            <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
+                Backend Settings (scrollable)
+            </h2>
+            <form
+                id="settingsForm"
+                class="[&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded max-h-[70vh] overflow-y-auto"
+                style="overflow: visible"
+            >
+                <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
+                    <legend>General</legend>
+                    <label>
+                        <span>Activate Terminal</span>
+                        <input
+                            type="checkbox"
+                            id="printTerminalCheckbox"
+                            checked
+                            autocomplete="off"
+                            data-form-type="other"
+                        />
+                    </label>
+                    <label>
+                        <span>Download Logs:</span>
+                        <button
+                            type="button"
+                            id="downloadLogsBtn"
+                            class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                        >
+                            Download
+                        </button>
+                    </label>
+                </fieldset>
+                <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
+                    <legend>Network Table</legend>
+                    <label>
+                        <span>Roborio (or sim) IP Address:</span>
+                        <input
+                            type="text"
+                            id="robotAddressInput"
+                            value="10.0.0.62"
+                            autocomplete="off"
+                            data-form-type="other"
+                        />
+                    </label>
+                </fieldset>
 
-            <button
-                type="button"
-                id="saveSettingsBtn"
-                class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                <button
+                    type="button"
+                    id="saveSettingsBtn"
+                    class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                >
+                    Save Settings
+                </button>
+                <button
+                    type="button"
+                    id="restartBackendBtn"
+                    class="block w-full p-2.5 bg-red-900 text-white rounded-md border border-red-700 cursor-pointer text-base font-semibold hover:bg-red-800 hover:border-red-600 transition-colors duration-200 mt-3"
+                    onclick="restartBackend()"
+                >
+                    Restart Backend
+                </button>
+            </form>
+        </div>
+
+        <!-- Terminal Panel -->
+        <div
+            id="terminalPanel"
+            class="terminal-panel flex-1 h-full flex flex-col gap-4 opacity-0 pointer-events-none transition-all duration-500 ease-in-out"
+            style="transform: translateX(20px);"
+        >
+            <!-- Logs Section -->
+            <div
+                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
             >
-                Save Settings
-            </button>
-            <button
-                type="button"
-                id="restartBackendBtn"
-                class="block w-full p-2.5 bg-red-900 text-white rounded-md border border-red-700 cursor-pointer text-base font-semibold hover:bg-red-800 hover:border-red-600 transition-colors duration-200 mt-3"
-                onclick="restartBackend()"
+                <div class="bg-[#1E1E1E] px-4 py-3 border-b-2 border-[#414141] flex items-center justify-between">
+                    <h3 class="text-yellow-400 font-bold text-lg">System Logs</h3>
+                    <button
+                        id="clearLogsBtn"
+                        class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-xs font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Clear
+                    </button>
+                </div>
+                <div
+                    id="logsOutput"
+                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
+                    style="scrollbar-width: thin; scrollbar-color: rgba(65, 65, 65, 0.6) transparent;"
+                >
+                    <div class="text-yellow-400">[INFO] System initialized</div>
+                    <div class="text-gray-400">[DEBUG] Waiting for logs...</div>
+                </div>
+            </div>
+
+            <!-- Interactive Terminal Section -->
+            <div
+                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
             >
-                Restart Backend
-            </button>
-        </form>
+                <div class="bg-[#1E1E1E] px-4 py-3 border-b-2 border-[#414141] flex items-center justify-between">
+                    <h3 class="text-yellow-400 font-bold text-lg">Raspberry Pi Terminal</h3>
+                    <button
+                        id="clearTerminalBtn"
+                        class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-xs font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Clear
+                    </button>
+                </div>
+                <div
+                    id="terminalOutput"
+                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
+                    style="scrollbar-width: thin; scrollbar-color: rgba(65, 65, 65, 0.6) transparent;"
+                >
+                    <div class="text-green-400">pi@eagleeye:~$ </div>
+                </div>
+                <div class="bg-[#1E1E1E] px-4 py-3 border-t-2 border-[#414141] flex items-center gap-2">
+                    <span class="text-green-400 font-mono text-sm">$</span>
+                    <input
+                        type="text"
+                        id="terminalInput"
+                        class="flex-1 bg-[#0a0a0a] text-gray-300 font-mono text-sm px-3 py-2 rounded border border-[#414141] focus:border-[#f9c845] focus:outline-none"
+                        placeholder="Enter command..."
+                        autocomplete="off"
+                    />
+                    <button
+                        id="sendCommandBtn"
+                        class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>

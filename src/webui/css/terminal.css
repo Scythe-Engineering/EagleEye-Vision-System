@@ -1,0 +1,54 @@
+/* Terminal Output Scrollbar Styling */
+#logsOutput::-webkit-scrollbar,
+#terminalOutput::-webkit-scrollbar {
+    width: 12px;
+    background: transparent;
+}
+
+#logsOutput::-webkit-scrollbar-track,
+#terminalOutput::-webkit-scrollbar-track {
+    background: #0a0a0a;
+    border-radius: 6px;
+}
+
+#logsOutput::-webkit-scrollbar-thumb,
+#terminalOutput::-webkit-scrollbar-thumb {
+    background: rgba(65, 65, 65, 0.6);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+#logsOutput::-webkit-scrollbar-thumb:hover,
+#terminalOutput::-webkit-scrollbar-thumb:hover {
+    background: rgba(65, 65, 65, 0.8);
+    background-clip: padding-box;
+}
+
+/* Settings Panel Animation */
+.settings-panel {
+    transition: transform 0.8s ease-in-out;
+    transform: translateX(0);
+    --center-offset: 0px;
+}
+
+.settings-panel.centered {
+    transform: translateX(var(--center-offset));
+}
+
+/* Terminal Panel Fade and Slide Animation */
+.terminal-panel {
+    transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+}
+
+.terminal-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0) !important;
+}
+
+.terminal-panel:not(.visible) {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(20px);
+}
