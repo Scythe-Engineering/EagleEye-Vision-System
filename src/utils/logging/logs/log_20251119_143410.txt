@@ -1,0 +1,88 @@
+[2025-11-19 14:34:10] Building Rust implementations (long first time build)...
+[2025-11-19 14:34:10] ✓ pose_outlier_filter is up to date
+[2025-11-19 14:34:10] Testing import of pose_outlier_filter...
+[2025-11-19 14:34:10] ✓ Successfully imported pose_outlier_filter
+[2025-11-19 14:34:10] ✓ temporal_acceleration is up to date
+[2025-11-19 14:34:10] Testing import of temporal_acceleration...
+[2025-11-19 14:34:10] ✓ Successfully imported temporal_acceleration
+[2025-11-19 14:34:10] Rust implementations built successfully.
+[2025-11-19 14:34:10] Detected Available Devices: {'CPU': ['Unknown CPU'], 'GPU': [], 'TPU': []}
+[2025-11-19 14:34:10] Initializing EagleEye backend...
+[2025-11-19 14:34:10] Initialized with cameras: {}
+[2025-11-19 14:34:15] Added CPU device: Unknown CPU
+[2025-11-19 14:34:15] Performing initial camera detection...
+[2025-11-19 14:34:16]     Found 3 new cameras: ['FaceTime HD Camera', 'OBS Camera Extension', 'iPhone15,2']
+[2025-11-19 14:34:16] Added camera: FaceTime HD Camera with ID: 0
+[2025-11-19 14:34:16]     Added new camera to web interface: FaceTime HD Camera (index: 0)
+[2025-11-19 14:34:18] SSE client connected
+[2025-11-19 14:34:18] v4l2-ctl not found, falling back to default FPS settings
+[2025-11-19 14:34:18] Camera FaceTime HD Camera: Set resolution to 1280x720 @ 30 fps
+[2025-11-19 14:34:18] Starting camera feed worker for FaceTime HD Camera
+[2025-11-19 14:34:18] Camera thread for FaceTime HD Camera is running at 30 target fps
+[2025-11-19 14:34:18] Successfully started camera thread for FaceTime HD Camera (index: 0)
+[2025-11-19 14:34:18]     Successfully started thread for new camera: FaceTime HD Camera (bus: 0)
+[2025-11-19 14:34:18] Added camera: OBS Camera Extension with ID: 1
+[2025-11-19 14:34:18]     Added new camera to web interface: OBS Camera Extension (index: 1)
+[2025-11-19 14:34:18] Camera: OBS Camera Extension created without intrinsics calibration
+[2025-11-19 14:34:18] Camera: OBS Camera Extension created without extrinsics calibration
+[2025-11-19 14:34:18] Failed to start camera thread for OBS Camera Extension: Camera: OBS Camera Extension created without extrinsics calibration, must have extrinsics before creation
+[2025-11-19 14:34:18] Full traceback: Traceback (most recent call last):
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/camera.py", line 118, in __init__
+    with open(
+         ^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'None/extrinsics.json'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/camera_thread_manager.py", line 145, in start_camera_thread
+    camera = PhysicalCamera(
+             ^^^^^^^^^^^^^^^
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/physical_camera.py", line 32, in __init__
+    super().__init__(camera_name, camera_calibration_folder, log)
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/camera.py", line 133, in __init__
+    raise RuntimeError(
+RuntimeError: Camera: OBS Camera Extension created without extrinsics calibration, must have extrinsics before creation
+
+[2025-11-19 14:34:18] Removed camera: OBS Camera Extension
+[2025-11-19 14:34:18]     Failed to start thread for new camera: OBS Camera Extension (bus: 1)
+[2025-11-19 14:34:18] Added camera: iPhone15,2 with ID: 2
+[2025-11-19 14:34:18]     Added new camera to web interface: iPhone15,2 (index: 2)
+[2025-11-19 14:34:18] Camera: iPhone15,2 created without intrinsics calibration
+[2025-11-19 14:34:18] Camera: iPhone15,2 created without extrinsics calibration
+[2025-11-19 14:34:18] Failed to start camera thread for iPhone15,2: Camera: iPhone15,2 created without extrinsics calibration, must have extrinsics before creation
+[2025-11-19 14:34:18] Full traceback: Traceback (most recent call last):
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/camera.py", line 118, in __init__
+    with open(
+         ^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'None/extrinsics.json'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/camera_thread_manager.py", line 145, in start_camera_thread
+    camera = PhysicalCamera(
+             ^^^^^^^^^^^^^^^
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/physical_camera.py", line 32, in __init__
+    super().__init__(camera_name, camera_calibration_folder, log)
+  File "/Users/darkeden/EagleEye-Vision-System/src/utils/camera_utils/cameras/camera.py", line 133, in __init__
+    raise RuntimeError(
+RuntimeError: Camera: iPhone15,2 created without extrinsics calibration, must have extrinsics before creation
+
+[2025-11-19 14:34:18] Removed camera: iPhone15,2
+[2025-11-19 14:34:18]     Failed to start thread for new camera: iPhone15,2 (bus: 2)
+[2025-11-19 14:34:18] Added camera: basic_test with ID: -1
+[2025-11-19 14:34:18] Loading frames (will init after frames are loaded into ram)...
+[2025-11-19 14:34:23] Frames loaded.
+[2025-11-19 14:34:23] Starting camera feed worker for basic_test
+[2025-11-19 14:34:23] Successfully started camera thread for basic_test (index: None)
+[2025-11-19 14:34:23] Camera thread for basic_test is running at 24 target fps
+[2025-11-19 14:34:23] Added video file camera: basic_test
+[2025-11-19 14:34:23] Initially detected 2 cameras: ['basic_test', 'FaceTime HD Camera']
+[2025-11-19 14:42:53] Failed to get frame from FaceTime HD Camera (1)
+[2025-11-19 14:42:53] SSE client disconnected
+[2025-11-19 14:42:53] SSE client connected
+[2025-11-19 14:42:54] Failed to get frame from FaceTime HD Camera (2)
+[2025-11-19 14:42:55] Failed to get frame from FaceTime HD Camera (3)
+[2025-11-19 14:43:02] Too many consecutive failures from FaceTime HD Camera, stopping worker
+[2025-11-19 14:43:02] Camera feed worker for FaceTime HD Camera stopped
