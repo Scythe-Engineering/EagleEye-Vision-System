@@ -29,6 +29,7 @@ class Pipeline:
         compute_pool: ComputePool,
         network_table: NetworkTable,
         camera_manager: CameraThreadManager | None = None,
+        logger=None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -38,6 +39,8 @@ class Pipeline:
             camera_bus_id: The bus ID of the camera to run the pipeline on.
             compute_pool: The compute pool to use for the pipelines.
             network_table: The network table to use for the pipelines.
+            camera_manager: The camera manager to use for the pipelines.
+            logger: Logger instance for logging.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
@@ -45,6 +48,7 @@ class Pipeline:
         self.compute_pool = compute_pool
         self.network_table = network_table
         self.camera_manager = camera_manager
+        self.logger = logger
 
         self.thread_running = False
         self.thread = None
@@ -162,6 +166,12 @@ class Pipeline:
             ):
                 init_params["camera_manager"] = self.camera_manager
 
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "logger" in operation_class.__init__.__code__.co_varnames
+            ):
+                init_params["logger"] = self.logger
+
             return operation_class(**init_params)
 
         except TypeError as e:
@@ -198,8 +208,8 @@ class Pipeline:
                 start_time = time.time()
                 current_data = operation.run(current_data)
                 if current_data is None and i != len(self.operations) - 1:
-                    if debug_mode:
-                        print(
+                    if debug_mode and self.logger:
+                        self.logger.log(
                             f"{Colors.YELLOW}Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline{Colors.RESET}"
                         )
                     break
@@ -215,9 +225,9 @@ class Pipeline:
             self.total_time_history.append(time_elapsed)
         self.all_total_times.append(time_elapsed)
 
-        if debug_mode:
+        if debug_mode and self.logger:
             print_timing_summary(
-                self.operations, self.operation_time_history, self.total_time_history
+                self.operations, self.operation_time_history, self.total_time_history, logger=self.logger
             )
 
         if visualize:
@@ -293,22 +303,23 @@ class Pipeline:
             if operation is not None and hasattr(operation, "update_config"):
                 try:
                     operation.update_config(action_params)
-                    if debug_mode:
-                        print(
+                    if debug_mode and self.logger:
+                        self.logger.log(
                             f"{Colors.GREEN}Updated config for {action_name}: {action_params}{Colors.RESET}"
                         )
                 except Exception as e:
-                    print(
-                        f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
-                    )
+                    if self.logger:
+                        self.logger.log(
+                            f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
+                        )
             elif operation is not None:
-                if debug_mode:
-                    print(
+                if debug_mode and self.logger:
+                    self.logger.log(
                         f"{Colors.YELLOW}Operation {action_name} does not support config updates{Colors.RESET}"
                     )
             else:
-                if debug_mode:
-                    print(
+                if debug_mode and self.logger:
+                    self.logger.log(
                         f"{Colors.RED}Operation {action_name} not found in pipeline{Colors.RESET}"
                     )
 
@@ -337,18 +348,21 @@ class Pipeline:
             camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
         if not camera_thread_manager.get_camera_ready(camera_bus_id):
-            print(
-                f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
-            )
+            if self.logger:
+                self.logger.log(
+                    f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
+                )
             while not camera_thread_manager.get_camera_ready(camera_bus_id):
                 time.sleep(0.01)
-            print(
-                f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
-            )
+            if self.logger:
+                self.logger.log(
+                    f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
+                )
 
-        print(
-            f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
-        )
+        if self.logger:
+            self.logger.log(
+                f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
+            )
         time.sleep(0.1)
 
         while self.thread_running:
@@ -377,9 +391,10 @@ class Pipeline:
                     else:
                         self.run(frame)
                 except Exception as _:
-                    print(
-                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                    )
+                    if self.logger:
+                        self.logger.log(
+                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                        )
             else:
                 time.sleep(0.01)
 

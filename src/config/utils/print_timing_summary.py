@@ -12,7 +12,7 @@ def _format_ms(seconds: float) -> float:
     """
     return round(seconds * 1000.0, 2)
 
-def print_timing_summary(operations: list[Any], operation_time_history: list[list[float]], total_time_history: list[float]) -> None:
+def print_timing_summary(operations: list[Any], operation_time_history: list[list[float]], total_time_history: list[float], logger=None) -> None:
     """Print a readable CLI timing summary using a moving average of the last 50 runs.
 
     Args:
@@ -63,13 +63,14 @@ def print_timing_summary(operations: list[Any], operation_time_history: list[lis
     )
     overall_fps_line = f"{'Total Avg FPS'.ljust(name_col_width)} | {str(overall_avg_fps).rjust(time_col_width)}"
     # Emit the table in a compact, readable format
-    print("\nTiming (moving average of last 50 runs)")
-    print(header)
-    print(separator)
+    log_func = logger.log if logger else print
+    log_func("\nTiming (moving average of last 50 runs)")
+    log_func(header)
+    log_func(separator)
     for row in rows:
-        print(row)
-    print(footer_sep)
-    print(footer)
-    print(fps_line)
-    print(overall_fps_line)
-    print("")
+        log_func(row)
+    log_func(footer_sep)
+    log_func(footer)
+    log_func(fps_line)
+    log_func(overall_fps_line)
+    log_func("")

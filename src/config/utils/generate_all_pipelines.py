@@ -53,6 +53,7 @@ def generate_all_pipelines(
     network_table: NetworkTable,
     camera_manager,
     pipeline_config: str | None = None,
+    logger=None,
 ) -> Dict[str, Dict[str, Pipeline]]:
     """Generate all pipelines from the pipeline_config.json file.
 
@@ -92,6 +93,7 @@ def generate_all_pipelines(
                 compute_pool,
                 network_table,
                 camera_manager,
+                logger=logger,
             )
             pipelines[camera_name][pipeline_name] = pipeline
             pipeline_count += 1
