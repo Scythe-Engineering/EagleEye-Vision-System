@@ -9,6 +9,29 @@
     font-size: 1rem;
     height: calc(100% - 80px);
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+.camera-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.camera-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.camera-list::-webkit-scrollbar-thumb {
+    background-color: #444;
+    border-radius: 4px;
+}
+
+.camera-list::-webkit-scrollbar-thumb:hover {
+    background-color: #555;
+}
+
+.camera-list::-webkit-scrollbar-button {
+    display: none;
 }
 
 .camera-view {
