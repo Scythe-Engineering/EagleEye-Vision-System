@@ -41,7 +41,9 @@ if not build_success:
 logger.log(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
 available_devices = get_available_devices(logger=logger)
-logger.log(f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}")
+logger.log(
+    f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}"
+)
 
 current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
@@ -99,7 +101,9 @@ def add_video_file_cameras(
             str(video_file),
         )
         known_cameras.add(camera_name)
-        logger.log(f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}")
+        logger.log(
+            f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"
+        )
 
 
 class MainBackend:
@@ -107,7 +111,9 @@ class MainBackend:
         try:
             self.logger = logger
 
-            self.logger.log(f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}")
+            self.logger.log(
+                f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
+            )
 
             NetworkTables.initialize(server="10.0.0.62")
             self.network_table = NetworkTables.getTable("EagleEye")
@@ -117,9 +123,11 @@ class MainBackend:
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
                 pipeline_objects_callback=self.get_pipelines,
-                log=self.logger.log,
+                logger=self.logger,
             )
-            self.camera_manager = CameraThreadManager(self.web_interface, logger=self.logger)
+            self.camera_manager = CameraThreadManager(
+                self.web_interface, logger=self.logger
+            )
             self.known_cameras: Set[str] = set()
 
             self.compute_pool = ComputePool()
@@ -134,7 +142,10 @@ class MainBackend:
 
             # Set logger for MX3 module if available
             if available_devices.get("MX3"):
-                from src.utils.device_management_utils.mx3_accelerator import set_mx3_logger
+                from src.utils.device_management_utils.mx3_accelerator import (
+                    set_mx3_logger,
+                )
+
                 set_mx3_logger(self.logger)
 
             # Add TPU devices if available
@@ -156,7 +167,9 @@ class MainBackend:
                                 continue
 
                             device_index = device_parts[1]
-                            mx3_device = MX3Accelerator(device_id=f"MX3_{device_index}", logger=self.logger)
+                            mx3_device = MX3Accelerator(
+                                device_id=f"MX3_{device_index}", logger=self.logger
+                            )
                             self.compute_pool.add_compute_device(mx3_device)
 
                             self.logger.log(
@@ -198,7 +211,9 @@ class MainBackend:
             )
 
             # Initial camera detection
-            self.logger.log(f"{Colors.CYAN}Performing initial camera detection...{Colors.RESET}")
+            self.logger.log(
+                f"{Colors.CYAN}Performing initial camera detection...{Colors.RESET}"
+            )
             self.known_cameras = check_and_add_new_cameras(
                 self.web_interface, self.camera_manager, self.known_cameras, self.logger
             )
@@ -221,7 +236,9 @@ class MainBackend:
                     )
 
             if not self.known_cameras:
-                self.logger.log(f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}")
+                self.logger.log(
+                    f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}"
+                )
             else:
                 self.logger.log(
                     f"{Colors.CYAN}Initially detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
@@ -243,7 +260,9 @@ class MainBackend:
             restart_service: If True, trigger a systemctl restart of the service after shutdown.
         """
         if restart_service:
-            self.logger.log(f"{Colors.CYAN}Restarting systemctl service...{Colors.RESET}")
+            self.logger.log(
+                f"{Colors.CYAN}Restarting systemctl service...{Colors.RESET}"
+            )
             try:
                 # Get the service name from environment or use a default
                 service_name = os.environ.get("SERVICE_NAME", "eagleeye")
