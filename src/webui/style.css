@@ -70,3 +70,21 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
 }
+
+/* Notification animations */
+.notification-item {
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: transform, opacity;
+}
+
+/* Initial state for entering notifications */
+.notification-enter {
+    transform: translateX(120%) scale(1) !important;
+    opacity: 0 !important;
+}
+
+/* State for exiting notifications */
+.notification-exit {
+    transform: translateX(120%) scale(0.8) !important;
+    opacity: 0 !important;
+}

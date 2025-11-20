@@ -24,6 +24,24 @@
             </div>
         </div>
 
+        <!-- Notification Container -->
+        <div
+            class="fixed top-4 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none"
+        >
+            <button
+                id="clearAllNotificationsBtn"
+                type="button"
+                class="hidden px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 pointer-events-auto mb-2"
+            >
+                Clear All
+            </button>
+            <div
+                id="notification-container"
+                class="relative pointer-events-auto"
+                style="min-width: 320px;"
+            ></div>
+        </div>
+
         <div
             class="main-container bg-[rgb(27,27,27)] flex-col w-[calc(100%_-_20px)] h-[calc(-20px_+_100vh)] flex overflow-hidden shadow-[rgba(0,0,0,0.6)_0px_4px_15px] m-2.5 rounded-lg"
         >

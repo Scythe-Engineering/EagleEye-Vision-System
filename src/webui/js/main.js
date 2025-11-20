@@ -5,6 +5,7 @@ import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
+import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
 import "../style.css";
 import { Matrix4 } from "three";
 
@@ -89,6 +90,26 @@ window.onload = async () => {
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
     saveSettings();
+
+    const clearAllButton = document.getElementById("clearAllNotificationsBtn");
+    if (clearAllButton) {
+        clearAllButton.addEventListener("click", () => {
+            clearAll();
+        });
+    }
+
+    const testNotificationsBtn = document.getElementById("testNotificationsBtn");
+    if (testNotificationsBtn) {
+        testNotificationsBtn.addEventListener("click", () => {
+            showSuccess("This is a success notification!");
+            setTimeout(() => {
+                showWarning("This is a warning notification!");
+            }, 300);
+            setTimeout(() => {
+                showDanger("This is a danger notification!");
+            }, 600);
+        });
+    }
 
     const showConnectionLostOverlay = () => {
         const overlay = document.getElementById("connection-lost-overlay");
