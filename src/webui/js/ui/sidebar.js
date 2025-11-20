@@ -6,6 +6,7 @@ import {
     refreshCameraFeeds,
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
+import { refreshLogMessages } from "../settings/terminalHandler.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -77,6 +78,7 @@ class ViewManager {
                 break;
             case VIEWS.SETTINGS:
                 loadSettings();
+                refreshLogMessages();
                 break;
             case VIEWS.PIPELINE:
                 // If pipeline creator is already initialized, refresh it; otherwise initialize it

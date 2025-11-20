@@ -2,7 +2,7 @@ import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings } from "./settings/saveSettings.js";
-import { initializeTerminalHandlers } from "./settings/terminalHandler.js";
+import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import "../style.css";
@@ -125,6 +125,8 @@ window.onload = async () => {
                 wasDisconnected = false;
                 const currentViewId = getCurrentViewId();
                 await refreshViewsOnReconnection(currentViewId);
+                // Refresh logs after reconnection
+                refreshLogMessages();
             }, 500);
         }
     });
@@ -182,6 +184,15 @@ window.onload = async () => {
                 "Failed to parse SSE update_detected_objects event",
                 err,
             );
+        }
+    });
+
+    es.addEventListener("log_update", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            handleLogUpdate(data);
+        } catch (err) {
+            console.warn("Failed to parse SSE log_update event", err);
         }
     });
 

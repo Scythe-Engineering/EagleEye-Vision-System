@@ -14,6 +14,7 @@ from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 
 from src.utils.colors import Colors
+from src.utils.logging.logger import Logger
 from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,
@@ -38,7 +39,7 @@ class EagleEyeInterface:
         pipeline_objects_callback: Callable,
         settings_object=None,
         dev_mode: bool = False,
-        log: Callable | None = None,
+        logger: Logger | None = None,
     ):
         """
         Initialize the EagleEyeInterface.
@@ -48,47 +49,49 @@ class EagleEyeInterface:
         Args:
             settings_object (Constants | None): Optional settings object.
             dev_mode (bool): Whether to run in development mode.
-            log (Callable | None): Optional logging function.
+            logger: Logger instance for logging.
         """
-        if log is None:
-            self.log = print
-        else:
-            def colored_log(*messages: object) -> None:
-                """Log function with automatic color coding based on message content."""
-                message = " ".join(str(m) for m in messages)
-                if any(
-                    word in message.lower() for word in ["error", "failed", "exception"]
-                ):
-                    log(f"{Colors.RED}{message}{Colors.RESET}")
-                elif any(
-                    word in message.lower()
-                    for word in ["success", "added", "updated", "started"]
-                ):
-                    log(f"{Colors.GREEN}{message}{Colors.RESET}")
-                elif any(
-                    word in message.lower()
-                    for word in ["warning", "skipping", "queue full"]
-                ):
-                    log(f"{Colors.YELLOW}{message}{Colors.RESET}")
-                elif any(
-                    word in message.lower()
-                    for word in [
-                        "connected",
-                        "disconnected",
-                        "initialized",
-                        "set",
-                        "removed",
-                    ]
-                ):
-                    log(f"{Colors.CYAN}{message}{Colors.RESET}")
-                else:
-                    log(message)
+        self.logger = logger
+        self.log = self.logger.log if self.logger is not None else print
+
+        def colored_log(*messages: object) -> None:
+            """Log function with automatic color coding based on message content."""
+            message = " ".join(str(m) for m in messages)
+            if any(
+                word in message.lower() for word in ["error", "failed", "exception"]
+            ):
+                self.logger.log(f"{Colors.RED}{message}{Colors.RESET}")
+            elif any(
+                word in message.lower()
+                for word in ["success", "added", "updated", "started"]
+            ):
+                self.logger.log(f"{Colors.GREEN}{message}{Colors.RESET}")
+            elif any(
+                word in message.lower()
+                for word in ["warning", "skipping", "queue full"]
+            ):
+                self.logger.log(f"{Colors.YELLOW}{message}{Colors.RESET}")
+            elif any(
+                word in message.lower()
+                for word in [
+                    "connected",
+                    "disconnected",
+                    "initialized",
+                    "set",
+                    "removed",
+                ]
+            ):
+                self.logger.log(f"{Colors.CYAN}{message}{Colors.RESET}")
+            else:
+                self.logger.log(message)
+
             self.log = colored_log
 
         self.restart_callback = restart_callback
         self.pipeline_objects_callback = pipeline_objects_callback
 
         self.restart_required_for_config = False
+        self.last_log_message_count = 0
 
         self.app = Flask(
             __name__,
@@ -142,6 +145,9 @@ class EagleEyeInterface:
         # Start heartbeat publisher thread for connection tracking
         self._heartbeat_interval = 5.0
         Thread(target=self._sse_heartbeat_loop, daemon=True).start()
+
+        # Start log monitoring thread for real-time log updates
+        Thread(target=self._log_monitor_loop, daemon=True).start()
 
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
@@ -290,6 +296,18 @@ class EagleEyeInterface:
             "/get_restart_required",
             "get_restart_required",
             self.get_restart_required,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-log-messages",
+            "get_log_messages",
+            self.get_log_messages,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/download-log-file",
+            "download_log_file",
+            self.download_log_file,
             methods=["GET"],
         )
 
@@ -496,7 +514,6 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
-        self.log("SSE client connected")
         try:
             while True:
                 try:
@@ -515,7 +532,6 @@ class EagleEyeInterface:
             with self._sse_queue_lock:
                 if self._sse_queue is q:
                     self._sse_queue = None
-            self.log("SSE client disconnected")
 
     def _publish_event(self, event_name: str, data: object) -> None:
         """
@@ -1062,11 +1078,70 @@ class EagleEyeInterface:
         """
         return {"restart_required": self.restart_required_for_config}, 200
 
+    def get_log_messages(self) -> tuple[dict, int]:
+        """
+        Get all log messages from the logger instance.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing log messages and HTTP status code.
+        """
+        if self.logger is None:
+            return {"messages": [], "error": "Logger instance not available"}, 503
+
+        try:
+            log_lines = self.logger.message_history.to_file_lines()
+
+            return {"messages": log_lines, "total_count": len(log_lines)}, 200
+        except Exception as e:
+            self.logger.log(f"Error retrieving log messages: {e}")
+            return {"messages": [], "error": str(e)}, 500
+
+    def _log_monitor_loop(self) -> None:
+        """
+        Monitor the logger for new messages and publish them via SSE.
+        """
+        if self.logger is None:
+            return
+
+        while True:
+            try:
+                current_message_count = len(self.logger.message_history.messages)
+
+                if current_message_count > self.last_log_message_count:
+                    message_lines = self.logger.message_history.to_file_lines()
+
+                    if message_lines:
+                        self._publish_event(
+                            "log_update",
+                            {
+                                "messages": message_lines,
+                            },
+                        )
+
+                    self.last_log_message_count = current_message_count
+
+                time.sleep(0.1)
+            except Exception as e:
+                self.logger.log(f"Error in log monitor loop: {e}")
+                time.sleep(1.0)
+
+    def download_log_file(self) -> tuple[dict, int]:
+        """
+        Download the log file.
+        """
+        try:
+            with open(os.path.join(self.logger.current_log_file), "r") as f:
+                return f.read(), 200
+        except Exception as e:
+            self.logger.log(f"Error downloading log file: {e}")
+            return {"error": str(e)}, 500
+
 
 if __name__ == "__main__":
     from src.utils.logging.logger import Logger  # noqa: E402
+
     logger = Logger()
-    interface = EagleEyeInterface(dev_mode=False, log=logger.log)
+    interface = EagleEyeInterface(dev_mode=False, logger=logger)
 
     try:
         while True:
