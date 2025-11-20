@@ -49,12 +49,12 @@ logger.log(
 current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
 
-if not os.path.exists("general_conf.json"):
+if not os.path.exists("src/general_conf.json"):
     # make empty json file with 0.0.0.0 as the address
-    with open("general_conf.json", "w") as f:
+    with open("src/general_conf.json", "w") as f:
         json.dump({"network_table_address": "0.0.0.0"}, f)
 
-general_conf = json.load(open("general_conf.json"))
+general_conf = json.load(open("src/general_conf.json"))
 
 
 class DummyNetworkTable:
