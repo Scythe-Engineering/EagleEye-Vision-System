@@ -102,9 +102,15 @@
 
             <!-- Interactive Terminal Section -->
             <div
-                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden"
+                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden relative"
                 style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
             >
+                <div
+                    class="absolute inset-0 z-50 flex items-center justify-center pointer-events-auto select-none"
+                    style="background-color: rgba(0, 0, 0, 0.3); backdrop-filter: blur(2px);"
+                >
+                    <div class="text-red-500 text-6xl font-bold opacity-80">Work-in-progress</div>
+                </div>
                 <div class="bg-[#1E1E1E] px-4 py-3 border-b-2 border-[#414141] flex items-center justify-between">
                     <h3 class="text-yellow-400 font-bold text-lg">Raspberry Pi Terminal</h3>
                     <button
