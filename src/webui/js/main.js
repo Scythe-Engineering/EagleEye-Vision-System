@@ -1,7 +1,7 @@
 import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
-import { saveSettings } from "./settings/saveSettings.js";
+import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
@@ -127,6 +127,8 @@ window.onload = async () => {
                 await refreshViewsOnReconnection(currentViewId);
                 // Refresh logs after reconnection
                 refreshLogMessages();
+                // Load settings after reconnection
+                await loadSettings();
             }, 500);
         }
     });

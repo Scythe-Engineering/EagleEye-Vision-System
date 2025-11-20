@@ -37,7 +37,6 @@ class EagleEyeInterface:
         self,
         restart_callback: Callable,
         pipeline_objects_callback: Callable,
-        settings_object=None,
         dev_mode: bool = False,
         logger: Logger | None = None,
     ):
@@ -119,11 +118,6 @@ class EagleEyeInterface:
 
         self.frame_locks = {}
         self.frame_list_structure_lock = threading.Lock()
-
-        if settings_object is None:
-            self.settings_object = None
-        else:
-            self.settings_object = settings_object
 
         self._register_routes()
 
@@ -309,6 +303,18 @@ class EagleEyeInterface:
             "download_log_file",
             self.download_log_file,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-general-conf",
+            "get_general_conf",
+            self.get_general_conf,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/save-general-conf",
+            "save_general_conf",
+            self.save_general_conf,
+            methods=["POST"],
         )
 
         # SSE stream for frontend (named events)
@@ -1134,6 +1140,28 @@ class EagleEyeInterface:
                 return f.read(), 200
         except Exception as e:
             self.logger.log(f"Error downloading log file: {e}")
+            return {"error": str(e)}, 500
+        
+    def get_general_conf(self) -> tuple[dict, int]:
+        """
+        Get the general configuration.
+        """
+        try:
+            with open("general_conf.json", "r") as f:
+                return json.load(f), 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    def save_general_conf(self) -> tuple[dict, int]:
+        """
+        Save the general configuration.
+        """
+        try:
+            with open("general_conf.json", "w") as f:
+                json.dump(request.get_json(), f)
+            return {"message": "General configuration saved successfully"}, 200
+        except Exception as e:
+            self.logger.log(f"Error saving general configuration: {e}")
             return {"error": str(e)}, 500
 
 

@@ -11,10 +11,10 @@ faulthandler.enable()
 from src.config.utils.generate_all_pipelines import generate_all_pipelines  # noqa: E402
 from src.config.utils.pipeline import Pipeline  # noqa: E402
 from src.rust_implementations.build import main as rust_build  # noqa: E402
-from src.utils.camera_utils.camera_thread_manager import (
+from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
     CameraThreadManager,  # noqa: E402
 )
-from src.utils.camera_utils.check_and_add_new_cameras import (
+from src.utils.camera_utils.check_and_add_new_cameras import (  # noqa: E402
     check_and_add_new_cameras,  # noqa: E402
 )
 from src.utils.colors import Colors  # noqa: E402
@@ -24,7 +24,8 @@ from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from networktables import NetworkTables  # noqa: E402
-from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
+from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
+import json  # noqa: E402
 
 # Build the Rust implementations (removed during uv sync)
 logger = Logger()
@@ -47,6 +48,13 @@ logger.log(
 
 current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
+
+if not os.path.exists("general_conf.json"):
+    # make empty json file with 0.0.0.0 as the address
+    with open("general_conf.json", "w") as f:
+        json.dump({"network_table_address": "0.0.0.0"}, f)
+
+general_conf = json.load(open("general_conf.json"))
 
 
 class DummyNetworkTable:
@@ -115,7 +123,7 @@ class MainBackend:
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
 
-            NetworkTables.initialize(server="10.0.0.62")
+            NetworkTables.initialize(server=general_conf["network_table_address"])
             self.network_table = NetworkTables.getTable("EagleEye")
             schema_manifest_payload = generate_schema_manifest_bytes()
             self.network_table.putRaw(SCHEMA_MANIFEST_KEY, schema_manifest_payload)

@@ -1,5 +1,5 @@
 import { init3DView } from "../init3DView.js";
-import { loadSettings } from "../settings/loadSettings.js";
+import { loadSettings } from "../settings/settingsHandler.js";
 import {
     pauseCameraFeeds,
     resumeCameraFeeds,
