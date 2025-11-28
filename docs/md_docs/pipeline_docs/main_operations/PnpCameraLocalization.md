@@ -210,8 +210,6 @@ camera_pose = localizer.run(detections)
 ## Related Operations
 
 - `DetectApriltagsDefinition`: Provides AprilTag detections for pose estimation
-- `FusedCameraLocalizationDefinition`: Combines multiple localization sources
-- `YtdCameraLocalizationDefinition`: Alternative localization using different sensors
 
 ## Files
 

@@ -1,10 +1,11 @@
 from src.utils.device_management_utils.compute_device import ComputeDevice
 from src.utils.colors import Colors
 import numpy as np
-from torch import Tensor
+import torch
 import time
 import onnxruntime as ort
 from threading import Condition
+from typing import Any
 
 # Global logger that can be set from main_backend.py
 _mx3_logger = None
@@ -52,7 +53,7 @@ class MX3ModelIO:
         self.zero_object = np.zeros(self.input_data_shape, dtype=np.float32)
 
         self.model_most_recent_inputs: dict[int, np.ndarray] = {}
-        self.model_most_recent_outputs: dict[int, np.ndarray] = {}
+        self.model_most_recent_outputs: dict[int, tuple[tuple[Any], float, int]] = {}
 
         self.input_conditions: dict[int, Condition] = {}
         self.output_conditions: dict[int, Condition] = {}
@@ -95,8 +96,8 @@ class MX3ModelIO:
         if self.inflight_epochs.get(stream_idx):
             epoch = self.inflight_epochs[stream_idx].pop(0)
         now = time.time()
-        self.model_most_recent_outputs[stream_idx] = [outputs, now, epoch]
         if epoch is not None:
+            self.model_most_recent_outputs[stream_idx] = (outputs, now, epoch)
             self.latest_output_epoch[stream_idx] = epoch
         out_cond = self.output_conditions.get(stream_idx, None)
         if out_cond is not None:
@@ -156,7 +157,7 @@ class MX3ModelIO:
             while True:
                 rec = self.model_most_recent_outputs.get(stream_idx)
                 if rec is not None and len(rec) == 3 and rec[2] == next_epoch:
-                    return rec[0]
+                    return np.array(rec[0])
                 remaining = deadline - time.time()
                 if remaining <= 0:
                     raise TimeoutError(
@@ -261,8 +262,8 @@ class MX3Accelerator(ComputeDevice):
 
     def run(
         self,
-        model_name: str,
-        input_data: Tensor | np.ndarray,
+        model_path: str,
+        input_data: np.ndarray | torch.Tensor,
         input_data_shape: tuple[int, int],
         stream_idx: int,
     ) -> np.ndarray:
@@ -270,14 +271,14 @@ class MX3Accelerator(ComputeDevice):
         Run a model on the MX3 accelerator. (synchronous)
 
         Args:
-            model_name (str): Name of the model to be run.
-            input_data (Tensor | np.ndarray): Input data to be processed.
+            model_path (str): Path to the model to be run.
+            input_data (np.ndarray | torch.Tensor): Input data to be processed.
             input_data_shape (tuple[int, int]): Shape of the input data.
 
         Returns:
             np.ndarray: Processed output data.
         """
-        if isinstance(input_data, Tensor):
+        if isinstance(input_data, torch.Tensor):
             input_data = input_data.cpu().numpy()
 
         expected_channels = input_data.shape[1]
@@ -293,14 +294,14 @@ class MX3Accelerator(ComputeDevice):
         if input_data.dtype != np.float32:
             input_data = input_data.astype(np.float32)
 
-        return_data = self.model_io_objects[model_name].sequential_run(
+        return_data = self.model_io_objects[model_path].sequential_run(
             stream_idx, input_data
         )
 
-        if model_name in self.post_processing_models:
-            session = self.post_processing_models[model_name]
-            input_names = self.post_processing_input_names[model_name]
-            output_name = self.post_processing_output_names[model_name]
+        if model_path in self.post_processing_models:
+            session = self.post_processing_models[model_path]
+            input_names = self.post_processing_input_names[model_path]
+            output_name = self.post_processing_output_names[model_path]
 
             if isinstance(return_data, (list, tuple)):
                 outputs_list = list(return_data)
@@ -309,12 +310,10 @@ class MX3Accelerator(ComputeDevice):
 
             if len(input_names) != len(outputs_list):
                 raise ValueError(
-                    f"Post-processing model for {model_name} expects {len(input_names)} inputs but received {len(outputs_list)} from accelerator."
+                    f"Post-processing model for {model_path} expects {len(input_names)} inputs but received {len(outputs_list)} from accelerator."
                 )
 
-            input_feed = {
-                name: tensor for name, tensor in zip(input_names, outputs_list)
-            }
+            input_feed = dict(zip(input_names, outputs_list))
             post_processed_outputs = np.array(session.run([output_name], input_feed))
 
             return post_processed_outputs[0]
@@ -331,20 +330,23 @@ class MX3Accelerator(ComputeDevice):
         self.thread_access_count += 1
         return self.thread_access_count - 1
 
-    def connect_streams(self, stream_count: int) -> None:
+    def connect_streams(self, num_streams: int) -> None:
         """
         Connect the streams to the MX3 accelerator.
+
+        Args:
+            num_streams (int): The number of streams to be connected.
         """
         for model_io_object in self.model_io_objects.values():
-            model_io_object.connect_streams(stream_count)
+            model_io_object.connect_streams(num_streams)
 
     def stop(self) -> None:
         """
         Stop the MX3 accelerator.
         """
         # Cancel the auto-connect timer if it's still running
-        if hasattr(self, "_connect_timer") and self._connect_timer.is_alive():
-            self._connect_timer.cancel()
+        if hasattr(self, "_connect_timer") and self._connect_timer.is_alive(): # type: ignore
+            self._connect_timer.cancel() # type: ignore
 
         for model_io_object in self.model_io_objects.values():
             model_io_object.stop()

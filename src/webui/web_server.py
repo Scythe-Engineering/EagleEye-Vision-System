@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
+from flask_socketio import SocketIO
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
@@ -30,6 +31,8 @@ with open(os.path.join(current_path, "assets", "no_image.png"), "rb") as f:
 no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
 success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
 no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
+
+CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5001"]
 
 
 class EagleEyeInterface:
@@ -99,10 +102,13 @@ class EagleEyeInterface:
         )
         CORS(
             self.app,
-            resources={
-                r"/*": {"origins": ["http://localhost:5173", "http://localhost:5001"]}
-            },
+            resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}},
             supports_credentials=True,
+        )
+
+        self.socketio = SocketIO(
+            self.app,
+            cors_allowed_origins=CORS_ALLOWED_ORIGINS,
         )
 
         # Disable Werkzeug access logging (HTTP request logs)
@@ -124,11 +130,15 @@ class EagleEyeInterface:
         if dev_mode:
             self.run()
         else:
-            # Run Flask normally; SSE streams are served from a route
+            # Run Flask with SocketIO for WebSocket support in production
             self.app_thread = Thread(
-                target=self.app.run,
-                args=("0.0.0.0", 5001),
-                kwargs={"debug": False, "use_reloader": False},
+                target=self.socketio.run,
+                args=(self.app,),
+                kwargs={
+                    "host": "0.0.0.0",
+                    "port": 5001,
+                    "debug": False,
+                },
                 daemon=True,
             )
             time.sleep(
@@ -343,7 +353,7 @@ class EagleEyeInterface:
         try:
             os._exit(0)
         except Exception as e:
-            self.log("Error during shutdown:", e)
+            self.log(f"Error during shutdown: {e}")
             return {"message": "Failed to shutdown server"}, 500
 
     def add_camera(self, camera_name: str, camera_id: int | str | None = None) -> None:
@@ -1131,7 +1141,7 @@ class EagleEyeInterface:
                 self.logger.log(f"Error in log monitor loop: {e}")
                 time.sleep(1.0)
 
-    def download_log_file(self) -> tuple[dict, int]:
+    def download_log_file(self) -> tuple[str, int] | tuple[dict, int]:
         """
         Download the log file.
         """
@@ -1141,7 +1151,7 @@ class EagleEyeInterface:
         except Exception as e:
             self.logger.log(f"Error downloading log file: {e}")
             return {"error": str(e)}, 500
-        
+
     def get_general_conf(self) -> tuple[dict, int]:
         """
         Get the general configuration.
@@ -1169,7 +1179,12 @@ if __name__ == "__main__":
     from src.utils.logging.logger import Logger  # noqa: E402
 
     logger = Logger()
-    interface = EagleEyeInterface(dev_mode=False, logger=logger)
+    interface = EagleEyeInterface(
+        dev_mode=False,
+        logger=logger,
+        restart_callback=lambda: None,
+        pipeline_objects_callback=lambda: {},
+    )
 
     try:
         while True:

@@ -10,7 +10,7 @@ visual_prompts = dict(
     bboxes=np.array(
         [[432, 682, 461, 739], [401, 596, 490, 675]]
     ),  # Box enclosing person
-    cls=np.array([0, 1]),  # ID to be assigned for person
+    cls=np.array([0, 1]), # type: ignore  # ID to be assigned for person
 )
 
 # Run prediction on a different image, using reference image to guide what to look for

@@ -181,7 +181,7 @@ class Pipeline:
         self,
         input_data: np.ndarray,
         visualize: bool = False,
-        visualization_operation_name: str = None,
+        visualization_operation_name: str | None = None,
     ) -> Any | None:
         """Run the pipeline with the given input data.
 
@@ -231,6 +231,8 @@ class Pipeline:
             )
 
         if visualize:
+            if visualization_operation_name is None:
+                raise ValueError("Visualization operation name is required when visualize is True")
             return self._visualize(input_data.copy(), visualization_operation_name)
 
     def get_operation_by_class_name(self, class_name: str) -> Any:

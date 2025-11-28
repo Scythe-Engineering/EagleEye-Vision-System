@@ -3,7 +3,7 @@ from typing import Optional
 
 # Import the Rust module (built automatically)
 try:
-    from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter
+    from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter # type: ignore
 except ImportError:
     RustPoseOutlierFilter = None
 

@@ -6,7 +6,7 @@ import numpy as np
 
 # Import the Rust module (built automatically)
 try:
-    from temporal_acceleration import TemporalAcceleration
+    from temporal_acceleration import TemporalAcceleration # type: ignore
 except ImportError:
     TemporalAcceleration = None
 
@@ -132,7 +132,7 @@ class TemporalAccelerationPreprocessorRustDefinition:
             bottom = min(int(height), int(bottom))
             if right > left and bottom > top:
                 cropped = frame[top:bottom, left:right]
-                cropped_images.append((cropped, (left, top)))
+                cropped_images.append((cropped, np.array([left, top])))
                 regions.append((left, top, right, bottom))
 
         with self._last_regions_lock:

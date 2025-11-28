@@ -14,7 +14,7 @@ class RobotPoseOutput:
         self.web_interface = web_interface
         self._last_sent_pose: np.ndarray | None = None
 
-    def run(self, pose: np.ndarray) -> np.ndarray:
+    def run(self, pose: np.ndarray) -> np.ndarray | None:
         """Output the robot pose to the web interface."""
         if self._last_sent_pose is not None and np.array_equal(
             self._last_sent_pose, pose

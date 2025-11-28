@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 
 import cv2
 import numpy as np
@@ -111,7 +111,7 @@ class AprilTagDetector:
             return None
 
         # Ensure writable C-contiguous uint8 buffer
-        gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"])
+        gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"]) # type: ignore
 
         # Check decimated size
         if (
@@ -167,7 +167,7 @@ class AprilTagDetector:
 
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
-    ) -> Optional[list[Detection] | list[CustomDetection] | None]:
+    ) -> Optional[list[Detection] | list[CustomDetection]]:
         """Run detection on a single image."""
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:
@@ -178,7 +178,8 @@ class AprilTagDetector:
             if gray_image is None:
                 return None
             with self._detect_lock:
-                return self.detector.detect(gray_image)
+                detections = cast(list[Detection], self.detector.detect(gray_image))
+                return detections
         else:
             detections = []
             for image, offset in images:
@@ -187,13 +188,21 @@ class AprilTagDetector:
                     continue
                 with self._detect_lock:
                     detected_tags = self.detector.detect(gray_image)
-                for detection in detected_tags:
+                if isinstance(detected_tags, Detection):
                     detections.append(
                         CustomDetection(
-                            tag_id=detection.tag_id,
-                            corners=(detection.corners + offset),
+                            tag_id=detected_tags.tag_id,
+                            corners=(detected_tags.corners + offset),
                         )
                     )
+                elif isinstance(detected_tags, list):
+                    for detection in detected_tags:
+                        detections.append(
+                            CustomDetection(
+                                tag_id=detection.tag_id,
+                                corners=(detection.corners + offset),
+                            )
+                        )
             return detections
 
     def detect(
@@ -212,8 +221,9 @@ class AprilTagDetector:
             List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
         """
         detections = self.run_detection(images)
-        if (detections is None or len(detections) == 0) and full_frame is not None:
-            full_frame_detections = self.run_detection(full_frame)
-            if full_frame_detections is not None and len(full_frame_detections) > 0:
-                return full_frame_detections
+        if detections is None or (len(detections) == 0 and full_frame is not None):
+            if full_frame is not None:
+                full_frame_detections = self.run_detection(full_frame)
+                if full_frame_detections is not None and len(full_frame_detections) > 0:
+                    return full_frame_detections
         return detections

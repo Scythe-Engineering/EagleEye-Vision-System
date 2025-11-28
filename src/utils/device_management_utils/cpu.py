@@ -2,6 +2,7 @@ from src.utils.device_management_utils.compute_device import ComputeDevice
 import numpy as np
 import torch
 import onnxruntime as ort
+import os
 
 
 class CPU(ComputeDevice):
@@ -11,12 +12,15 @@ class CPU(ComputeDevice):
         self.model_input_names = {}
         self.model_output_names = {}
 
-    def load_model(self, model_path: str) -> None:
+    def load_model(self, model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None:
         """
         Loads an ONNX model from the specified file path.
 
         Args:
             model_path: The file path to the ONNX model.
+            input_data_shape: The shape of the input data. (unused)
+            post_processing_model_path: The file path to the post-processing model. (unused)
+            is_grayscale: Whether the model is grayscale. (unused)
         """
         try:
             session_options = ort.SessionOptions()
@@ -33,7 +37,7 @@ class CPU(ComputeDevice):
             input_name = session.get_inputs()[0].name
             output_name = session.get_outputs()[0].name
 
-            model_key = model_path.split("/")[-1].split(".")[0]
+            model_key = os.path.splitext(os.path.basename(model_path))[0]
 
             self.models[model_key] = session
             self.model_input_names[model_key] = input_name
@@ -42,7 +46,7 @@ class CPU(ComputeDevice):
         except Exception as e:
             raise RuntimeError(f"Failed to load ONNX model from {model_path}: {e}")
 
-    def run(self, model_name: str, input_tensor: torch.Tensor, _: tuple[int, int]) -> np.ndarray:
+    def run(self, model_path: str, input_data: np.ndarray | torch.Tensor, input_data_shape: tuple[int, int], stream_idx: int) -> np.ndarray:
         """
         Runs inference on the specified ONNX model.
 
@@ -50,19 +54,25 @@ class CPU(ComputeDevice):
             model_name: The key of the loaded model (derived from file name).
             input_tensor: The input data as a torch.Tensor. It will be
                           converted to a NumPy array for ONNX Runtime.
-
+            input_data_shape: The shape of the input data. (unused)
+            stream_idx: The index of the stream to be run. (unused)
         Returns:
             The output of the ONNX model as a NumPy array.
         """
-        if model_name not in self.models:
-            raise ValueError(f"Model '{model_name}' not loaded.")
+        model_key = os.path.splitext(os.path.basename(model_path))[0]
 
-        session = self.models[model_name]
-        input_name = self.model_input_names[model_name]
-        output_name = self.model_output_names[model_name]
+        if model_key not in self.models:
+            raise ValueError(f"Model '{model_key}' not loaded.")
 
-        # .detach() is important to remove it from the computation graph
-        input_data = input_tensor.detach().cpu().numpy()
+        session = self.models[model_key]
+        input_name = self.model_input_names[model_key]
+        output_name = self.model_output_names[model_key]
+        
+        if isinstance(input_data, np.ndarray):
+            input_data = torch.from_numpy(input_data)
+
+        # .detach() is important to remove it from the computation graph to avoid memory leaks
+        input_data = input_data.detach().cpu().numpy()
 
         input_feed = {input_name: input_data}
 

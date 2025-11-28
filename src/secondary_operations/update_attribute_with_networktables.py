@@ -44,8 +44,8 @@ class UpdateAttributeWithNetworktables:
 
     def run(self, passthrough_data: Any) -> Any:
         """Output the robot pose to the web interface."""
-        data = self.network_table.getNumber(self.network_table_key, None)
-        if data is not None:
+        data = self.network_table.getNumber(self.network_table_key, -999)
+        if data != -999:
             try:
                 action_object = self.pipeline.get_operation_by_class_name(
                     self.action_name

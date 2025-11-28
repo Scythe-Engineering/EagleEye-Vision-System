@@ -31,7 +31,7 @@ class ColorThresholdDetectionDefinition:
     def __init__(
         self,
         target_size: int = 320,
-        color_ranges: List[Dict[str, Any]] = None,
+        color_ranges: List[Dict[str, Any]] | None = None,
         min_area: int = 100,
         max_area: int = 50000,
         blur_kernel_size: int = 5,
@@ -69,6 +69,15 @@ class ColorThresholdDetectionDefinition:
         self.distortion_coefficients: Optional[np.ndarray] = None
         if self.intrinsics_path is not None:
             self._load_camera_parameters()
+            
+        if color_ranges is None:
+            raise ValueError("Color ranges are required")
+        if self.camera_matrix is None:
+            raise ValueError("Camera matrix is required")
+        if self.distortion_coefficients is None:
+            raise ValueError("Distortion coefficients are required")
+        if not isinstance(self.intrinsics_path, str):
+            raise ValueError("Intrinsics path must be a string")
 
         self.delegate = ColorThresholdDetectionImplementation(
             target_size=target_size,
@@ -90,6 +99,9 @@ class ColorThresholdDetectionDefinition:
     def _load_camera_parameters(self) -> None:
         """Load camera intrinsics from file or resolve from camera bus ID."""
         intrinsics_path = self.intrinsics_path
+        
+        if not isinstance(intrinsics_path, str):
+            raise ValueError("Intrinsics path must be a string")
 
         if self.pipeline is not None:
             camera_bus_id = getattr(self.pipeline, "camera_bus_id", None)
@@ -121,7 +133,7 @@ class ColorThresholdDetectionDefinition:
             return point
 
         point_reshaped = point.reshape(1, 1, 2).astype(np.float32)
-        undistorted = cv2.undistortPoints(
+        undistorted = cv2.undistortPoints( # type: ignore
             point_reshaped,
             self.camera_matrix,
             self.distortion_coefficients,

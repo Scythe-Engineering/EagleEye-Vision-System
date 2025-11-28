@@ -21,14 +21,14 @@ class ColorThresholdDetectionImplementation:
     def __init__(
         self,
         target_size: int = 320,
-        color_ranges: List[Dict[str, Any]] = None,
+        color_ranges: List[Dict[str, Any]] | None = None,
         min_area: int = 100,
         max_area: int = 50000,
         blur_kernel_size: int = 5,
         morphology_kernel_size: int = 5,
         morphology_iterations: int = 2,
-        camera_matrix: np.ndarray = None,
-        distortion_coefficients: np.ndarray = None,
+        camera_matrix: np.ndarray | None = None,
+        distortion_coefficients: np.ndarray | None = None,
     ):
         """Initialize color threshold detection implementation.
 
@@ -59,14 +59,7 @@ class ColorThresholdDetectionImplementation:
         self.distortion_coefficients = distortion_coefficients
 
         if color_ranges is None:
-            self.color_ranges = [
-                {
-                    "name": "red",
-                    "class_id": 0,
-                    "lower_hsv": [0, 100, 100],
-                    "upper_hsv": [10, 255, 255],
-                }
-            ]
+            raise ValueError("Color ranges are required")
         else:
             self.color_ranges = color_ranges
 
@@ -194,7 +187,7 @@ class ColorThresholdDetectionImplementation:
             return point
 
         point_reshaped = point.reshape(1, 1, 2).astype(np.float32)
-        undistorted = cv2.undistortPoints(
+        undistorted = cv2.undistortPoints( # type: ignore
             point_reshaped,
             self.camera_matrix,
             self.distortion_coefficients,

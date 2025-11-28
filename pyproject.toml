@@ -25,6 +25,7 @@ dependencies = [
   "pupil-apriltags",
   "flask",
   "flask-cors",
+  "flask-socketio",
   "line_profiler",
   "onnxruntime",
   "linuxpy",

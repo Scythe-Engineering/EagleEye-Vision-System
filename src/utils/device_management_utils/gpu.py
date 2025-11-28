@@ -36,12 +36,15 @@ class GPU(ComputeDevice):
         self.device = torch.device("cuda")
         self.models = {}
 
-    def load_model(self, model_path: str) -> None:
+    def load_model(self, model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None:
         """
         Load a PyTorch model from the specified file path.
 
         Args:
             model_path (str): Path to the PyTorch model (.pt or .pth file).
+            input_data_shape (tuple[int, int]): Shape of the input data. (unused)
+            post_processing_model_path (str | None): Path to the post-processing model. (unused)
+            is_grayscale (bool): Whether the model is grayscale. (unused)
         """
         try:
             # Load the model
@@ -59,7 +62,7 @@ class GPU(ComputeDevice):
     def run(
         self,
         model_path: str,
-        input_data: np.ndarray,
+        input_data: np.ndarray | torch.Tensor,
         input_data_shape: tuple[int, int],
         stream_idx: int,
     ) -> np.ndarray:
@@ -68,7 +71,7 @@ class GPU(ComputeDevice):
 
         Args:
             model_path (str): Path to the model.
-            input_data (np.ndarray): Input data.
+            input_data (np.ndarray | torch.Tensor): Input data.
             input_data_shape (tuple[int, int]): Shape of the input data (unused for GPU inference).
             stream_idx (int): Stream index (unused for GPU inference).
 
@@ -83,8 +86,10 @@ class GPU(ComputeDevice):
 
         model = self.models[model_name]
 
-        # Convert input data to torch tensor and ensure it's on the correct device
-        input_tensor = torch.from_numpy(input_data).to(self.device)
+        if isinstance(input_data, np.ndarray):
+            input_tensor = torch.from_numpy(input_data).to(self.device)
+        else:
+            input_tensor = input_data.to(self.device)
 
         # Run inference
         with torch.no_grad():

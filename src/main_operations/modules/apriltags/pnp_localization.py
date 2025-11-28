@@ -156,7 +156,19 @@ class PnpLocalization:
         )
 
         if use_guess:
-            last_t = self._last_camera_space_pose[:3, 3]
+            last_t = (
+                self._last_camera_space_pose[:3, 3]
+                if self._last_camera_space_pose is not None
+                else None
+            )
+            if last_t is None:
+                success, rotation_vector, translation_vector = cv2.solvePnP(
+                    object_points,
+                    image_points,
+                    self.camera_matrix,
+                    self.distortion_coefficients,
+                    flags=cv2.SOLVEPNP_ITERATIVE,
+                )
             success, rotation_vector, translation_vector = cv2.solvePnP(
                 object_points,
                 image_points,

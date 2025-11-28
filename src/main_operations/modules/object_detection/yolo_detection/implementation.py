@@ -79,7 +79,7 @@ class ObjectDetectionImplementation:
         # Register thread access for devices that support it (e.g., MX3)
         self.stream_idx: int = 0
         if self.device is not None and hasattr(self.device, "register_thread_access"):
-            self.stream_idx = self.device.register_thread_access()
+            self.stream_idx = self.device.register_thread_access() # type: ignore
             print(
                 f"{Colors.GREEN}Assigned stream index: {self.stream_idx}{Colors.RESET}"
             )

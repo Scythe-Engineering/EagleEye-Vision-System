@@ -95,33 +95,35 @@ class MessageHistory:
                 continue
 
             current_chunk = self._extract_chunk_from_end(chunk_size)
-            if len(current_chunk) != chunk_size:
+            
+            if current_chunk is False:
+                continue
+            
+            if len(current_chunk) != chunk_size: # type: ignore
                 continue
 
-            if self._try_add_to_existing_sequence(current_chunk, chunk_size):
+            if self._try_add_to_existing_sequence(current_chunk, chunk_size): # type: ignore
                 return
 
-            if isinstance(self.messages[-chunk_size], MessageSequence):
-                continue
-
-            if self._try_create_from_matching_chunks(current_chunk, chunk_size):
+            if self._try_create_from_matching_chunks(current_chunk, chunk_size): # type: ignore
                 return
 
-    def _extract_chunk_from_end(self, chunk_size: int) -> List[MessageEntry]:
+    def _extract_chunk_from_end(self, chunk_size: int) -> List[MessageEntry] | bool:
         """Extract the last chunk_size messages from history.
 
         Args:
             chunk_size: Number of messages to extract
 
         Returns:
-            List of MessageEntry objects from the end of history
+            List of MessageEntry objects from the end of history or False if the chunk has a MessageSequence
         """
         chunk: List[MessageEntry] = []
         for i in range(chunk_size):
             idx = len(self.messages) - 1 - i
             if isinstance(self.messages[idx], MessageSequence):
-                break
-            chunk.insert(0, self.messages[idx])
+                return False
+            else:
+                chunk.insert(0, self.messages[idx]) # type: ignore
         return chunk
 
     def _try_add_to_existing_sequence(
@@ -177,7 +179,7 @@ class MessageHistory:
             else:
                 return False
 
-        previous_chunk = self._extract_chunk_from_end(chunk_size * 2)[:chunk_size]
+        previous_chunk = self._extract_chunk_from_end(chunk_size * 2)[:chunk_size] # type: ignore Will be never be bool
         if len(previous_chunk) != chunk_size:
             return False
 

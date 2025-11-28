@@ -45,7 +45,7 @@ class FpsLimiter:
         self.last_run_time = time.time()
         return frame
 
-    def visualize(self, frame: np.ndarray) -> None:
+    def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Visualize the pose outlier filter outputs.
 
         This operation returns pose estimation data (transform) only,

@@ -4,6 +4,7 @@ from threading import Lock
 
 from ..modules.apriltags.apriltag_detector import AprilTagDetector
 from pupil_apriltags import Detection
+from ..modules.apriltags.apriltag_detector import CustomDetection
 from typing import List, Optional
 
 
@@ -44,10 +45,10 @@ class DetectApriltagsDefinition:
             decode_sharpening=decode_sharpening,
         )
 
-        self.last_detections: Optional[List[Detection]] = None
+        self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
         self.last_detections_lock: Lock = Lock()
 
-    def run(self, input_data) -> List[Detection] | None:
+    def run(self, input_data) -> List[Detection] | List[CustomDetection] | None:
         """Detect AprilTags in the given image or image segments.
 
         Args:

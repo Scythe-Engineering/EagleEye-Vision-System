@@ -15,7 +15,7 @@ class YoloV10:
     def __init__(
         self,
         original_image_shape: Tuple[int, int, int] | None,
-        input_shape: Tuple[int, int],
+        input_shape: Tuple[int, int, int],
         max_det: int,
         conf_threshold: float,
     ):
@@ -24,7 +24,7 @@ class YoloV10:
 
         Args:
             original_image_shape: Shape of the original input image as (height, width, channels).
-            input_shape: Target input shape for the model as (height, width).
+            input_shape: Target input shape for the model as (height, width, channels).
             max_det: Maximum number of detections to return.
             conf_threshold: Confidence threshold used for filtering detections.
         """
@@ -98,8 +98,8 @@ class YoloV10:
             Boxes with padding removed and converted to percentages (0-1) of resized content dimensions,
             same shape and type as input.
         """
-        pad_x, pad_y = self.padding
-        resized_width, resized_height = self.resized_size
+        pad_x, pad_y = self.padding if self.padding else (0, 0)
+        resized_width, resized_height = self.resized_size if self.resized_size else (0, 0)
 
         # Reverse letterbox padding
         boxes -= np.array([pad_x, pad_y, pad_x, pad_y])

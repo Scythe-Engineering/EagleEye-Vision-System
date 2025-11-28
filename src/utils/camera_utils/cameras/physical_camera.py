@@ -105,7 +105,7 @@ class PhysicalCamera(Camera):
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
 
         # Prefer MJPG codec for better performance and frame rate
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG") # type: ignore
         self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
 
         # Get available FPS for the configured resolution

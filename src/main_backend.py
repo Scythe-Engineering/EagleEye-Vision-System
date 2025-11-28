@@ -1,10 +1,9 @@
-import csv
 import faulthandler
 import os
 import subprocess
 from pathlib import Path
 from time import sleep
-from typing import Callable, Dict, Set
+from typing import Dict, Set
 
 faulthandler.enable()
 
@@ -55,31 +54,6 @@ if not os.path.exists("src/general_conf.json"):
         json.dump({"network_table_address": "0.0.0.0"}, f)
 
 general_conf = json.load(open("src/general_conf.json"))
-
-
-class DummyNetworkTable:
-    def __init__(self, video_camera_index_callback: Callable[[], str]):
-        self.video_camera_index_callback = video_camera_index_callback
-        self.sim_data = []
-
-        with open(
-            os.path.join(current_dir, "utils", "sim_videos", "basic_test_data.csv"),
-            "r",
-        ) as f:
-            reader = csv.reader(f)
-            header = next(reader)  # Skip header row
-            self.sim_data = {}
-            for row in reader:
-                frame_key = row[0]
-                # Create a dictionary mapping column names to values
-                frame_data = {header[i]: row[i] for i in range(1, len(header))}
-                self.sim_data[frame_key] = frame_data
-
-    def get_number(self, key: str, default: float | bool = 0.0) -> float | bool:
-        frame_key = str(self.video_camera_index_callback())
-        if frame_key in self.sim_data and str(key) in self.sim_data[frame_key]:
-            return float(self.sim_data[frame_key][str(key)])
-        return default
 
 
 def add_video_file_cameras(
