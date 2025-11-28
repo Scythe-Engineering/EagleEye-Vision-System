@@ -4,6 +4,8 @@
 
 **EagleEye Vision System** is a Python-based project aimed at detecting game pieces using YOLO Ai object detection. This project was created by DarkEden-Coding on the FRC Team 3322 Eagle Evolution.
 
+![Alt](https://repobeats.axiom.co/api/embed/afdf811c96a1e587ab15608b17e83b7880631ffc.svg "Repobeats analytics image")
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Installation](#installation)
