@@ -147,7 +147,7 @@ async function fetchAvailableOperations() {
             name: op.name
                 .replaceAll(".py", "")
                 .replaceAll("_", " ")
-                .replace(/\b\w/g, (l) => l.toUpperCase()), // Convert filename to readable name
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()), // Convert filename to readable name
             type: op.category.toUpperCase(), // Use category as type, convert to uppercase for consistency
             description: op.description,
             path: op.path,
@@ -228,7 +228,7 @@ async function fetchPipelinesForCamera(cameraName) {
             name: name,
             displayName: name
                 .replaceAll("_", " ")
-                .replace(/\b\w/g, (l) => l.toUpperCase()), // Convert to readable name
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()), // Convert to readable name
         }));
 
         console.log("Loaded pipelines from server:", pipelines);
@@ -616,15 +616,53 @@ function openOperationSettings(opOrItem) {
         }
     };
 
+    const loadFileManager = () => {
+        if (globalThis.FileManagerPopup) {
+            return Promise.resolve();
+        }
+
+        const fileManagerUrl = "../../js/pipeline/fileManager.js";
+        const fileManagerAlready = document.querySelector(
+            `script[src="${fileManagerUrl}"]`,
+        );
+        if (fileManagerAlready) {
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.type = "module";
+            s.src = fileManagerUrl;
+            s.onload = () => {
+                if (!globalThis.FileManagerPopup) {
+                    console.warn(
+                        "FileManagerPopup loaded but did not register on globalThis",
+                    );
+                }
+                resolve();
+            };
+            s.onerror = () => {
+                console.error(
+                    "Failed to load file manager script at",
+                    fileManagerUrl,
+                );
+                reject(new Error("Failed to load file manager"));
+            };
+            document.head.appendChild(s);
+        });
+    };
+
     if (globalThis.SettingsPopup) {
-        doOpen();
+        void loadFileManager().then(doOpen).catch(console.error);
         return;
     }
 
     const scriptUrl = "../../js/pipeline/settingsPopup.js";
     const already = document.querySelector(`script[src="${scriptUrl}"]`);
     if (already) {
-        already.addEventListener("load", doOpen);
+        already.addEventListener("load", () => {
+            void loadFileManager().then(doOpen).catch(console.error);
+        });
         return;
     }
 
@@ -633,10 +671,12 @@ function openOperationSettings(opOrItem) {
     s.src = scriptUrl;
     s.onload = () => {
         if (!globalThis.SettingsPopup) {
-            console.warn("SettingsPopup loaded but did not register on window");
+            console.warn(
+                "SettingsPopup loaded but did not register on globalThis",
+            );
             return;
         }
-        doOpen();
+        void loadFileManager().then(doOpen).catch(console.error);
     };
     s.onerror = () =>
         console.error("Failed to load settings popup script at", scriptUrl);
@@ -1242,7 +1282,9 @@ export async function initPipelineCreator() {
         element.addEventListener("drop", async (e) => {
             // Prevent dropping operations if no pipeline is selected
             if (!selectedPipeline) {
-                console.log("[PIPELINE] Cannot drop operations: no pipeline selected");
+                console.log(
+                    "[PIPELINE] Cannot drop operations: no pipeline selected",
+                );
                 e.preventDefault();
                 return;
             }
@@ -1260,7 +1302,7 @@ export async function initPipelineCreator() {
                 timestamp: new Date().toISOString(),
             });
 
-            await handleDropOnPipelineWithLogging(
+            handleDropOnPipelineWithLogging(
                 e,
                 pipeline,
                 operations,
@@ -1293,17 +1335,21 @@ export async function initPipelineCreator() {
                 pipeline.length !== pipelineLengthBefore ||
                 pipelineOrderBefore !== pipelineOrderAfter;
 
+            let operationType = "UNCHANGED";
+            if (structureChanged) {
+                if (pipeline.length > pipelineLengthBefore) {
+                    operationType = "ADDED";
+                } else if (pipeline.length < pipelineLengthBefore) {
+                    operationType = "REMOVED";
+                } else {
+                    operationType = "REORDERED";
+                }
+            }
             console.log("[PIPELINE] Structure change analysis", {
                 pipelineLengthAfter: pipeline.length,
                 pipelineOrderAfter: pipelineOrderAfter.split(","),
                 structureChanged,
-                operationType: structureChanged
-                    ? pipeline.length > pipelineLengthBefore
-                        ? "ADDED"
-                        : pipeline.length < pipelineLengthBefore
-                          ? "REMOVED"
-                          : "REORDERED"
-                    : "UNCHANGED",
+                operationType,
                 timestamp: new Date().toISOString(),
             });
 
