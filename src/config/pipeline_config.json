@@ -1,2 +1,60 @@
 {
+    "basic_test": {
+        "apriltag_pipeline": [
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust",
+                "action_params": {
+                    "camera_parameters_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/apriltag_map_path/frc2025r2.json",
+                    "max_regions": 6,
+                    "min_region_size_px": 20,
+                    "padding_factor": 0.25
+                }
+            },
+            {
+                "action_name": "detect_apriltags",
+                "action_params": {
+                    "decode_sharpening": 0.25,
+                    "families": "tag36h11",
+                    "nthreads": 4,
+                    "quad_decimate": 2,
+                    "quad_sigma": 0,
+                    "refine_edges": "1"
+                }
+            },
+            {
+                "action_name": "pnp_camera_localization",
+                "action_params": {
+                    "camera_parameters_path": "{project_root}/files/pnp_camera_localization/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/pnp_camera_localization/apriltag_map_path/frc2025r2.json",
+                    "jump_threshold": 2
+                }
+            },
+            {
+                "action_name": "back_propagate",
+                "action_params": {
+                    "action_name": "temporal_acceleration_preprocessor_rust"
+                }
+            },
+            {
+                "action_name": "flatten_pose",
+                "action_params": {}
+            },
+            {
+                "action_name": "robot_pose_output",
+                "action_params": {}
+            },
+            {
+                "action_name": "extract_pose",
+                "action_params": {}
+            },
+            {
+                "action_name": "publish_to_networktables",
+                "action_params": {
+                    "target_key": "robot_pose",
+                    "data_path": []
+                }
+            }
+        ]
+    }
 }
