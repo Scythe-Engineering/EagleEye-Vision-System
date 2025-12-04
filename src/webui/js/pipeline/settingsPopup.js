@@ -87,13 +87,13 @@ import { BACKEND_BASE_URL } from "../config.js";
                     if (response.ok) {
                         const data = await response.json();
                         basePath = data.base_path || "";
-                        
+
                         const currentSelectedValue = input.value;
-                        
+
                         while (input.options.length > 0) {
                             input.remove(0);
                         }
-                        
+
                         input.appendChild(customOption);
 
                         data.files.forEach((filename) => {
@@ -118,14 +118,16 @@ import { BACKEND_BASE_URL } from "../config.js";
 
                         if (
                             currentValue &&
-                            !data.files.some(
-                                (f) => {
-                                    const fullPath = basePath ? `${basePath}/${f}` : f;
-                                    return currentValue === fullPath || 
-                                           currentValue.endsWith(`/${f}`) ||
-                                           currentValue === f;
-                                }
-                            )
+                            !data.files.some((f) => {
+                                const fullPath = basePath
+                                    ? `${basePath}/${f}`
+                                    : f;
+                                return (
+                                    currentValue === fullPath ||
+                                    currentValue.endsWith(`/${f}`) ||
+                                    currentValue === f
+                                );
+                            })
                         ) {
                             const customValueOption = createElement("option", {
                                 value: currentValue,
@@ -135,7 +137,10 @@ import { BACKEND_BASE_URL } from "../config.js";
                             customOption.before(customValueOption);
                         } else if (currentValue) {
                             customOption.selected = false;
-                        } else if (!currentSelectedValue || currentSelectedValue === "") {
+                        } else if (
+                            !currentSelectedValue ||
+                            currentSelectedValue === ""
+                        ) {
                             customOption.selected = true;
                         }
                     }
@@ -280,7 +285,10 @@ import { BACKEND_BASE_URL } from "../config.js";
                         if (normalizedOpName.endsWith(".py")) {
                             normalizedOpName = normalizedOpName.slice(0, -3);
                         }
-                        normalizedOpName = normalizedOpName.replace(/\s+/g, "_");
+                        normalizedOpName = normalizedOpName.replace(
+                            /\s+/g,
+                            "_",
+                        );
                         globalThis.FileManagerPopup.open(
                             normalizedOpName,
                             name,
