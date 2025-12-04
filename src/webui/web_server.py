@@ -5,8 +5,9 @@ import queue
 import threading
 import time
 import traceback
+from pathlib import Path
 from threading import Thread
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, List
 
 import cv2
 import numpy as np
@@ -235,6 +236,24 @@ class EagleEyeInterface:
             "get_operation_config_data",
             self.get_operation_config_data,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-operation-files/<path:operation_name>/<path:parameter_name>",
+            "get_operation_files",
+            self.get_operation_files,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/upload-operation-file/<path:operation_name>/<path:parameter_name>",
+            "upload_operation_file",
+            self.upload_operation_file,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/delete-operation-file/<path:operation_name>/<path:parameter_name>/<path:filename>",
+            "delete_operation_file",
+            self.delete_operation_file,
+            methods=["DELETE"],
         )
         self.app.add_url_rule(
             "/get-pipeline-config/<string:camera_name>/<string:pipeline_name>",
@@ -845,7 +864,10 @@ class EagleEyeInterface:
         try:
             with open(config_path, "r") as f:
                 return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
+        except FileNotFoundError:
+            # Don't log errors for missing configs when trying both locations
+            return {}
+        except json.JSONDecodeError as e:
             self.log(f"Error loading config for operation {operation_name}: {e}")
             return {}
 
@@ -863,11 +885,11 @@ class EagleEyeInterface:
             dict[str, Any]: The reordered action parameters.
         """
         try:
-            # Try main operations first, then secondary operations
-            config_def = self.get_operation_config_data(operation_name, False)
+            # Try secondary operations first (most secondary ops don't have main equivalents)
+            config_def = self.get_operation_config_data(operation_name, True)
             if not config_def or "parameters" not in config_def:
-                # Try secondary operations
-                config_def = self.get_operation_config_data(operation_name, True)
+                # Try main operations
+                config_def = self.get_operation_config_data(operation_name, False)
 
             if config_def and "parameters" in config_def:
                 param_order = list(config_def["parameters"].keys())
@@ -887,6 +909,190 @@ class EagleEyeInterface:
 
         # Return original params if reordering failed
         return action_params
+
+    def _get_parameter_file_extensions(self, parameter_name: str) -> List[str]:
+        """
+        Get allowed file extensions for a parameter.
+
+        Args:
+            parameter_name: Name of the parameter.
+
+        Returns:
+            List of allowed file extensions (with dots).
+        """
+        extension_map = {
+            "camera_parameters_path": [".json"],
+            "apriltag_map_path": [".fmap", ".json"],
+            "model_path": [".onnx", ".dfp", ".pt"],
+            "post_processing_model_path": [".onnx"],
+        }
+        return extension_map.get(parameter_name, [])
+
+    def _ensure_operation_directory(
+        self, operation_name: str, parameter_name: str
+    ) -> Path:
+        """
+        Ensure the operation's parameter-specific file directory exists.
+
+        Args:
+            operation_name: Name of the operation.
+            parameter_name: Name of the parameter.
+
+        Returns:
+            Path to the parameter-specific directory.
+        """
+        files_base_dir = Path(src_path).parent / "files"
+        operation_dir = files_base_dir / operation_name.lower().replace(
+            " ", "_"
+        ).replace(".py", "")
+        parameter_dir = operation_dir / parameter_name
+        parameter_dir.mkdir(parents=True, exist_ok=True)
+        return parameter_dir
+
+    def get_operation_files(
+        self, operation_name: str, parameter_name: str
+    ) -> tuple[dict, int]:
+        """
+        Get list of available files for an operation parameter.
+
+        Args:
+            operation_name: Name of the operation.
+            parameter_name: Name of the parameter.
+
+        Returns:
+            Tuple of (response dict, status code).
+        """
+        try:
+            parameter_dir = self._ensure_operation_directory(
+                operation_name, parameter_name
+            )
+            allowed_extensions = self._get_parameter_file_extensions(parameter_name)
+
+            if not allowed_extensions:
+                return {
+                    "error": f"No file extensions defined for parameter {parameter_name}"
+                }, 400
+
+            files = []
+            if parameter_dir.exists():
+                for file_path in parameter_dir.iterdir():
+                    if (
+                        file_path.is_file()
+                        and file_path.suffix.lower() in allowed_extensions
+                    ):
+                        file_stat = file_path.stat()
+                        files.append(
+                            {
+                                "filename": file_path.name,
+                                "size": file_stat.st_size,
+                                "modified": file_stat.st_mtime,
+                            }
+                        )
+
+            files.sort(key=lambda x: x["modified"], reverse=True)
+
+            relative_path = parameter_dir.relative_to(Path(src_path).parent)
+            base_path = f"{{project_root}}/{relative_path}"
+            return {
+                "files": [f["filename"] for f in files],
+                "file_details": files,
+                "base_path": str(base_path),
+            }, 200
+        except Exception as e:
+            self.log(f"Error getting operation files: {e}")
+            return {"error": str(e)}, 500
+
+    def upload_operation_file(
+        self, operation_name: str, parameter_name: str
+    ) -> tuple[dict, int]:
+        """
+        Upload a file for an operation parameter.
+
+        Args:
+            operation_name: Name of the operation.
+            parameter_name: Name of the parameter.
+
+        Returns:
+            Tuple of (response dict, status code).
+        """
+        try:
+            if "file" not in request.files:
+                return {"error": "No file provided"}, 400
+
+            file = request.files["file"]
+            if file.filename == "":
+                return {"error": "No file selected"}, 400
+
+            allowed_extensions = self._get_parameter_file_extensions(parameter_name)
+            if not allowed_extensions:
+                return {
+                    "error": f"No file extensions defined for parameter {parameter_name}"
+                }, 400
+
+            file_ext = Path(file.filename).suffix.lower()
+            if file_ext not in allowed_extensions:
+                return {
+                    "error": f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}"
+                }, 400
+
+            parameter_dir = self._ensure_operation_directory(
+                operation_name, parameter_name
+            )
+            file_path = parameter_dir / file.filename
+
+            file.save(str(file_path))
+            self.log(
+                f"Uploaded file {file.filename} for {operation_name}/{parameter_name}"
+            )
+
+            relative_path = parameter_dir.relative_to(Path(src_path).parent)
+            full_path = f"{{project_root}}/{relative_path}/{file.filename}"
+            return {
+                "success": True,
+                "filename": file.filename,
+                "path": full_path,
+            }, 200
+        except Exception as e:
+            self.log(f"Error uploading operation file: {e}")
+            return {"error": str(e)}, 500
+
+    def delete_operation_file(
+        self, operation_name: str, parameter_name: str, filename: str
+    ) -> tuple[dict, int]:
+        """
+        Delete a file for an operation parameter.
+
+        Args:
+            operation_name: Name of the operation.
+            parameter_name: Name of the parameter.
+            filename: Name of the file to delete.
+
+        Returns:
+            Tuple of (response dict, status code).
+        """
+        try:
+            parameter_dir = self._ensure_operation_directory(
+                operation_name, parameter_name
+            )
+            file_path = parameter_dir / filename
+
+            if not file_path.exists():
+                return {"error": "File not found"}, 404
+
+            if not file_path.is_file():
+                return {"error": "Path is not a file"}, 400
+
+            allowed_extensions = self._get_parameter_file_extensions(parameter_name)
+            if file_path.suffix.lower() not in allowed_extensions:
+                return {"error": "File extension not allowed for this parameter"}, 400
+
+            file_path.unlink()
+            self.log(f"Deleted file {filename} for {operation_name}/{parameter_name}")
+
+            return {"success": True}, 200
+        except Exception as e:
+            self.log(f"Error deleting operation file: {e}")
+            return {"error": str(e)}, 500
 
     def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> list:
         """
