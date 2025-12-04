@@ -169,6 +169,12 @@ import { BACKEND_BASE_URL } from "../config.js";
 
             if (response.ok) {
                 await fetchFiles();
+                if (onFileSelectedCallback) {
+                    onFileSelectedCallback(null);
+                }
+                if (globalThis.refreshPathDropdown) {
+                    globalThis.refreshPathDropdown(null);
+                }
             } else {
                 const error = await response.json();
                 alert(`Failed to delete file: ${error.error || "Unknown error"}`);
@@ -199,6 +205,9 @@ import { BACKEND_BASE_URL } from "../config.js";
                 await fetchFiles();
                 if (onFileSelectedCallback) {
                     onFileSelectedCallback(data.filename);
+                }
+                if (globalThis.refreshPathDropdown) {
+                    globalThis.refreshPathDropdown(data.filename);
                 }
             } else {
                 const error = await response.json();

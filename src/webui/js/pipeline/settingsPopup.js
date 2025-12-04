@@ -87,46 +87,55 @@ import { BACKEND_BASE_URL } from "../config.js";
                     if (response.ok) {
                         const data = await response.json();
                         basePath = data.base_path || "";
-                        const existingOptions = new Set(
-                            Array.from(input.options).map((opt) => opt.value),
-                        );
+                        
+                        const currentSelectedValue = input.value;
+                        
+                        while (input.options.length > 0) {
+                            input.remove(0);
+                        }
+                        
+                        input.appendChild(customOption);
 
                         data.files.forEach((filename) => {
                             const fullPath = basePath
                                 ? `${basePath}/${filename}`
                                 : filename;
-                            if (!existingOptions.has(fullPath)) {
-                                const optEl = createElement("option", {
-                                    value: fullPath,
-                                    text: filename,
-                                });
-                                const currentPathValue = currentValue || "";
-                                if (
-                                    currentPathValue === fullPath ||
-                                    currentPathValue.endsWith(`/${filename}`) ||
-                                    currentPathValue === filename
-                                ) {
-                                    optEl.selected = true;
-                                }
-                                customOption.before(optEl);
+                            const optEl = createElement("option", {
+                                value: fullPath,
+                                text: filename,
+                            });
+                            const currentPathValue = currentValue || "";
+                            if (
+                                currentPathValue === fullPath ||
+                                currentPathValue.endsWith(`/${filename}`) ||
+                                currentPathValue === filename ||
+                                currentSelectedValue === fullPath
+                            ) {
+                                optEl.selected = true;
                             }
+                            customOption.before(optEl);
                         });
 
                         if (
                             currentValue &&
-                            !Array.from(input.options).some(
-                                (opt) => opt.value === currentValue,
+                            !data.files.some(
+                                (f) => {
+                                    const fullPath = basePath ? `${basePath}/${f}` : f;
+                                    return currentValue === fullPath || 
+                                           currentValue.endsWith(`/${f}`) ||
+                                           currentValue === f;
+                                }
                             )
                         ) {
                             const customValueOption = createElement("option", {
                                 value: currentValue,
                                 text: currentValue + " (custom)",
-                                selected: true,
+                                selected: currentSelectedValue === currentValue,
                             });
                             customOption.before(customValueOption);
                         } else if (currentValue) {
                             customOption.selected = false;
-                        } else {
+                        } else if (!currentSelectedValue || currentSelectedValue === "") {
                             customOption.selected = true;
                         }
                     }
@@ -165,28 +174,29 @@ import { BACKEND_BASE_URL } from "../config.js";
             });
 
             globalThis.refreshPathDropdown = (selectedFilename) => {
-                if (selectedFilename) {
-                    const fullPath = basePath
-                        ? `${basePath}/${selectedFilename}`
-                        : selectedFilename;
-                    const existingOption = Array.from(input.options).find(
-                        (opt) => opt.value === fullPath,
-                    );
-                    if (existingOption) {
-                        input.value = fullPath;
-                    } else {
-                        const newOption = createElement("option", {
-                            value: fullPath,
-                            text: selectedFilename,
-                            selected: true,
-                        });
-                        customOption.before(newOption);
-                        input.value = fullPath;
+                loadFiles().then(() => {
+                    if (selectedFilename) {
+                        const fullPath = basePath
+                            ? `${basePath}/${selectedFilename}`
+                            : selectedFilename;
+                        const existingOption = Array.from(input.options).find(
+                            (opt) => opt.value === fullPath,
+                        );
+                        if (existingOption) {
+                            input.value = fullPath;
+                        } else {
+                            const newOption = createElement("option", {
+                                value: fullPath,
+                                text: selectedFilename,
+                                selected: true,
+                            });
+                            customOption.before(newOption);
+                            input.value = fullPath;
+                        }
+                        const event = new Event("change", { bubbles: true });
+                        input.dispatchEvent(event);
                     }
-                    const event = new Event("change", { bubbles: true });
-                    input.dispatchEvent(event);
-                }
-                loadFiles();
+                });
             };
         } else if (def.options && Array.isArray(def.options)) {
             input = createElement("select", {
