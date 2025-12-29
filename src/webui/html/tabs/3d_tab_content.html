@@ -1,25 +1,25 @@
 <!-- 3D View (WebGL model will load here) -->
 <div
     id="view-3d"
-    class="w-full h-full min-w-0 rounded-[10px] overflow-hidden relative hidden z-10"
+    class="w-full h-full min-w-0 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] overflow-hidden relative hidden z-10"
     style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
 >
     <div
         id="fieldDropdown"
-        class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
         style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        <label for="yearSelect">Year:</label>
+        <label for="yearSelect" class="font-bold mb-1">Year:</label>
         <select
             id="yearSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[#1E1E1E] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base mb-3 p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Year</option>
         </select>
-        <label for="fieldFileSelect">Field File:</label>
+        <label for="fieldFileSelect" class="font-bold mb-1">Field File:</label>
         <select
             id="fieldFileSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[#1E1E1E] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Field File</option>
         </select>
@@ -27,13 +27,13 @@
 
     <div
         id="robotDropdown"
-        class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
         style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        <label for="robotFileSelect">Robot File:</label>
+        <label for="robotFileSelect" class="font-bold mb-1">Robot File:</label>
         <select
             id="robotFileSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[#1E1E1E] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Robot File</option>
         </select>
@@ -41,14 +41,14 @@
 
     <button
         id="toggleGamePiecesBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
+        class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-2 rounded-md border border-[#414141] font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 z-10"
         style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
         Toggle Game Pieces
     </button>
     <button
         id="toggleShadowBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
+        class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-2 rounded-md border border-[#414141] font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 z-10"
         style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
         Toggle Shadows

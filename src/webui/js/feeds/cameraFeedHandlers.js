@@ -81,14 +81,14 @@ export function setupCameraFeedHandlers() {
         for (const name of cameraNames) {
             const cameraBox = document.createElement("div");
             cameraBox.className =
-                "relative flex items-center justify-center min-h-[100px] bg-[#232323] text-[#f9c84a] border border-[#333] rounded-xl p-[15px] text-lg text-center";
+                "relative flex items-center justify-center min-h-[100px] bg-[#1f1f1f] text-[#f9c84a] border-2 border-[#414141] rounded-[15px] p-[15px] text-lg text-center";
             cameraBox.style.boxShadow =
-                "6px 6px 12px rgba(0, 0, 0, 0.6), -4px -4px 10px rgba(255, 255, 255, 0.05)";
+                "8px 8px 16px rgba(0, 0, 0, 0.4)";
             cameraBox.dataset.cameraName = name;
 
             const cameraNameLabel = document.createElement("div");
             cameraNameLabel.className =
-                "absolute top-0 left-0 bg-[#232323] text-[#f9c84a] px-[15px] py-2 rounded-tl-[10px] rounded-br-xl text-sm font-semibold border-r-2 border-b-2 border-[#444] z-10 pointer-events-none";
+                "absolute top-0 left-0 bg-[#1E1E1E] text-[#f9c84a] px-[15px] py-2 rounded-tl-[13px] rounded-br-xl text-sm font-semibold border-r-2 border-b-2 border-[#414141] z-10 pointer-events-none";
             cameraNameLabel.textContent = name;
             cameraNameLabel.style.boxShadow = "2px 2px 4px rgba(0, 0, 0, 0.4)";
             cameraBox.appendChild(cameraNameLabel);
