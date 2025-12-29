@@ -25,30 +25,7 @@
     background-clip: padding-box;
 }
 
-/* Settings Panel Animation */
+/* Settings Panel Styling */
 .settings-panel {
-    transition: transform 0.8s ease-in-out;
     transform: translateX(0);
-    --center-offset: 0px;
-}
-
-.settings-panel.centered {
-    transform: translateX(var(--center-offset));
-}
-
-/* Terminal Panel Fade and Slide Animation */
-.terminal-panel {
-    transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
-}
-
-.terminal-panel.visible {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0) !important;
-}
-
-.terminal-panel:not(.visible) {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(20px);
 }

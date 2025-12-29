@@ -1,8 +1,6 @@
-let terminalVisible = false;
 let logsLoaded = false;
 
 export function initializeTerminalHandlers() {
-    const terminalCheckbox = document.getElementById("printTerminalCheckbox");
     const terminalPanel = document.getElementById("terminalPanel");
     const settingsPanel = document.getElementById("settingsPanel");
     const clearLogsBtn = document.getElementById("clearLogsBtn");
@@ -13,34 +11,8 @@ export function initializeTerminalHandlers() {
     const terminalOutput = document.getElementById("terminalOutput");
     const downloadLogsBtn = document.getElementById("downloadLogsBtn");
 
-    if (terminalCheckbox && settingsPanel) {
-        terminalVisible = terminalCheckbox.checked;
-
-        if (terminalVisible === false) {
-            const viewSettings = document.getElementById("view-settings");
-            if (viewSettings) {
-                const containerWidth = viewSettings.clientWidth;
-                const settingsPanelWidth = 400;
-                const centerOffset =
-                    containerWidth / 2 - settingsPanelWidth / 2;
-                settingsPanel.style.setProperty(
-                    "--center-offset",
-                    `${centerOffset}px`,
-                );
-            }
-            settingsPanel.classList.add("centered");
-        } else {
-            terminalPanel.classList.add("visible");
-            loadLogMessages();
-        }
-
-        terminalCheckbox.addEventListener("change", function () {
-            terminalVisible = this.checked;
-            updateTerminalVisibility();
-            if (terminalVisible && !logsLoaded) {
-                loadLogMessages();
-            }
-        });
+    if (terminalPanel) {
+        loadLogMessages();
     }
 
     if (clearLogsBtn) {
@@ -80,34 +52,6 @@ export function initializeTerminalHandlers() {
                 sendTerminalCommand();
             }
         });
-    }
-}
-
-function updateTerminalVisibility() {
-    const terminalPanel = document.getElementById("terminalPanel");
-    const settingsPanel = document.getElementById("settingsPanel");
-    const viewSettings = document.getElementById("view-settings");
-
-    if (terminalPanel && settingsPanel && viewSettings) {
-        if (terminalVisible) {
-            settingsPanel.classList.remove("centered");
-            setTimeout(() => {
-                terminalPanel.classList.add("visible");
-            }, 800);
-        } else {
-            terminalPanel.classList.remove("visible");
-            setTimeout(() => {
-                const containerWidth = viewSettings.clientWidth;
-                const settingsPanelWidth = 400;
-                const centerOffset =
-                    containerWidth / 2 - settingsPanelWidth / 2;
-                settingsPanel.style.setProperty(
-                    "--center-offset",
-                    `${centerOffset}px`,
-                );
-                settingsPanel.classList.add("centered");
-            }, 500);
-        }
     }
 }
 

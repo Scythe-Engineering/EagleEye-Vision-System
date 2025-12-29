@@ -4,7 +4,7 @@
         <!-- Settings Panel -->
         <div
             id="settingsPanel"
-            class="settings-panel text-gray-200 bg-[#1f1f1f] w-[400px] flex-shrink-0 p-5 rounded-[15px] border-2 border-[#414141] transition-all duration-500 ease-in-out self-start"
+            class="settings-panel text-gray-200 bg-[#1f1f1f] w-[400px] flex-shrink-0 p-5 rounded-[15px] border-2 border-[#414141] self-start"
             style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
         >
             <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
@@ -17,16 +17,6 @@
             >
                 <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
                     <legend>General</legend>
-                    <label>
-                        <span>Activate Terminal</span>
-                        <input
-                            type="checkbox"
-                            id="printTerminalCheckbox"
-                            checked
-                            autocomplete="off"
-                            data-form-type="other"
-                        />
-                    </label>
                     <label>
                         <span>Download Logs:</span>
                         <button
@@ -83,8 +73,7 @@
         <!-- Terminal Panel -->
         <div
             id="terminalPanel"
-            class="terminal-panel flex-1 h-full flex flex-col gap-4 opacity-0 pointer-events-none transition-all duration-500 ease-in-out"
-            style="transform: translateX(20px);"
+            class="terminal-panel flex-1 h-full flex flex-col gap-4"
         >
             <!-- Logs Section -->
             <div
