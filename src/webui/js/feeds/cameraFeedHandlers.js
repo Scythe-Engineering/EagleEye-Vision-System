@@ -7,6 +7,36 @@ let cameraFetchFn = null;
 export function setupCameraFeedHandlers() {
     const cameraList = document.getElementById("cameraList");
     const noCamerasMessage = document.getElementById("noCamerasMessage");
+    const bottomBlur = document.getElementById("cameraListBottomBlur");
+
+    // Handle bottom blur visibility on scroll
+    if (cameraList && bottomBlur) {
+        const updateBlurVisibility = () => {
+            const isScrollable =
+                cameraList.scrollHeight > cameraList.clientHeight;
+            const isAtBottom =
+                cameraList.scrollHeight -
+                    cameraList.scrollTop -
+                    cameraList.clientHeight <
+                10;
+
+            if (isScrollable && !isAtBottom) {
+                bottomBlur.classList.remove("opacity-0");
+                bottomBlur.classList.add("opacity-100");
+            } else {
+                bottomBlur.classList.remove("opacity-100");
+                bottomBlur.classList.add("opacity-0");
+            }
+        };
+
+        cameraList.addEventListener("scroll", updateBlurVisibility);
+        // Also check on resize and when content changes
+        const resizeObserver = new ResizeObserver(updateBlurVisibility);
+        resizeObserver.observe(cameraList);
+
+        // Export it so it can be called after rendering
+        cameraList.updateBlurVisibility = updateBlurVisibility;
+    }
 
     // Hide manual feed control elements if they exist
     const feedControls = document.querySelector(".feed-controls");
@@ -51,13 +81,14 @@ export function setupCameraFeedHandlers() {
         for (const name of cameraNames) {
             const cameraBox = document.createElement("div");
             cameraBox.className =
-                "relative flex items-center justify-center min-h-[100px] bg-[#1E1E1E] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
-            cameraBox.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
+                "relative flex items-center justify-center min-h-[100px] bg-[#232323] text-[#f9c84a] border border-[#333] rounded-xl p-[15px] text-lg text-center";
+            cameraBox.style.boxShadow =
+                "6px 6px 12px rgba(0, 0, 0, 0.6), -4px -4px 10px rgba(255, 255, 255, 0.05)";
             cameraBox.dataset.cameraName = name;
 
             const cameraNameLabel = document.createElement("div");
             cameraNameLabel.className =
-                "absolute top-2 left-3 bg-[#1E1E1E] text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
+                "absolute top-0 left-0 bg-[#232323] text-[#f9c84a] px-[15px] py-2 rounded-tl-[10px] rounded-br-xl text-sm font-semibold border-r-2 border-b-2 border-[#444] z-10 pointer-events-none";
             cameraNameLabel.textContent = name;
             cameraNameLabel.style.boxShadow = "2px 2px 4px rgba(0, 0, 0, 0.4)";
             cameraBox.appendChild(cameraNameLabel);
@@ -77,6 +108,9 @@ export function setupCameraFeedHandlers() {
         }
 
         updateGridLayout();
+        if (cameraList.updateBlurVisibility) {
+            setTimeout(cameraList.updateBlurVisibility, 100);
+        }
     }
 
     function fetchAndUpdateCameras() {

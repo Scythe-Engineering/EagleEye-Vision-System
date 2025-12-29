@@ -3,11 +3,10 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: 15px;
-    margin: 20px 0;
     padding: 10px;
     color: #ccc;
     font-size: 1rem;
-    height: calc(100% - 80px);
+    height: 100%;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #444 transparent;
@@ -46,8 +45,7 @@
     align-items: center !important;
     justify-content: center !important;
     min-height: auto !important;
-    padding-top: 40px !important;
-    padding-bottom: 8px !important;
+    padding: 15px !important;
 }
 
 .camera-remove-btn {

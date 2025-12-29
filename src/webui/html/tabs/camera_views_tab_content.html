@@ -1,13 +1,20 @@
 <!-- Default "Views" grid with feed controls -->
-<div id="view-views" class="view active flex-col w-full h-full flex">
+<div id="view-views" class="view active flex-col w-full h-full flex relative">
     <div
         id="noCamerasMessage"
         class="no-cameras-message text-center text-[rgb(119,119,119)] text-2xl mt-5"
     >
         No Cameras Available
     </div>
-    <div
-        id="cameraList"
-        class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] h-[calc(100%_-_80px)] text-base grid overflow-y-auto mx-0 my-5 p-2.5"
-    ></div>
+    <div class="relative flex-1 overflow-hidden flex flex-col mb-5">
+        <div
+            id="cameraList"
+            class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] flex-1 text-base grid overflow-y-auto m-0 p-2.5"
+        ></div>
+        <div 
+            id="cameraListBottomBlur" 
+            class="absolute bottom-0 left-0 right-2 h-10 pointer-events-none opacity-0 transition-opacity duration-300 z-20"
+            style="background: linear-gradient(to top, rgb(27, 27, 27) 10%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); -webkit-mask-image: linear-gradient(to top, black, transparent); mask-image: linear-gradient(to top, black, transparent);"
+        ></div>
+    </div>
 </div>
