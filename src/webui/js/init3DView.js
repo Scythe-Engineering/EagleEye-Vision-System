@@ -589,8 +589,8 @@ export async function init3DView(modelUrl) {
     if (!globalThis.__eev_gamePiecesToggleAttached) {
         document
             .getElementById("toggleGamePiecesBtn")
-            .addEventListener("click", () => {
-                gamePiecesVisible = !gamePiecesVisible;
+            .addEventListener("change", (event) => {
+                gamePiecesVisible = event.target.checked;
                 for (const gp of gamePieces) {
                     gp.visible = gamePiecesVisible;
                 }
@@ -649,8 +649,8 @@ export async function init3DView(modelUrl) {
     if (!globalThis.__eev_shadowToggleAttached) {
         document
             .getElementById("toggleShadowBtn")
-            .addEventListener("click", () => {
-                shadowsEnabled = !shadowsEnabled;
+            .addEventListener("change", (event) => {
+                shadowsEnabled = event.target.checked;
                 scene.traverse((object) => {
                     if (object.isMesh && !object.excludeFromShadowToggle) {
                         object.castShadow = shadowsEnabled;

@@ -25,7 +25,7 @@ class ViewManager {
         this.sidebarItems = document.querySelectorAll(".sidebar li");
         this.views = document.querySelectorAll("[id^='view-']");
         this.controls = document.querySelectorAll(
-            "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn",
+            "#fieldDropdown, #robotDropdown, #viewToggles",
         );
     }
 

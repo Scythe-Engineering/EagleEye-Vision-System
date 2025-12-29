@@ -39,20 +39,30 @@
         </select>
     </div>
 
-    <button
-        id="toggleGamePiecesBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-2 rounded-md border border-[#414141] font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 z-10"
+    <div
+        id="viewToggles"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
         style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        Toggle Game Pieces
-    </button>
-    <button
-        id="toggleShadowBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-2 rounded-md border border-[#414141] font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 z-10"
-        style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
-    >
-        Toggle Shadows
-    </button>    
+        <label class="flex justify-between items-center mb-2 cursor-pointer font-bold text-sm">
+            <span>Game Pieces:</span>
+            <input
+                type="checkbox"
+                id="toggleGamePiecesBtn"
+                checked
+                class="accent-[#f9c84a] cursor-pointer"
+            />
+        </label>
+        <label class="flex justify-between items-center cursor-pointer font-bold text-sm">
+            <span>Shadows:</span>
+            <input
+                type="checkbox"
+                id="toggleShadowBtn"
+                checked
+                class="accent-[#f9c84a] cursor-pointer"
+            />
+        </label>
+    </div>    
 
     <div
         id="statsDisplay"
