@@ -378,16 +378,6 @@ export class FlowchartNode {
     }
 
     handleDragStart(event) {
-        if (
-            event.target.closest(".node-settings-btn") ||
-            event.target.closest(".node-remove-btn") ||
-            event.target.closest(".port-connector")
-        ) {
-            return;
-        }
-
-        if (event.button !== 0) return;
-
         this.isDragging = true;
 
         // Find the canvas to get scale and translate
