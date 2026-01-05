@@ -332,21 +332,29 @@ export class FlowchartMinimap {
         const viewportState = this.canvas.getViewportState();
         const containerRect = this.canvas.container.getBoundingClientRect();
         const scale = this.calculateScale();
-        
+
         const worldViewLeft = -viewportState.translateX / viewportState.scale;
         const worldViewTop = -viewportState.translateY / viewportState.scale;
         const worldViewWidth = containerRect.width / viewportState.scale;
         const worldViewHeight = containerRect.height / viewportState.scale;
-        
+
         const rectX = (worldViewLeft - this.worldBounds.minX) * scale;
         const rectY = (worldViewTop - this.worldBounds.minY) * scale;
         const rectWidth = worldViewWidth * scale;
         const rectHeight = worldViewHeight * scale;
-        
-        this.viewportRect.style.left = `${Math.max(0, rectX)}px`;
-        this.viewportRect.style.top = `${Math.max(0, rectY)}px`;
-        this.viewportRect.style.width = `${Math.min(this.width - rectX, rectWidth)}px`;
-        this.viewportRect.style.height = `${Math.min(this.height - rectY, rectHeight)}px`;
+
+        const visualPadding = 5;
+        const borderWidth = 1;
+        const positionPadding = visualPadding + borderWidth;
+        const sizePadding = visualPadding + borderWidth + 3;
+
+        const clampedRectX = Math.max(positionPadding, rectX);
+        const clampedRectY = Math.max(positionPadding, rectY);
+
+        this.viewportRect.style.left = `${clampedRectX}px`;
+        this.viewportRect.style.top = `${clampedRectY}px`;
+        this.viewportRect.style.width = `${Math.min(this.width - sizePadding - clampedRectX, rectWidth)}px`;
+        this.viewportRect.style.height = `${Math.min(this.height - sizePadding - clampedRectY, rectHeight)}px`;
     }
 
     onViewportChange(viewportState) {
