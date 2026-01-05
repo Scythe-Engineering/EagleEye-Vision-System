@@ -378,8 +378,10 @@ export class FlowchartNode {
     }
 
     handleDragStart(event) {
-        this.isDragging = true;
+        // Only handle left mouse button
+        if (event.button !== 0) return;
 
+        this.isDragging = true;
         // Find the canvas to get scale and translate
         // We assume the canvas instance is available via some global or we can find it
         // For now we'll stick to DOM inspection but make it more robust

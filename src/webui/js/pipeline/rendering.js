@@ -458,7 +458,10 @@ export class FlowchartRenderer {
                         this.callbacks.autoSavePipeline();
                     } else if (!connectingStarted) {
                         // Held long enough but didn't move - start connecting now
-                        this.startConnecting(node, portName, event, true);
+                        // Only start connecting if mouse button is still pressed
+                        if (e.buttons & 1) {
+                            this.startConnecting(node, portName, event, true);
+                        }
                     }
                     // If connectingStarted is true and not a quick click, startConnecting handles its own cleanup
                 };
@@ -539,7 +542,10 @@ export class FlowchartRenderer {
                                 // Remove the existing connection
                                 existingConnections.forEach(id => this.connections.removeConnection(id));
                                 this.callbacks.autoSavePipeline();
-                                this.startConnecting(fromNode, existingConn.fromPortName, event, true);
+                                // Only start connecting if mouse button is still pressed
+                                if (e.buttons & 1) {
+                                    this.startConnecting(fromNode, existingConn.fromPortName, event, true);
+                                }
                             }
                         }
                     }
@@ -554,16 +560,20 @@ export class FlowchartRenderer {
 
     startConnecting(node, portName, event, isReconnecting = false) {
         if (this.connectingState) {
+            if (this.connectingState.cleanup) {
+                this.connectingState.cleanup();
+            }
             this.connectingState.temp.remove();
         }
 
         const startPos = node.getOutputPortPosition(portName);
         const temp = this.connections.createTemporaryConnection(startPos, { fromHover: isReconnecting });
-        
+
         this.connectingState = {
             fromNode: node,
             fromPort: portName,
-            temp: temp
+            temp: temp,
+            cleanup: null
         };
 
         // Immediately update temp connection to current mouse position
@@ -574,7 +584,7 @@ export class FlowchartRenderer {
             if (!this.connectingState) return;
             const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
             this.connectingState.temp.update(worldPos);
-            
+
             // Visual feedback for potential connection
             const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".port-connector");
             if (target && target.dataset.portType === "input") {
@@ -595,13 +605,13 @@ export class FlowchartRenderer {
             // Find the element at the release point more reliably
             const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".port-connector");
             const isInput = target?.dataset.portType === "input";
-            
+
             if (isInput) {
                 const nodeElement = target.closest(".flowchart-node");
                 const instanceId = nodeElement?.dataset.instanceId;
                 const targetNode = this.nodes.get(instanceId);
                 const targetPortName = target.dataset.portName;
-                
+
                 if (targetNode && targetPortName) {
                     this.completeConnection(targetNode, targetPortName);
                 } else {
@@ -614,20 +624,30 @@ export class FlowchartRenderer {
                     this.cancelConnecting();
                 }
             }
-            
+
             // Reset visual feedback
             document.querySelectorAll(".input-connector").forEach(p => {
                 p.style.backgroundColor = "#404040";
                 p.style.transform = "scale(1)";
             });
-            
+
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+            if (this.connectingState) {
+                this.connectingState.cleanup = () => {};
+            }
+        };
+
+        const cleanup = () => {
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
         };
 
+        this.connectingState.cleanup = cleanup;
+
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
-        
+
         event.stopPropagation();
     }
 
@@ -668,6 +688,9 @@ export class FlowchartRenderer {
 
     cancelConnecting() {
         if (this.connectingState) {
+            if (this.connectingState.cleanup) {
+                this.connectingState.cleanup();
+            }
             this.connectingState.temp.remove();
             this.connectingState = null;
         }
