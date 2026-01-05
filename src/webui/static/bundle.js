@@ -32250,8 +32250,8 @@ function normalizeDetectionPosition(position) {
   const fieldCenterZ = 4.025901;
   return new Vector3(
     (numericPosition[0] - fieldCenterX) * detectionScaleFactor,
-    (numericPosition[2] - fieldCenterZ) * detectionScaleFactor,
-    numericPosition[1] * detectionScaleFactor
+    numericPosition[2] * detectionScaleFactor,
+    (-numericPosition[1] + fieldCenterZ) * detectionScaleFactor
   );
 }
 function createDetectionMaterial(classIdentifier, normalizedConfidence) {
@@ -32574,8 +32574,8 @@ async function init3DView(modelUrl) {
     }
   );
   if (!globalThis.__eev_gamePiecesToggleAttached) {
-    document.getElementById("toggleGamePiecesBtn").addEventListener("click", () => {
-      gamePiecesVisible = !gamePiecesVisible;
+    document.getElementById("toggleGamePiecesBtn").addEventListener("change", (event) => {
+      gamePiecesVisible = event.target.checked;
       for (const gp of gamePieces) {
         gp.visible = gamePiecesVisible;
       }
@@ -32620,8 +32620,8 @@ async function init3DView(modelUrl) {
     globalThis.__eev_resizeAttached = true;
   }
   if (!globalThis.__eev_shadowToggleAttached) {
-    document.getElementById("toggleShadowBtn").addEventListener("click", () => {
-      shadowsEnabled = !shadowsEnabled;
+    document.getElementById("toggleShadowBtn").addEventListener("change", (event) => {
+      shadowsEnabled = event.target.checked;
       scene.traverse((object) => {
         if (object.isMesh && !object.excludeFromShadowToggle) {
           object.castShadow = shadowsEnabled;
@@ -32738,38 +32738,81 @@ function populateFieldDropdown() {
     init3DView(`./assets/fields/${year}/field_files/${file}`);
   });
 }
-function loadSettings() {
-  const settings = fetch("/get-settings", {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }).then((response) => {
+async function loadSettings() {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/get-general-conf`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
     if (!response.ok) {
       throw new Error("Network response was not ok");
     }
-    return response.json();
-  });
-  settings.then((settings2) => {
-    document.getElementById("logCheckbox").checked = settings2["Constants"]["log"];
-    document.getElementById("printTerminalCheckbox").checked = settings2["Constants"]["print_terminal"];
-    document.getElementById("detectionLoggingCheckbox").checked = settings2["Constants"]["detection_logging"];
-    document.getElementById("simulationModeCheckbox").checked = settings2["Constants"]["simulation_mode"];
-    document.getElementById("serverAddressInput").value = settings2["NetworkTableConstants"]["server_address"];
-    document.getElementById("robotPositionKeyInput").value = settings2["NetworkTableConstants"]["robot_position_key"];
-    document.getElementById("robotRotationKeyInput").value = settings2["NetworkTableConstants"]["robot_rotation_key"];
-    document.getElementById("inputSizeInput").value = settings2["ObjectDetectionConstants"]["input_size"];
-    document.getElementById("confidenceThresholdInput").value = settings2["ObjectDetectionConstants"]["confidence_threshold"];
-    document.getElementById("combinedThresholdInput").value = settings2["ObjectDetectionConstants"]["combined_threshold"];
-    document.getElementById("maxDistanceInput").value = settings2["ObjectDetectionConstants"]["max_distance"];
+    const settings = await response.json();
+    const robotAddressInput = document.getElementById("robotAddressInput");
+    if (robotAddressInput && settings.network_table_address) {
+      robotAddressInput.value = settings.network_table_address;
+    }
+  } catch (error) {
+    console.error("Error loading settings:", error);
+  }
+}
+function saveSettings() {
+  const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+  if (!saveSettingsBtn) {
+    return;
+  }
+  saveSettingsBtn.addEventListener("click", async () => {
+    const robotAddressInput = document.getElementById("robotAddressInput");
+    if (!robotAddressInput) {
+      return;
+    }
+    const settings = {
+      network_table_address: robotAddressInput.value
+    };
+    try {
+      const response = await fetch(`${BACKEND_BASE_URL}/save-general-conf`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(settings)
+      });
+      if (response.ok) {
+        alert("Settings have been saved!");
+      } else {
+        alert("Failed to save settings on the server.");
+      }
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      alert("An error occurred while saving settings.");
+    }
   });
 }
 let cameraFeedsPaused = false;
-let cameraListPollIntervalId = null;
 let cameraFetchFn = null;
 function setupCameraFeedHandlers() {
   const cameraList = document.getElementById("cameraList");
   const noCamerasMessage = document.getElementById("noCamerasMessage");
+  const bottomBlur = document.getElementById("cameraListBottomBlur");
+  if (cameraList && bottomBlur) {
+    const updateBlurVisibility = () => {
+      const isScrollable = cameraList.scrollHeight > cameraList.clientHeight;
+      const isAtBottom = cameraList.scrollHeight - cameraList.scrollTop - cameraList.clientHeight < 10;
+      if (isScrollable && !isAtBottom) {
+        bottomBlur.classList.remove("opacity-0");
+        bottomBlur.classList.add("opacity-100");
+      } else {
+        bottomBlur.classList.remove("opacity-100");
+        bottomBlur.classList.add("opacity-0");
+      }
+    };
+    cameraList.addEventListener("scroll", updateBlurVisibility);
+    const resizeObserver = new ResizeObserver(updateBlurVisibility);
+    resizeObserver.observe(cameraList);
+    cameraList.updateBlurVisibility = updateBlurVisibility;
+  }
   const feedControls = document.querySelector(".feed-controls");
   if (feedControls) {
     feedControls.style.display = "none";
@@ -32804,17 +32847,19 @@ function setupCameraFeedHandlers() {
       return;
     }
     if (noCamerasMessage) noCamerasMessage.style.display = "none";
-    cameraNames.forEach((name) => {
+    for (const name of cameraNames) {
       const cameraBox = document.createElement("div");
-      cameraBox.className = "relative flex items-center justify-center min-h-[100px] bg-[#222] text-[#f9c84a] border-2 border-[#444] rounded-xl py-[30px] px-[15px] text-lg text-center";
+      cameraBox.className = "relative flex items-center justify-center min-h-[100px] bg-[#1f1f1f] text-[#f9c84a] border-2 border-[#414141] rounded-[15px] p-[15px] text-lg text-center";
+      cameraBox.style.boxShadow = "8px 8px 16px rgba(0, 0, 0, 0.4)";
       cameraBox.dataset.cameraName = name;
       const cameraNameLabel = document.createElement("div");
-      cameraNameLabel.className = "absolute top-2 left-3 bg-[#111]/90 text-[#f9c84a] px-2 py-1 rounded-md text-sm font-semibold border border-[#333] z-10 pointer-events-none";
+      cameraNameLabel.className = "absolute top-0 left-0 bg-[#1E1E1E] text-[#f9c84a] px-[15px] py-2 rounded-tl-[13px] rounded-br-xl text-sm font-semibold border-r-2 border-b-2 border-[#414141] z-10 pointer-events-none";
       cameraNameLabel.textContent = name;
+      cameraNameLabel.style.boxShadow = "2px 2px 4px rgba(0, 0, 0, 0.4)";
       cameraBox.appendChild(cameraNameLabel);
       const cameraView = document.createElement("img");
-      cameraView.className = "camera-view";
-      const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+      cameraView.className = "camera-view rounded-lg";
+      const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replaceAll(" ", "_")}`;
       if (cameraFeedsPaused) {
         cameraView.dataset.pausedSrc = feedSrc;
         cameraView.src = "";
@@ -32823,8 +32868,11 @@ function setupCameraFeedHandlers() {
       }
       cameraBox.appendChild(cameraView);
       cameraList.appendChild(cameraBox);
-    });
+    }
     updateGridLayout();
+    if (cameraList.updateBlurVisibility) {
+      setTimeout(cameraList.updateBlurVisibility, 100);
+    }
   }
   function fetchAndUpdateCameras() {
     fetch(`${BACKEND_BASE_URL}/get-available-cameras`, {
@@ -32841,29 +32889,22 @@ function setupCameraFeedHandlers() {
   }
   cameraFetchFn = fetchAndUpdateCameras;
   fetchAndUpdateCameras();
-  if (cameraListPollIntervalId === null) {
-    cameraListPollIntervalId = setInterval(fetchAndUpdateCameras, 5e3);
-  }
 }
 function pauseCameraFeeds() {
   cameraFeedsPaused = true;
-  if (cameraListPollIntervalId !== null) {
-    clearInterval(cameraListPollIntervalId);
-    cameraListPollIntervalId = null;
-  }
   const imageElements = document.querySelectorAll("img.camera-view");
-  imageElements.forEach((img) => {
+  for (const img of imageElements) {
     if ((img == null ? void 0 : img.src) && img.src !== "") {
       img.dataset.pausedSrc = img.src;
       img.src = "";
     }
-  });
+  }
 }
 function resumeCameraFeeds() {
+  var _a, _b;
   cameraFeedsPaused = false;
   const imageElements = document.querySelectorAll("img.camera-view");
-  imageElements.forEach((img) => {
-    var _a, _b;
+  for (const img of imageElements) {
     if ((_a = img.dataset) == null ? void 0 : _a.pausedSrc) {
       img.src = img.dataset.pausedSrc;
       delete img.dataset.pausedSrc;
@@ -32871,13 +32912,14 @@ function resumeCameraFeeds() {
       const container = img.closest("[data-camera-name]");
       if ((_b = container == null ? void 0 : container.dataset) == null ? void 0 : _b.cameraName) {
         const name = container.dataset.cameraName;
-        img.src = `${BACKEND_BASE_URL}/feed/${name.replace(/ /g, "_")}`;
+        img.src = `${BACKEND_BASE_URL}/feed/${name.replaceAll(" ", "_")}`;
       }
     }
-  });
-  if (cameraListPollIntervalId === null && typeof cameraFetchFn === "function") {
+  }
+}
+function refreshCameraFeeds() {
+  if (typeof cameraFetchFn === "function") {
     cameraFetchFn();
-    cameraListPollIntervalId = setInterval(cameraFetchFn, 5e3);
   }
 }
 function escapeHtml(s) {
@@ -32910,6 +32952,840 @@ function parseDropPayload(dataTransfer) {
   } catch (error) {
     console.warn("Failed to parse drop payload:", error);
     return null;
+  }
+}
+class FlowchartCanvas {
+  constructor(containerElement, options = {}) {
+    this.container = containerElement;
+    this.gridSpacing = options.gridSpacing || 20;
+    this.gridLayer = null;
+    this.connectionsLayer = null;
+    this.nodesLayer = null;
+    this.init();
+  }
+  init() {
+    this.container.innerHTML = "";
+    this.container.style.position = "relative";
+    this.container.style.overflow = "hidden";
+    this.container.style.width = "100%";
+    this.container.style.height = "100%";
+    this.container.style.backgroundColor = "#1a1a1a";
+    this.container.style.cursor = "grab";
+    this.container.style.borderRadius = "0 0 15px 15px";
+    this.applyGridBackground();
+    this.viewport = document.createElement("div");
+    this.viewport.id = "flowchartViewport";
+    this.viewport.style.position = "absolute";
+    this.viewport.style.top = "0";
+    this.viewport.style.left = "0";
+    this.viewport.style.width = "100%";
+    this.viewport.style.height = "100%";
+    this.viewport.style.transformOrigin = "0 0";
+    this.viewport.style.borderRadius = "inherit";
+    this.viewport.style.pointerEvents = "auto";
+    this.scale = 1;
+    this.translateX = 0;
+    this.translateY = 0;
+    this.connectionsLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    this.connectionsLayer.id = "flowchartConnections";
+    this.connectionsLayer.style.position = "absolute";
+    this.connectionsLayer.style.top = "0";
+    this.connectionsLayer.style.left = "0";
+    this.connectionsLayer.style.width = "10000px";
+    this.connectionsLayer.style.height = "10000px";
+    this.connectionsLayer.style.pointerEvents = "none";
+    this.connectionsLayer.style.zIndex = "1";
+    this.connectionsLayer.setAttribute("width", "10000");
+    this.connectionsLayer.setAttribute("height", "10000");
+    this.nodesLayer = document.createElement("div");
+    this.nodesLayer.id = "flowchartNodes";
+    this.nodesLayer.style.position = "absolute";
+    this.nodesLayer.style.top = "0";
+    this.nodesLayer.style.left = "0";
+    this.nodesLayer.style.width = "10000px";
+    this.nodesLayer.style.height = "10000px";
+    this.nodesLayer.style.pointerEvents = "auto";
+    this.nodesLayer.style.zIndex = "2";
+    this.viewport.appendChild(this.connectionsLayer);
+    this.viewport.appendChild(this.nodesLayer);
+    this.container.appendChild(this.viewport);
+    this.updateTransform();
+    this.setupPanZoom();
+  }
+  setupPanZoom() {
+    let isPanning = false;
+    let startX, startY;
+    this.container.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      const isNode = e.target.closest(".flowchart-node");
+      const isButton = e.target.closest("button");
+      const isPort = e.target.closest(".port-connector");
+      if (!isNode && !isButton && !isPort) {
+        isPanning = true;
+        this.container.style.cursor = "grabbing";
+        startX = e.clientX - this.translateX;
+        startY = e.clientY - this.translateY;
+        e.preventDefault();
+      }
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!isPanning) return;
+      this.translateX = e.clientX - startX;
+      this.translateY = e.clientY - startY;
+      this.updateTransform();
+    });
+    window.addEventListener("mouseup", () => {
+      if (isPanning) {
+        isPanning = false;
+        this.container.style.cursor = "grab";
+      }
+    });
+    this.container.addEventListener("wheel", (e) => {
+      const rect = this.container.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+        return;
+      }
+      e.preventDefault();
+      const delta = -e.deltaY;
+      const zoomFactor = Math.pow(1.1, delta / 100);
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const worldX = (mouseX - this.translateX) / this.scale;
+      const worldY = (mouseY - this.translateY) / this.scale;
+      const newScale = Math.min(Math.max(0.1, this.scale * zoomFactor), 3);
+      this.translateX = mouseX - worldX * newScale;
+      this.translateY = mouseY - worldY * newScale;
+      this.scale = newScale;
+      this.updateTransform();
+    }, { passive: false });
+    this.container.addEventListener("dblclick", (e) => {
+      const isNode = e.target.closest(".flowchart-node");
+      if (!isNode) {
+        this.resetView();
+      }
+    });
+  }
+  updateTransform() {
+    this.viewport.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+    this.updateGrid();
+  }
+  updateGrid() {
+    const scaledSpacing = this.gridSpacing * this.scale;
+    this.container.style.backgroundSize = `${scaledSpacing}px ${scaledSpacing}px`;
+    this.container.style.backgroundPosition = `${this.translateX}px ${this.translateY}px`;
+  }
+  applyGridBackground() {
+    const dotColor = "rgba(128, 128, 128, 0.3)";
+    const dotSize = 2;
+    this.container.style.backgroundImage = `radial-gradient(circle, ${dotColor} ${dotSize}px, transparent ${dotSize}px)`;
+    this.updateGrid();
+  }
+  screenToWorld(screenX, screenY) {
+    const rect = this.container.getBoundingClientRect();
+    const worldX = (screenX - rect.left - this.translateX) / this.scale;
+    const worldY = (screenY - rect.top - this.translateY) / this.scale;
+    return { x: worldX, y: worldY };
+  }
+  snapPositionToGrid(x, y) {
+    return {
+      x: Math.round(x / this.gridSpacing) * this.gridSpacing,
+      y: Math.round(y / this.gridSpacing) * this.gridSpacing
+    };
+  }
+  snapToGrid(value) {
+    return Math.round(value / this.gridSpacing) * this.gridSpacing;
+  }
+  getNodesLayer() {
+    return this.nodesLayer;
+  }
+  getConnectionsLayer() {
+    return this.connectionsLayer;
+  }
+  fitToContent() {
+    this.translateX = 0;
+    this.translateY = 0;
+    this.scale = 1;
+    this.updateTransform();
+  }
+  resetView() {
+    this.translateX = 0;
+    this.translateY = 0;
+    this.scale = 1;
+    this.updateTransform();
+  }
+}
+class FlowchartNode {
+  constructor(operationData, options = {}) {
+    this.operationData = operationData;
+    this.instanceId = operationData.instanceId;
+    this.position = operationData.position || { x: 100, y: 100 };
+    this.inputNodes = [];
+    this.outputNodes = [];
+    this.element = null;
+    this.inputPorts = /* @__PURE__ */ new Map();
+    this.outputPorts = /* @__PURE__ */ new Map();
+    this.onDragStart = options.onDragStart || null;
+    this.onDragEnd = options.onDragEnd || null;
+    this.onPositionChange = options.onPositionChange || null;
+    this.onSettingsClick = options.onSettingsClick || null;
+    this.onRemoveClick = options.onRemoveClick || null;
+    this.onPortHover = options.onPortHover || null;
+    this.onPortClick = options.onPortClick || null;
+    this.isDragging = false;
+    this.dragOffsetX = 0;
+    this.dragOffsetY = 0;
+    this.gridSpacing = options.gridSpacing || 20;
+    this.configDataLoaded = false;
+  }
+  async loadConfigData() {
+    if (this.configDataLoaded) return;
+    try {
+      const isSecondary = this.operationData.isSecondary || false;
+      const response = await fetch(
+        `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(this.operationData.id)}/${isSecondary ? 1 : 0}`
+      );
+      if (response.ok) {
+        const configData = await response.json();
+        this.inputNodes = configData.input_nodes || ["data"];
+        this.outputNodes = configData.output_nodes || ["data"];
+        this.configDataLoaded = true;
+      }
+    } catch (error) {
+      console.warn(`Failed to load config data for ${this.operationData.id}:`, error);
+      this.inputNodes = ["data"];
+      this.outputNodes = ["data"];
+    }
+  }
+  async createElement() {
+    await this.loadConfigData();
+    this.element = document.createElement("div");
+    this.element.className = "flowchart-node";
+    this.element.dataset.instanceId = this.instanceId;
+    this.element.style.position = "absolute";
+    this.element.style.left = `${this.position.x}px`;
+    this.element.style.top = `${this.position.y}px`;
+    this.element.style.minWidth = "200px";
+    this.element.style.zIndex = "10";
+    this.applyStyles();
+    this.renderContent();
+    this.setupDragListeners();
+    return this.element;
+  }
+  applyStyles() {
+    Object.assign(this.element.style, {
+      backgroundColor: "#232323",
+      border: "2px solid #404040",
+      borderRadius: "12px",
+      boxShadow: "4px 4px 12px rgba(0, 0, 0, 0.5)",
+      cursor: "move",
+      userSelect: "none",
+      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+      pointerEvents: "auto"
+      // Ensure the node itself is interactable
+    });
+    this.element.addEventListener("mouseenter", () => {
+      if (!this.isDragging) {
+        this.element.style.borderColor = "#f9c845";
+        this.element.style.boxShadow = "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
+      }
+    });
+    this.element.addEventListener("mouseleave", () => {
+      if (!this.isDragging) {
+        this.element.style.borderColor = "#404040";
+        this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+      }
+    });
+  }
+  renderContent() {
+    var _a;
+    const categoryColors = {
+      det: "#995e19",
+      loc: "#196099",
+      prep: "#199960",
+      proc: "#601999",
+      net: "#996019",
+      out: "#199919"
+    };
+    const categoryColor = categoryColors[(_a = this.operationData.type) == null ? void 0 : _a.toLowerCase()] || "#995e19";
+    this.element.innerHTML = `
+            <div class="node-header" style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 8px 12px;
+                background: linear-gradient(180deg, #2a2a2a 0%, #232323 100%);
+                border-bottom: 1px solid #404040;
+                border-radius: 10px 10px 0 0;
+            ">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="
+                        background-color: ${categoryColor};
+                        color: white;
+                        font-size: 10px;
+                        font-weight: 600;
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    ">${escapeHtml(this.operationData.type || "OP")}</span>
+                    <span style="
+                        color: white;
+                        font-weight: 500;
+                        font-size: 13px;
+                        max-width: 140px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    ">${escapeHtml(this.operationData.name)}</span>
+                </div>
+                <div style="display: flex; gap: 4px;">
+                    <button class="node-settings-btn" title="Settings" style="
+                        padding: 4px;
+                        background: transparent;
+                        border: none;
+                        cursor: pointer;
+                        border-radius: 4px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">
+                        <img src="../../../assets/settings.svg" alt="Settings" style="width: 14px; height: 14px; filter: grayscale(100%); transition: filter 0.15s;" />
+                    </button>
+                    <button class="node-remove-btn" title="Remove" style="
+                        padding: 4px;
+                        background: transparent;
+                        border: none;
+                        cursor: pointer;
+                        border-radius: 4px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">
+                        <img src="../../../assets/delete.svg" alt="Delete" style="width: 14px; height: 14px; filter: grayscale(100%); transition: filter 0.15s;" />
+                    </button>
+                </div>
+            </div>
+            <div class="node-ports" style="padding: 8px 0;">
+                <div class="input-ports" style="margin-bottom: ${this.inputNodes.length > 0 && this.outputNodes.length > 0 ? "8px" : "0"};">
+                    ${this.renderInputPorts()}
+                </div>
+                <div class="output-ports">
+                    ${this.renderOutputPorts()}
+                </div>
+            </div>
+        `;
+    this.setupButtonListeners();
+    this.cachePortElements();
+  }
+  renderInputPorts() {
+    return this.inputNodes.map((nodeName) => `
+            <div class="port-row input-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="input" style="
+                display: flex;
+                align-items: center;
+                padding: 4px 12px;
+                gap: 8px;
+            ">
+                <div class="port-connector input-connector" data-port-name="${escapeHtml(nodeName)}" data-port-type="input" style="
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #404040;
+                    border: 2px solid #606060;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                    margin-left: -18px;
+                "></div>
+                <span style="
+                    color: #a0a0a0;
+                    font-size: 11px;
+                    font-weight: 500;
+                ">${escapeHtml(nodeName)}</span>
+            </div>
+        `).join("");
+  }
+  renderOutputPorts() {
+    return this.outputNodes.map((nodeName) => `
+            <div class="port-row output-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="output" style="
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                padding: 4px 12px;
+                gap: 8px;
+            ">
+                <span style="
+                    color: #a0a0a0;
+                    font-size: 11px;
+                    font-weight: 500;
+                ">${escapeHtml(nodeName)}</span>
+                <div class="port-connector output-connector" data-port-name="${escapeHtml(nodeName)}" data-port-type="output" style="
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #404040;
+                    border: 2px solid #606060;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                    margin-right: -18px;
+                "></div>
+            </div>
+        `).join("");
+  }
+  cachePortElements() {
+    this.inputPorts.clear();
+    this.outputPorts.clear();
+    this.element.querySelectorAll(".input-connector").forEach((port) => {
+      const portName = port.dataset.portName;
+      this.inputPorts.set(portName, port);
+      this.setupPortListeners(port, portName, "input");
+    });
+    this.element.querySelectorAll(".output-connector").forEach((port) => {
+      const portName = port.dataset.portName;
+      this.outputPorts.set(portName, port);
+      this.setupPortListeners(port, portName, "output");
+    });
+  }
+  setupPortListeners(portElement, portName, portType) {
+    portElement.addEventListener("mouseenter", () => {
+      portElement.style.backgroundColor = "#f9c845";
+      portElement.style.borderColor = "#f9c845";
+      portElement.style.transform = "scale(1.2)";
+      if (this.onPortHover) {
+        this.onPortHover(this, portName, portType, true);
+      }
+    });
+    portElement.addEventListener("mouseleave", () => {
+      portElement.style.backgroundColor = "#404040";
+      portElement.style.borderColor = "#606060";
+      portElement.style.transform = "scale(1)";
+      if (this.onPortHover) {
+        this.onPortHover(this, portName, portType, false);
+      }
+    });
+    portElement.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      if (this.onPortClick) {
+        this.onPortClick(this, portName, portType, e);
+      }
+    });
+  }
+  setupButtonListeners() {
+    const settingsBtn = this.element.querySelector(".node-settings-btn");
+    const removeBtn = this.element.querySelector(".node-remove-btn");
+    if (settingsBtn) {
+      settingsBtn.addEventListener("mouseenter", () => {
+        settingsBtn.style.backgroundColor = "#404040";
+        const img = settingsBtn.querySelector("img");
+        if (img) img.style.filter = "none";
+      });
+      settingsBtn.addEventListener("mouseleave", () => {
+        settingsBtn.style.backgroundColor = "transparent";
+        const img = settingsBtn.querySelector("img");
+        if (img) img.style.filter = "grayscale(100%)";
+      });
+      settingsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this.onSettingsClick) {
+          this.onSettingsClick(this.operationData);
+        }
+      });
+    }
+    if (removeBtn) {
+      removeBtn.addEventListener("mouseenter", () => {
+        removeBtn.style.backgroundColor = "#404040";
+        const img = removeBtn.querySelector("img");
+        if (img) img.style.filter = "none";
+      });
+      removeBtn.addEventListener("mouseleave", () => {
+        removeBtn.style.backgroundColor = "transparent";
+        const img = removeBtn.querySelector("img");
+        if (img) img.style.filter = "grayscale(100%)";
+      });
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this.onRemoveClick) {
+          this.onRemoveClick(this.instanceId);
+        }
+      });
+    }
+  }
+  setupDragListeners() {
+    this.element.addEventListener("mousedown", this.handleDragStart.bind(this));
+  }
+  handleDragStart(event) {
+    if (event.target.closest(".node-settings-btn") || event.target.closest(".node-remove-btn") || event.target.closest(".port-connector")) {
+      return;
+    }
+    if (event.button !== 0) return;
+    this.isDragging = true;
+    const scale = this.getCanvasScale();
+    const rect = this.element.getBoundingClientRect();
+    this.dragOffsetX = (event.clientX - rect.left) / scale;
+    this.dragOffsetY = (event.clientY - rect.top) / scale;
+    this.element.style.zIndex = "100";
+    this.element.style.cursor = "grabbing";
+    this.element.style.borderColor = "#f9c845";
+    this.element.style.boxShadow = "8px 8px 24px rgba(0, 0, 0, 0.7)";
+    if (this.onDragStart) {
+      this.onDragStart(this, event);
+    }
+    const handleDragMove = (e) => {
+      if (!this.isDragging) return;
+      const scale2 = this.getCanvasScale();
+      const viewport = this.element.closest("#flowchartViewport");
+      if (!viewport) return;
+      const containerRect = viewport.parentElement.getBoundingClientRect();
+      const translate = this.getCanvasTranslate();
+      let worldX = (e.clientX - containerRect.left - translate.x) / scale2 - this.dragOffsetX;
+      let worldY = (e.clientY - containerRect.top - translate.y) / scale2 - this.dragOffsetY;
+      const snappedX = Math.round(worldX / this.gridSpacing) * this.gridSpacing;
+      const snappedY = Math.round(worldY / this.gridSpacing) * this.gridSpacing;
+      if (snappedX !== this.position.x || snappedY !== this.position.y) {
+        this.position.x = snappedX;
+        this.position.y = snappedY;
+        this.element.style.left = `${snappedX}px`;
+        this.element.style.top = `${snappedY}px`;
+        if (this.onPositionChange) {
+          this.onPositionChange(this, { x: snappedX, y: snappedY });
+        }
+      }
+    };
+    const handleDragEnd2 = () => {
+      if (!this.isDragging) return;
+      this.isDragging = false;
+      this.element.style.zIndex = "10";
+      this.element.style.cursor = "move";
+      this.element.style.borderColor = "#404040";
+      this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+      document.removeEventListener("mousemove", handleDragMove);
+      document.removeEventListener("mouseup", handleDragEnd2);
+      if (this.onDragEnd) {
+        this.onDragEnd(this, this.position);
+      }
+    };
+    document.addEventListener("mousemove", handleDragMove);
+    document.addEventListener("mouseup", handleDragEnd2);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  getCanvasScale() {
+    const viewport = this.element.closest("#flowchartViewport");
+    if (!viewport) return 1;
+    const transform = viewport.style.transform;
+    const scaleMatch = transform.match(/scale\(([^)]+)\)/);
+    return scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1;
+  }
+  getCanvasTranslate() {
+    const viewport = this.element.closest("#flowchartViewport");
+    if (!viewport) return { x: 0, y: 0 };
+    const transform = viewport.style.transform;
+    const translateMatch = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
+    if (translateMatch) {
+      return {
+        x: Number.parseFloat(translateMatch[1]),
+        y: Number.parseFloat(translateMatch[2])
+      };
+    }
+    return { x: 0, y: 0 };
+  }
+  getInputPortPosition(portName) {
+    const port = this.inputPorts.get(portName);
+    if (!port) return null;
+    const portRect = port.getBoundingClientRect();
+    const nodeRect = this.element.getBoundingClientRect();
+    const scale = this.getCanvasScale();
+    return {
+      x: this.position.x,
+      y: this.position.y + (portRect.top - nodeRect.top + portRect.height / 2) / scale
+    };
+  }
+  getOutputPortPosition(portName) {
+    const port = this.outputPorts.get(portName);
+    if (!port) return null;
+    const portRect = port.getBoundingClientRect();
+    const nodeRect = this.element.getBoundingClientRect();
+    const scale = this.getCanvasScale();
+    return {
+      x: this.position.x + this.element.offsetWidth,
+      y: this.position.y + (portRect.top - nodeRect.top + portRect.height / 2) / scale
+    };
+  }
+  setPosition(x, y) {
+    this.position.x = x;
+    this.position.y = y;
+    if (this.element) {
+      this.element.style.left = `${x}px`;
+      this.element.style.top = `${y}px`;
+    }
+  }
+  getPosition() {
+    return { ...this.position };
+  }
+  destroy() {
+    var _a;
+    (_a = this.element) == null ? void 0 : _a.remove();
+    this.inputPorts.clear();
+    this.outputPorts.clear();
+  }
+}
+class FlowchartConnections {
+  constructor(svgLayer, options = {}) {
+    this.svgLayer = svgLayer;
+    this.connections = /* @__PURE__ */ new Map();
+    this.connectionColor = options.connectionColor || "#f9c845";
+    this.connectionWidth = options.connectionWidth || 2;
+    this.labelFontSize = options.labelFontSize || 10;
+    this.curveTension = options.curveTension || 0.5;
+    this.onConnectionRemoved = options.onConnectionRemoved || (() => {
+    });
+    this.setupDefs();
+  }
+  setupDefs() {
+    let defs = this.svgLayer.querySelector("defs");
+    if (!defs) {
+      defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      this.svgLayer.insertBefore(defs, this.svgLayer.firstChild);
+    }
+    const markerId = "flowchart-arrow";
+    if (!defs.querySelector(`#${markerId}`)) {
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+      marker.setAttribute("id", markerId);
+      marker.setAttribute("viewBox", "0 0 10 10");
+      marker.setAttribute("refX", "8");
+      marker.setAttribute("refY", "5");
+      marker.setAttribute("markerWidth", "6");
+      marker.setAttribute("markerHeight", "6");
+      marker.setAttribute("orient", "auto-start-reverse");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+      path.setAttribute("fill", this.connectionColor);
+      marker.appendChild(path);
+      defs.appendChild(marker);
+    }
+    const filterId = "connection-glow";
+    if (!defs.querySelector(`#${filterId}`)) {
+      const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+      filter.setAttribute("id", filterId);
+      filter.setAttribute("x", "-50%");
+      filter.setAttribute("y", "-50%");
+      filter.setAttribute("width", "200%");
+      filter.setAttribute("height", "200%");
+      const feGaussianBlur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
+      feGaussianBlur.setAttribute("stdDeviation", "2");
+      feGaussianBlur.setAttribute("result", "coloredBlur");
+      const feMerge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
+      const feMergeNode1 = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
+      feMergeNode1.setAttribute("in", "coloredBlur");
+      const feMergeNode2 = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
+      feMergeNode2.setAttribute("in", "SourceGraphic");
+      feMerge.appendChild(feMergeNode1);
+      feMerge.appendChild(feMergeNode2);
+      filter.appendChild(feGaussianBlur);
+      filter.appendChild(feMerge);
+      defs.appendChild(filter);
+    }
+  }
+  createConnection(connectionId, fromNode, fromPortName, toNode, toPortName, dataType) {
+    if (this.connections.has(connectionId)) {
+      this.updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName);
+      return;
+    }
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("data-connection-id", connectionId);
+    group.style.pointerEvents = "auto";
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", this.connectionColor);
+    path.setAttribute("stroke-width", this.connectionWidth.toString());
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("marker-end", "url(#flowchart-arrow)");
+    path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease";
+    const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hitArea.setAttribute("fill", "none");
+    hitArea.setAttribute("stroke", "transparent");
+    hitArea.setAttribute("stroke-width", "20");
+    hitArea.style.cursor = "pointer";
+    const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    labelGroup.setAttribute("class", "connection-label");
+    const labelBackground = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    labelBackground.setAttribute("fill", "#1f1f1f");
+    labelBackground.setAttribute("stroke", "#404040");
+    labelBackground.setAttribute("stroke-width", "1");
+    labelBackground.setAttribute("rx", "4");
+    labelBackground.setAttribute("ry", "4");
+    const labelText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    labelText.setAttribute("fill", "#a0a0a0");
+    labelText.setAttribute("font-size", this.labelFontSize.toString());
+    labelText.setAttribute("font-family", "system-ui, -apple-system, sans-serif");
+    labelText.setAttribute("text-anchor", "middle");
+    labelText.setAttribute("dominant-baseline", "middle");
+    labelText.textContent = dataType || fromPortName;
+    labelGroup.appendChild(labelBackground);
+    labelGroup.appendChild(labelText);
+    group.appendChild(hitArea);
+    group.appendChild(path);
+    group.appendChild(labelGroup);
+    this.setupHoverEffects(group, path);
+    this.svgLayer.appendChild(group);
+    this.connections.set(connectionId, {
+      group,
+      path,
+      hitArea,
+      labelGroup,
+      labelBackground,
+      labelText,
+      fromNodeId: fromNode.instanceId,
+      fromPortName,
+      toNodeId: toNode.instanceId,
+      toPortName,
+      dataType
+    });
+    this.updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName);
+  }
+  setupHoverEffects(group, path) {
+    group.addEventListener("mouseenter", () => {
+      path.setAttribute("stroke-width", (this.connectionWidth + 1).toString());
+      path.setAttribute("filter", "url(#connection-glow)");
+    });
+    group.addEventListener("mouseleave", () => {
+      path.setAttribute("stroke-width", this.connectionWidth.toString());
+      path.removeAttribute("filter");
+    });
+    group.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const connectionId = group.getAttribute("data-connection-id");
+      if (connectionId) {
+        this.removeConnection(connectionId);
+        this.onConnectionRemoved(connectionId);
+      }
+    });
+  }
+  updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+    const fromPos = fromNode.getOutputPortPosition(fromPortName);
+    const toPos = toNode.getInputPortPosition(toPortName);
+    if (!fromPos || !toPos) return;
+    const pathD = this.calculateBezierPath(fromPos, toPos);
+    connection.path.setAttribute("d", pathD);
+    connection.hitArea.setAttribute("d", pathD);
+    this.updateLabel(connection, fromPos, toPos);
+  }
+  calculateBezierPath(from, to) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const controlPointOffset = Math.max(50, Math.min(150, distance * this.curveTension));
+    const cp1x = from.x + controlPointOffset;
+    const cp1y = from.y;
+    const cp2x = to.x - controlPointOffset;
+    const cp2y = to.y;
+    return `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
+  }
+  updateLabel(connection, fromPos, toPos) {
+    const midX = (fromPos.x + toPos.x) / 2;
+    const midY = (fromPos.y + toPos.y) / 2;
+    const text = connection.labelText;
+    const textBBox = text.getBBox();
+    const padding = 6;
+    const bgWidth = textBBox.width + padding * 2;
+    const bgHeight = textBBox.height + padding;
+    connection.labelBackground.setAttribute("x", (midX - bgWidth / 2).toString());
+    connection.labelBackground.setAttribute("y", (midY - bgHeight / 2).toString());
+    connection.labelBackground.setAttribute("width", bgWidth.toString());
+    connection.labelBackground.setAttribute("height", bgHeight.toString());
+    text.setAttribute("x", midX.toString());
+    text.setAttribute("y", midY.toString());
+  }
+  updateAllConnections(nodeMap) {
+    for (const [connectionId, connection] of this.connections) {
+      const fromNode = nodeMap.get(connection.fromNodeId);
+      const toNode = nodeMap.get(connection.toNodeId);
+      if (fromNode && toNode) {
+        this.updateConnection(connectionId, fromNode, connection.fromPortName, toNode, connection.toPortName);
+      }
+    }
+  }
+  removeConnection(connectionId) {
+    const connection = this.connections.get(connectionId);
+    if (connection) {
+      connection.group.remove();
+      this.connections.delete(connectionId);
+    }
+  }
+  removeConnectionsForNode(nodeInstanceId) {
+    const toRemove = [];
+    for (const [connectionId, connection] of this.connections) {
+      if (connection.fromNodeId === nodeInstanceId || connection.toNodeId === nodeInstanceId) {
+        toRemove.push(connectionId);
+      }
+    }
+    toRemove.forEach((id) => this.removeConnection(id));
+  }
+  clearAllConnections() {
+    for (const [connectionId] of this.connections) {
+      this.removeConnection(connectionId);
+    }
+    this.connections.clear();
+  }
+  highlightConnection(connectionId, highlight = true) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+    if (highlight) {
+      connection.path.setAttribute("stroke", "#ffffff");
+      connection.path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
+      connection.path.setAttribute("filter", "url(#connection-glow)");
+    } else {
+      connection.path.setAttribute("stroke", this.connectionColor);
+      connection.path.setAttribute("stroke-width", this.connectionWidth.toString());
+      connection.path.removeAttribute("filter");
+    }
+  }
+  getConnectionsForPort(nodeInstanceId, portName, portType) {
+    const result = [];
+    for (const [connectionId, connection] of this.connections) {
+      if (portType === "output" && connection.fromNodeId === nodeInstanceId && connection.fromPortName === portName) {
+        result.push(connectionId);
+      } else if (portType === "input" && connection.toNodeId === nodeInstanceId && connection.toPortName === portName) {
+        result.push(connectionId);
+      }
+    }
+    return result;
+  }
+  createTemporaryConnection(startPos) {
+    const tempPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    tempPath.setAttribute("fill", "none");
+    tempPath.setAttribute("stroke", this.connectionColor);
+    tempPath.setAttribute("stroke-width", this.connectionWidth.toString());
+    tempPath.setAttribute("stroke-dasharray", "5,5");
+    tempPath.setAttribute("opacity", "0.7");
+    tempPath.id = "temp-connection";
+    this.svgLayer.appendChild(tempPath);
+    return {
+      update: (endPos) => {
+        const pathD = this.calculateBezierPath(startPos, endPos);
+        tempPath.setAttribute("d", pathD);
+      },
+      remove: () => {
+        tempPath.remove();
+      }
+    };
+  }
+  getConnectionData() {
+    const data = [];
+    for (const [connectionId, connection] of this.connections) {
+      data.push({
+        id: connectionId,
+        fromNodeId: connection.fromNodeId,
+        fromPortName: connection.fromPortName,
+        toNodeId: connection.toNodeId,
+        toPortName: connection.toPortName,
+        dataType: connection.dataType
+      });
+    }
+    return data;
+  }
+  destroy() {
+    this.clearAllConnections();
   }
 }
 let descriptionPopup = null;
@@ -32961,6 +33837,7 @@ function renderOperations(operations2, operationsList2, openOperationSettings2, 
     const el = document.createElement("div");
     el.draggable = true;
     el.className = "bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg mb-2 group";
+    el.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
     el.innerHTML = `
         <div class="flex items-center gap-3">
           <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(op.type)}</div>
@@ -32975,14 +33852,22 @@ function renderOperations(operations2, operationsList2, openOperationSettings2, 
           </div>
         </div>
       `;
-    el.addEventListener(
-      "dragstart",
-      (e) => handleDragStart2(e, op, null, operations2)
-    );
+    el.addEventListener("dragstart", (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+      if (window.flowchartRenderer) {
+        window.flowchartRenderer.setDragOffset(offsetX, offsetY);
+      }
+      handleDragStart2(e, op, null, operations2);
+    });
     el.addEventListener("dragend", (e) => {
       if (e.currentTarget instanceof HTMLElement) {
         e.currentTarget.classList.remove("dragging");
         e.currentTarget.style.opacity = "";
+      }
+      if (window.flowchartRenderer) {
+        window.flowchartRenderer.setDragOffset(0, 0);
       }
     });
     addHoverListeners(el, op.name, op.description);
@@ -32997,6 +33882,370 @@ function renderOperations(operations2, operationsList2, openOperationSettings2, 
     operationsList2.appendChild(el);
   });
 }
+class FlowchartRenderer {
+  constructor(canvasContainer, options = {}) {
+    this.canvasContainer = canvasContainer;
+    this.canvas = null;
+    this.connections = null;
+    this.nodes = /* @__PURE__ */ new Map();
+    this.pipeline = [];
+    this.callbacks = {
+      openOperationSettings: options.openOperationSettings || (() => {
+      }),
+      updateRunButton: options.updateRunButton || (() => {
+      }),
+      removeFromPipeline: options.removeFromPipeline || (() => {
+      }),
+      onPipelineChange: options.onPipelineChange || (() => {
+      }),
+      autoSavePipeline: options.autoSavePipeline || (() => {
+      })
+    };
+    this.gridSpacing = options.gridSpacing || 20;
+    this.nodeSpacingX = options.nodeSpacingX || 300;
+    this.nodeSpacingY = options.nodeSpacingY || 150;
+    this.dragOffsetX = 0;
+    this.dragOffsetY = 0;
+    this.init();
+  }
+  init() {
+    this.canvas = new FlowchartCanvas(this.canvasContainer, {
+      gridSpacing: this.gridSpacing
+    });
+    this.connections = new FlowchartConnections(
+      this.canvas.getConnectionsLayer(),
+      {
+        connectionColor: "#f9c845",
+        connectionWidth: 2,
+        onConnectionRemoved: this.handleConnectionRemoved.bind(this)
+      }
+    );
+    this.dragGhost = null;
+    this.setupDropZone();
+  }
+  setDragOffset(offsetX, offsetY) {
+    this.dragOffsetX = offsetX;
+    this.dragOffsetY = offsetY;
+  }
+  setupDropZone() {
+    const pipelineArea2 = document.getElementById("pipelineArea");
+    const canvasContainer = this.canvasContainer;
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+      this.updateDragGhost(e);
+    };
+    const handleDragEnter = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.createDragGhost(e);
+    };
+    const handleDragLeave = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = canvasContainer.getBoundingClientRect();
+      if (e.clientX <= rect.left || e.clientX >= rect.right || e.clientY <= rect.top || e.clientY >= rect.bottom) {
+        this.removeDragGhost();
+      }
+    };
+    const handleDrop = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.removeDragGhost();
+      await this.handleDrop(e);
+    };
+    [pipelineArea2, canvasContainer].forEach((elem) => {
+      if (elem) {
+        elem.addEventListener("dragover", handleDragOver);
+        elem.addEventListener("dragenter", handleDragEnter);
+        elem.addEventListener("dragleave", handleDragLeave);
+        elem.addEventListener("drop", handleDrop);
+      }
+    });
+  }
+  createDragGhost(e) {
+    if (this.dragGhost) return;
+    this.dragGhost = document.createElement("div");
+    this.dragGhost.className = "flowchart-node-ghost";
+    Object.assign(this.dragGhost.style, {
+      position: "absolute",
+      width: "200px",
+      height: "80px",
+      backgroundColor: "rgba(249, 200, 69, 0.05)",
+      border: "2px dashed #f9c845",
+      borderRadius: "12px",
+      zIndex: "1000",
+      pointerEvents: "none",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#f9c845",
+      fontWeight: "bold",
+      fontSize: "12px",
+      boxShadow: "0 0 15px rgba(249, 200, 69, 0.2)"
+    });
+    this.dragGhost.textContent = "Place Operation";
+    this.canvas.getNodesLayer().appendChild(this.dragGhost);
+  }
+  updateDragGhost(e) {
+    if (!this.dragGhost) {
+      this.createDragGhost(e);
+    }
+    const scale = this.canvas.scale || 1;
+    const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
+    const adjustedX = worldPos.x - this.dragOffsetX / scale;
+    const adjustedY = worldPos.y - this.dragOffsetY / scale;
+    const snappedPos = this.canvas.snapPositionToGrid(adjustedX, adjustedY);
+    this.dragGhost.style.left = `${snappedPos.x}px`;
+    this.dragGhost.style.top = `${snappedPos.y}px`;
+  }
+  removeDragGhost() {
+    if (this.dragGhost) {
+      this.dragGhost.remove();
+      this.dragGhost = null;
+    }
+  }
+  async handleDrop(e) {
+    let dropData = null;
+    try {
+      const jsonData = e.dataTransfer.getData("application/pipeline") || e.dataTransfer.getData("text/plain");
+      if (jsonData) {
+        dropData = JSON.parse(jsonData);
+      }
+    } catch (err) {
+      console.warn("[FLOWCHART] Failed to parse drop data:", err);
+      return;
+    }
+    if (!dropData || !dropData.id) {
+      console.warn("[FLOWCHART] Invalid drop data", dropData);
+      return;
+    }
+    if (dropData.instanceId) {
+      return;
+    }
+    const scale = this.canvas.scale || 1;
+    const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
+    const adjustedX = worldPos.x - this.dragOffsetX / scale;
+    const adjustedY = worldPos.y - this.dragOffsetY / scale;
+    const snappedPos = this.canvas.snapPositionToGrid(adjustedX, adjustedY);
+    await this.callbacks.onPipelineChange({
+      type: "add",
+      operationId: dropData.id,
+      position: snappedPos
+    });
+  }
+  async renderPipeline(pipeline2) {
+    var _a;
+    this.pipeline = pipeline2;
+    this.nodes.forEach((node) => node.destroy());
+    this.nodes.clear();
+    this.connections.clearAllConnections();
+    const placeholder = document.getElementById("pipelinePlaceholder");
+    if (placeholder) {
+      const shouldShow = pipeline2.length === 0;
+      placeholder.classList.toggle("hidden", !shouldShow);
+      if (shouldShow) {
+        const hintText = placeholder.querySelector("p:last-child");
+        if (hintText && !((_a = window.pipelineCreator) == null ? void 0 : _a.selectedPipeline)) {
+          hintText.textContent = "Create a new pipeline first using the button above";
+          hintText.style.color = "#f9c845";
+        } else if (hintText) {
+          hintText.textContent = "Double-click to fit view • Scroll to zoom • Drag to pan";
+          hintText.style.color = "#666";
+        }
+      }
+    }
+    if (pipeline2.length === 0) {
+      this.callbacks.updateRunButton();
+      return;
+    }
+    for (let i = 0; i < pipeline2.length; i++) {
+      const item = pipeline2[i];
+      if (!item.position) {
+        item.position = this.calculateDefaultPosition(i, pipeline2.length);
+      }
+      await this.createNode(item);
+    }
+    this.callbacks.updateRunButton();
+  }
+  calculateDefaultPosition(index, total) {
+    const startX = 100;
+    const startY = 100;
+    return {
+      x: this.canvas.snapToGrid(startX + index * this.nodeSpacingX),
+      y: this.canvas.snapToGrid(startY + Math.sin(index * 0.5) * 50)
+    };
+  }
+  async createNode(item) {
+    const node = new FlowchartNode(item, {
+      gridSpacing: this.gridSpacing,
+      onDragStart: this.handleNodeDragStart.bind(this),
+      onDragEnd: this.handleNodeDragEnd.bind(this),
+      onPositionChange: this.handleNodePositionChange.bind(this),
+      onSettingsClick: this.callbacks.openOperationSettings,
+      onRemoveClick: this.handleNodeRemove.bind(this),
+      onPortHover: this.handlePortHover.bind(this),
+      onPortClick: this.handlePortClick.bind(this)
+    });
+    const element = await node.createElement();
+    const nodesLayer = this.canvas.getNodesLayer();
+    nodesLayer.appendChild(element);
+    this.nodes.set(item.instanceId, node);
+    return node;
+  }
+  handleNodeDragStart(node, event) {
+    node.element.style.zIndex = "100";
+  }
+  handleNodeDragEnd(node, position) {
+    node.element.style.zIndex = "10";
+    const item = this.pipeline.find((p) => p.instanceId === node.instanceId);
+    if (item) {
+      item.position = position;
+    }
+    this.connections.updateAllConnections(this.nodes);
+    this.callbacks.autoSavePipeline();
+  }
+  handleNodePositionChange(node, position) {
+    this.connections.updateAllConnections(this.nodes);
+  }
+  handlePortHover(node, portName, portType, isHovering) {
+    const connectionIds = this.connections.getConnectionsForPort(
+      node.instanceId,
+      portName,
+      portType
+    );
+    connectionIds.forEach((id) => {
+      this.connections.highlightConnection(id, isHovering);
+    });
+  }
+  handlePortClick(node, portName, portType, event) {
+    if (portType === "output") {
+      this.startConnecting(node, portName, event);
+    } else if (portType === "input" && this.connectingState) {
+      this.completeConnection(node, portName);
+    }
+  }
+  startConnecting(node, portName, event) {
+    if (this.connectingState) {
+      this.connectingState.temp.remove();
+    }
+    const startPos = node.getOutputPortPosition(portName);
+    const temp = this.connections.createTemporaryConnection(startPos);
+    this.connectingState = {
+      fromNode: node,
+      fromPort: portName,
+      temp
+    };
+    const onMouseMove2 = (e) => {
+      var _a;
+      if (!this.connectingState) return;
+      const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
+      this.connectingState.temp.update(worldPos);
+      const target = (_a = document.elementFromPoint(e.clientX, e.clientY)) == null ? void 0 : _a.closest(".port-connector");
+      if (target && target.dataset.portType === "input") {
+        target.style.backgroundColor = "#f9c845";
+        target.style.transform = "scale(1.3)";
+      } else {
+        document.querySelectorAll(".input-connector").forEach((p) => {
+          if (p !== target) {
+            p.style.backgroundColor = "#404040";
+            p.style.transform = "scale(1)";
+          }
+        });
+      }
+    };
+    const onMouseUp = (e) => {
+      var _a;
+      const target = (_a = document.elementFromPoint(e.clientX, e.clientY)) == null ? void 0 : _a.closest(".port-connector");
+      const isInput = (target == null ? void 0 : target.dataset.portType) === "input";
+      if (isInput) {
+        const nodeElement = target.closest(".flowchart-node");
+        const instanceId = nodeElement == null ? void 0 : nodeElement.dataset.instanceId;
+        const targetNode = this.nodes.get(instanceId);
+        const targetPortName = target.dataset.portName;
+        if (targetNode && targetPortName) {
+          this.completeConnection(targetNode, targetPortName);
+        } else {
+          this.cancelConnecting();
+        }
+      } else {
+        const isOriginalOutput = target === event.target;
+        if (!isOriginalOutput) {
+          this.cancelConnecting();
+        }
+      }
+      document.querySelectorAll(".input-connector").forEach((p) => {
+        p.style.backgroundColor = "#404040";
+        p.style.transform = "scale(1)";
+      });
+      window.removeEventListener("mousemove", onMouseMove2);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+    window.addEventListener("mousemove", onMouseMove2);
+    window.addEventListener("mouseup", onMouseUp);
+    event.stopPropagation();
+  }
+  completeConnection(toNode, toPort) {
+    if (!this.connectingState) return;
+    const { fromNode, fromPort, temp } = this.connectingState;
+    if (fromNode.instanceId === toNode.instanceId) {
+      this.cancelConnecting();
+      return;
+    }
+    const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;
+    this.connections.createConnection(
+      connectionId,
+      fromNode,
+      fromPort,
+      toNode,
+      toPort,
+      fromPort
+      // Use output port name as data type for now
+    );
+    this.cancelConnecting();
+    this.callbacks.autoSavePipeline();
+  }
+  cancelConnecting() {
+    if (this.connectingState) {
+      this.connectingState.temp.remove();
+      this.connectingState = null;
+    }
+  }
+  handleNodeRemove(instanceId) {
+    this.callbacks.removeFromPipeline(instanceId);
+  }
+  handleConnectionRemoved(connectionId) {
+    this.callbacks.autoSavePipeline();
+  }
+  removeNode(instanceId) {
+    const node = this.nodes.get(instanceId);
+    if (node) {
+      this.connections.removeConnectionsForNode(instanceId);
+      node.destroy();
+      this.nodes.delete(instanceId);
+    }
+  }
+  getNodePositions() {
+    const positions = {};
+    this.nodes.forEach((node, instanceId) => {
+      positions[instanceId] = node.getPosition();
+    });
+    return positions;
+  }
+  fitToContent() {
+    this.canvas.fitToContent();
+  }
+  resetView() {
+    this.canvas.resetView();
+  }
+  destroy() {
+    this.nodes.forEach((node) => node.destroy());
+    this.nodes.clear();
+    this.connections.destroy();
+    this.canvas.destroy();
+  }
+}
 function renderPipeline(pipeline2, pipelineContainer2, pipelinePlaceholder2, callbacks) {
   pipelineContainer2.innerHTML = "";
   if (pipeline2.length === 0) {
@@ -33010,6 +34259,7 @@ function renderPipeline(pipeline2, pipelineContainer2, pipelinePlaceholder2, cal
     wrapper.dataset.instanceId = item.instanceId;
     wrapper.draggable = true;
     wrapper.className = "pipeline-item group relative bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg";
+    wrapper.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
     wrapper.innerHTML = `
         <div class="flex items-center gap-3">
           <div class="text-gray-600">${getIconSVG()}</div>
@@ -33245,13 +34495,6 @@ function handleDropOnPipeline(e, pipeline2, operations2, pipelineContainer2, pip
       finalIndex -= 1;
     }
     if (localFromIndex !== finalIndex) {
-      console.log("[DRAGDROP] Reordering item", {
-        localFromIndex,
-        finalIndex,
-        k,
-        instanceId: localDraggedItem.instanceId,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
       const removedItem = pipeline2.splice(localFromIndex, 1)[0];
       const newPipeline = pipeline2.slice();
       newPipeline.splice(finalIndex, 0, removedItem);
@@ -33353,6 +34596,8 @@ let pipelines = [];
 let selectedPipeline = null;
 let isAutoSaving = false;
 let pendingAutoSave = false;
+let flowchartRenderer = null;
+let useFlowchartMode = true;
 let pipelineArea;
 let pipelineContainer;
 let pipelinePlaceholder;
@@ -33363,6 +34608,7 @@ let pipelineSelect;
 let newPipelineButton;
 let deletePipelineButton;
 let restartIndicator;
+let flowchartCanvas;
 async function fetchAvailableOperations() {
   try {
     const response = await fetch(
@@ -33374,16 +34620,12 @@ async function fetchAvailableOperations() {
     const data = await response.json();
     operations = data.operations.map((op) => ({
       id: op.name,
-      // Use filename as unique ID
-      name: op.name.replaceAll(".py", "").replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
-      // Convert filename to readable name
+      name: op.name.replaceAll(".py", "").replaceAll("_", " ").replaceAll(/\b\w/g, (l) => l.toUpperCase()),
       type: op.category.toUpperCase(),
-      // Use category as type, convert to uppercase for consistency
       description: op.description,
       path: op.path,
       configDataPath: op.config_data_path,
       isSecondary: op.is_secondary
-      // Store the secondary operation flag
     }));
     console.log("Loaded operations from server:", operations);
   } catch (error) {
@@ -33444,8 +34686,7 @@ async function fetchPipelinesForCamera(cameraName) {
     const pipelineNames = await response.json();
     pipelines = pipelineNames.map((name) => ({
       name,
-      displayName: name.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
-      // Convert to readable name
+      displayName: name.replaceAll("_", " ").replaceAll(/\b\w/g, (l) => l.toUpperCase())
     }));
     console.log("Loaded pipelines from server:", pipelines);
   } catch (error) {
@@ -33477,13 +34718,13 @@ function populatePipelineDropdown(selectedPipelineName = null) {
   pipelineSelect.appendChild(defaultOption);
   let foundSelectedPipeline = false;
   for (let index = 0; index < pipelines.length; index++) {
-    const pipeline2 = pipelines[index];
+    const pipelineItem = pipelines[index];
     const option = document.createElement("option");
-    option.value = pipeline2.name;
-    option.textContent = pipeline2.displayName;
-    if (selectedPipelineName === pipeline2.name || selectedPipelineName === null && index === 0) {
+    option.value = pipelineItem.name;
+    option.textContent = pipelineItem.displayName;
+    if (selectedPipelineName === pipelineItem.name || selectedPipelineName === null && index === 0) {
       option.selected = true;
-      selectedPipeline = pipeline2;
+      selectedPipeline = pipelineItem;
       foundSelectedPipeline = true;
     }
     pipelineSelect.appendChild(option);
@@ -33520,7 +34761,7 @@ async function handleCameraSelection() {
 async function handlePipelineSelection() {
   const selectedValue = pipelineSelect.value;
   selectedPipeline = pipelines.find(
-    (pipeline2) => pipeline2.name === selectedValue
+    (pipelineItem) => pipelineItem.name === selectedValue
   );
   console.log("Selected pipeline:", selectedPipeline);
   if (selectedPipeline && selectedCamera) {
@@ -33563,10 +34804,9 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
           instanceId: `${operation.id}_${Date.now()}_${index}`,
           config: configItem.action_params || {},
           originalConfig: configItem.action_params || {},
-          // Store original config for restart comparison
           name: operation.name,
-          requiresRestart: false
-          // Initialize restart flag (will be updated if needed)
+          requiresRestart: false,
+          position: configItem.position || null
         };
         pipeline.push(pipelineItem);
       } else {
@@ -33576,15 +34816,16 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         );
       }
     }
-    console.log("[PIPELINE] Re-rendering pipeline after loading", {
-      operationCount: pipeline.length,
-      operations: pipeline.map((op) => ({
-        id: op.id,
-        name: op.name,
-        instanceId: op.instanceId
-      })),
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
+    await renderCurrentPipeline();
+    updateRunButton();
+  } catch (error) {
+    console.error("Failed to load pipeline:", error);
+  }
+}
+async function renderCurrentPipeline() {
+  if (useFlowchartMode && flowchartRenderer) {
+    await flowchartRenderer.renderPipeline(pipeline);
+  } else {
     renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
       openOperationSettings,
       updateRunButton,
@@ -33592,10 +34833,6 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
       handleDragStart: handleDragStartWithLogging,
       handleDragEnd: handleDragEndWithLogging
     });
-    updateRunButton();
-    console.log("Pipeline loaded:", pipeline);
-  } catch (error) {
-    console.error("Failed to load pipeline:", error);
   }
 }
 async function checkAndTriggerAutoFill() {
@@ -33648,6 +34885,9 @@ async function removeFromPipeline(instanceId) {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
   pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
+  if (useFlowchartMode && flowchartRenderer) {
+    flowchartRenderer.removeNode(instanceId);
+  }
   console.log("[PIPELINE] Pipeline after removal", {
     pipelineLengthAfter: pipeline.length,
     remainingOperations: pipeline.map((op) => ({
@@ -33657,13 +34897,7 @@ async function removeFromPipeline(instanceId) {
     })),
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
-  renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-    openOperationSettings,
-    updateRunButton,
-    removeFromPipeline,
-    handleDragStart: handleDragStartWithLogging,
-    handleDragEnd: handleDragEndWithLogging
-  });
+  await renderCurrentPipeline();
   autoSavePipeline();
   console.log("Operation removed from pipeline - requiring backend restart");
   await updateRestartIndicator(true);
@@ -33683,9 +34917,9 @@ function openOperationSettings(opOrItem) {
   }
   const onSave = (values) => {
     console.log("Saved settings for", opOrItem, values);
-    const isAutoSave = values._isAutoSave;
+    const isAutoSaveFlag = values._isAutoSave;
     const requiresRestart = values._requiresRestart;
-    console.log("isAutoSave flag:", isAutoSave);
+    console.log("isAutoSave flag:", isAutoSaveFlag);
     console.log("requiresRestart flag:", requiresRestart);
     delete values._isAutoSave;
     delete values._requiresRestart;
@@ -33726,14 +34960,49 @@ function openOperationSettings(opOrItem) {
       console.error("Failed to open SettingsPopup:", err);
     }
   };
+  const loadFileManager = () => {
+    if (globalThis.FileManagerPopup) {
+      return Promise.resolve();
+    }
+    const fileManagerUrl = "../../js/pipeline/fileManager.js";
+    const fileManagerAlready = document.querySelector(
+      `script[src="${fileManagerUrl}"]`
+    );
+    if (fileManagerAlready) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const s2 = document.createElement("script");
+      s2.type = "module";
+      s2.src = fileManagerUrl;
+      s2.onload = () => {
+        if (!globalThis.FileManagerPopup) {
+          console.warn(
+            "FileManagerPopup loaded but did not register on globalThis"
+          );
+        }
+        resolve();
+      };
+      s2.onerror = () => {
+        console.error(
+          "Failed to load file manager script at",
+          fileManagerUrl
+        );
+        reject(new Error("Failed to load file manager"));
+      };
+      document.head.appendChild(s2);
+    });
+  };
   if (globalThis.SettingsPopup) {
-    doOpen();
+    void loadFileManager().then(doOpen).catch(console.error);
     return;
   }
   const scriptUrl = "../../js/pipeline/settingsPopup.js";
   const already = document.querySelector(`script[src="${scriptUrl}"]`);
   if (already) {
-    already.addEventListener("load", doOpen);
+    already.addEventListener("load", () => {
+      void loadFileManager().then(doOpen).catch(console.error);
+    });
     return;
   }
   const s = document.createElement("script");
@@ -33741,10 +35010,12 @@ function openOperationSettings(opOrItem) {
   s.src = scriptUrl;
   s.onload = () => {
     if (!globalThis.SettingsPopup) {
-      console.warn("SettingsPopup loaded but did not register on window");
+      console.warn(
+        "SettingsPopup loaded but did not register on globalThis"
+      );
       return;
     }
-    doOpen();
+    void loadFileManager().then(doOpen).catch(console.error);
   };
   s.onerror = () => console.error("Failed to load settings popup script at", scriptUrl);
   document.head.appendChild(s);
@@ -33777,7 +35048,8 @@ async function autoSavePipeline() {
       }
       return {
         action_name: item.id.replaceAll(".py", ""),
-        action_params: configParams
+        action_params: configParams,
+        position: item.position || null
       };
     });
     const response = await fetch(
@@ -33849,15 +35121,10 @@ async function createNewPipeline() {
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       }
     );
-    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-      openOperationSettings,
-      updateRunButton,
-      removeFromPipeline,
-      handleDragStart: handleDragStartWithLogging,
-      handleDragEnd: handleDragEndWithLogging
-    });
+    await renderCurrentPipeline();
     updateRunButton();
     updateDeleteButtonVisibility();
+    await autoSavePipeline();
     restartRequiredOperations.clear();
     await updateRestartIndicator(false);
     console.log("New pipeline created:", newPipelineName);
@@ -33880,8 +35147,9 @@ async function deleteCurrentPipeline() {
     alert("No camera selected.");
     return;
   }
+  const pipelineToDelete = selectedPipeline;
   const confirmed = confirm(
-    `Are you sure you want to delete the pipeline "${selectedPipeline.displayName}"?
+    `Are you sure you want to delete the pipeline "${pipelineToDelete.displayName}"?
 
 This action cannot be undone.`
   );
@@ -33890,7 +35158,7 @@ This action cannot be undone.`
   }
   try {
     const response = await fetch(
-      `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+      `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(pipelineToDelete.name)}`,
       {
         method: "DELETE",
         headers: {
@@ -33904,7 +35172,7 @@ This action cannot be undone.`
     const result = await response.json();
     console.log("Pipeline deleted from backend:", result);
     const pipelineIndex = pipelines.findIndex(
-      (p) => p.name === selectedPipeline.name
+      (p) => p.name === pipelineToDelete.name
     );
     if (pipelineIndex === -1) {
       console.error("Pipeline not found in pipelines array");
@@ -33912,31 +35180,17 @@ This action cannot be undone.`
       return;
     }
     pipelines.splice(pipelineIndex, 1);
-    console.log("Deleted pipeline:", selectedPipeline.name);
+    console.log("Deleted pipeline:", pipelineToDelete.name);
     console.log("Remaining pipelines:", pipelines);
     pipeline.length = 0;
     pipeline = [];
     selectedPipeline = null;
     populatePipelineDropdown();
-    console.log("[PIPELINE] Re-rendering empty pipeline after deletion", {
-      deletedPipelineName: selectedPipeline.displayName,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-      openOperationSettings,
-      updateRunButton,
-      removeFromPipeline,
-      handleDragStart: handleDragStartWithLogging,
-      handleDragEnd: handleDragEndWithLogging
-    });
+    await renderCurrentPipeline();
     updateRunButton();
     updateDeleteButtonVisibility();
     restartRequiredOperations.clear();
     await updateRestartIndicator(false);
-    console.log("[PIPELINE] Pipeline deleted successfully", {
-      deletedPipeline: selectedPipeline.displayName,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
   } catch (error) {
     console.error("Failed to delete pipeline:", error);
     alert(
@@ -34031,8 +35285,8 @@ async function checkBackendRestartStatus() {
   }
 }
 async function checkPipelineRestartRequirements(operationItem = null, changedParamName = null, changedValue = null) {
-  const restartIndicator2 = document.getElementById("restartIndicator");
-  if (restartIndicator2 && !restartIndicator2.classList.contains("hidden") && restartIndicator2.classList.contains("backend-state-warning")) {
+  const restartIndicatorEl = document.getElementById("restartIndicator");
+  if (restartIndicatorEl && !restartIndicatorEl.classList.contains("hidden") && restartIndicatorEl.classList.contains("backend-state-warning")) {
     return;
   }
   if (operationItem && changedParamName !== null && changedValue !== null) {
@@ -34121,10 +35375,64 @@ async function refreshPipelineCreator$1() {
     }
     updateDeleteButtonVisibility();
     await checkBackendRestartStatus();
-    console.log("[PIPELINE] Pipeline creator refreshed successfully");
   } catch (error) {
     console.error("[PIPELINE] Error refreshing pipeline creator:", error);
   }
+}
+async function handleFlowchartPipelineChange(changeEvent) {
+  if (!selectedPipeline) {
+    if (!selectedCamera) {
+      alert("Please select a camera first, then create a new pipeline.");
+      return;
+    }
+    const shouldCreate = confirm("You need to create a pipeline before adding operations. Would you like to create a new pipeline now?");
+    if (!shouldCreate) {
+      return;
+    }
+    await createNewPipeline();
+    if (!selectedPipeline) {
+      return;
+    }
+  }
+  if (changeEvent.type === "add") {
+    const operation = operations.find((op) => op.id === changeEvent.operationId);
+    if (!operation) {
+      console.warn(`Operation ${changeEvent.operationId} not found`);
+      return;
+    }
+    const newItem = {
+      ...operation,
+      instanceId: uid(operation.id + "-"),
+      config: {},
+      originalConfig: {},
+      position: changeEvent.position,
+      requiresRestart: false
+    };
+    pipeline.push(newItem);
+    await renderCurrentPipeline();
+    autoSavePipeline();
+    updateRestartIndicator(true);
+    restartRequiredOperations.clear();
+  }
+}
+function initFlowchartRenderer() {
+  flowchartCanvas = document.getElementById("flowchartCanvas");
+  if (!flowchartCanvas) {
+    console.warn("Flowchart canvas not found, falling back to list mode");
+    useFlowchartMode = false;
+    return;
+  }
+  flowchartRenderer = new FlowchartRenderer(flowchartCanvas, {
+    gridSpacing: 20,
+    nodeSpacingX: 300,
+    nodeSpacingY: 150,
+    openOperationSettings,
+    updateRunButton,
+    removeFromPipeline,
+    onPipelineChange: handleFlowchartPipelineChange,
+    autoSavePipeline
+  });
+  window.flowchartRenderer = flowchartRenderer;
 }
 async function initPipelineCreator() {
   if (isInitialized) return;
@@ -34148,9 +35456,13 @@ async function initPipelineCreator() {
 #pipelineArea .op-settings-btn, #pipelineArea .remove-btn { display: inline-flex !important; }
 .icon-grayscale { filter: grayscale(100%); transition: filter .15s ease-in-out; }
 #pipelineArea .group:hover .icon-grayscale, #pipelineArea .group:focus-within .icon-grayscale { filter: none; }
+#flowchartCanvas { background-color: #1a1a1a; }
+.flowchart-node .node-settings-btn:hover img,
+.flowchart-node .node-remove-btn:hover img { filter: none !important; }
 `;
     document.head.appendChild(styleEl);
   }
+  initFlowchartRenderer();
   await fetchAvailableOperations();
   await fetchAvailableCameras();
   populateCameraDropdown();
@@ -34166,92 +35478,73 @@ async function initPipelineCreator() {
   }
   await checkAndTriggerAutoFill();
   updateDeleteButtonVisibility();
-  const setupDragDrop = (element) => {
-    element.addEventListener(
-      "dragenter",
-      (e) => handleDragEnterPipeline(e)
-    );
-    element.addEventListener("dragover", (e) => {
-      if (!selectedPipeline) {
-        e.preventDefault();
-        return;
-      }
-      handleDragOverPipeline(e, pipeline, pipelineContainer);
-    });
-    element.addEventListener(
-      "dragleave",
-      (e) => handleDragLeavePipeline(e, pipeline, pipelinePlaceholder)
-    );
-    element.addEventListener("drop", async (e) => {
-      if (!selectedPipeline) {
-        console.log("[PIPELINE] Cannot drop operations: no pipeline selected");
-        e.preventDefault();
-        return;
-      }
-      const pipelineLengthBefore = pipeline.length;
-      const pipelineOrderBefore = pipeline.map((item) => item.instanceId).join(",");
-      console.log("[PIPELINE] Processing drop event", {
-        pipelineLengthBefore,
-        pipelineOrderBefore: pipelineOrderBefore.split(","),
-        elementType: element.tagName,
-        elementId: element.id,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      await handleDropOnPipelineWithLogging(
-        e,
-        pipeline,
-        operations,
-        pipelineContainer,
-        pipelinePlaceholder,
-        {
-          renderPipeline: () => renderPipeline(
-            pipeline,
-            pipelineContainer,
-            pipelinePlaceholder,
-            {
-              updateRunButton,
-              handleDragStart: handleDragStartWithLogging,
-              handleDragEnd: handleDragEndWithLogging,
-              removeFromPipeline,
-              openOperationSettings
-            }
-          ),
-          updateRunButton,
-          openOperationSettings
-        }
+  if (!useFlowchartMode) {
+    const setupDragDrop = (element) => {
+      if (!element) return;
+      element.addEventListener(
+        "dragenter",
+        (e) => handleDragEnterPipeline(e)
       );
-      const pipelineOrderAfter = pipeline.map((item) => item.instanceId).join(",");
-      const structureChanged = pipeline.length !== pipelineLengthBefore || pipelineOrderBefore !== pipelineOrderAfter;
-      console.log("[PIPELINE] Structure change analysis", {
-        pipelineLengthAfter: pipeline.length,
-        pipelineOrderAfter: pipelineOrderAfter.split(","),
-        structureChanged,
-        operationType: structureChanged ? pipeline.length > pipelineLengthBefore ? "ADDED" : pipeline.length < pipelineLengthBefore ? "REMOVED" : "REORDERED" : "UNCHANGED",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      if (structureChanged) {
-        console.log(
-          "[PIPELINE] Pipeline structure changed - requiring backend restart"
-        );
-        await updateRestartIndicator(true);
-        restartRequiredOperations.clear();
-        autoSavePipeline();
-      } else if (pipeline.length > pipelineLengthBefore) {
-        console.log(
-          "[PIPELINE] New operations added, checking restart requirements"
-        );
-        for (const item of pipeline) {
-          checkPipelineRestartRequirements(item);
+      element.addEventListener("dragover", (e) => {
+        if (!selectedPipeline) {
+          e.preventDefault();
+          return;
         }
-        autoSavePipeline();
-      } else {
-        console.log("[PIPELINE] No structure changes detected");
-      }
-    });
-  };
-  setupDragDrop(pipelineArea);
-  setupDragDrop(pipelineContainer);
-  setupDragDrop(pipelinePlaceholder);
+        handleDragOverPipeline(e, pipeline, pipelineContainer);
+      });
+      element.addEventListener(
+        "dragleave",
+        (e) => handleDragLeavePipeline(e, pipeline, pipelinePlaceholder)
+      );
+      element.addEventListener("drop", async (e) => {
+        if (!selectedPipeline) {
+          console.log(
+            "[PIPELINE] Cannot drop operations: no pipeline selected"
+          );
+          e.preventDefault();
+          return;
+        }
+        const pipelineLengthBefore = pipeline.length;
+        const pipelineOrderBefore = pipeline.map((item) => item.instanceId).join(",");
+        handleDropOnPipelineWithLogging(
+          e,
+          pipeline,
+          operations,
+          pipelineContainer,
+          pipelinePlaceholder,
+          {
+            renderPipeline: () => renderPipeline(
+              pipeline,
+              pipelineContainer,
+              pipelinePlaceholder,
+              {
+                updateRunButton,
+                handleDragStart: handleDragStartWithLogging,
+                handleDragEnd: handleDragEndWithLogging,
+                removeFromPipeline,
+                openOperationSettings
+              }
+            ),
+            updateRunButton,
+            openOperationSettings
+          }
+        );
+        const pipelineOrderAfter = pipeline.map((item) => item.instanceId).join(",");
+        const structureChanged = pipeline.length !== pipelineLengthBefore || pipelineOrderBefore !== pipelineOrderAfter;
+        if (structureChanged) {
+          console.log(
+            "[PIPELINE] Pipeline structure changed - requiring backend restart"
+          );
+          await updateRestartIndicator(true);
+          restartRequiredOperations.clear();
+          autoSavePipeline();
+        }
+      });
+    };
+    setupDragDrop(pipelineArea);
+    setupDragDrop(pipelineContainer);
+    setupDragDrop(pipelinePlaceholder);
+  }
   if (runButton) {
     runButton.addEventListener("click", runPipeline);
   }
@@ -34269,24 +35562,13 @@ async function initPipelineCreator() {
       restartButton.addEventListener("click", handleRestartBackend);
     }
   }
-  console.log("[PIPELINE] Initial render of operations and pipeline", {
-    operationsCount: operations.length,
-    pipelineLength: pipeline.length,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
   renderOperations(
     operations,
     operationsList,
     openOperationSettings,
     handleDragStartWithLogging
   );
-  renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-    openOperationSettings,
-    updateRunButton,
-    removeFromPipeline,
-    handleDragStart: handleDragStartWithLogging,
-    handleDragEnd: handleDragEndWithLogging
-  });
+  await renderCurrentPipeline();
   await checkBackendRestartStatus();
   isInitialized = true;
   if (globalThis.showBackendRestartIndicator) {
@@ -34298,8 +35580,232 @@ async function initPipelineCreator() {
     checkPipelineRestartRequirements,
     checkBackendRestartStatus,
     restartIndicator,
-    refreshPipelineCreator: refreshPipelineCreator$1
+    refreshPipelineCreator: refreshPipelineCreator$1,
+    flowchartRenderer,
+    selectedPipeline: null
   };
+  Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {
+    get: () => selectedPipeline,
+    enumerable: true
+  });
+}
+let logsLoaded = false;
+function initializeTerminalHandlers() {
+  const terminalPanel = document.getElementById("terminalPanel");
+  document.getElementById("settingsPanel");
+  const clearLogsBtn = document.getElementById("clearLogsBtn");
+  const clearTerminalBtn = document.getElementById("clearTerminalBtn");
+  const sendCommandBtn = document.getElementById("sendCommandBtn");
+  const terminalInput = document.getElementById("terminalInput");
+  const logsOutput = document.getElementById("logsOutput");
+  const terminalOutput = document.getElementById("terminalOutput");
+  const downloadLogsBtn = document.getElementById("downloadLogsBtn");
+  if (terminalPanel) {
+    loadLogMessages();
+  }
+  if (clearLogsBtn) {
+    clearLogsBtn.addEventListener("click", function() {
+      if (logsOutput) {
+        logsOutput.innerHTML = "";
+        appendToLogs(
+          "Logs cleared (display only - backend logs preserved)",
+          "INFO"
+        );
+      }
+    });
+  }
+  if (clearTerminalBtn) {
+    clearTerminalBtn.addEventListener("click", function() {
+      if (terminalOutput) {
+        terminalOutput.innerHTML = '<div class="text-green-400">pi@eagleeye:~$ </div>';
+      }
+    });
+  }
+  if (downloadLogsBtn) {
+    downloadLogsBtn.addEventListener("click", function() {
+      downloadLogFile();
+    });
+  }
+  if (sendCommandBtn) {
+    sendCommandBtn.addEventListener("click", sendTerminalCommand);
+  }
+  if (terminalInput) {
+    terminalInput.addEventListener("keypress", function(event) {
+      if (event.key === "Enter") {
+        sendTerminalCommand();
+      }
+    });
+  }
+}
+function sendTerminalCommand() {
+  const terminalInput = document.getElementById("terminalInput");
+  const terminalOutput = document.getElementById("terminalOutput");
+  if (terminalInput && terminalOutput) {
+    const command = terminalInput.value.trim();
+    if (command) {
+      appendToTerminal(terminalOutput, command, "command");
+      terminalInput.value = "";
+      fetch("http://localhost:5001/terminal/execute", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ command })
+      }).then((response) => response.json()).then((data) => {
+        if (data.output) {
+          appendToTerminal(terminalOutput, data.output, "output");
+        }
+        if (data.error) {
+          appendToTerminal(terminalOutput, data.error, "error");
+        }
+      }).catch((error) => {
+        appendToTerminal(
+          terminalOutput,
+          `Error: ${error.message}`,
+          "error"
+        );
+      });
+    }
+  }
+}
+function appendToTerminal(terminalOutput, text, type) {
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const lineDiv = document.createElement("div");
+    if (type === "command") {
+      lineDiv.className = "text-green-400";
+      lineDiv.textContent = `pi@eagleeye:~$ ${line}`;
+    } else if (type === "error") {
+      lineDiv.className = "text-red-400";
+      lineDiv.textContent = line;
+    } else {
+      lineDiv.className = "text-gray-300";
+      lineDiv.textContent = line;
+    }
+    terminalOutput.appendChild(lineDiv);
+  }
+  terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+async function loadLogMessages() {
+  if (logsLoaded) return;
+  const logsOutput = document.getElementById("logsOutput");
+  if (!logsOutput) return;
+  try {
+    const response = await fetch("http://localhost:5001/get-log-messages");
+    const data = await response.json();
+    if (data.messages && Array.isArray(data.messages)) {
+      logsOutput.innerHTML = "";
+      for (const message of data.messages) {
+        appendLogMessage(message);
+      }
+      logsLoaded = true;
+    }
+  } catch (error) {
+    console.error("Failed to load log messages:", error);
+    appendToLogs("Failed to load log history", "ERROR");
+  }
+}
+function parseAnsiColors(text) {
+  const ansiRegex = /\u001b\[([0-9;]+)m/g;
+  const colorMap = {
+    0: "text-gray-300",
+    91: "text-red-400",
+    92: "text-green-400",
+    93: "text-yellow-400",
+    94: "text-blue-400",
+    96: "text-cyan-400"
+  };
+  let currentColor = "text-gray-300";
+  const segments = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = ansiRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({
+        text: text.substring(lastIndex, match.index),
+        color: currentColor
+      });
+    }
+    const code = match[1];
+    currentColor = colorMap[code] || currentColor;
+    if (code === "0") currentColor = "text-gray-300";
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({
+      text: text.substring(lastIndex),
+      color: currentColor
+    });
+  }
+  return segments.length > 0 ? segments : [{ text, color: "text-gray-300" }];
+}
+function appendLogMessage(message) {
+  const logsOutput = document.getElementById("logsOutput");
+  if (!logsOutput) return;
+  const logDiv = document.createElement("div");
+  logDiv.className = "flex items-start";
+  logDiv.style.whiteSpace = "pre-wrap";
+  const segments = parseAnsiColors(message);
+  for (const segment of segments) {
+    const span = document.createElement("span");
+    span.className = segment.color;
+    span.textContent = segment.text;
+    logDiv.appendChild(span);
+  }
+  logsOutput.appendChild(logDiv);
+  logsOutput.scrollTop = logsOutput.scrollHeight;
+}
+function handleLogUpdate(data) {
+  if (data.messages && Array.isArray(data.messages)) {
+    for (const message of data.messages) {
+      appendLogMessage(message);
+    }
+  }
+}
+function refreshLogMessages() {
+  logsLoaded = false;
+  const logsOutput = document.getElementById("logsOutput");
+  if (logsOutput) {
+    logsOutput.innerHTML = "";
+    loadLogMessages();
+  }
+}
+function downloadLogFile() {
+  fetch("http://localhost:5001/download-log-file").then((response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.text();
+  }).then((logContent) => {
+    const blob = new Blob([logContent], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "eagleeye_logs.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }).catch((error) => {
+    console.error("Failed to download log file:", error);
+    appendToLogs("Failed to download log file", "ERROR");
+  });
+}
+function appendToLogs(message, level = "INFO") {
+  const logsOutput = document.getElementById("logsOutput");
+  if (logsOutput) {
+    const logDiv = document.createElement("div");
+    const timestamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
+    let colorClass = "text-gray-300";
+    if (level === "ERROR") colorClass = "text-red-400";
+    else if (level === "WARNING") colorClass = "text-orange-400";
+    else if (level === "INFO") colorClass = "text-yellow-400";
+    else if (level === "DEBUG") colorClass = "text-gray-400";
+    logDiv.className = colorClass;
+    logDiv.style.whiteSpace = "pre-wrap";
+    logDiv.textContent = `[${level}] ${timestamp} - ${message}`;
+    logsOutput.appendChild(logDiv);
+    logsOutput.scrollTop = logsOutput.scrollHeight;
+  }
 }
 const VIEWS = {
   THREE_D: "view-3d",
@@ -34315,7 +35821,7 @@ class ViewManager {
     this.sidebarItems = document.querySelectorAll(".sidebar li");
     this.views = document.querySelectorAll("[id^='view-']");
     this.controls = document.querySelectorAll(
-      "#fieldDropdown, #toggleShadowBtn, #toggleGamePiecesBtn"
+      "#fieldDropdown, #robotDropdown, #viewToggles"
     );
   }
   activateView(targetViewId) {
@@ -34356,9 +35862,11 @@ class ViewManager {
         break;
       case VIEWS.CAMERA:
         resumeCameraFeeds();
+        refreshCameraFeeds();
         break;
       case VIEWS.SETTINGS:
         loadSettings();
+        refreshLogMessages();
         break;
       case VIEWS.PIPELINE:
         if ((_a = globalThis.pipelineCreator) == null ? void 0 : _a.refreshPipelineCreator) {
@@ -34415,62 +35923,194 @@ function setupSidebar() {
     }
   }
 }
-function saveSettings() {
-  document.getElementById("saveSettingsBtn").addEventListener("click", () => {
-    const settings = {
-      Constants: {
-        log: document.getElementById("logCheckbox").checked,
-        print_terminal: document.getElementById("printTerminalCheckbox").checked,
-        detection_logging: document.getElementById(
-          "detectionLoggingCheckbox"
-        ).checked,
-        simulation_mode: document.getElementById(
-          "simulationModeCheckbox"
-        ).checked
-      },
-      NetworkTableConstants: {
-        server_address: document.getElementById("serverAddressInput").value,
-        robot_position_key: document.getElementById(
-          "robotPositionKeyInput"
-        ).value,
-        robot_rotation_key: document.getElementById(
-          "robotRotationKeyInput"
-        ).value
-      },
-      ObjectDetectionConstants: {
-        input_size: parseInt(
-          document.getElementById("inputSizeInput").value,
-          10
-        ),
-        confidence_threshold: parseFloat(
-          document.getElementById("confidenceThresholdInput").value
-        ),
-        combined_threshold: parseFloat(
-          document.getElementById("combinedThresholdInput").value
-        ),
-        max_distance: parseFloat(
-          document.getElementById("maxDistanceInput").value
-        )
+const activeNotifications = [];
+const MAX_VISIBLE_NOTIFICATIONS = 4;
+const STACK_OFFSET = 8;
+function getNotificationContainer() {
+  return document.getElementById("notification-container");
+}
+function getClearAllButton() {
+  return document.getElementById("clearAllNotificationsBtn");
+}
+function updateClearAllButtonVisibility() {
+  const clearAllButton = getClearAllButton();
+  if (clearAllButton) {
+    if (activeNotifications.length > 0) {
+      clearAllButton.classList.remove("hidden");
+    } else {
+      clearAllButton.classList.add("hidden");
+    }
+  }
+}
+function updateNotificationPositions() {
+  const notificationContainer = getNotificationContainer();
+  if (!notificationContainer) return;
+  const baseHeight = 80;
+  const totalHeight = activeNotifications.length > 0 ? baseHeight + (activeNotifications.length - 1) * STACK_OFFSET : 0;
+  notificationContainer.style.height = `${totalHeight}px`;
+  const reversedNotifications = [...activeNotifications].reverse();
+  for (let index = 0; index < reversedNotifications.length; index++) {
+    const notificationId = reversedNotifications[index];
+    const notificationElement = document.getElementById(notificationId);
+    if (!notificationElement) continue;
+    const offsetY = index * STACK_OFFSET;
+    const offsetX = index * 4;
+    const scale = 1 - index * 0.05;
+    let opacity = 1;
+    if (index > 0) {
+      opacity = Math.max(0.5, 1 - index * 0.15);
+    }
+    if (index >= MAX_VISIBLE_NOTIFICATIONS) {
+      opacity = 0;
+      notificationElement.style.pointerEvents = "none";
+    } else {
+      notificationElement.style.pointerEvents = "auto";
+    }
+    notificationElement.classList.remove("notification-enter");
+    notificationElement.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    notificationElement.style.opacity = opacity.toString();
+    notificationElement.style.zIndex = (reversedNotifications.length - index + 10).toString();
+  }
+}
+function removeNotification(notificationId) {
+  const index = activeNotifications.indexOf(notificationId);
+  if (index > -1) {
+    activeNotifications.splice(index, 1);
+  }
+  const notificationElement = document.getElementById(notificationId);
+  if (notificationElement) {
+    notificationElement.classList.add("notification-exit");
+    setTimeout(() => {
+      if (notificationElement.parentNode) {
+        notificationElement.remove();
       }
-    };
-    console.log("Settings saved:", settings);
-    fetch("/save-settings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(settings)
-    }).then((response) => {
-      if (response.ok) {
-        alert("Settings have been saved!");
-      } else {
-        alert("Failed to save settings on the server.");
-      }
-    }).catch((error) => {
-      console.error("Error sending settings to the server:", error);
-      alert("An error occurred while saving settings.");
-    });
+      updateNotificationPositions();
+    }, 400);
+  }
+  updateClearAllButtonVisibility();
+}
+function createNotificationElement(type, message) {
+  const notificationId = `toast-${type}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  const toastTemplates = {
+    success: {
+      id: "toast-success",
+      // Darker backgrounds for dark mode, distinct text colors
+      iconColor: "text-green-400 bg-green-900/30",
+      borderColor: "border-green-500/50",
+      iconPath: "M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 8.207-4 4a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L9 10.586l3.293-3.293a1 1 0 0 1 1.414 1.414Z",
+      iconLabel: "Check icon"
+    },
+    warning: {
+      id: "toast-warning",
+      iconColor: "text-orange-400 bg-orange-900/30",
+      borderColor: "border-orange-500/50",
+      iconPath: "M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM10 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm1-4a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v5Z",
+      iconLabel: "Warning icon"
+    },
+    danger: {
+      id: "toast-danger",
+      iconColor: "text-red-400 bg-red-900/30",
+      borderColor: "border-red-500/50",
+      iconPath: "M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 11.793a1 1 0 1 1-1.414 1.414L10 11.414l-2.293 2.293a1 1 0 0 1-1.414-1.414L8.586 10 6.293 7.707a1 1 0 0 1 1.414-1.414L10 8.586l2.293-2.293a1 1 0 0 1 1.414 1.414L11.414 10l2.293 2.293Z",
+      iconLabel: "Error icon"
+    }
+  };
+  const template = toastTemplates[type];
+  if (!template) {
+    console.error(`Unknown notification type: ${type}`);
+    return null;
+  }
+  const notificationDiv = document.createElement("div");
+  notificationDiv.id = notificationId;
+  notificationDiv.className = `notification-item flex items-center w-full max-w-xs p-4 text-gray-200 bg-[#1f1f1f] rounded-lg border-l-4 ${template.borderColor} shadow-[0_10px_15px_-3px_rgba(0,0,0,0.5),0_4px_6px_-2px_rgba(0,0,0,0.3)] border-y border-r border-[#414141]`;
+  notificationDiv.setAttribute("role", "alert");
+  notificationDiv.style.position = "absolute";
+  notificationDiv.style.top = "0";
+  notificationDiv.style.right = "0";
+  notificationDiv.style.width = "100%";
+  notificationDiv.style.transformOrigin = "center right";
+  notificationDiv.innerHTML = `
+        <div class="inline-flex items-center justify-center shrink-0 w-8 h-8 ${template.iconColor} rounded-lg">
+            <svg
+                class="w-5 h-5"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+            >
+                <path d="${template.iconPath}" />
+            </svg>
+            <span class="sr-only">${template.iconLabel}</span>
+        </div>
+        <div class="ms-3 text-sm font-normal flex-1 break-words">${message}</div>
+        <button
+            type="button"
+            class="ms-auto -mx-1.5 -my-1.5 bg-[#1f1f1f] text-gray-400 hover:text-gray-200 rounded-lg focus:ring-2 focus:ring-gray-600 p-1.5 hover:bg-[#2a2a2a] inline-flex items-center justify-center h-8 w-8 transition-colors duration-200"
+            aria-label="Close"
+        >
+            <span class="sr-only">Close</span>
+            <svg
+                class="w-3 h-3"
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 14 14"
+            >
+                <path
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"
+                />
+            </svg>
+        </button>
+    `;
+  const closeButton = notificationDiv.querySelector("button");
+  closeButton.addEventListener("click", () => {
+    removeNotification(notificationId);
   });
+  return notificationDiv;
+}
+function showNotification(type, message) {
+  const notificationContainer = getNotificationContainer();
+  if (!notificationContainer) {
+    console.error("Notification container not found");
+    return;
+  }
+  const notificationElement = createNotificationElement(type, message);
+  if (!notificationElement) {
+    return;
+  }
+  const notificationId = notificationElement.id;
+  activeNotifications.push(notificationId);
+  notificationContainer.appendChild(notificationElement);
+  notificationElement.classList.add("notification-enter");
+  requestAnimationFrame(() => {
+    void notificationElement.offsetHeight;
+    notificationElement.classList.remove("notification-enter");
+    updateNotificationPositions();
+  });
+  updateClearAllButtonVisibility();
+}
+function showSuccess(message) {
+  showNotification("success", message);
+}
+function showWarning(message) {
+  showNotification("warning", message);
+}
+function showDanger(message) {
+  showNotification("danger", message);
+}
+function clearAll() {
+  const notificationsToRemove = [...activeNotifications];
+  const reversed = notificationsToRemove.reverse();
+  for (let index = 0; index < reversed.length; index++) {
+    const notificationId = reversed[index];
+    setTimeout(() => {
+      removeNotification(notificationId);
+    }, index * 100);
+  }
 }
 const mmToM = 1e3;
 function getCurrentViewId() {
@@ -34534,7 +36174,26 @@ window.onload = async () => {
   populateFieldDropdown();
   setupSidebar();
   setupCameraFeedHandlers();
+  initializeTerminalHandlers();
   saveSettings();
+  const clearAllButton = document.getElementById("clearAllNotificationsBtn");
+  if (clearAllButton) {
+    clearAllButton.addEventListener("click", () => {
+      clearAll();
+    });
+  }
+  const testNotificationsBtn = document.getElementById("testNotificationsBtn");
+  if (testNotificationsBtn) {
+    testNotificationsBtn.addEventListener("click", () => {
+      showSuccess("This is a success notification!");
+      setTimeout(() => {
+        showWarning("This is a warning notification!");
+      }, 300);
+      setTimeout(() => {
+        showDanger("This is a danger notification!");
+      }, 600);
+    });
+  }
   const showConnectionLostOverlay = () => {
     var _a;
     const overlay = document.getElementById("connection-lost-overlay");
@@ -34566,6 +36225,8 @@ window.onload = async () => {
         wasDisconnected = false;
         const currentViewId = getCurrentViewId();
         await refreshViewsOnReconnection(currentViewId);
+        refreshLogMessages();
+        await loadSettings();
       }, 500);
     }
   });
@@ -34615,6 +36276,14 @@ window.onload = async () => {
         "Failed to parse SSE update_detected_objects event",
         err
       );
+    }
+  });
+  es.addEventListener("log_update", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      handleLogUpdate(data);
+    } catch (err) {
+      console.warn("Failed to parse SSE log_update event", err);
     }
   });
   es.onerror = () => {

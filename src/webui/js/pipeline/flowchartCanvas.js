@@ -1,0 +1,207 @@
+/**
+ * FlowchartCanvas - Simplified canvas with just a grid for dropping nodes
+ */
+
+export class FlowchartCanvas {
+    constructor(containerElement, options = {}) {
+        this.container = containerElement;
+        this.gridSpacing = options.gridSpacing || 20;
+        
+        this.gridLayer = null;
+        this.connectionsLayer = null;
+        this.nodesLayer = null;
+        
+        this.init();
+    }
+
+    init() {
+        this.container.innerHTML = "";
+        this.container.style.position = "relative";
+        this.container.style.overflow = "hidden";
+        this.container.style.width = "100%";
+        this.container.style.height = "100%";
+        this.container.style.backgroundColor = "#1a1a1a";
+        this.container.style.cursor = "grab";
+        this.container.style.borderRadius = "0 0 15px 15px";
+        
+        // Move grid to container background for dynamic generation
+        this.applyGridBackground();
+        
+        // Create viewport for scaling and panning
+        this.viewport = document.createElement("div");
+        this.viewport.id = "flowchartViewport";
+        this.viewport.style.position = "absolute";
+        this.viewport.style.top = "0";
+        this.viewport.style.left = "0";
+        this.viewport.style.width = "100%";
+        this.viewport.style.height = "100%";
+        this.viewport.style.transformOrigin = "0 0";
+        this.viewport.style.borderRadius = "inherit";
+        this.viewport.style.pointerEvents = "auto";
+        
+        this.scale = 1;
+        this.translateX = 0;
+        this.translateY = 0;
+        
+        // Create connections layer (SVG)
+        this.connectionsLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        this.connectionsLayer.id = "flowchartConnections";
+        this.connectionsLayer.style.position = "absolute";
+        this.connectionsLayer.style.top = "0";
+        this.connectionsLayer.style.left = "0";
+        this.connectionsLayer.style.width = "10000px";
+        this.connectionsLayer.style.height = "10000px";
+        this.connectionsLayer.style.pointerEvents = "none";
+        this.connectionsLayer.style.zIndex = "1";
+        this.connectionsLayer.setAttribute("width", "10000");
+        this.connectionsLayer.setAttribute("height", "10000");
+        
+        // Create nodes layer
+        this.nodesLayer = document.createElement("div");
+        this.nodesLayer.id = "flowchartNodes";
+        this.nodesLayer.style.position = "absolute";
+        this.nodesLayer.style.top = "0";
+        this.nodesLayer.style.left = "0";
+        this.nodesLayer.style.width = "10000px";
+        this.nodesLayer.style.height = "10000px";
+        this.nodesLayer.style.pointerEvents = "auto";
+        this.nodesLayer.style.zIndex = "2";
+        
+        this.viewport.appendChild(this.connectionsLayer);
+        this.viewport.appendChild(this.nodesLayer);
+        this.container.appendChild(this.viewport);
+        
+        this.updateTransform();
+        this.setupPanZoom();
+    }
+
+    setupPanZoom() {
+        let isPanning = false;
+        let startX, startY;
+        
+        this.container.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+
+            const isNode = e.target.closest(".flowchart-node");
+            const isButton = e.target.closest("button");
+            const isPort = e.target.closest(".port-connector");
+            
+            if (!isNode && !isButton && !isPort) {
+                isPanning = true;
+                this.container.style.cursor = "grabbing";
+                startX = e.clientX - this.translateX;
+                startY = e.clientY - this.translateY;
+                e.preventDefault();
+            }
+        });
+        
+        window.addEventListener("mousemove", (e) => {
+            if (!isPanning) return;
+            
+            this.translateX = e.clientX - startX;
+            this.translateY = e.clientY - startY;
+            this.updateTransform();
+        });
+        
+        window.addEventListener("mouseup", () => {
+            if (isPanning) {
+                isPanning = false;
+                this.container.style.cursor = "grab";
+            }
+        });
+        
+        this.container.addEventListener("wheel", (e) => {
+            const rect = this.container.getBoundingClientRect();
+            if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+                return;
+            }
+
+            e.preventDefault();
+            
+            const delta = -e.deltaY;
+            const zoomFactor = Math.pow(1.1, delta / 100);
+            
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            const worldX = (mouseX - this.translateX) / this.scale;
+            const worldY = (mouseY - this.translateY) / this.scale;
+            
+            const newScale = Math.min(Math.max(0.1, this.scale * zoomFactor), 3);
+            
+            this.translateX = mouseX - worldX * newScale;
+            this.translateY = mouseY - worldY * newScale;
+            this.scale = newScale;
+            
+            this.updateTransform();
+        }, { passive: false });
+
+        this.container.addEventListener("dblclick", (e) => {
+            const isNode = e.target.closest(".flowchart-node");
+            if (!isNode) {
+                this.resetView();
+            }
+        });
+    }
+
+    updateTransform() {
+        this.viewport.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+        this.updateGrid();
+    }
+
+    updateGrid() {
+        const scaledSpacing = this.gridSpacing * this.scale;
+        this.container.style.backgroundSize = `${scaledSpacing}px ${scaledSpacing}px`;
+        this.container.style.backgroundPosition = `${this.translateX}px ${this.translateY}px`;
+    }
+
+    applyGridBackground() {
+        const dotColor = "rgba(128, 128, 128, 0.3)";
+        const dotSize = 2;
+        this.container.style.backgroundImage = `radial-gradient(circle, ${dotColor} ${dotSize}px, transparent ${dotSize}px)`;
+        this.updateGrid();
+    }
+
+    screenToWorld(screenX, screenY) {
+        const rect = this.container.getBoundingClientRect();
+        
+        const worldX = (screenX - rect.left - this.translateX) / this.scale;
+        const worldY = (screenY - rect.top - this.translateY) / this.scale;
+
+        return { x: worldX, y: worldY };
+    }
+
+    snapPositionToGrid(x, y) {
+        return {
+            x: Math.round(x / this.gridSpacing) * this.gridSpacing,
+            y: Math.round(y / this.gridSpacing) * this.gridSpacing
+        };
+    }
+
+    snapToGrid(value) {
+        return Math.round(value / this.gridSpacing) * this.gridSpacing;
+    }
+
+    getNodesLayer() {
+        return this.nodesLayer;
+    }
+
+    getConnectionsLayer() {
+        return this.connectionsLayer;
+    }
+
+    fitToContent() {
+        // Simple fit to content implementation
+        this.translateX = 0;
+        this.translateY = 0;
+        this.scale = 1;
+        this.updateTransform();
+    }
+
+    resetView() {
+        this.translateX = 0;
+        this.translateY = 0;
+        this.scale = 1;
+        this.updateTransform();
+    }
+}

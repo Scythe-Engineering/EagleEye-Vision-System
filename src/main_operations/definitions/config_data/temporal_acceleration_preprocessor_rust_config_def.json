@@ -2,6 +2,13 @@
     "class_name": "TemporalAccelerationPreprocessorRustDefinition",
     "description": "High-performance Rust implementation for predicting ROIs for AprilTag detection using extrapolated camera motion.",
     "category": "prep",
+    "input_nodes": [
+        "frame",
+        "camera_pose"
+    ],
+    "output_nodes": [
+        "processed_frame"
+    ],
     "parameters": {
         "camera_parameters_path": {
             "type": "str",

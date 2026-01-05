@@ -2,6 +2,12 @@
     "class_name": "FpsLimiter",
     "description": "Limits frame rate by sleeping to maintain target FPS",
     "category": "proc",
+    "input_nodes": [
+        "data"
+    ],
+    "output_nodes": [
+        "data"
+    ],
     "parameters": {
         "fps": {
             "type": "float",

@@ -31,9 +31,11 @@ The divide between secondary and primary operations is complexity, secondary ope
   - `robot_pose_output.py` (class `RobotPoseOutput`)
 - `src/config/pipeline_config.json` — The per-camera configuration mapping each pipeline step to an action name and parameters.
 
-## How configuration drives pipelines
+## Pipeline Configuration and UI
 
-Pipelines are instantiated by reading the pipeline config in `generate_all_pipelines.py`. The config file comprises per-camera entries whose values are lists of operation specs:
+### Configuration-Driven Instantiation
+
+Pipelines are instantiated by reading the pipeline config in `generate_all_pipelines.py`. The config file comprises per-camera entries whose values are lists of operation specs. Each operation spec includes positioning information for the visual flowchart interface:
 
 ```json
 {
@@ -44,12 +46,20 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
         "model_path": "/path/to/model.onnx",
         "device_id": "MX3",
         "conf_threshold": 0.15
+      },
+      "position": {
+        "x": 100,
+        "y": 100
       }
     },
     {
       "action_name": "detect_apriltags",
       "action_params": {
         "families": "tag36h11"
+      },
+      "position": {
+        "x": 400,
+        "y": 120
       }
     },
     {
@@ -57,6 +67,10 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
       "action_params": {
         "camera_parameters_path": "/path/to/camera_parameters.yaml",
         "apriltag_map_path": "/path/to/apriltag_map.fmap"
+      },
+      "position": {
+        "x": 700,
+        "y": 140
       }
     }
   ],
@@ -67,11 +81,28 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
         "model_path": "/path/to/model.onnx",
         "device_id": "MX3",
         "conf_threshold": 0.15
+      },
+      "position": {
+        "x": 100,
+        "y": 100
       }
     }
   ]
 }
 ```
+
+### Visual Pipeline Editor
+
+The EagleEye WebUI provides a flowchart-style visual pipeline editor that allows users to:
+
+- **Drag and Drop**: Operations can be dragged from a side panel onto a grid-based canvas
+- **Visual Layout**: Operations appear as nodes positioned according to their `position` coordinates
+- **Grid Snapping**: Nodes snap to a grid for consistent, professional layouts
+- **Interactive Editing**: Click nodes to configure settings, drag to reposition, or remove operations
+- **Real-time Saving**: Pipeline changes are automatically saved to the configuration file
+- **Scrollable Canvas**: Large 4000x4000px workspace for complex pipeline layouts
+
+The `position` field stores the x,y coordinates of each operation node in the visual editor. Operations without position data default to calculated positions.
 
 Notes:
 - The framework will inject `web_interface` and `compute_pool` into operation constructors if their signatures include `web_interface` and/or `compute_pool`.

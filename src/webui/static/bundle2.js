@@ -62,7 +62,7 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
     (children || []).forEach((c) => el.appendChild(c));
     return el;
   }
-  function buildField(name, def, currentValues, originalValues) {
+  function buildField(name, def, currentValues, originalValues, operationName = null) {
     const fieldId = `setting-${name}`;
     const label = createElement("label", {
       for: fieldId,
@@ -73,7 +73,119 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
     const currentValue = currentValues && name in currentValues ? currentValues[name] : def.default;
     const originalValue = originalValues && name in originalValues ? originalValues[name] : def.default;
     const isEdited = JSON.stringify(currentValue) !== JSON.stringify(originalValue);
-    if (def.options && Array.isArray(def.options)) {
+    const isPathParameter = name.endsWith("_path") && def.type === "str";
+    if (isPathParameter && operationName) {
+      input = createElement("select", {
+        id: fieldId,
+        className: "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
+      });
+      const customOption = createElement("option", {
+        value: "",
+        text: "Custom path..."
+      });
+      input.appendChild(customOption);
+      let basePath = "";
+      const loadFiles = async () => {
+        try {
+          let normalizedOpName = operationName.toLowerCase();
+          if (normalizedOpName.endsWith(".py")) {
+            normalizedOpName = normalizedOpName.slice(0, -3);
+          }
+          normalizedOpName = normalizedOpName.replace(/\s+/g, "_");
+          const response = await fetch(
+            `${BACKEND_BASE_URL}/get-operation-files/${encodeURIComponent(normalizedOpName)}/${encodeURIComponent(name)}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            basePath = data.base_path || "";
+            const currentSelectedValue = input.value;
+            while (input.options.length > 0) {
+              input.remove(0);
+            }
+            input.appendChild(customOption);
+            data.files.forEach((filename) => {
+              const fullPath = basePath ? `${basePath}/${filename}` : filename;
+              const optEl = createElement("option", {
+                value: fullPath,
+                text: filename
+              });
+              const currentPathValue = currentValue || "";
+              if (currentPathValue === fullPath || currentPathValue.endsWith(`/${filename}`) || currentPathValue === filename || currentSelectedValue === fullPath) {
+                optEl.selected = true;
+              }
+              customOption.before(optEl);
+            });
+            if (currentValue && !data.files.some((f) => {
+              const fullPath = basePath ? `${basePath}/${f}` : f;
+              return currentValue === fullPath || currentValue.endsWith(`/${f}`) || currentValue === f;
+            })) {
+              const customValueOption = createElement("option", {
+                value: currentValue,
+                text: currentValue + " (custom)",
+                selected: currentSelectedValue === currentValue
+              });
+              customOption.before(customValueOption);
+            } else if (currentValue) {
+              customOption.selected = false;
+            } else if (!currentSelectedValue || currentSelectedValue === "") {
+              customOption.selected = true;
+            }
+          }
+        } catch (error) {
+          console.error("Error loading files:", error);
+        }
+      };
+      loadFiles();
+      input.addEventListener("change", () => {
+        if (input.value === "") {
+          const customPath = prompt(
+            "Enter custom path:",
+            currentValue || ""
+          );
+          if (customPath !== null && customPath !== "") {
+            const existingOption = Array.from(input.options).find(
+              (opt) => opt.value === customPath
+            );
+            if (existingOption) {
+              input.value = customPath;
+            } else {
+              const newOption = createElement("option", {
+                value: customPath,
+                text: customPath + " (custom)",
+                selected: true
+              });
+              customOption.before(newOption);
+              input.value = customPath;
+            }
+          } else if (customPath === null || customPath === "") {
+            input.value = currentValue || "";
+          }
+        }
+      });
+      globalThis.refreshPathDropdown = (selectedFilename) => {
+        loadFiles().then(() => {
+          if (selectedFilename) {
+            const fullPath = basePath ? `${basePath}/${selectedFilename}` : selectedFilename;
+            const existingOption = Array.from(input.options).find(
+              (opt) => opt.value === fullPath
+            );
+            if (existingOption) {
+              input.value = fullPath;
+            } else {
+              const newOption = createElement("option", {
+                value: fullPath,
+                text: selectedFilename,
+                selected: true
+              });
+              customOption.before(newOption);
+              input.value = fullPath;
+            }
+            const event = new Event("change", { bubbles: true });
+            input.dispatchEvent(event);
+          }
+        });
+      };
+    } else if (def.options && Array.isArray(def.options)) {
       input = createElement("select", {
         id: fieldId,
         className: "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
@@ -123,9 +235,44 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
       [label, hint]
     );
     const inputContainer = createElement("div", {
-      className: "relative"
+      className: "relative flex gap-2"
     });
     inputContainer.appendChild(input);
+    let manageButton = null;
+    if (isPathParameter && operationName) {
+      manageButton = createElement("button", {
+        type: "button",
+        className: "px-3 py-2 bg-[#f9c845] text-[#232323] rounded-md hover:bg-[#d4a83a] transition-colors text-sm font-medium whitespace-nowrap",
+        text: "Manage",
+        onclick: () => {
+          if (globalThis.FileManagerPopup) {
+            let normalizedOpName = operationName.toLowerCase();
+            if (normalizedOpName.endsWith(".py")) {
+              normalizedOpName = normalizedOpName.slice(0, -3);
+            }
+            normalizedOpName = normalizedOpName.replace(
+              /\s+/g,
+              "_"
+            );
+            globalThis.FileManagerPopup.open(
+              normalizedOpName,
+              name,
+              currentValue,
+              (selectedFile) => {
+                if (selectedFile && globalThis.refreshPathDropdown) {
+                  globalThis.refreshPathDropdown(
+                    selectedFile
+                  );
+                }
+              }
+            );
+          } else {
+            console.error("FileManagerPopup not available");
+          }
+        }
+      });
+      inputContainer.appendChild(manageButton);
+    }
     const editedIndicator = createElement("div", {
       className: "absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-yellow-400 rounded-full",
       title: "This field has been modified from its default value",
@@ -139,9 +286,9 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
       } else if (input.type === "checkbox") {
         currentVal = input.checked;
       } else if (def.type === "int") {
-        currentVal = parseInt(input.value, 10);
+        currentVal = Number.parseInt(input.value, 10);
       } else if (def.type === "float") {
-        currentVal = parseFloat(input.value);
+        currentVal = Number.parseFloat(input.value);
       } else {
         currentVal = input.value;
       }
@@ -160,13 +307,13 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
         if (input.tagName.toLowerCase() === "select")
           return input.value;
         if (input.type === "checkbox") return input.checked;
-        if (def.type === "int") return parseInt(input.value, 10);
-        if (def.type === "float") return parseFloat(input.value);
+        if (def.type === "int") return Number.parseInt(input.value, 10);
+        if (def.type === "float") return Number.parseFloat(input.value);
         return input.value;
       }
     };
   }
-  function renderForm(modalBody, config, initialValues, originalValues, onSave) {
+  function renderForm(modalBody, config, initialValues, originalValues, onSave, operationName = null) {
     modalBody.innerHTML = "";
     const fields = [];
     const params = (config == null ? void 0 : config.parameters) || {};
@@ -175,7 +322,8 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
         key,
         params[key],
         initialValues || {},
-        originalValues || {}
+        originalValues || {},
+        operationName
       );
       fields.push({ name: key, ...field });
       modalBody.appendChild(field.wrapper);
@@ -243,23 +391,23 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
         currentValues._isAutoSave = true;
         console.log("Calling onSave with _isAutoSave=true");
         console.log(
-          "window.pipelineCreator exists:",
-          !!window.pipelineCreator
+          "globalThis.pipelineCreator exists:",
+          !!globalThis.pipelineCreator
         );
-        if (window.pipelineCreator) {
+        if (globalThis.pipelineCreator) {
           console.log(
-            "window.pipelineCreator.autoSavePipeline exists:",
-            !!window.pipelineCreator.autoSavePipeline
+            "globalThis.pipelineCreator.autoSavePipeline exists:",
+            !!globalThis.pipelineCreator.autoSavePipeline
           );
         }
         onSave(currentValues);
-        if ((_a = window.pipelineCreator) == null ? void 0 : _a.updateRestartIndicator) {
+        if ((_a = globalThis.pipelineCreator) == null ? void 0 : _a.updateRestartIndicator) {
           const requiresRestart2 = checkIfRestartRequired(
             currentValues,
             originalValues,
             config
           );
-          window.pipelineCreator.updateRestartIndicator(
+          globalThis.pipelineCreator.updateRestartIndicator(
             requiresRestart2
           );
         }
@@ -383,7 +531,13 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
     } catch (err) {
       console.warn("Could not read camera/pipeline selection:", err);
     }
-    const computeActionName = (name) => String(name || "").replace(/\.py$/i, "").toLowerCase().replace(/\s+/g, "_");
+    const computeActionName = (name) => {
+      let result = String(name || "");
+      if (result.toLowerCase().endsWith(".py")) {
+        result = result.slice(0, -3);
+      }
+      return result.toLowerCase().replace(/\s+/g, "_");
+    };
     const actionNameForApi = computeActionName(operationName || "");
     const startVisIfReady = async () => {
       if (!selectedCameraName || !selectedPipelineName) {
@@ -441,7 +595,11 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
         if (noVisMessage) noVisMessage.classList.add("hidden");
         imgEl.classList.remove("hidden");
         if (_visInterval) clearInterval(_visInterval);
+        let hasNoVisualization = false;
         _visInterval = setInterval(async () => {
+          if (hasNoVisualization) {
+            return;
+          }
           try {
             const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`;
             const response = await fetch(url, {
@@ -453,6 +611,11 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
                 if (errorText.includes(
                   "Function has no visualization"
                 )) {
+                  hasNoVisualization = true;
+                  if (_visInterval) {
+                    clearInterval(_visInterval);
+                    _visInterval = null;
+                  }
                   showNoVisualizationMessage(operationName);
                   return;
                 }
@@ -466,10 +629,6 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
             _currentVisObjectUrl = objectUrl;
             imgEl.src = objectUrl;
           } catch (err) {
-            console.warn(
-              "Error fetching visualization image:",
-              err
-            );
           }
         }, 100);
       } catch (err) {
@@ -488,7 +647,8 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
         config,
         initialValues,
         originalValues,
-        onSave
+        onSave,
+        operationName
       );
       const saveBtn = modal.querySelector("[data-action='save']");
       const cancelBtn = modal.querySelector("[data-action='cancel']");
@@ -631,7 +791,7 @@ import { B as BACKEND_BASE_URL } from "./bundle3.js";
       return null;
     });
   }
-  window.SettingsPopup = {
+  globalThis.SettingsPopup = {
     init,
     open,
     close

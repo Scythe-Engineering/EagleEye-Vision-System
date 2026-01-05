@@ -2,5 +2,12 @@
     "class_name": "RobotLocalToFieldTransform",
     "description": "Convert robot-local detection coordinates to field coordinates using back-propagated robot pose.",
     "category": "proc",
+    "input_nodes": [
+        "detections",
+        "robot_pose"
+    ],
+    "output_nodes": [
+        "field_detections"
+    ],
     "parameters": {}
 }

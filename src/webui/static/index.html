@@ -26,6 +26,24 @@
             </div>
         </div>
 
+        <!-- Notification Container -->
+        <div
+            class="fixed top-4 right-4 z-40 flex flex-col items-end gap-2 pointer-events-none"
+        >
+            <button
+                id="clearAllNotificationsBtn"
+                type="button"
+                class="hidden px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 pointer-events-auto mb-2"
+            >
+                Clear All
+            </button>
+            <div
+                id="notification-container"
+                class="relative pointer-events-auto"
+                style="min-width: 320px;"
+            ></div>
+        </div>
+
         <div
             class="main-container bg-[rgb(27,27,27)] flex-col w-[calc(100%_-_20px)] h-[calc(-20px_+_100vh)] flex overflow-hidden shadow-[rgba(0,0,0,0.6)_0px_4px_15px] m-2.5 rounded-lg"
         >
@@ -41,38 +59,47 @@
                 <!-- LEFT CONTENT -->
                 <div class="Left-Content flex-col flex-1 flex relative">
                     <!-- Default "Views" grid with feed controls -->
-<div id="view-views" class="view active flex-col w-full h-full flex">
+<div id="view-views" class="view active flex-col w-full h-full flex relative">
     <div
         id="noCamerasMessage"
         class="no-cameras-message text-center text-[rgb(119,119,119)] text-2xl mt-5"
     >
         No Cameras Available
     </div>
-    <div
-        id="cameraList"
-        class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] h-[calc(100%_-_80px)] text-base grid overflow-y-auto mx-0 my-5 p-2.5"
-    ></div>
+    <div class="relative flex-1 overflow-hidden flex flex-col mb-5">
+        <div
+            id="cameraList"
+            class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] flex-1 text-base grid overflow-y-auto m-0 p-2.5"
+        ></div>
+        <div 
+            id="cameraListBottomBlur" 
+            class="absolute bottom-0 left-0 right-2 h-10 pointer-events-none opacity-0 transition-opacity duration-300 z-20"
+            style="background: linear-gradient(to top, rgb(27, 27, 27) 10%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); -webkit-mask-image: linear-gradient(to top, black, transparent); mask-image: linear-gradient(to top, black, transparent);"
+        ></div>
+    </div>
 </div>
  <!-- 3D View (WebGL model will load here) -->
 <div
     id="view-3d"
-    class="w-full h-full min-w-0 rounded-[10px] overflow-hidden relative hidden z-10"
+    class="w-full h-full min-w-0 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] overflow-hidden relative hidden z-10"
+    style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
 >
     <div
         id="fieldDropdown"
-        class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
+        style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        <label for="yearSelect">Year:</label>
+        <label for="yearSelect" class="font-bold mb-1">Year:</label>
         <select
             id="yearSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(17,17,17)] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base mb-3 p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Year</option>
         </select>
-        <label for="fieldFileSelect">Field File:</label>
+        <label for="fieldFileSelect" class="font-bold mb-1">Field File:</label>
         <select
             id="fieldFileSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(17,17,17)] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Field File</option>
         </select>
@@ -80,29 +107,42 @@
 
     <div
         id="robotDropdown"
-        class="flex flex-col bg-[rgb(34,34,34)] border text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-[5px] rounded-lg border-[rgb(68,68,68)] z-10"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
+        style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        <label for="robotFileSelect">Robot File:</label>
+        <label for="robotFileSelect" class="font-bold mb-1">Robot File:</label>
         <select
             id="robotFileSelect"
-            class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(17,17,17)] border text-base m-[5px] p-0.5 rounded-md border-solid border-[rgb(68,68,68)] hover:bg-[rgb(51,51,51)] focus:[outline:none] focus:border-[rgb(249,200,74)]"
+            class="text-[rgb(249,200,74)] cursor-pointer bg-[#2a2a2a] border-2 text-base p-1 rounded-md border-solid border-[#414141] hover:bg-[#3a3a3a] focus:outline-none focus:border-[#f9c845]"
         >
             <option disabled selected>Select Robot File</option>
         </select>
     </div>
 
-    <button
-        id="toggleGamePiecesBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
+    <div
+        id="viewToggles"
+        class="flex flex-col bg-[#1E1E1E] border-2 text-[rgb(249,200,74)] max-w-[200px] mt-2.5 mb-0 mx-2.5 p-4 rounded-[15px] border-[#414141] z-10"
+        style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
     >
-        Toggle Game Pieces
-    </button>
-    <button
-        id="toggleShadowBtn"
-        class="text-[rgb(249,200,74)] cursor-pointer bg-[rgb(68,68,68)] w-[180px] block mt-2.5 mb-0 mx-2.5 px-3 py-[5px] rounded-md border-0 hover:bg-[rgb(102,102,102)] z-10"
-    >
-        Toggle Shadows
-    </button>    
+        <label class="flex justify-between items-center mb-2 cursor-pointer font-bold text-sm">
+            <span>Game Pieces:</span>
+            <input
+                type="checkbox"
+                id="toggleGamePiecesBtn"
+                checked
+                class="accent-[#f9c84a] cursor-pointer"
+            />
+        </label>
+        <label class="flex justify-between items-center cursor-pointer font-bold text-sm">
+            <span>Shadows:</span>
+            <input
+                type="checkbox"
+                id="toggleShadowBtn"
+                checked
+                class="accent-[#f9c84a] cursor-pointer"
+            />
+        </label>
+    </div>    
 
     <div
         id="statsDisplay"
@@ -115,9 +155,11 @@
             <!-- Pipeline Area -->
             <div
                 class="flex-1 flex flex-col bg-[#1f1f1f] rounded-[15px] min-h-0 mt-[5px]"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
             >
                 <div
                     class="bg-[#1E1E1E] p-4 border-b border-[#414141] flex items-center justify-between rounded-[15px]"
+                    style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
                 >
                     <div class="flex items-center gap-4">
                         <div class="flex flex-col gap-2">
@@ -164,7 +206,7 @@
                         </div>
                         <button
                             id="newPipelineButton"
-                            class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
                             title="Create a new pipeline"
                         >
                             New Pipeline
@@ -174,20 +216,18 @@
 
                 <div
                     id="pipelineArea"
-                    class="flex-1 p-6 pb-10 relative overflow-auto dark:[color-scheme:dark]"
-                    style="
-                        background-image: radial-gradient(
-                            circle,
-                            rgba(249, 115, 22, 0.1) 1px,
-                            transparent 1px
-                        );
-                        background-size: 20px 20px;
-                    "
+                    class="flex-1 relative dark:[color-scheme:dark]"
+                    style="overflow: hidden;"
                 >
+                    <!-- Flowchart Canvas Container -->
+                    <div id="flowchartCanvas" class="absolute inset-0 z-0" style="pointer-events: auto;">
+                        <!-- Grid, connections, and nodes layers are created by JS -->
+                    </div>
+
                     <!-- Restart Required Indicator -->
                     <div
                         id="restartIndicator"
-                        class="hidden absolute top-6 left-6 z-10 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
+                        class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
                     >
                         <svg
                             class="w-5 h-5 text-red-300"
@@ -213,53 +253,69 @@
                             Restart
                         </button>
                     </div>
-                    <div
-                        id="pipelinePlaceholder"
-                        class="flex items-center justify-center h-full"
-                    >
-                        <div class="text-center">
-                            <div
-                                class="w-24 h-24 mx-auto mb-4 bg-[rgb(35,35,35)] rounded-2xl flex items-center justify-center"
-                            >
-                                <!-- Small branch icon -->
-                                <svg
-                                    class="w-10 h-10 text-[#f9c84a]"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                >
-                                    <path d="M6 3v12"></path>
-                                    <circle cx="6" cy="18" r="2"></circle>
-                                    <circle cx="18" cy="6" r="2"></circle>
-                                    <path d="M18 8v12"></path>
-                                </svg>
-                            </div>
-                            <p class="text-[#ac8a2f] text-lg">
-                                Start by dragging operations here
-                            </p>
-                        </div>
-                    </div>
 
                     <!-- Delete Pipeline Button -->
                     <button
                         id="deletePipelineButton"
-                        class="hidden absolute top-6 right-6 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
+                        class="hidden absolute top-4 right-4 z-20 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
                         title="Delete current pipeline"
                     >
                         Delete Pipeline
                     </button>
 
-                    <div id="pipelineContainer" class="max-w-md mx-auto"></div>
+                    <!-- Pipeline Placeholder (shown when empty) -->
+                    <div
+                        id="pipelinePlaceholder"
+                        class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none"
+                    >
+                        <div class="text-center">
+                            <div class="relative mx-auto mb-4 w-24 h-24 flex items-center justify-center">
+                                <!-- Background layer - slightly larger and darker -->
+                                <div
+                                    class="absolute inset-0 w-28 h-28 -translate-x-2 -translate-y-2 bg-[rgb(33,33,33)] rounded-2xl"
+                                ></div>
+                                <!-- Foreground layer -->
+                                <div
+                                    class="relative w-24 h-24 bg-[rgb(35,35,35)] rounded-2xl flex items-center justify-center"
+                                >
+                                    <!-- Small branch icon -->
+                                    <svg
+                                        class="w-10 h-10 text-[#f9c84a]"
+                                        quick-tip="hehe go fuck yourself" 
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                    > <!--- cant change quick-tip either -->
+                                        <path d="M6 3v12"></path>
+                                        <circle cx="6" cy="18" r="2"></circle> <!--- you are NOT allowed to change this from 18 to 17 under any circumstances or else you will be fired -->
+                                        <circle cx="18" cy="6" r="2"></circle>
+                                        <path d="M18 8v12"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                            <p class="text-[#ac8a2f] text-lg">
+                                Drag operations here to build your pipeline
+                            </p>
+                            <p class="text-[#666] text-sm mt-2">
+                                Double-click to fit view • Scroll to zoom • Drag to pan
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Legacy pipeline container (hidden, for backwards compatibility) -->
+                    <div id="pipelineContainer" class="hidden"></div>
                 </div>
             </div>
 
             <!-- Operations Panel -->
             <div
                 class="w-80 bg-[#1f1f1f] border border-transparent flex flex-col rounded-[15px] min-h-0 mt-[5px]"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
             >
                 <div
                     class="p-4 border-b border-[#414141] rounded-[15px] bg-[#1E1E1E]"
+                    style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
                 >
                     <h2 class="text-2xl font-bold text-[#f9c845]">
                         Operations
@@ -284,7 +340,8 @@
             <!-- Settings Panel -->
             <div
                 id="operationSettingsModal"
-                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] overflow-hidden"
+                style="box-shadow: 12px 12px 24px rgba(0, 0, 0, 0.5);"
             >
                 <div
                     class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"
@@ -341,7 +398,8 @@
             <!-- Live View Panel -->
             <div
                 id="operationLiveViewPanel"
-                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] shadow-xl overflow-hidden"
+                class="flex-1 max-w-lg rounded-2xl bg-[#1f1f1f] border border-[#414141] overflow-hidden"
+                style="box-shadow: 12px 12px 24px rgba(0, 0, 0, 0.5);"
             >
                 <div
                     class="flex items-center justify-between px-5 py-4 bg-[#1E1E1E] border-b border-[#414141]"
@@ -434,108 +492,176 @@
 
 <!-- Load settings popup script (ensures SettingsPopup is available) -->
  <!-- Settings view -->
-<div id="view-settings" class="view hidden">
-    <div
-        class="text-gray-200 bg-[#1f1f1f] max-w-[400px] mx-auto p-5 rounded-[15px] border-2 border-[#414141]"
-    >
-        <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
-            Backend Settings (scrollable)
-        </h2>
-        <form
-            id="settingsForm"
-            class="[&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:text-[#f9c84a] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded max-h-[70vh] overflow-y-auto"
+<div
+    id="view-settings"
+    class="view hidden p-4 h-full relative"
+    style="overflow: visible"
+>
+    <div class="settings-container flex gap-4 h-full w-full">
+        <!-- Settings Panel -->
+        <div
+            id="settingsPanel"
+            class="settings-panel text-gray-200 bg-[#1f1f1f] w-[400px] flex-shrink-0 p-5 rounded-[15px] border-2 border-[#414141] self-start"
+            style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
         >
-            <fieldset>
-                <legend>General</legend>
-                <label>
-                    <span>Enable Logging</span>
-                    <input
-                        type="checkbox"
-                        id="logCheckbox"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Print to Terminal</span>
-                    <input
-                        type="checkbox"
-                        id="printTerminalCheckbox"
-                        checked
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Detection Logging</span>
-                    <input
-                        type="checkbox"
-                        id="detectionLoggingCheckbox"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Simulation Mode</span>
-                    <input
-                        type="checkbox"
-                        id="simulationModeCheckbox"
-                        checked
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-            </fieldset>
-            <fieldset>
-                <legend>Network Table</legend>
-                <label>
-                    <span>Server Address:</span>
-                    <input
-                        type="text"
-                        id="serverAddressInput"
-                        value="10.0.0.62"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Robot Position Key:</span>
-                    <input
-                        type="text"
-                        id="robotPositionKeyInput"
-                        value="robot_position"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-                <label>
-                    <span>Robot Rotation Key:</span>
-                    <input
-                        type="text"
-                        id="robotRotationKeyInput"
-                        value="robot_rotation"
-                        autocomplete="off"
-                        data-form-type="other"
-                    />
-                </label>
-            </fieldset>
+            <h2 class="text-center text-yellow-400 mb-5 text-2xl font-bold">
+                Backend Settings (scrollable)
+            </h2>
+            <form
+                id="settingsForm"
+                class="[&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded max-h-[70vh] overflow-y-auto"
+                style="overflow: visible"
+            >
+                <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
+                    <legend>General</legend>
+                    <label>
+                        <span>Download Logs:</span>
+                        <button
+                            type="button"
+                            id="downloadLogsBtn"
+                            class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                        >
+                            Download
+                        </button>
+                    </label>
+                    <label>
+                        <span>Test Notifications:</span>
+                        <button
+                            type="button"
+                            id="testNotificationsBtn"
+                            class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                        >
+                            Test
+                        </button>
+                    </label>
+                </fieldset>
+                <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
+                    <legend>Network Table</legend>
+                    <label>
+                        <span>Roborio (or sim) IP Address:</span>
+                        <input
+                            type="text"
+                            id="robotAddressInput"
+                            value="10.0.0.62"
+                            autocomplete="off"
+                            data-form-type="other"
+                        />
+                    </label>
+                </fieldset>
 
-            <button
-                type="button"
-                id="saveSettingsBtn"
-                class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                <button
+                    type="button"
+                    id="saveSettingsBtn"
+                    class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                >
+                    Save Settings
+                </button>
+                <button
+                    type="button"
+                    id="restartBackendBtn"
+                    class="block w-full p-2.5 bg-red-900 text-white rounded-md border border-red-700 cursor-pointer text-base font-semibold hover:bg-red-800 hover:border-red-600 transition-colors duration-200 mt-3"
+                    onclick="restartBackend()"
+                >
+                    Restart Backend
+                </button>
+            </form>
+        </div>
+
+        <!-- Terminal Panel -->
+        <div
+            id="terminalPanel"
+            class="terminal-panel flex-1 h-full flex flex-col gap-4"
+        >
+            <!-- Logs Section -->
+            <div
+                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
             >
-                Save Settings
-            </button>
-            <button
-                type="button"
-                id="restartBackendBtn"
-                class="block w-full p-2.5 bg-red-900 text-white rounded-md border border-red-700 cursor-pointer text-base font-semibold hover:bg-red-800 hover:border-red-600 transition-colors duration-200 mt-3"
-                onclick="restartBackend()"
+                <div
+                    class="bg-[#1E1E1E] px-4 py-3 border-b-2 border-[#414141] flex items-center justify-between"
+                >
+                    <h3 class="text-yellow-400 font-bold text-lg">
+                        System Logs
+                    </h3>
+                    <button
+                        id="clearLogsBtn"
+                        class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-xs font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Clear
+                    </button>
+                </div>
+                <div
+                    id="logsOutput"
+                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
+                    style="
+                        scrollbar-width: thin;
+                        scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
+                    "
+                >
+                    <div class="text-yellow-400">[INFO] System initialized</div>
+                    <div class="text-gray-400">[DEBUG] Waiting for logs...</div>
+                </div>
+            </div>
+
+            <!-- Interactive Terminal Section -->
+            <div
+                class="flex-1 bg-[#1f1f1f] rounded-[15px] border-2 border-[#414141] flex flex-col overflow-hidden relative"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
             >
-                Restart Backend
-            </button>
-        </form>
+                <div
+                    class="absolute inset-0 z-50 flex items-center justify-center pointer-events-auto select-none rounded-[15px]"
+                    style="
+                        background-color: rgba(0, 0, 0, 0.3);
+                        backdrop-filter: blur(2px);
+                    "
+                >
+                    <div class="text-red-500 text-6xl font-bold opacity-80">
+                        Work-in-progress
+                    </div>
+                </div>
+                <div
+                    class="bg-[#1E1E1E] px-4 py-3 border-b-2 border-[#414141] flex items-center justify-between"
+                >
+                    <h3 class="text-yellow-400 font-bold text-lg">
+                        Raspberry Pi Terminal
+                    </h3>
+                    <button
+                        id="clearTerminalBtn"
+                        class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-xs font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Clear
+                    </button>
+                </div>
+                <div
+                    id="terminalOutput"
+                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
+                    style="
+                        scrollbar-width: thin;
+                        scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
+                    "
+                >
+                    <div class="text-green-400">pi@eagleeye:~$</div>
+                </div>
+                <div
+                    class="bg-[#1E1E1E] px-4 py-3 border-t-2 border-[#414141] flex items-center gap-2"
+                >
+                    <span class="text-green-400 font-mono text-sm">$</span>
+                    <input
+                        type="text"
+                        id="terminalInput"
+                        class="flex-1 bg-[#0a0a0a] text-gray-300 font-mono text-sm px-3 py-2 rounded border border-[#414141] focus:border-[#f9c845] focus:outline-none"
+                        placeholder="Enter command..."
+                        autocomplete="off"
+                    />
+                    <button
+                        id="sendCommandBtn"
+                        class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 

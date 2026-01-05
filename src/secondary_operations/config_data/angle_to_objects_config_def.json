@@ -2,6 +2,12 @@
     "class_name": "AngleToObjects",
     "description": "Calculate horizontal angles to detected objects from color threshold detections, sorted by area descending",
     "category": "proc",
+    "input_nodes": [
+        "detections"
+    ],
+    "output_nodes": [
+        "angles"
+    ],
     "parameters": {
         "camera_fov_degrees": {
             "type": "float",

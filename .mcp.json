@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "ScytheContextEngine": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "uv",
+        "run",
+        "--directory",
+        "E:/Ceph-Mirror/Python-Files/Projects/Scythe-Context-Engine",
+        "python",
+        "E:/Ceph-Mirror/Python-Files/Projects/Scythe-Context-Engine/mcp_server/server.py"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

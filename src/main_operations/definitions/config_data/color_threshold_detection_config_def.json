@@ -2,6 +2,12 @@
     "class_name": "ColorThresholdDetectionDefinition",
     "description": "Color-based object detection with downscaling, letterboxing, HSV color thresholding for multiple objects, contour extraction, and bounding box calculation. Returns detections with bounding boxes scaled to original frame coordinates.",
     "category": "det",
+    "input_nodes": [
+        "frame"
+    ],
+    "output_nodes": [
+        "detections"
+    ],
     "parameters": {
         "target_size": {
             "type": "int",

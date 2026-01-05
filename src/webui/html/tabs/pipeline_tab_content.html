@@ -65,12 +65,18 @@
 
                 <div
                     id="pipelineArea"
-                    class="flex-1 p-6 pb-10 relative overflow-auto dark:[color-scheme:dark]"
+                    class="flex-1 relative dark:[color-scheme:dark]"
+                    style="overflow: hidden;"
                 >
+                    <!-- Flowchart Canvas Container -->
+                    <div id="flowchartCanvas" class="absolute inset-0 z-0" style="pointer-events: auto;">
+                        <!-- Grid, connections, and nodes layers are created by JS -->
+                    </div>
+
                     <!-- Restart Required Indicator -->
                     <div
                         id="restartIndicator"
-                        class="hidden absolute top-6 left-6 z-10 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
+                        class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
                     >
                         <svg
                             class="w-5 h-5 text-red-300"
@@ -96,9 +102,20 @@
                             Restart
                         </button>
                     </div>
+
+                    <!-- Delete Pipeline Button -->
+                    <button
+                        id="deletePipelineButton"
+                        class="hidden absolute top-4 right-4 z-20 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
+                        title="Delete current pipeline"
+                    >
+                        Delete Pipeline
+                    </button>
+
+                    <!-- Pipeline Placeholder (shown when empty) -->
                     <div
                         id="pipelinePlaceholder"
-                        class="flex items-center justify-center h-full"
+                        class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none"
                     >
                         <div class="text-center">
                             <div class="relative mx-auto mb-4 w-24 h-24 flex items-center justify-center">
@@ -127,21 +144,16 @@
                                 </div>
                             </div>
                             <p class="text-[#ac8a2f] text-lg">
-                                Start by dragging operations here
+                                Drag operations here to build your pipeline
+                            </p>
+                            <p class="text-[#666] text-sm mt-2">
+                                Double-click to fit view • Scroll to zoom • Drag to pan
                             </p>
                         </div>
                     </div>
 
-                    <!-- Delete Pipeline Button -->
-                    <button
-                        id="deletePipelineButton"
-                        class="hidden absolute top-6 right-6 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
-                        title="Delete current pipeline"
-                    >
-                        Delete Pipeline
-                    </button>
-
-                    <div id="pipelineContainer" class="max-w-md mx-auto"></div>
+                    <!-- Legacy pipeline container (hidden, for backwards compatibility) -->
+                    <div id="pipelineContainer" class="hidden"></div>
                 </div>
             </div>
 
@@ -329,14 +341,3 @@
 
 <!-- Load settings popup script (ensures SettingsPopup is available) -->
 <script type="module" src="./js/pipeline/settingsPopup.js"></script>
-
-<!-- Initialize interactive grid -->
-<script type="module">
-    import { initializeInteractiveGrid } from './js/pipeline/interactiveGrid.js';
-    
-    document.addEventListener('DOMContentLoaded', () => {
-        initializeInteractiveGrid({
-            changeOpacity: false
-        });
-    });
-</script>

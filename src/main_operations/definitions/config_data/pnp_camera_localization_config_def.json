@@ -2,6 +2,12 @@
     "class_name": "PnpCameraLocalizationDefinition",
     "description": "Calculates camera pose (position and orientation) relative to known AprilTag markers using a Perspective-n-Point algorithm",
     "category": "loc",
+    "input_nodes": [
+        "detections"
+    ],
+    "output_nodes": [
+        "camera_pose"
+    ],
     "parameters": {
         "camera_parameters_path": {
             "type": "str",

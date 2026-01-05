@@ -2,6 +2,12 @@
     "class_name": "PublishToNetworktables",
     "description": "Publishes values from upstream pipeline data to NetworkTables entries with automatic type handling",
     "category": "net",
+    "input_nodes": [
+        "data"
+    ],
+    "output_nodes": [
+        "data"
+    ],
     "parameters": {
         "target_key": {
             "type": "str",

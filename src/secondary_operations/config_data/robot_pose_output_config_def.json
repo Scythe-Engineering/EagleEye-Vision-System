@@ -2,5 +2,11 @@
     "class_name": "RobotPoseOutput",
     "description": "Publishes robot pose and localization data to web interfaces for visualization",
     "category": "out",
+    "input_nodes": [
+        "pose"
+    ],
+    "output_nodes": [
+        "pose"
+    ],
     "parameters": {}
 }
