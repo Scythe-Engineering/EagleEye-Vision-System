@@ -51,12 +51,14 @@ export class FlowchartCanvas {
         this.connectionsLayer.style.left = "0";
         this.connectionsLayer.style.width = "10000px";
         this.connectionsLayer.style.height = "10000px";
-        this.connectionsLayer.style.pointerEvents = "none";
+        this.connectionsLayer.style.pointerEvents = "visiblePainted";
         this.connectionsLayer.style.zIndex = "1";
         this.connectionsLayer.setAttribute("width", "10000");
         this.connectionsLayer.setAttribute("height", "10000");
         
         // Create nodes layer
+        // pointer-events: none on the layer allows clicks to pass through to connections below
+        // Individual node elements have pointer-events: auto so they remain interactive
         this.nodesLayer = document.createElement("div");
         this.nodesLayer.id = "flowchartNodes";
         this.nodesLayer.style.position = "absolute";
@@ -64,7 +66,7 @@ export class FlowchartCanvas {
         this.nodesLayer.style.left = "0";
         this.nodesLayer.style.width = "10000px";
         this.nodesLayer.style.height = "10000px";
-        this.nodesLayer.style.pointerEvents = "auto";
+        this.nodesLayer.style.pointerEvents = "none";
         this.nodesLayer.style.zIndex = "2";
         
         this.viewport.appendChild(this.connectionsLayer);

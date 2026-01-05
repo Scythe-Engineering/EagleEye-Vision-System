@@ -76,7 +76,7 @@ export class FlowchartConnections {
         
         const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
         group.setAttribute("data-connection-id", connectionId);
-        group.style.pointerEvents = "auto";
+        group.setAttribute("pointer-events", "visibleStroke");
         
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("fill", "none");
@@ -85,12 +85,14 @@ export class FlowchartConnections {
         path.setAttribute("stroke-linecap", "round");
         path.setAttribute("marker-end", "url(#flowchart-arrow)");
         path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease";
+        path.setAttribute("pointer-events", "none");
         
         const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
         hitArea.setAttribute("fill", "none");
         hitArea.setAttribute("stroke", "transparent");
         hitArea.setAttribute("stroke-width", "20");
         hitArea.style.cursor = "pointer";
+        hitArea.setAttribute("pointer-events", "stroke");
         
         const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         labelGroup.setAttribute("class", "connection-label");
@@ -140,7 +142,7 @@ export class FlowchartConnections {
 
     setupHoverEffects(group, path) {
         group.addEventListener("mouseenter", () => {
-            path.setAttribute("stroke-width", (this.connectionWidth + 1).toString());
+            path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
             path.setAttribute("filter", "url(#connection-glow)");
         });
 
@@ -289,6 +291,11 @@ export class FlowchartConnections {
         tempPath.setAttribute("stroke-dasharray", "5,5");
         tempPath.setAttribute("opacity", "0.7");
         tempPath.id = "temp-connection";
+        
+        // Render immediately at start position (short line to make it visible)
+        const initialEndPos = { x: startPos.x + 50, y: startPos.y };
+        const initialPathD = this.calculateBezierPath(startPos, initialEndPos);
+        tempPath.setAttribute("d", initialPathD);
         
         this.svgLayer.appendChild(tempPath);
         

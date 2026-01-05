@@ -415,9 +415,93 @@ export class FlowchartRenderer {
 
     handlePortClick(node, portName, portType, event) {
         if (portType === "output") {
-            this.startConnecting(node, portName, event);
-        } else if (portType === "input" && this.connectingState) {
-            this.completeConnection(node, portName);
+            // Check for existing connections from this output port
+            const existingConnections = this.connections.getConnectionsForPort(
+                node.instanceId,
+                portName,
+                "output"
+            );
+            
+            if (existingConnections.length > 0) {
+                // Time-based click vs drag detection
+                // < 0.125s = click = delete connection
+                // > 0.125s = drag = reconnect
+                const mouseDownTime = Date.now();
+                const startX = event.clientX;
+                const startY = event.clientY;
+                let hasMoved = false;
+                let connectingStarted = false;
+                
+                const onMouseMove = (e) => {
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                        hasMoved = true;
+                        if (!connectingStarted) {
+                            connectingStarted = true;
+                            this.startConnecting(node, portName, event);
+                        }
+                    }
+                };
+                
+                const onMouseUp = (e) => {
+                    const elapsed = Date.now() - mouseDownTime;
+                    window.removeEventListener("mousemove", onMouseMove);
+                    window.removeEventListener("mouseup", onMouseUp);
+                    
+                    if (elapsed < 125 && !hasMoved) {
+                        // Quick click without movement - delete all connections from this output
+                        if (connectingStarted) {
+                            this.cancelConnecting();
+                        }
+                        existingConnections.forEach(id => this.connections.removeConnection(id));
+                        this.callbacks.autoSavePipeline();
+                    } else if (!connectingStarted) {
+                        // Held long enough but didn't move - start connecting now
+                        this.startConnecting(node, portName, event);
+                    }
+                    // If connectingStarted is true and not a quick click, startConnecting handles its own cleanup
+                };
+                
+                window.addEventListener("mousemove", onMouseMove);
+                window.addEventListener("mouseup", onMouseUp);
+            } else {
+                // No existing connections - just start connecting immediately
+                this.startConnecting(node, portName, event);
+            }
+        } else if (portType === "input") {
+            // Check if there's already a connection to this input port
+            const existingConnections = this.connections.getConnectionsForPort(
+                node.instanceId,
+                portName,
+                "input"
+            );
+            
+            // If we're currently connecting, complete the connection
+            if (this.connectingState) {
+                // Remove existing connection if present before completing new one
+                if (existingConnections.length > 0) {
+                    existingConnections.forEach(id => this.connections.removeConnection(id));
+                }
+                this.completeConnection(node, portName);
+            } else if (existingConnections.length > 0) {
+                // If not connecting but there is an existing connection,
+                // get the source and start reconnecting from it
+                const connectionData = this.connections.getConnectionData();
+                const existingConn = connectionData.find(c => c.id === existingConnections[0]);
+                
+                if (existingConn) {
+                    const fromNode = this.nodes.get(existingConn.fromNodeId);
+                    if (fromNode) {
+                        // Remove the existing connection
+                        existingConnections.forEach(id => this.connections.removeConnection(id));
+                        this.callbacks.autoSavePipeline();
+                        
+                        // Start reconnecting from the original output port
+                        this.startConnecting(fromNode, existingConn.fromPortName, event);
+                    }
+                }
+            }
         }
     }
 
@@ -434,6 +518,10 @@ export class FlowchartRenderer {
             fromPort: portName,
             temp: temp
         };
+
+        // Immediately update temp connection to current mouse position
+        const initialWorldPos = this.canvas.screenToWorld(event.clientX, event.clientY);
+        temp.update(initialWorldPos);
 
         const onMouseMove = (e) => {
             if (!this.connectingState) return;
@@ -506,6 +594,15 @@ export class FlowchartRenderer {
             this.cancelConnecting();
             return;
         }
+
+        // Remove any existing connections to this input port (enforce single connection per input)
+        const existingConnections = this.connections.getConnectionsForPort(
+            toNode.instanceId,
+            toPort,
+            "input"
+        );
+        
+        existingConnections.forEach(id => this.connections.removeConnection(id));
 
         const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;
         
