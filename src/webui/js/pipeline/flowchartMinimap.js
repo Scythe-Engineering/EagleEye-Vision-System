@@ -18,10 +18,13 @@ export class FlowchartMinimap {
         this.canvasElement = null;
         this.ctx = null;
         this.viewportRect = null;
-        
+        this.closeButton = null;
+        this.showButton = null;
+
         this.isDragging = false;
         this.nodes = [];
         this.worldBounds = { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
+        this.isVisible = true;
         
         this.init();
     }
@@ -35,13 +38,27 @@ export class FlowchartMinimap {
             right: ${this.padding}px;
             width: ${this.width}px;
             height: ${this.height}px;
+            z-index: 100;
+            transition: all 0.3s ease-in-out;
+            transform: scale(1);
+            opacity: 1;
+            overflow: visible;
+            pointer-events: none;
+        `;
+
+        // Inner container that handles clipping and background
+        this.contentContainer = document.createElement("div");
+        this.contentContainer.style.cssText = `
+            width: 100%;
+            height: 100%;
             background-color: ${this.backgroundColor};
             border: 2px solid ${this.borderColor};
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-            z-index: 100;
             cursor: pointer;
+            position: relative;
+            pointer-events: auto;
         `;
         
         this.canvasElement = document.createElement("canvas");
@@ -59,20 +76,100 @@ export class FlowchartMinimap {
             position: absolute;
             background-color: ${this.viewportColor};
             border: 1px solid ${this.viewportBorderColor};
+            border-radius: 4px;
             pointer-events: none;
         `;
         
-        this.element.appendChild(this.canvasElement);
-        this.element.appendChild(this.viewportRect);
+        // Create close button
+        this.closeButton = document.createElement("button");
+        this.closeButton.innerHTML = "×";
+        this.closeButton.style.cssText = `
+            position: absolute;
+            top: -12px;
+            left: -12px;
+            width: 26px;
+            height: 26px;
+            background-color: #f9c845;
+            color: #1a1a1a;
+            border: 2px solid #404040;
+            border-radius: 50%;
+            font-size: 20px;
+            line-height: 1;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 102;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            padding: 0;
+            margin: 0;
+            pointer-events: auto;
+        `;
+        this.closeButton.title = "Hide minimap";
+
+        // Create show button (initially hidden)
+        this.showButton = document.createElement("button");
+        this.showButton.innerHTML = `
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+            </svg>
+        `;
+        this.showButton.style.cssText = `
+            position: absolute;
+            bottom: ${this.padding}px;
+            right: ${this.padding}px;
+            width: 36px;
+            height: 36px;
+            background-color: #f9c845;
+            color: #1a1a1a;
+            border: 2px solid #404040;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease-in-out;
+            transform: scale(0);
+            opacity: 0;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            pointer-events: auto;
+        `;
+        this.showButton.title = "Show minimap";
+        this.showButton.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.show();
+        });
+
+        this.contentContainer.appendChild(this.canvasElement);
+        this.contentContainer.appendChild(this.viewportRect);
         
+        this.element.appendChild(this.contentContainer);
+        this.element.appendChild(this.closeButton);
+        this.element.appendChild(this.showButton);
+
         this.setupEventListeners();
     }
 
     setupEventListeners() {
-        this.element.addEventListener("mousedown", this.handleMouseDown.bind(this));
-        this.element.addEventListener("mousemove", this.handleMouseMove.bind(this));
-        this.element.addEventListener("mouseup", this.handleMouseUp.bind(this));
-        this.element.addEventListener("mouseleave", this.handleMouseUp.bind(this));
+        this.contentContainer.addEventListener("mousedown", this.handleMouseDown.bind(this));
+        this.contentContainer.addEventListener("mousemove", this.handleMouseMove.bind(this));
+        this.contentContainer.addEventListener("mouseup", this.handleMouseUp.bind(this));
+        this.contentContainer.addEventListener("mouseleave", this.handleMouseUp.bind(this));
+
+        // Close button logic
+        this.closeButton.addEventListener("mousedown", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+        });
+        this.closeButton.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.hide();
+        });
     }
 
     handleMouseDown(event) {
@@ -93,7 +190,7 @@ export class FlowchartMinimap {
     }
 
     navigateToPosition(event) {
-        const rect = this.element.getBoundingClientRect();
+        const rect = this.contentContainer.getBoundingClientRect();
         const clickX = event.clientX - rect.left;
         const clickY = event.clientY - rect.top;
         
@@ -108,6 +205,7 @@ export class FlowchartMinimap {
         const newTranslateY = containerRect.height / 2 - worldY * viewportState.scale;
         
         this.canvas.setViewportState({
+            scale: viewportState.scale,
             translateX: newTranslateX,
             translateY: newTranslateY
         });
@@ -137,28 +235,37 @@ export class FlowchartMinimap {
 
     calculateWorldBounds() {
         if (this.nodes.length === 0) {
-            this.worldBounds = { minX: 0, minY: 0, maxX: 1000, maxY: 800 };
+            this.worldBounds = { minX: -500, minY: -400, maxX: 500, maxY: 400 };
             return;
         }
-        
-        const padding = 100;
-        
+
+        const padding = 150;
+
         let minX = Infinity, minY = Infinity;
         let maxX = -Infinity, maxY = -Infinity;
-        
+
         this.nodes.forEach(node => {
             minX = Math.min(minX, node.x);
             minY = Math.min(minY, node.y);
             maxX = Math.max(maxX, node.x + node.width);
             maxY = Math.max(maxY, node.y + node.height);
         });
-        
-        minX = Math.min(0, minX) - padding;
-        minY = Math.min(0, minY) - padding;
-        maxX = Math.max(1000, maxX) + padding;
-        maxY = Math.max(800, maxY) + padding;
-        
-        this.worldBounds = { minX, minY, maxX, maxY };
+
+        // Calculate the center of all nodes
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        // Calculate the size needed to contain all nodes with padding
+        const width = Math.max(maxX - minX + padding * 2, 800);
+        const height = Math.max(maxY - minY + padding * 2, 600);
+
+        // Center the bounds on the nodes
+        this.worldBounds = {
+            minX: centerX - width / 2,
+            minY: centerY - height / 2,
+            maxX: centerX + width / 2,
+            maxY: centerY + height / 2
+        };
     }
 
     render() {
@@ -248,21 +355,45 @@ export class FlowchartMinimap {
 
     attachTo(container) {
         container.appendChild(this.element);
+        container.appendChild(this.showButton);
     }
 
     show() {
-        this.element.style.display = "block";
+        this.isVisible = true;
+        this.contentContainer.style.display = "block";
+        this.closeButton.style.display = "block";
+        this.element.style.opacity = "1";
+
+        // Hide show button with scale animation
+        this.showButton.style.opacity = "0";
+        this.showButton.style.transform = "scale(0)";
+        setTimeout(() => {
+            this.showButton.style.display = "none";
+        }, 300);
     }
 
     hide() {
-        this.element.style.display = "none";
+        this.isVisible = false;
+        this.element.style.opacity = "0";
+
+        // Show the show button after fade out completes
+        setTimeout(() => {
+            this.contentContainer.style.display = "none";
+            this.closeButton.style.display = "none";
+            this.showButton.style.display = "flex";
+            this.showButton.style.transform = "scale(1)";
+            // Trigger smooth fade-in by setting opacity after display change
+            setTimeout(() => {
+                this.showButton.style.opacity = "1";
+            }, 10);
+        }, 300);
     }
 
     toggle() {
-        if (this.element.style.display === "none") {
-            this.show();
-        } else {
+        if (this.isVisible) {
             this.hide();
+        } else {
+            this.show();
         }
     }
 
@@ -279,6 +410,9 @@ export class FlowchartMinimap {
     destroy() {
         if (this.element && this.element.parentElement) {
             this.element.parentElement.removeChild(this.element);
+        }
+        if (this.showButton && this.showButton.parentElement) {
+            this.showButton.parentElement.removeChild(this.showButton);
         }
     }
 }

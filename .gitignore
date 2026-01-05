@@ -290,5 +290,4 @@ log_*.txt
 general_conf.json
 
 src/webui/static/*
-src/webui/static/main.css
-src/webui/static/bundle.js
+!src/webui/static/background.png

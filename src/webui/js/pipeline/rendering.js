@@ -2,6 +2,7 @@ import { escapeHtml, getIconSVG } from "./utils.js";
 import { FlowchartCanvas } from "./flowchartCanvas.js";
 import { FlowchartNode } from "./flowchartNode.js";
 import { FlowchartConnections } from "./flowchartConnections.js";
+import { FlowchartMinimap } from "./flowchartMinimap.js";
 
 let descriptionPopup = null;
 
@@ -131,6 +132,7 @@ export class FlowchartRenderer {
         this.canvasContainer = canvasContainer;
         this.canvas = null;
         this.connections = null;
+        this.minimap = null;
         this.nodes = new Map();
         this.pipeline = [];
 
@@ -154,8 +156,16 @@ export class FlowchartRenderer {
 
     init() {
         this.canvas = new FlowchartCanvas(this.canvasContainer, {
-            gridSpacing: this.gridSpacing
+            gridSpacing: this.gridSpacing,
+            onViewportChange: this.handleViewportChange.bind(this)
         });
+
+        this.minimap = new FlowchartMinimap(this.canvas, {
+            width: 180,
+            height: 120,
+            padding: 10
+        });
+        this.minimap.attachTo(this.canvasContainer);
 
         this.connections = new FlowchartConnections(
             this.canvas.getConnectionsLayer(),
@@ -345,7 +355,17 @@ export class FlowchartRenderer {
 
             await this.createNode(item);
         }
-        
+
+        // Update minimap with current nodes
+        if (this.minimap) {
+            const nodeDataList = Array.from(this.nodes.values()).map(node => ({
+                position: node.getPosition(),
+                width: 200,
+                height: 80
+            }));
+            this.minimap.updateNodes(nodeDataList);
+        }
+
         this.callbacks.updateRunButton();
     }
 
@@ -399,6 +419,16 @@ export class FlowchartRenderer {
 
     handleNodePositionChange(node, position) {
         this.connections.updateAllConnections(this.nodes);
+
+        // Update minimap when node position changes
+        if (this.minimap) {
+            const nodeDataList = Array.from(this.nodes.values()).map(node => ({
+                position: node.getPosition(),
+                width: 200,
+                height: 80
+            }));
+            this.minimap.updateNodes(nodeDataList);
+        }
     }
 
     handlePortHover(node, portName, portType, isHovering) {
@@ -704,6 +734,12 @@ export class FlowchartRenderer {
         this.callbacks.autoSavePipeline();
     }
 
+    handleViewportChange(viewportState) {
+        if (this.minimap) {
+            this.minimap.onViewportChange(viewportState);
+        }
+    }
+
     removeNode(instanceId) {
         const node = this.nodes.get(instanceId);
         if (node) {
@@ -733,6 +769,9 @@ export class FlowchartRenderer {
         this.nodes.forEach(node => node.destroy());
         this.nodes.clear();
         this.connections.destroy();
+        if (this.minimap) {
+            this.minimap.destroy();
+        }
         this.canvas.destroy();
     }
 }

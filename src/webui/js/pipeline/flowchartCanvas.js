@@ -6,11 +6,13 @@ export class FlowchartCanvas {
     constructor(containerElement, options = {}) {
         this.container = containerElement;
         this.gridSpacing = options.gridSpacing || 20;
-        
+
         this.gridLayer = null;
         this.connectionsLayer = null;
         this.nodesLayer = null;
-        
+
+        this.onViewportChange = options.onViewportChange || (() => {});
+
         this.init();
     }
 
@@ -149,6 +151,7 @@ export class FlowchartCanvas {
     updateTransform() {
         this.viewport.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
         this.updateGrid();
+        this.onViewportChange(this.getViewportState());
     }
 
     updateGrid() {
@@ -190,6 +193,21 @@ export class FlowchartCanvas {
 
     getConnectionsLayer() {
         return this.connectionsLayer;
+    }
+
+    getViewportState() {
+        return {
+            scale: this.scale,
+            translateX: this.translateX,
+            translateY: this.translateY
+        };
+    }
+
+    setViewportState(state) {
+        this.scale = state.scale;
+        this.translateX = state.translateX;
+        this.translateY = state.translateY;
+        this.updateTransform();
     }
 
     fitToContent() {
