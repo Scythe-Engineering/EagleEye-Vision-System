@@ -439,7 +439,7 @@ export class FlowchartRenderer {
                         hasMoved = true;
                         if (!connectingStarted) {
                             connectingStarted = true;
-                            this.startConnecting(node, portName, event);
+                            this.startConnecting(node, portName, event, true);
                         }
                     }
                 };
@@ -458,7 +458,7 @@ export class FlowchartRenderer {
                         this.callbacks.autoSavePipeline();
                     } else if (!connectingStarted) {
                         // Held long enough but didn't move - start connecting now
-                        this.startConnecting(node, portName, event);
+                        this.startConnecting(node, portName, event, true);
                     }
                     // If connectingStarted is true and not a quick click, startConnecting handles its own cleanup
                 };
@@ -498,20 +498,20 @@ export class FlowchartRenderer {
                         this.callbacks.autoSavePipeline();
                         
                         // Start reconnecting from the original output port
-                        this.startConnecting(fromNode, existingConn.fromPortName, event);
+                        this.startConnecting(fromNode, existingConn.fromPortName, event, true);
                     }
                 }
             }
         }
     }
 
-    startConnecting(node, portName, event) {
+    startConnecting(node, portName, event, isReconnecting = false) {
         if (this.connectingState) {
             this.connectingState.temp.remove();
         }
 
         const startPos = node.getOutputPortPosition(portName);
-        const temp = this.connections.createTemporaryConnection(startPos);
+        const temp = this.connections.createTemporaryConnection(startPos, { fromHover: isReconnecting });
         
         this.connectingState = {
             fromNode: node,
