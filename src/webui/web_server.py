@@ -1103,7 +1103,7 @@ class EagleEyeInterface:
             pipeline_name (str): The name of the pipeline.
 
         Returns:
-            dict: The config data for the pipeline.
+            list: The config data for the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
@@ -1120,10 +1120,10 @@ class EagleEyeInterface:
                 action_params = self._reorder_operation_params(
                     operation_name, operation["action_params"]
                 )
-
-                reordered_pipeline.append(
-                    {"action_name": operation_name, "action_params": action_params}
-                )
+                
+                operation["action_params"] = action_params
+    
+                reordered_pipeline.append(operation)
 
             return reordered_pipeline
 
@@ -1147,7 +1147,14 @@ class EagleEyeInterface:
         self, camera_name: str, pipeline_name: str
     ) -> tuple[dict, int]:
         """
-        Save the pipeline config.
+        Save the pipeline config. Json should be of the following at least, other data allowed:
+        
+        {
+            action_name: str,
+            action_params: dict (param name: param value),
+            action_connections: arr[str (op id's)],
+            action_position: dict (x:int, y:int)
+        }
 
         Args:
             camera_name (str): The name of the camera.
@@ -1166,33 +1173,36 @@ class EagleEyeInterface:
             if pipeline_name not in current_config[camera_name]:
                 current_config[camera_name][pipeline_name] = []
 
+            # Merge operations while preserving existing data and enabling reordering
+            existing_ops = {op["action_name"]: op for op in current_config[camera_name][pipeline_name]}
+            updated_operations = []
             for operation in new_data:
                 operation_name = operation["action_name"]
                 operation_params = self._reorder_operation_params(
                     operation_name, operation["action_params"]
                 )
 
-                operation_names = [
-                    operation["action_name"]
-                    for operation in current_config[camera_name][pipeline_name]
-                ]
-
-                if operation_name in operation_names:
-                    for key, value in operation_params.items():
-                        current_config[camera_name][pipeline_name][
-                            operation_names.index(operation_name)
-                        ]["action_params"][key] = value
+                if operation_name in existing_ops:
+                    # Merge incoming data into existing operation
+                    merged_op = existing_ops[operation_name].copy()
+                    for key, value in operation.items():
+                        if key == "action_params":
+                            merged_op["action_params"] = operation_params
+                        else:
+                            merged_op[key] = value
                 else:
-                    current_config[camera_name][pipeline_name].append(
-                        {
-                            "action_name": operation_name,
-                            "action_params": operation_params,
-                        }
-                    )
+                    # New operation
+                    merged_op = operation.copy()
+                    merged_op["action_params"] = operation_params
+
+                updated_operations.append(merged_op)
+
+            current_config[camera_name][pipeline_name] = updated_operations
 
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
 
+        # use callback to prevent circular imports
         pipeline_objects = self.pipeline_objects_callback()
         if (
             camera_name in pipeline_objects
