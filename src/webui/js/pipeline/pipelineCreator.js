@@ -352,8 +352,13 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         // Build UUID to instanceId mapping for connection restoration
         const uuidToInstanceId = new Map();
         
-        // Extract connections from first item (if present)
-        const connectionsData = pipelineConfig.length > 0 && pipelineConfig[0].connections ? pipelineConfig[0].connections : [];
+        // Collect connections from ALL nodes
+        const allConnections = [];
+        pipelineConfig.forEach(configItem => {
+            if (configItem.connections && Array.isArray(configItem.connections)) {
+                allConnections.push(...configItem.connections);
+            }
+        });
 
         for (let index = 0; index < pipelineConfig.length; index++) {
             const configItem = pipelineConfig[index];
@@ -402,8 +407,8 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
 
         // Convert UUID-based connections to instanceId-based connections for rendering
         let instanceIdConnections = null;
-        if (connectionsData.length > 0) {
-            instanceIdConnections = connectionsData.map(conn => ({
+        if (allConnections.length > 0) {
+            instanceIdConnections = allConnections.map(conn => ({
                 fromNodeId: uuidToInstanceId.get(conn.from_uuid),
                 toNodeId: uuidToInstanceId.get(conn.to_uuid),
                 fromPortName: conn.from_port,
@@ -696,6 +701,15 @@ async function autoSavePipeline() {
             }).filter(conn => conn.from_uuid && conn.to_uuid);
         }
 
+        // Group connections by source UUID
+        const connectionsBySourceUuid = new Map();
+        connections.forEach(conn => {
+            if (!connectionsBySourceUuid.has(conn.from_uuid)) {
+                connectionsBySourceUuid.set(conn.from_uuid, []);
+            }
+            connectionsBySourceUuid.get(conn.from_uuid).push(conn);
+        });
+
         const pipelineConfig = pipeline.map((item) => {
             const configParams = {};
             if (item.config) {
@@ -706,18 +720,22 @@ async function autoSavePipeline() {
                     }
                 }
             }
-            return {
+            
+            const nodeConfig = {
                 action_name: item.id.replaceAll(".py", ""),
                 action_params: configParams,
                 position: item.position || null,
                 uuid: item.uuid || uid("op-"),
             };
+            
+            // Add this node's outgoing connections if any exist
+            const nodeConnections = connectionsBySourceUuid.get(item.uuid);
+            if (nodeConnections && nodeConnections.length > 0) {
+                nodeConfig.connections = nodeConnections;
+            }
+            
+            return nodeConfig;
         });
-
-        // Add connections as metadata on the first item if any exist
-        if (connections.length > 0 && pipelineConfig.length > 0) {
-            pipelineConfig[0].connections = connections;
-        }
 
         const response = await fetch(
             `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
