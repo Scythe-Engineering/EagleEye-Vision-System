@@ -157,13 +157,13 @@ export class FlowchartRenderer {
     init() {
         this.canvas = new FlowchartCanvas(this.canvasContainer, {
             gridSpacing: this.gridSpacing,
-            onViewportChange: this.handleViewportChange.bind(this)
+            onViewportChange: this.handleViewportChange.bind(this),
         });
 
         this.minimap = new FlowchartMinimap(this.canvas, {
             width: 180,
             height: 120,
-            padding: 10
+            padding: 10,
         });
         this.minimap.attachTo(this.canvasContainer);
 
@@ -172,8 +172,8 @@ export class FlowchartRenderer {
             {
                 connectionColor: "#f9c845",
                 connectionWidth: 2,
-                onConnectionRemoved: this.handleConnectionRemoved.bind(this)
-            }
+                onConnectionRemoved: this.handleConnectionRemoved.bind(this),
+            },
         );
 
         this.dragGhost = null;
@@ -188,12 +188,12 @@ export class FlowchartRenderer {
     setupDropZone() {
         const pipelineArea = document.getElementById("pipelineArea");
         const canvasContainer = this.canvasContainer;
-        
+
         const handleDragOver = (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = "copy";
-            
+
             this.updateDragGhost(e);
         };
 
@@ -206,10 +206,15 @@ export class FlowchartRenderer {
         const handleDragLeave = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            
+
             // Only remove if we're actually leaving the canvas area
             const rect = canvasContainer.getBoundingClientRect();
-            if (e.clientX <= rect.left || e.clientX >= rect.right || e.clientY <= rect.top || e.clientY >= rect.bottom) {
+            if (
+                e.clientX <= rect.left ||
+                e.clientX >= rect.right ||
+                e.clientY <= rect.top ||
+                e.clientY >= rect.bottom
+            ) {
                 this.removeDragGhost();
             }
         };
@@ -220,9 +225,9 @@ export class FlowchartRenderer {
             this.removeDragGhost();
             await this.handleDrop(e);
         };
-        
+
         // Add listeners to both the area and the container to be safe
-        [pipelineArea, canvasContainer].forEach(elem => {
+        [pipelineArea, canvasContainer].forEach((elem) => {
             if (elem) {
                 elem.addEventListener("dragover", handleDragOver);
                 elem.addEventListener("dragenter", handleDragEnter);
@@ -234,7 +239,7 @@ export class FlowchartRenderer {
 
     createDragGhost(e) {
         if (this.dragGhost) return;
-        
+
         this.dragGhost = document.createElement("div");
         this.dragGhost.className = "flowchart-node-ghost";
         Object.assign(this.dragGhost.style, {
@@ -252,10 +257,10 @@ export class FlowchartRenderer {
             color: "#f9c845",
             fontWeight: "bold",
             fontSize: "12px",
-            boxShadow: "0 0 15px rgba(249, 200, 69, 0.2)"
+            boxShadow: "0 0 15px rgba(249, 200, 69, 0.2)",
         });
         this.dragGhost.textContent = "Place Operation";
-        
+
         this.canvas.getNodesLayer().appendChild(this.dragGhost);
     }
 
@@ -266,8 +271,8 @@ export class FlowchartRenderer {
 
         const scale = this.canvas.scale || 1;
         const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
-        const adjustedX = worldPos.x - (this.dragOffsetX / scale);
-        const adjustedY = worldPos.y - (this.dragOffsetY / scale);
+        const adjustedX = worldPos.x - this.dragOffsetX / scale;
+        const adjustedY = worldPos.y - this.dragOffsetY / scale;
         const snappedPos = this.canvas.snapPositionToGrid(adjustedX, adjustedY);
 
         this.dragGhost.style.left = `${snappedPos.x}px`;
@@ -285,8 +290,9 @@ export class FlowchartRenderer {
         let dropData = null;
 
         try {
-            const jsonData = e.dataTransfer.getData("application/pipeline") ||
-                           e.dataTransfer.getData("text/plain");
+            const jsonData =
+                e.dataTransfer.getData("application/pipeline") ||
+                e.dataTransfer.getData("text/plain");
             if (jsonData) {
                 dropData = JSON.parse(jsonData);
             }
@@ -306,51 +312,56 @@ export class FlowchartRenderer {
 
         const scale = this.canvas.scale || 1;
         const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
-        const adjustedX = worldPos.x - (this.dragOffsetX / scale);
-        const adjustedY = worldPos.y - (this.dragOffsetY / scale);
+        const adjustedX = worldPos.x - this.dragOffsetX / scale;
+        const adjustedY = worldPos.y - this.dragOffsetY / scale;
         const snappedPos = this.canvas.snapPositionToGrid(adjustedX, adjustedY);
 
         await this.callbacks.onPipelineChange({
             type: "add",
             operationId: dropData.id,
-            position: snappedPos
+            position: snappedPos,
         });
     }
 
     async renderPipeline(pipeline) {
         this.pipeline = pipeline;
-        
-        this.nodes.forEach(node => node.destroy());
+
+        this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
         this.connections.clearAllConnections();
-        
+
         const placeholder = document.getElementById("pipelinePlaceholder");
         if (placeholder) {
             const shouldShow = pipeline.length === 0;
             placeholder.classList.toggle("hidden", !shouldShow);
-            
+
             if (shouldShow) {
                 const hintText = placeholder.querySelector("p:last-child");
                 if (hintText && !window.pipelineCreator?.selectedPipeline) {
-                    hintText.textContent = "Create a new pipeline first using the button above";
+                    hintText.textContent =
+                        "Create a new pipeline first using the button above";
                     hintText.style.color = "#f9c845";
                 } else if (hintText) {
-                    hintText.textContent = "Double-click to fit view • Scroll to zoom • Drag to pan";
+                    hintText.textContent =
+                        "Double-click to fit view • Scroll to zoom • Drag to pan";
                     hintText.style.color = "#666";
                 }
             }
         }
-        
+
         if (pipeline.length === 0) {
             this.callbacks.updateRunButton();
             return;
         }
-        
+
         for (let i = 0; i < pipeline.length; i++) {
             const item = pipeline[i];
 
             if (!item.position) {
-                item.position = this.calculateDefaultPosition(i, pipeline.length);
+                item.position = this.calculateDefaultPosition(
+                    i,
+                    pipeline.length,
+                );
             }
 
             await this.createNode(item);
@@ -358,13 +369,18 @@ export class FlowchartRenderer {
 
         // Update minimap with current nodes
         if (this.minimap) {
-            const nodeDataList = Array.from(this.nodes.values()).map(node => ({
-                position: node.getPosition(),
-                width: 200,
-                height: 80
-            }));
+            const nodeDataList = Array.from(this.nodes.values()).map(
+                (node) => ({
+                    position: node.getPosition(),
+                    width: 200,
+                    height: 80,
+                }),
+            );
             this.minimap.updateNodes(nodeDataList);
         }
+
+        // Update grid with operation positions
+        this.updateGridOperationPositions();
 
         this.callbacks.updateRunButton();
     }
@@ -372,10 +388,10 @@ export class FlowchartRenderer {
     calculateDefaultPosition(index, total) {
         const startX = 100;
         const startY = 100;
-        
+
         return {
             x: this.canvas.snapToGrid(startX + index * this.nodeSpacingX),
-            y: this.canvas.snapToGrid(startY + Math.sin(index * 0.5) * 50)
+            y: this.canvas.snapToGrid(startY + Math.sin(index * 0.5) * 50),
         };
     }
 
@@ -388,16 +404,16 @@ export class FlowchartRenderer {
             onSettingsClick: this.callbacks.openOperationSettings,
             onRemoveClick: this.handleNodeRemove.bind(this),
             onPortHover: this.handlePortHover.bind(this),
-            onPortClick: this.handlePortClick.bind(this)
+            onPortClick: this.handlePortClick.bind(this),
         });
-        
+
         const element = await node.createElement();
         const nodesLayer = this.canvas.getNodesLayer();
 
         nodesLayer.appendChild(element);
 
         this.nodes.set(item.instanceId, node);
-        
+
         return node;
     }
 
@@ -407,13 +423,19 @@ export class FlowchartRenderer {
 
     handleNodeDragEnd(node, position) {
         node.element.style.zIndex = "10";
-        
-        const item = this.pipeline.find(p => p.instanceId === node.instanceId);
+
+        const item = this.pipeline.find(
+            (p) => p.instanceId === node.instanceId,
+        );
         if (item) {
             item.position = position;
         }
-        
+
         this.connections.updateAllConnections(this.nodes);
+
+        // Update grid with new operation positions
+        this.updateGridOperationPositions();
+
         this.callbacks.autoSavePipeline();
     }
 
@@ -422,12 +444,31 @@ export class FlowchartRenderer {
 
         // Update minimap when node position changes
         if (this.minimap) {
-            const nodeDataList = Array.from(this.nodes.values()).map(node => ({
-                position: node.getPosition(),
-                width: 200,
-                height: 80
-            }));
+            const nodeDataList = Array.from(this.nodes.values()).map(
+                (n) => ({
+                    position: n.getPosition(),
+                    width: 200,
+                    height: 80,
+                }),
+            );
             this.minimap.updateNodes(nodeDataList);
+        }
+
+        // Update grid with new operation positions during dragging
+        this.updateGridOperationPositions();
+    }
+
+    /**
+     * Helper method to update the interactive grid with current node positions
+     */
+    updateGridOperationPositions() {
+        if (this.canvas) {
+            const nodeDataList = Array.from(this.nodes.values()).map(
+                (n) => ({
+                    position: n.getPosition(),
+                }),
+            );
+            this.canvas.updateOperationPositions(nodeDataList);
         }
     }
 
@@ -435,10 +476,10 @@ export class FlowchartRenderer {
         const connectionIds = this.connections.getConnectionsForPort(
             node.instanceId,
             portName,
-            portType
+            portType,
         );
-        
-        connectionIds.forEach(id => {
+
+        connectionIds.forEach((id) => {
             this.connections.highlightConnection(id, isHovering);
         });
     }
@@ -449,9 +490,9 @@ export class FlowchartRenderer {
             const existingConnections = this.connections.getConnectionsForPort(
                 node.instanceId,
                 portName,
-                "output"
+                "output",
             );
-            
+
             if (existingConnections.length > 0) {
                 // Time-based click vs drag detection
                 // < 0.125s = click = delete connection
@@ -461,7 +502,7 @@ export class FlowchartRenderer {
                 const startY = event.clientY;
                 let hasMoved = false;
                 let connectingStarted = false;
-                
+
                 const onMouseMove = (e) => {
                     const dx = e.clientX - startX;
                     const dy = e.clientY - startY;
@@ -473,18 +514,20 @@ export class FlowchartRenderer {
                         }
                     }
                 };
-                
+
                 const onMouseUp = (e) => {
                     const elapsed = Date.now() - mouseDownTime;
                     window.removeEventListener("mousemove", onMouseMove);
                     window.removeEventListener("mouseup", onMouseUp);
-                    
+
                     if (elapsed < 125 && !hasMoved) {
                         // Quick click without movement - delete all connections from this output
                         if (connectingStarted) {
                             this.cancelConnecting();
                         }
-                        existingConnections.forEach(id => this.connections.removeConnection(id));
+                        existingConnections.forEach((id) =>
+                            this.connections.removeConnection(id),
+                        );
                         this.callbacks.autoSavePipeline();
                     } else if (!connectingStarted) {
                         // Held long enough but didn't move - start connecting now
@@ -495,7 +538,7 @@ export class FlowchartRenderer {
                     }
                     // If connectingStarted is true and not a quick click, startConnecting handles its own cleanup
                 };
-                
+
                 window.addEventListener("mousemove", onMouseMove);
                 window.addEventListener("mouseup", onMouseUp);
             } else {
@@ -507,14 +550,16 @@ export class FlowchartRenderer {
             const existingConnections = this.connections.getConnectionsForPort(
                 node.instanceId,
                 portName,
-                "input"
+                "input",
             );
 
             // If we're currently connecting, complete the connection
             if (this.connectingState) {
                 // Remove existing connection if present before completing new one
                 if (existingConnections.length > 0) {
-                    existingConnections.forEach(id => this.connections.removeConnection(id));
+                    existingConnections.forEach((id) =>
+                        this.connections.removeConnection(id),
+                    );
                 }
                 this.completeConnection(node, portName);
             } else if (existingConnections.length > 0) {
@@ -535,15 +580,27 @@ export class FlowchartRenderer {
                         if (!reconnectingStarted) {
                             reconnectingStarted = true;
                             // Start reconnecting from the original output port
-                            const connectionData = this.connections.getConnectionData();
-                            const existingConn = connectionData.find(c => c.id === existingConnections[0]);
+                            const connectionData =
+                                this.connections.getConnectionData();
+                            const existingConn = connectionData.find(
+                                (c) => c.id === existingConnections[0],
+                            );
                             if (existingConn) {
-                                const fromNode = this.nodes.get(existingConn.fromNodeId);
+                                const fromNode = this.nodes.get(
+                                    existingConn.fromNodeId,
+                                );
                                 if (fromNode) {
                                     // Remove the existing connection
-                                    existingConnections.forEach(id => this.connections.removeConnection(id));
+                                    existingConnections.forEach((id) =>
+                                        this.connections.removeConnection(id),
+                                    );
                                     this.callbacks.autoSavePipeline();
-                                    this.startConnecting(fromNode, existingConn.fromPortName, event, true);
+                                    this.startConnecting(
+                                        fromNode,
+                                        existingConn.fromPortName,
+                                        event,
+                                        true,
+                                    );
                                 }
                             }
                         }
@@ -560,21 +617,35 @@ export class FlowchartRenderer {
                         if (reconnectingStarted) {
                             this.cancelConnecting();
                         }
-                        existingConnections.forEach(id => this.connections.removeConnection(id));
+                        existingConnections.forEach((id) =>
+                            this.connections.removeConnection(id),
+                        );
                         this.callbacks.autoSavePipeline();
                     } else if (!reconnectingStarted) {
                         // Held long enough but didn't move - start reconnecting now
-                        const connectionData = this.connections.getConnectionData();
-                        const existingConn = connectionData.find(c => c.id === existingConnections[0]);
+                        const connectionData =
+                            this.connections.getConnectionData();
+                        const existingConn = connectionData.find(
+                            (c) => c.id === existingConnections[0],
+                        );
                         if (existingConn) {
-                            const fromNode = this.nodes.get(existingConn.fromNodeId);
+                            const fromNode = this.nodes.get(
+                                existingConn.fromNodeId,
+                            );
                             if (fromNode) {
                                 // Remove the existing connection
-                                existingConnections.forEach(id => this.connections.removeConnection(id));
+                                existingConnections.forEach((id) =>
+                                    this.connections.removeConnection(id),
+                                );
                                 this.callbacks.autoSavePipeline();
                                 // Only start connecting if mouse button is still pressed
                                 if (e.buttons & 1) {
-                                    this.startConnecting(fromNode, existingConn.fromPortName, event, true);
+                                    this.startConnecting(
+                                        fromNode,
+                                        existingConn.fromPortName,
+                                        event,
+                                        true,
+                                    );
                                 }
                             }
                         }
@@ -597,17 +668,22 @@ export class FlowchartRenderer {
         }
 
         const startPos = node.getOutputPortPosition(portName);
-        const temp = this.connections.createTemporaryConnection(startPos, { fromHover: isReconnecting });
+        const temp = this.connections.createTemporaryConnection(startPos, {
+            fromHover: isReconnecting,
+        });
 
         this.connectingState = {
             fromNode: node,
             fromPort: portName,
             temp: temp,
-            cleanup: null
+            cleanup: null,
         };
 
         // Immediately update temp connection to current mouse position
-        const initialWorldPos = this.canvas.screenToWorld(event.clientX, event.clientY);
+        const initialWorldPos = this.canvas.screenToWorld(
+            event.clientX,
+            event.clientY,
+        );
         temp.update(initialWorldPos);
 
         const onMouseMove = (e) => {
@@ -616,13 +692,15 @@ export class FlowchartRenderer {
             this.connectingState.temp.update(worldPos);
 
             // Visual feedback for potential connection
-            const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".port-connector");
+            const target = document
+                .elementFromPoint(e.clientX, e.clientY)
+                ?.closest(".port-connector");
             if (target && target.dataset.portType === "input") {
                 target.style.backgroundColor = "#f9c845";
                 target.style.transform = "scale(1.3)";
             } else {
                 // Reset other ports (simple way)
-                document.querySelectorAll(".input-connector").forEach(p => {
+                document.querySelectorAll(".input-connector").forEach((p) => {
                     if (p !== target) {
                         p.style.backgroundColor = "#404040";
                         p.style.transform = "scale(1)";
@@ -633,7 +711,9 @@ export class FlowchartRenderer {
 
         const onMouseUp = (e) => {
             // Find the element at the release point more reliably
-            const target = document.elementFromPoint(e.clientX, e.clientY)?.closest(".port-connector");
+            const target = document
+                .elementFromPoint(e.clientX, e.clientY)
+                ?.closest(".port-connector");
             const isInput = target?.dataset.portType === "input";
 
             if (isInput) {
@@ -656,7 +736,7 @@ export class FlowchartRenderer {
             }
 
             // Reset visual feedback
-            document.querySelectorAll(".input-connector").forEach(p => {
+            document.querySelectorAll(".input-connector").forEach((p) => {
                 p.style.backgroundColor = "#404040";
                 p.style.transform = "scale(1)";
             });
@@ -685,7 +765,7 @@ export class FlowchartRenderer {
         if (!this.connectingState) return;
 
         const { fromNode, fromPort, temp } = this.connectingState;
-        
+
         // Don't connect to self
         if (fromNode.instanceId === toNode.instanceId) {
             this.cancelConnecting();
@@ -696,20 +776,22 @@ export class FlowchartRenderer {
         const existingConnections = this.connections.getConnectionsForPort(
             toNode.instanceId,
             toPort,
-            "input"
+            "input",
         );
-        
-        existingConnections.forEach(id => this.connections.removeConnection(id));
+
+        existingConnections.forEach((id) =>
+            this.connections.removeConnection(id),
+        );
 
         const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;
-        
+
         this.connections.createConnection(
             connectionId,
             fromNode,
             fromPort,
             toNode,
             toPort,
-            fromPort // Use output port name as data type for now
+            fromPort, // Use output port name as data type for now
         );
 
         this.cancelConnecting();
@@ -766,7 +848,7 @@ export class FlowchartRenderer {
     }
 
     destroy() {
-        this.nodes.forEach(node => node.destroy());
+        this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
         this.connections.destroy();
         if (this.minimap) {
@@ -821,7 +903,12 @@ export function renderPipeline(
             callbacks.handleDragStart(e, item, index, pipeline),
         );
         wrapper.addEventListener("dragend", (e) =>
-            callbacks.handleDragEnd(e, pipelineContainer, pipelinePlaceholder, pipeline),
+            callbacks.handleDragEnd(
+                e,
+                pipelineContainer,
+                pipelinePlaceholder,
+                pipeline,
+            ),
         );
 
         addHoverListeners(wrapper, item.name, item.description);

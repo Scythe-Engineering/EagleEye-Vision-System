@@ -460,11 +460,11 @@ async function removeFromPipeline(instanceId) {
     });
 
     pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
-    
+
     if (useFlowchartMode && flowchartRenderer) {
         flowchartRenderer.removeNode(instanceId);
     }
-    
+
     console.log("[PIPELINE] Pipeline after removal", {
         pipelineLengthAfter: pipeline.length,
         remainingOperations: pipeline.map((op) => ({
@@ -735,11 +735,11 @@ async function createNewPipeline() {
                 timestamp: new Date().toISOString(),
             },
         );
-        
+
         await renderCurrentPipeline();
         updateRunButton();
         updateDeleteButtonVisibility();
-        
+
         // Save the empty pipeline to backend so it persists
         await autoSavePipeline();
 
@@ -770,7 +770,7 @@ async function deleteCurrentPipeline() {
     }
 
     const pipelineToDelete = selectedPipeline;
-    
+
     const confirmed = confirm(
         `Are you sure you want to delete the pipeline "${pipelineToDelete.displayName}"?\n\nThis action cannot be undone.`,
     );
@@ -1062,7 +1062,6 @@ async function refreshPipelineCreator() {
         updateDeleteButtonVisibility();
 
         await checkBackendRestartStatus();
-
     } catch (error) {
         console.error("[PIPELINE] Error refreshing pipeline creator:", error);
     }
@@ -1074,21 +1073,25 @@ async function handleFlowchartPipelineChange(changeEvent) {
             alert("Please select a camera first, then create a new pipeline.");
             return;
         }
-        
-        const shouldCreate = confirm("You need to create a pipeline before adding operations. Would you like to create a new pipeline now?");
+
+        const shouldCreate = confirm(
+            "You need to create a pipeline before adding operations. Would you like to create a new pipeline now?",
+        );
         if (!shouldCreate) {
             return;
         }
-        
+
         await createNewPipeline();
-        
+
         if (!selectedPipeline) {
             return;
         }
     }
 
     if (changeEvent.type === "add") {
-        const operation = operations.find(op => op.id === changeEvent.operationId);
+        const operation = operations.find(
+            (op) => op.id === changeEvent.operationId,
+        );
         if (!operation) {
             console.warn(`Operation ${changeEvent.operationId} not found`);
             return;
@@ -1114,7 +1117,7 @@ async function handleFlowchartPipelineChange(changeEvent) {
 
 function initFlowchartRenderer() {
     flowchartCanvas = document.getElementById("flowchartCanvas");
-    
+
     if (!flowchartCanvas) {
         console.warn("Flowchart canvas not found, falling back to list mode");
         useFlowchartMode = false;
@@ -1133,9 +1136,7 @@ function initFlowchartRenderer() {
     });
 
     window.flowchartRenderer = flowchartRenderer;
-
 }
-
 export async function initPipelineCreator() {
     if (isInitialized) return;
 
@@ -1195,7 +1196,7 @@ export async function initPipelineCreator() {
     if (!useFlowchartMode) {
         const setupDragDrop = (element) => {
             if (!element) return;
-            
+
             element.addEventListener("dragenter", (e) =>
                 handleDragEnterPipeline(e),
             );
@@ -1298,7 +1299,7 @@ export async function initPipelineCreator() {
         openOperationSettings,
         handleDragStartWithLogging,
     );
-    
+
     await renderCurrentPipeline();
 
     await checkBackendRestartStatus();
@@ -1319,9 +1320,9 @@ export async function initPipelineCreator() {
         flowchartRenderer: flowchartRenderer,
         selectedPipeline: null,
     };
-    
-    Object.defineProperty(globalThis.pipelineCreator, 'selectedPipeline', {
+
+    Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {
         get: () => selectedPipeline,
-        enumerable: true
+        enumerable: true,
     });
 }
