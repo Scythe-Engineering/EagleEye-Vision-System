@@ -28,6 +28,9 @@ export class FlowchartMinimap {
         this.worldBounds = { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
         this.isVisible = true;
 
+        // Cache minimap container rect
+        this.minimapRect = { width: 0, height: 0, left: 0, top: 0 };
+
         this.init();
     }
 
@@ -154,9 +157,25 @@ export class FlowchartMinimap {
         this.element.appendChild(this.showButton);
 
         this.setupEventListeners();
+        this.updateMinimapRect();
+    }
+
+    updateMinimapRect() {
+        const rect = this.contentContainer.getBoundingClientRect();
+        this.minimapRect = {
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top
+        };
     }
 
     setupEventListeners() {
+        const resizeObserver = new ResizeObserver(() => {
+            this.updateMinimapRect();
+        });
+        resizeObserver.observe(this.contentContainer);
+
         this.contentContainer.addEventListener(
             "mousedown",
             this.handleMouseDown.bind(this),
@@ -204,7 +223,7 @@ export class FlowchartMinimap {
     }
 
     navigateToPosition(event) {
-        const rect = this.contentContainer.getBoundingClientRect();
+        const rect = this.minimapRect;
         const clickX = event.clientX - rect.left;
         const clickY = event.clientY - rect.top;
 
@@ -212,7 +231,7 @@ export class FlowchartMinimap {
         const worldX = this.worldBounds.minX + clickX / scale;
         const worldY = this.worldBounds.minY + clickY / scale;
 
-        const containerRect = this.canvas.container.getBoundingClientRect();
+        const containerRect = this.canvas.containerRect;
         const viewportState = this.canvas.getViewportState();
 
         const newTranslateX =
@@ -390,7 +409,7 @@ export class FlowchartMinimap {
 
     updateViewportRect() {
         const viewportState = this.canvas.getViewportState();
-        const containerRect = this.canvas.container.getBoundingClientRect();
+        const containerRect = this.canvas.containerRect;
         const scale = this.calculateScale();
 
         const worldViewLeft = -viewportState.translateX / viewportState.scale;

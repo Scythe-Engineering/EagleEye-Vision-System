@@ -30,6 +30,12 @@ export class InteractiveGrid {
         this.operationFadeDistance = 600;
         this.operationMaxDotSize = 3;
 
+        // Caching for performance
+        this.distanceCache = new Map();
+        this.cacheResolution = 20; // Cache distance every 20 world units
+        this.dotCache = new Map();
+        this.containerRect = { width: 0, height: 0, left: 0, top: 0 };
+
         // Viewport transform state
         this.scale = 1;
         this.translateX = 0;
@@ -57,13 +63,24 @@ export class InteractiveGrid {
 
         this.ctx = this.canvas.getContext("2d");
 
+        this.updateContainerRect();
         this.resize();
         this.setupEventListeners();
         this.startAnimation();
     }
 
-    resize() {
+    updateContainerRect() {
         const rect = this.container.getBoundingClientRect();
+        this.containerRect = {
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top
+        };
+    }
+
+    resize() {
+        const rect = this.containerRect;
         const dpr = window.devicePixelRatio || 1;
 
         this.canvas.width = rect.width * dpr;
@@ -76,7 +93,7 @@ export class InteractiveGrid {
 
     setupEventListeners() {
         this.container.addEventListener("mousemove", (e) => {
-            const rect = this.container.getBoundingClientRect();
+            const rect = this.containerRect;
             this.mouseScreenX = e.clientX - rect.left;
             this.mouseScreenY = e.clientY - rect.top;
         });
@@ -87,6 +104,7 @@ export class InteractiveGrid {
         });
 
         const resizeObserver = new ResizeObserver(() => {
+            this.updateContainerRect();
             this.resize();
         });
         resizeObserver.observe(this.container);
@@ -111,6 +129,9 @@ export class InteractiveGrid {
             width: 200,
             height: 80,
         }));
+        // Clear caches when operations change
+        this.distanceCache.clear();
+        this.dotCache.clear();
     }
 
     /**
@@ -141,6 +162,13 @@ export class InteractiveGrid {
             return Infinity;
         }
 
+        // Create cache key based on rounded coordinates
+        const cacheKey = `${Math.round(worldX / this.cacheResolution)},${Math.round(worldY / this.cacheResolution)}`;
+
+        if (this.distanceCache.has(cacheKey)) {
+            return this.distanceCache.get(cacheKey);
+        }
+
         let minDistance = Infinity;
         for (const op of this.operationPositions) {
             // Calculate distance to the rectangle's edge
@@ -151,23 +179,24 @@ export class InteractiveGrid {
             const distance = Math.hypot(dx, dy);
             minDistance = Math.min(minDistance, distance);
         }
+
+        // Cache the result
+        this.distanceCache.set(cacheKey, minDistance);
         return minDistance;
     }
 
     /**
-     * Calculate dot properties based on cursor and operation proximity
+     * Calculate base dot properties (only operation-dependent)
      */
-    calculateDotProperties(worldX, worldY) {
-        // Convert mouse screen position to world coordinates
-        const mouseWorld = this.screenToWorld(
-            this.mouseScreenX,
-            this.mouseScreenY,
-        );
+    calculateBaseDotProperties(worldX, worldY) {
+        // Cache based on grid-aligned coordinates to avoid recalculating during zoom/pan
+        const gridX = Math.floor(worldX / this.gridSpacing);
+        const gridY = Math.floor(worldY / this.gridSpacing);
+        const cacheKey = `${gridX},${gridY}`;
 
-        // Calculate distance to mouse in world coordinates
-        const dx = worldX - mouseWorld.x;
-        const dy = worldY - mouseWorld.y;
-        const distanceToMouse = Math.hypot(dx, dy);
+        if (this.dotCache.has(cacheKey)) {
+            return this.dotCache.get(cacheKey);
+        }
 
         // Calculate distance to nearest operation
         const distanceToOperation = this.getDistanceToNearestOperation(
@@ -177,15 +206,6 @@ export class InteractiveGrid {
 
         let size = this.baseDotSize;
         let opacity = this.baseOpacity;
-
-        // Cursor influence (in world coordinates)
-        if (distanceToMouse <= this.cursorInfluenceRadius) {
-            const influence = 1 - distanceToMouse / this.cursorInfluenceRadius;
-            const easedInfluence = influence * influence;
-            size += (this.maxDotSize - this.baseDotSize) * easedInfluence;
-            opacity +=
-                (this.maxOpacity - this.baseOpacity) * easedInfluence * 0.5;
-        }
 
         // Operation proximity influence
         if (this.operationPositions.length > 0) {
@@ -220,6 +240,43 @@ export class InteractiveGrid {
                 // Far from any operation - fade to zero
                 opacity = 0;
             }
+        }
+
+        const result = { size, opacity };
+        this.dotCache.set(cacheKey, result);
+        return result;
+    }
+
+    /**
+     * Calculate dot properties based on cursor and operation proximity
+     */
+    calculateDotProperties(worldX, worldY) {
+        // Get base properties from cache or calculation
+        const { size: baseSize, opacity: baseOpacity } = this.calculateBaseDotProperties(worldX, worldY);
+
+        // If base opacity is 0 and mouse is far, we can skip
+        const mouseWorld = this.screenToWorld(
+            this.mouseScreenX,
+            this.mouseScreenY,
+        );
+        const dx = worldX - mouseWorld.x;
+        const dy = worldY - mouseWorld.y;
+        const distanceToMouse = Math.hypot(dx, dy);
+
+        if (baseOpacity === 0 && distanceToMouse > this.cursorInfluenceRadius) {
+            return { size: 0, opacity: 0 };
+        }
+
+        let size = baseSize;
+        let opacity = baseOpacity;
+
+        // Cursor influence (in world coordinates)
+        if (distanceToMouse <= this.cursorInfluenceRadius) {
+            const influence = 1 - distanceToMouse / this.cursorInfluenceRadius;
+            const easedInfluence = influence * influence;
+            size += (this.maxDotSize - this.baseDotSize) * easedInfluence;
+            opacity +=
+                (this.maxOpacity - this.baseOpacity) * easedInfluence * 0.5;
         }
 
         return { size, opacity };
@@ -290,7 +347,7 @@ export class InteractiveGrid {
     draw() {
         if (!this.ctx) return;
 
-        const rect = this.container.getBoundingClientRect();
+        const rect = this.containerRect;
         const width = rect.width;
         const height = rect.height;
 
@@ -356,9 +413,7 @@ export class InteractiveGrid {
             Math.ceil(bottomRight.y / crossSpacing) * crossSpacing;
 
         for (
-            let worldX = crossStartX;
-            worldX <= crossEndX;
-            worldX += crossSpacing
+            let worldX = crossStartX; worldX <= crossEndX; worldX += crossSpacing
         ) {
             for (
                 let worldY = crossStartY;

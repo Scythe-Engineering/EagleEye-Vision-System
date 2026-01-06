@@ -16,6 +16,9 @@ export class FlowchartCanvas {
         this.onViewportChange = options.onViewportChange || (() => {});
         this.interactiveGrid = null;
 
+        // Cache container dimensions to avoid getBoundingClientRect during zoom/pan
+        this.containerRect = { width: 0, height: 0, left: 0, top: 0 };
+
         this.init();
     }
 
@@ -28,6 +31,8 @@ export class FlowchartCanvas {
         this.container.style.backgroundColor = "#1a1a1a";
         this.container.style.cursor = "grab";
         this.container.style.borderRadius = "0 0 15px 15px";
+
+        this.updateContainerRect();
 
         // Create interactive grid (canvas-based dynamic grid)
         this.interactiveGrid = new InteractiveGrid(this.container, {
@@ -87,9 +92,24 @@ export class FlowchartCanvas {
         this.setupPanZoom();
     }
 
+    updateContainerRect() {
+        const rect = this.container.getBoundingClientRect();
+        this.containerRect = {
+            width: rect.width,
+            height: rect.height,
+            left: rect.left,
+            top: rect.top
+        };
+    }
+
     setupPanZoom() {
         let isPanning = false;
         let startX, startY;
+
+        const resizeObserver = new ResizeObserver(() => {
+            this.updateContainerRect();
+        });
+        resizeObserver.observe(this.container);
 
         this.container.addEventListener("mousedown", (e) => {
             if (e.button !== 0) return;
@@ -125,12 +145,12 @@ export class FlowchartCanvas {
         this.container.addEventListener(
             "wheel",
             (e) => {
-                const rect = this.container.getBoundingClientRect();
+                const rect = this.containerRect;
                 if (
                     e.clientX < rect.left ||
-                    e.clientX > rect.right ||
+                    e.clientX > rect.left + rect.width ||
                     e.clientY < rect.top ||
-                    e.clientY > rect.bottom
+                    e.clientY > rect.top + rect.height
                 ) {
                     return;
                 }
@@ -202,7 +222,7 @@ export class FlowchartCanvas {
     }
 
     screenToWorld(screenX, screenY) {
-        const rect = this.container.getBoundingClientRect();
+        const rect = this.containerRect;
 
         const worldX = (screenX - rect.left - this.translateX) / this.scale;
         const worldY = (screenY - rect.top - this.translateY) / this.scale;
