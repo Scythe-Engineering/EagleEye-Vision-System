@@ -41,31 +41,6 @@ export class FlowchartConnections {
             defs.appendChild(marker);
         }
         
-        const filterId = "connection-glow";
-        if (!defs.querySelector(`#${filterId}`)) {
-            const filter = document.createElementNS("http://www.w3.org/2000/svg", "filter");
-            filter.setAttribute("id", filterId);
-            filter.setAttribute("x", "-50%");
-            filter.setAttribute("y", "-50%");
-            filter.setAttribute("width", "200%");
-            filter.setAttribute("height", "200%");
-            
-            const feGaussianBlur = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
-            feGaussianBlur.setAttribute("stdDeviation", "2");
-            feGaussianBlur.setAttribute("result", "coloredBlur");
-            
-            const feMerge = document.createElementNS("http://www.w3.org/2000/svg", "feMerge");
-            const feMergeNode1 = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-            feMergeNode1.setAttribute("in", "coloredBlur");
-            const feMergeNode2 = document.createElementNS("http://www.w3.org/2000/svg", "feMergeNode");
-            feMergeNode2.setAttribute("in", "SourceGraphic");
-            feMerge.appendChild(feMergeNode1);
-            feMerge.appendChild(feMergeNode2);
-            
-            filter.appendChild(feGaussianBlur);
-            filter.appendChild(feMerge);
-            defs.appendChild(filter);
-        }
     }
 
     createConnection(connectionId, fromNode, fromPortName, toNode, toPortName, dataType) {
@@ -92,7 +67,7 @@ export class FlowchartConnections {
         hitArea.setAttribute("stroke", "transparent");
         hitArea.setAttribute("stroke-width", "20");
         hitArea.style.cursor = "pointer";
-        hitArea.setAttribute("pointer-events", "stroke");
+        hitArea.setAttribute("pointer-events", "auto");
         
         const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         labelGroup.setAttribute("class", "connection-label");
@@ -154,12 +129,12 @@ export class FlowchartConnections {
         
         group.addEventListener("mouseenter", () => {
             path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
-            path.setAttribute("filter", "url(#connection-glow)");
+            path.style.filter = "drop-shadow(0 0 4px " + this.connectionColor + ")";
         });
 
         group.addEventListener("mouseleave", () => {
             path.setAttribute("stroke-width", this.connectionWidth.toString());
-            path.removeAttribute("filter");
+            path.style.filter = "none";
         });
 
         group.addEventListener("click", (e) => {
@@ -312,11 +287,11 @@ export class FlowchartConnections {
         if (highlight) {
             connection.path.setAttribute("stroke", "#ffffff");
             connection.path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
-            connection.path.setAttribute("filter", "url(#connection-glow)");
+            connection.path.style.filter = "drop-shadow(0 0 4px #ffffff)";
         } else {
             connection.path.setAttribute("stroke", this.connectionColor);
             connection.path.setAttribute("stroke-width", this.connectionWidth.toString());
-            connection.path.removeAttribute("filter");
+            connection.path.style.filter = "none";
         }
     }
 
@@ -351,7 +326,7 @@ export class FlowchartConnections {
             tempPath.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
             tempPath.setAttribute("stroke-dasharray", "0");
             tempPath.setAttribute("opacity", "1");
-            tempPath.setAttribute("filter", "url(#connection-glow)");
+            tempPath.style.filter = "drop-shadow(0 0 4px " + this.connectionColor + ")";
         } else {
             // Start invisible for new connections
             tempPath.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
@@ -378,7 +353,7 @@ export class FlowchartConnections {
                 tempPath.setAttribute("stroke-dasharray", "5,5");
                 tempPath.setAttribute("stroke-width", this.connectionWidth.toString());
                 tempPath.setAttribute("opacity", "0.7");
-                tempPath.removeAttribute("filter");
+                tempPath.style.filter = "none";
             } else {
                 // Fade in for new connections
                 tempPath.setAttribute("opacity", "0.7");
