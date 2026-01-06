@@ -26,9 +26,12 @@ export class InteractiveGrid {
 
         // Operation-related properties
         this.operationPositions = [];
+        this.focusArea = null; // Alternative focal point (e.g., for placeholder)
         this.operationInfluenceRadius = 200;
         this.operationFadeDistance = 600;
         this.operationMaxDotSize = 3;
+        this.focusAreaInfluenceRadius = 150; // Influence radius for placeholder
+        this.focusAreaFadeDistance = 300; // Fade distance for placeholder
 
         // Caching for performance
         this.distanceCache = new Map();
@@ -135,6 +138,26 @@ export class InteractiveGrid {
     }
 
     /**
+     * Set a focus area (e.g., placeholder) for dot proximity effects
+     */
+    setFocusArea(area) {
+        this.focusArea = area;
+        // Clear caches when focus area changes
+        this.distanceCache.clear();
+        this.dotCache.clear();
+    }
+
+    /**
+     * Clear the focus area
+     */
+    clearFocusArea() {
+        this.focusArea = null;
+        // Clear caches when focus area changes
+        this.distanceCache.clear();
+        this.dotCache.clear();
+    }
+
+    /**
      * Convert screen coordinates to world coordinates
      */
     screenToWorld(screenX, screenY) {
@@ -170,6 +193,8 @@ export class InteractiveGrid {
         }
 
         let minDistance = Infinity;
+
+        // Check distance to operations
         for (const op of this.operationPositions) {
             // Calculate distance to the rectangle's edge
             const closestX = Math.max(op.x, Math.min(worldX, op.x + op.width));
@@ -186,6 +211,22 @@ export class InteractiveGrid {
     }
 
     /**
+     * Get distance from a world point to the focus area (e.g., placeholder)
+     */
+    getDistanceToFocusArea(worldX, worldY) {
+        if (!this.focusArea) {
+            return Infinity;
+        }
+
+        const { x, y, width, height } = this.focusArea;
+        const closestX = Math.max(x, Math.min(worldX, x + width));
+        const closestY = Math.max(y, Math.min(worldY, y + height));
+        const dx = worldX - closestX;
+        const dy = worldY - closestY;
+        return Math.hypot(dx, dy);
+    }
+
+    /**
      * Calculate base dot properties (only operation-dependent)
      */
     calculateBaseDotProperties(worldX, worldY) {
@@ -198,11 +239,12 @@ export class InteractiveGrid {
             return this.dotCache.get(cacheKey);
         }
 
-        // Calculate distance to nearest operation
+        // Calculate distances
         const distanceToOperation = this.getDistanceToNearestOperation(
             worldX,
             worldY,
         );
+        const distanceToFocusArea = this.getDistanceToFocusArea(worldX, worldY);
 
         let size = this.baseDotSize;
         let opacity = this.baseOpacity;
@@ -238,6 +280,38 @@ export class InteractiveGrid {
                 opacity *= fadeFactor;
             } else {
                 // Far from any operation - fade to zero
+                opacity = 0;
+            }
+        } else if (this.focusArea) {
+            // No operations, but focus area exists - apply focus area effects only
+            if (distanceToFocusArea <= this.focusAreaInfluenceRadius) {
+                // Dots grow near focus area
+                const focusInfluence =
+                    1 - distanceToFocusArea / this.focusAreaInfluenceRadius;
+                const easedFocusInfluence = focusInfluence * focusInfluence;
+                size = Math.max(
+                    size,
+                    this.baseDotSize +
+                        (this.operationMaxDotSize - this.baseDotSize) *
+                            easedFocusInfluence,
+                );
+                opacity = Math.max(
+                    opacity,
+                    this.baseOpacity +
+                        (this.maxOpacity - this.baseOpacity) *
+                            easedFocusInfluence *
+                            0.3,
+                );
+            }
+
+            // Fade dots based on distance from focus area
+            if (distanceToFocusArea < this.focusAreaFadeDistance) {
+                const fadeInfluence =
+                    1 - distanceToFocusArea / this.focusAreaFadeDistance;
+                const fadeFactor = Math.pow(fadeInfluence, 0.5); // Smooth falloff
+                opacity *= fadeFactor;
+            } else {
+                // Far from focus area - fade to zero
                 opacity = 0;
             }
         }
@@ -308,22 +382,44 @@ export class InteractiveGrid {
     }
 
     /**
-     * Calculate cross opacity based on distance from operations
+     * Calculate cross opacity based on distance from operations or focus area
      * Fades in gradually beyond the fade distance
      */
-    calculateCrossOpacity(distanceToOperation) {
-        const fadeStart = this.operationFadeDistance;
-        const fadeEnd = this.operationFadeDistance + 200;
+    calculateCrossOpacity(distanceToOperation, distanceToFocusArea) {
+        // If we have operations, use operation-based fade
+        if (this.operationPositions.length > 0) {
+            const fadeStart = this.operationFadeDistance;
+            const fadeEnd = this.operationFadeDistance + 200;
 
-        if (distanceToOperation <= fadeStart) {
-            return 0;
-        } else if (distanceToOperation >= fadeEnd) {
-            return this.crossOpacity;
-        } else {
-            const fadeProgress =
-                (distanceToOperation - fadeStart) / (fadeEnd - fadeStart);
-            return this.crossOpacity * fadeProgress;
+            if (distanceToOperation <= fadeStart) {
+                return 0;
+            } else if (distanceToOperation >= fadeEnd) {
+                return this.crossOpacity;
+            } else {
+                const fadeProgress =
+                    (distanceToOperation - fadeStart) / (fadeEnd - fadeStart);
+                return this.crossOpacity * fadeProgress;
+            }
         }
+
+        // If we have a focus area but no operations, use focus area-based fade
+        if (this.focusArea) {
+            const fadeStart = this.focusAreaFadeDistance;
+            const fadeEnd = this.focusAreaFadeDistance + 100; // Shorter fade range for focus area
+
+            if (distanceToFocusArea <= fadeStart) {
+                return 0;
+            } else if (distanceToFocusArea >= fadeEnd) {
+                return this.crossOpacity;
+            } else {
+                const fadeProgress =
+                    (distanceToFocusArea - fadeStart) / (fadeEnd - fadeStart);
+                return this.crossOpacity * fadeProgress;
+            }
+        }
+
+        // No operations or focus area
+        return this.crossOpacity;
     }
 
     /**
@@ -424,12 +520,16 @@ export class InteractiveGrid {
                     worldX,
                     worldY,
                 );
+                const distanceToFocusArea = this.getDistanceToFocusArea(
+                    worldX,
+                    worldY,
+                );
 
                 // Calculate cross opacity based on distance
-                const crossOpacity =
-                    this.operationPositions.length === 0
-                        ? this.crossOpacity
-                        : this.calculateCrossOpacity(distanceToOperation);
+                const crossOpacity = this.calculateCrossOpacity(
+                    distanceToOperation,
+                    distanceToFocusArea,
+                );
 
                 if (crossOpacity > 0.01) {
                     const screen = this.worldToScreen(worldX, worldY);

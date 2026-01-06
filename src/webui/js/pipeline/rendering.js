@@ -336,6 +336,7 @@ export class FlowchartRenderer {
         }
 
         const placeholder = document.getElementById("pipelinePlaceholder");
+        
         if (placeholder) {
             const selectedPipeline = window.pipelineCreator?.selectedPipeline;
             const shouldShow = !selectedPipeline;
@@ -351,10 +352,57 @@ export class FlowchartRenderer {
                     hintText.textContent = "Use the New Pipeline button above";
                     hintText.style.color = "#f9c845";
                 }
+                
+                // Set focus area on grid to a 50x50 square at center of placeholder
+                if (this.canvas && this.canvas.getInteractiveGrid) {
+                    const placeholderRect = placeholder.getBoundingClientRect();
+                    const containerRect = this.canvasContainer.getBoundingClientRect();
+                    
+                    // Calculate center of placeholder in screen coordinates
+                    const centerScreenX = placeholderRect.left + placeholderRect.width / 2;
+                    const centerScreenY = placeholderRect.top + placeholderRect.height / 2;
+                    
+                    // Create 50x50 unit square centered on placeholder center in screen coordinates
+                    const squareScreenLeft = centerScreenX - 25;
+                    const squareScreenTop = centerScreenY - 25;
+                    
+                    // Convert to world coordinates accounting for canvas transforms
+                    const relativeRect = {
+                        x: (squareScreenLeft - containerRect.left - this.canvas.translateX) / this.canvas.scale,
+                        y: (squareScreenTop - containerRect.top - this.canvas.translateY) / this.canvas.scale,
+                        width: 50 / this.canvas.scale,
+                        height: 50 / this.canvas.scale,
+                    };
+                    this.canvas.getInteractiveGrid().setFocusArea(relativeRect);
+                }
+                
+                // Disable zoom and pan when placeholder is shown
+                this.canvas.setPlaceholderVisible(true);
+                
+                // Clear minimap when no pipeline is selected
+                if (this.minimap) {
+                    this.minimap.updateNodes([]);
+                    this.minimap.updateConnections([]);
+                }
+            } else {
+                // Clear focus area when placeholder is hidden
+                if (this.canvas && this.canvas.getInteractiveGrid) {
+                    this.canvas.getInteractiveGrid().clearFocusArea();
+                }
+                
+                // Enable zoom and pan when placeholder is hidden
+                this.canvas.setPlaceholderVisible(false);
             }
         }
 
         if (pipeline.length === 0) {
+            // Update grid with empty operation positions to clear caches
+            this.updateGridOperationPositions();
+            // Clear minimap when pipeline is empty
+            if (this.minimap) {
+                this.minimap.updateNodes([]);
+                this.minimap.updateConnections([]);
+            }
             this.callbacks.updateRunButton();
             return;
         }
@@ -393,6 +441,9 @@ export class FlowchartRenderer {
 
         // Update grid with operation positions
         this.updateGridOperationPositions();
+
+        // Center view on all operations
+        this.centerViewOnNodes();
 
         this.callbacks.updateRunButton();
     }
@@ -858,6 +909,46 @@ export class FlowchartRenderer {
             positions[instanceId] = node.getPosition();
         });
         return positions;
+    }
+
+    centerViewOnNodes() {
+        if (this.nodes.size === 0) return;
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        this.nodes.forEach((node) => {
+            const pos = node.getPosition();
+            const nodeWidth = 200;
+            const nodeHeight = 80;
+
+            minX = Math.min(minX, pos.x - nodeWidth / 2);
+            minY = Math.min(minY, pos.y - nodeHeight / 2);
+            maxX = Math.max(maxX, pos.x + nodeWidth / 2);
+            maxY = Math.max(maxY, pos.y + nodeHeight / 2);
+        });
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        const containerRect = this.canvasContainer.getBoundingClientRect();
+        const padding = 100;
+
+        const scaleX = (containerRect.width - padding * 2) / width;
+        const scaleY = (containerRect.height - padding * 2) / height;
+        const scale = Math.min(scaleX, scaleY, 1);
+
+        this.canvas.scale = scale;
+        this.canvas.translateX =
+            containerRect.width / 2 - centerX * scale;
+        this.canvas.translateY =
+            containerRect.height / 2 - centerY * scale;
+
+        this.canvas.updateTransform();
     }
 
     fitToContent() {

@@ -105,6 +105,7 @@ export class FlowchartCanvas {
     setupPanZoom() {
         let isPanning = false;
         let startX, startY;
+        this.placeholderVisible = false;
 
         const resizeObserver = new ResizeObserver(() => {
             this.updateContainerRect();
@@ -113,6 +114,7 @@ export class FlowchartCanvas {
 
         this.container.addEventListener("mousedown", (e) => {
             if (e.button !== 0) return;
+            if (this.placeholderVisible) return;
 
             const isNode = e.target.closest(".flowchart-node");
             const isButton = e.target.closest("button");
@@ -145,6 +147,8 @@ export class FlowchartCanvas {
         this.container.addEventListener(
             "wheel",
             (e) => {
+                if (this.placeholderVisible) return;
+
                 const rect = this.containerRect;
                 if (
                     e.clientX < rect.left ||
@@ -262,6 +266,10 @@ export class FlowchartCanvas {
         this.translateX = state.translateX;
         this.translateY = state.translateY;
         this.updateTransform();
+    }
+
+    setPlaceholderVisible(isVisible) {
+        this.placeholderVisible = isVisible;
     }
 
     fitToContent() {
