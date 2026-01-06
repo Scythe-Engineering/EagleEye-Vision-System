@@ -1,0 +1,10 @@
+{
+    "class_name": "DeviceInput",
+    "description": "Provides the initial device input for the pipeline",
+    "category": "prep",
+    "input_nodes": [],
+    "output_nodes": [
+        "frame"
+    ],
+    "parameters": {}
+}
