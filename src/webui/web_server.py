@@ -1187,7 +1187,7 @@ class EagleEyeInterface:
                     merged_op = existing_ops[operation_name].copy()
                     for key, value in operation.items():
                         if key == "action_params":
-                            merged_op["action_params"] = operation_params
+                            merged_op["action_params"].update(operation_params)
                         else:
                             merged_op[key] = value
                 else:

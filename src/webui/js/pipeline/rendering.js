@@ -324,12 +324,16 @@ export class FlowchartRenderer {
         });
     }
 
-    async renderPipeline(pipeline) {
+    async renderPipeline(pipeline, options = {}) {
         this.pipeline = pipeline;
 
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
-        this.connections.clearAllConnections();
+
+        // Only clear connections if we're not preserving them (default behavior for loading saved connections)
+        if (!options.preserveConnections) {
+            this.connections.clearAllConnections();
+        }
 
         const placeholder = document.getElementById("pipelinePlaceholder");
         if (placeholder) {
@@ -366,6 +370,11 @@ export class FlowchartRenderer {
             }
 
             await this.createNode(item);
+        }
+
+        // Restore connections if provided
+        if (options.connections && options.connections.length > 0) {
+            this.restoreConnections(options.connections);
         }
 
         // Update minimap with current nodes
@@ -867,6 +876,25 @@ export class FlowchartRenderer {
             this.minimap.destroy();
         }
         this.canvas.destroy();
+    }
+
+    restoreConnections(connectionsData) {
+        connectionsData.forEach((conn) => {
+            const fromNode = this.nodes.get(conn.fromNodeId);
+            const toNode = this.nodes.get(conn.toNodeId);
+
+            if (fromNode && toNode) {
+                const connectionId = `${conn.fromNodeId}-${conn.fromPortName}-${conn.toNodeId}-${conn.toPortName}`;
+                this.connections.createConnection(
+                    connectionId,
+                    fromNode,
+                    conn.fromPortName,
+                    toNode,
+                    conn.toPortName,
+                    conn.dataType || conn.fromPortName,
+                );
+            }
+        });
     }
 }
 

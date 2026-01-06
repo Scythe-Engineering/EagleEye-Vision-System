@@ -339,6 +339,12 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             pipelineName,
         );
 
+        // Build UUID to instanceId mapping for connection restoration
+        const uuidToInstanceId = new Map();
+        
+        // Extract connections from first item (if present)
+        const connectionsData = pipelineConfig.length > 0 && pipelineConfig[0].connections ? pipelineConfig[0].connections : [];
+
         for (let index = 0; index < pipelineConfig.length; index++) {
             const configItem = pipelineConfig[index];
             let operation = operations.find(
@@ -360,9 +366,14 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             }
 
             if (operation) {
+                // Use UUID from config or generate new one
+                const itemUuid = configItem.uuid || uid("op-");
+                const instanceId = `${operation.id}_${Date.now()}_${index}`;
+
                 const pipelineItem = {
                     ...operation,
-                    instanceId: `${operation.id}_${Date.now()}_${index}`,
+                    instanceId: instanceId,
+                    uuid: itemUuid,
                     config: configItem.action_params || {},
                     originalConfig: configItem.action_params || {},
                     name: operation.name,
@@ -370,6 +381,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
                     position: configItem.position || null,
                 };
                 pipeline.push(pipelineItem);
+                uuidToInstanceId.set(itemUuid, instanceId);
             } else {
                 console.warn(
                     `Operation ${configItem.action_name} not found in available operations. Available operations:`,
@@ -378,16 +390,35 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             }
         }
 
-        await renderCurrentPipeline();
+        // Convert UUID-based connections to instanceId-based connections for rendering
+        let instanceIdConnections = null;
+        if (connectionsData.length > 0) {
+            instanceIdConnections = connectionsData.map(conn => ({
+                fromNodeId: uuidToInstanceId.get(conn.from_uuid),
+                toNodeId: uuidToInstanceId.get(conn.to_uuid),
+                fromPortName: conn.from_port,
+                toPortName: conn.to_port,
+                dataType: conn.data_type || conn.from_port
+            })).filter(conn => conn.fromNodeId && conn.toNodeId);
+        }
+
+        await renderCurrentPipeline(instanceIdConnections);
+
         updateRunButton();
     } catch (error) {
         console.error("Failed to load pipeline:", error);
     }
 }
 
-async function renderCurrentPipeline() {
+async function renderCurrentPipeline(connectionsData = null) {
     if (useFlowchartMode && flowchartRenderer) {
-        await flowchartRenderer.renderPipeline(pipeline);
+        // When connectionsData is provided, we're loading from config - don't preserve existing connections
+        // When connectionsData is null, we're doing normal operations - preserve existing connections
+        const options = connectionsData !== null
+            ? { connections: connectionsData }
+            : { preserveConnections: true };
+
+        await flowchartRenderer.renderPipeline(pipeline, options);
     } else {
         renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
@@ -636,6 +667,25 @@ async function autoSavePipeline() {
     }
     isAutoSaving = true;
     try {
+        // Get connections from flowchart renderer if available
+        let connections = [];
+        if (useFlowchartMode && flowchartRenderer && flowchartRenderer.connections) {
+            const connectionData = flowchartRenderer.connections.getConnectionData();
+            connections = connectionData.map(conn => {
+                // Map instanceId back to UUID
+                const fromItem = pipeline.find(item => item.instanceId === conn.fromNodeId);
+                const toItem = pipeline.find(item => item.instanceId === conn.toNodeId);
+                
+                return {
+                    from_uuid: fromItem?.uuid || null,
+                    from_port: conn.fromPortName,
+                    to_uuid: toItem?.uuid || null,
+                    to_port: conn.toPortName,
+                    data_type: conn.dataType || conn.fromPortName
+                };
+            }).filter(conn => conn.from_uuid && conn.to_uuid);
+        }
+
         const pipelineConfig = pipeline.map((item) => {
             const configParams = {};
             if (item.config) {
@@ -650,8 +700,14 @@ async function autoSavePipeline() {
                 action_name: item.id.replaceAll(".py", ""),
                 action_params: configParams,
                 position: item.position || null,
+                uuid: item.uuid || uid("op-"),
             };
         });
+
+        // Add connections as metadata on the first item if any exist
+        if (connections.length > 0 && pipelineConfig.length > 0) {
+            pipelineConfig[0].connections = connections;
+        }
 
         const response = await fetch(
             `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
@@ -1100,6 +1156,7 @@ async function handleFlowchartPipelineChange(changeEvent) {
         const newItem = {
             ...operation,
             instanceId: uid(operation.id + "-"),
+            uuid: uid("op-"),
             config: {},
             originalConfig: {},
             position: changeEvent.position,
