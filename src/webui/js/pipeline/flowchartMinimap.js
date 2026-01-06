@@ -11,9 +11,10 @@ export class FlowchartMinimap {
         this.backgroundColor = options.backgroundColor || "#1a1a1a";
         this.borderColor = options.borderColor || "#404040";
         this.nodeColor = options.nodeColor || "#f9c845";
+        this.connectionColor = options.connectionColor || "#f9c845";
         this.viewportColor = options.viewportColor || "rgba(249, 200, 69, 0.3)";
         this.viewportBorderColor = options.viewportBorderColor || "#f9c845";
-        
+
         this.element = null;
         this.canvasElement = null;
         this.ctx = null;
@@ -23,9 +24,10 @@ export class FlowchartMinimap {
 
         this.isDragging = false;
         this.nodes = [];
+        this.connections = [];
         this.worldBounds = { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
         this.isVisible = true;
-        
+
         this.init();
     }
 
@@ -60,7 +62,7 @@ export class FlowchartMinimap {
             position: relative;
             pointer-events: auto;
         `;
-        
+
         this.canvasElement = document.createElement("canvas");
         this.canvasElement.width = this.width;
         this.canvasElement.height = this.height;
@@ -68,9 +70,9 @@ export class FlowchartMinimap {
             width: 100%;
             height: 100%;
         `;
-        
+
         this.ctx = this.canvasElement.getContext("2d");
-        
+
         this.viewportRect = document.createElement("div");
         this.viewportRect.style.cssText = `
             position: absolute;
@@ -79,7 +81,7 @@ export class FlowchartMinimap {
             border-radius: 4px;
             pointer-events: none;
         `;
-        
+
         // Create close button
         this.closeButton = document.createElement("button");
         this.closeButton.innerHTML = "×";
@@ -146,7 +148,7 @@ export class FlowchartMinimap {
 
         this.contentContainer.appendChild(this.canvasElement);
         this.contentContainer.appendChild(this.viewportRect);
-        
+
         this.element.appendChild(this.contentContainer);
         this.element.appendChild(this.closeButton);
         this.element.appendChild(this.showButton);
@@ -155,10 +157,22 @@ export class FlowchartMinimap {
     }
 
     setupEventListeners() {
-        this.contentContainer.addEventListener("mousedown", this.handleMouseDown.bind(this));
-        this.contentContainer.addEventListener("mousemove", this.handleMouseMove.bind(this));
-        this.contentContainer.addEventListener("mouseup", this.handleMouseUp.bind(this));
-        this.contentContainer.addEventListener("mouseleave", this.handleMouseUp.bind(this));
+        this.contentContainer.addEventListener(
+            "mousedown",
+            this.handleMouseDown.bind(this),
+        );
+        this.contentContainer.addEventListener(
+            "mousemove",
+            this.handleMouseMove.bind(this),
+        );
+        this.contentContainer.addEventListener(
+            "mouseup",
+            this.handleMouseUp.bind(this),
+        );
+        this.contentContainer.addEventListener(
+            "mouseleave",
+            this.handleMouseUp.bind(this),
+        );
 
         // Close button logic
         this.closeButton.addEventListener("mousedown", (e) => {
@@ -193,43 +207,51 @@ export class FlowchartMinimap {
         const rect = this.contentContainer.getBoundingClientRect();
         const clickX = event.clientX - rect.left;
         const clickY = event.clientY - rect.top;
-        
+
         const scale = this.calculateScale();
         const worldX = this.worldBounds.minX + clickX / scale;
         const worldY = this.worldBounds.minY + clickY / scale;
-        
+
         const containerRect = this.canvas.container.getBoundingClientRect();
         const viewportState = this.canvas.getViewportState();
-        
-        const newTranslateX = containerRect.width / 2 - worldX * viewportState.scale;
-        const newTranslateY = containerRect.height / 2 - worldY * viewportState.scale;
-        
+
+        const newTranslateX =
+            containerRect.width / 2 - worldX * viewportState.scale;
+        const newTranslateY =
+            containerRect.height / 2 - worldY * viewportState.scale;
+
         this.canvas.setViewportState({
             scale: viewportState.scale,
             translateX: newTranslateX,
-            translateY: newTranslateY
+            translateY: newTranslateY,
         });
     }
 
     calculateScale() {
         const worldWidth = this.worldBounds.maxX - this.worldBounds.minX;
         const worldHeight = this.worldBounds.maxY - this.worldBounds.minY;
-        
+
         const scaleX = this.width / worldWidth;
         const scaleY = this.height / worldHeight;
-        
+
         return Math.min(scaleX, scaleY);
     }
 
     updateNodes(nodeDataList) {
-        this.nodes = nodeDataList.map(node => ({
+        this.nodes = nodeDataList.map((node) => ({
+            id: node.instanceId,
             x: node.position?.x || 0,
             y: node.position?.y || 0,
             width: node.width || 200,
-            height: node.height || 80
+            height: node.height || 80,
         }));
-        
+
         this.calculateWorldBounds();
+        this.render();
+    }
+
+    updateConnections(connectionsData) {
+        this.connections = connectionsData;
         this.render();
     }
 
@@ -241,10 +263,12 @@ export class FlowchartMinimap {
 
         const padding = 150;
 
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
+        let minX = Infinity,
+            minY = Infinity;
+        let maxX = -Infinity,
+            maxY = -Infinity;
 
-        this.nodes.forEach(node => {
+        this.nodes.forEach((node) => {
             minX = Math.min(minX, node.x);
             minY = Math.min(minY, node.y);
             maxX = Math.max(maxX, node.x + node.width);
@@ -264,17 +288,18 @@ export class FlowchartMinimap {
             minX: centerX - width / 2,
             minY: centerY - height / 2,
             maxX: centerX + width / 2,
-            maxY: centerY + height / 2
+            maxY: centerY + height / 2,
         };
     }
 
     render() {
         this.ctx.clearRect(0, 0, this.width, this.height);
-        
+
         this.ctx.fillStyle = this.backgroundColor;
         this.ctx.fillRect(0, 0, this.width, this.height);
-        
+
         this.renderGrid();
+        this.renderConnections();
         this.renderNodes();
         this.updateViewportRect();
     }
@@ -282,13 +307,15 @@ export class FlowchartMinimap {
     renderGrid() {
         const scale = this.calculateScale();
         const gridSpacing = 100;
-        
+
         this.ctx.strokeStyle = "rgba(64, 64, 64, 0.3)";
         this.ctx.lineWidth = 0.5;
-        
-        const startX = Math.floor(this.worldBounds.minX / gridSpacing) * gridSpacing;
-        const startY = Math.floor(this.worldBounds.minY / gridSpacing) * gridSpacing;
-        
+
+        const startX =
+            Math.floor(this.worldBounds.minX / gridSpacing) * gridSpacing;
+        const startY =
+            Math.floor(this.worldBounds.minY / gridSpacing) * gridSpacing;
+
         for (let x = startX; x <= this.worldBounds.maxX; x += gridSpacing) {
             const screenX = (x - this.worldBounds.minX) * scale;
             this.ctx.beginPath();
@@ -296,7 +323,7 @@ export class FlowchartMinimap {
             this.ctx.lineTo(screenX, this.height);
             this.ctx.stroke();
         }
-        
+
         for (let y = startY; y <= this.worldBounds.maxY; y += gridSpacing) {
             const screenY = (y - this.worldBounds.minY) * scale;
             this.ctx.beginPath();
@@ -308,24 +335,57 @@ export class FlowchartMinimap {
 
     renderNodes() {
         const scale = this.calculateScale();
-        
+
         this.ctx.fillStyle = this.nodeColor;
         this.ctx.shadowColor = "rgba(249, 200, 69, 0.3)";
         this.ctx.shadowBlur = 2;
-        
-        this.nodes.forEach(node => {
+
+        this.nodes.forEach((node) => {
             const x = (node.x - this.worldBounds.minX) * scale;
             const y = (node.y - this.worldBounds.minY) * scale;
             const w = Math.max(4, node.width * scale);
             const h = Math.max(3, node.height * scale);
-            
+
             this.ctx.beginPath();
             this.ctx.roundRect(x, y, w, h, 2);
             this.ctx.fill();
         });
-        
+
         this.ctx.shadowColor = "transparent";
         this.ctx.shadowBlur = 0;
+    }
+
+    renderConnections() {
+        const scale = this.calculateScale();
+
+        this.ctx.strokeStyle = this.connectionColor;
+        this.ctx.lineWidth = 1.5;
+        this.ctx.lineCap = "round";
+
+        this.connections.forEach((conn) => {
+            const fromNode = this.nodes.find((n) => n.id === conn.fromNodeId);
+            const toNode = this.nodes.find((n) => n.id === conn.toNodeId);
+
+            if (fromNode && toNode) {
+                const fromX =
+                    (fromNode.x + fromNode.width / 2 - this.worldBounds.minX) *
+                    scale;
+                const fromY =
+                    (fromNode.y + fromNode.height / 2 - this.worldBounds.minY) *
+                    scale;
+                const toX =
+                    (toNode.x + toNode.width / 2 - this.worldBounds.minX) *
+                    scale;
+                const toY =
+                    (toNode.y + toNode.height / 2 - this.worldBounds.minY) *
+                    scale;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(fromX, fromY);
+                this.ctx.lineTo(toX, toY);
+                this.ctx.stroke();
+            }
+        });
     }
 
     updateViewportRect() {

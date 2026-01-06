@@ -164,6 +164,7 @@ export class FlowchartRenderer {
             width: 180,
             height: 120,
             padding: 10,
+            connectionColor: "#f9c845",
         });
         this.minimap.attachTo(this.canvasContainer);
 
@@ -371,12 +372,14 @@ export class FlowchartRenderer {
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map(
                 (node) => ({
+                    instanceId: node.instanceId,
                     position: node.getPosition(),
                     width: 200,
                     height: 80,
                 }),
             );
             this.minimap.updateNodes(nodeDataList);
+            this.minimap.updateConnections(this.connections.getConnectionData());
         }
 
         // Update grid with operation positions
@@ -444,14 +447,14 @@ export class FlowchartRenderer {
 
         // Update minimap when node position changes
         if (this.minimap) {
-            const nodeDataList = Array.from(this.nodes.values()).map(
-                (n) => ({
-                    position: n.getPosition(),
-                    width: 200,
-                    height: 80,
-                }),
-            );
+            const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
+                instanceId: n.instanceId,
+                position: n.getPosition(),
+                width: 200,
+                height: 80,
+            }));
             this.minimap.updateNodes(nodeDataList);
+            this.minimap.updateConnections(this.connections.getConnectionData());
         }
 
         // Update grid with new operation positions during dragging
@@ -463,11 +466,9 @@ export class FlowchartRenderer {
      */
     updateGridOperationPositions() {
         if (this.canvas) {
-            const nodeDataList = Array.from(this.nodes.values()).map(
-                (n) => ({
-                    position: n.getPosition(),
-                }),
-            );
+            const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
+                position: n.getPosition(),
+            }));
             this.canvas.updateOperationPositions(nodeDataList);
         }
     }
@@ -794,6 +795,10 @@ export class FlowchartRenderer {
             fromPort, // Use output port name as data type for now
         );
 
+        if (this.minimap) {
+            this.minimap.updateConnections(this.connections.getConnectionData());
+        }
+
         this.cancelConnecting();
         this.callbacks.autoSavePipeline();
     }
@@ -813,6 +818,9 @@ export class FlowchartRenderer {
     }
 
     handleConnectionRemoved(connectionId) {
+        if (this.minimap) {
+            this.minimap.updateConnections(this.connections.getConnectionData());
+        }
         this.callbacks.autoSavePipeline();
     }
 
@@ -828,6 +836,10 @@ export class FlowchartRenderer {
             this.connections.removeConnectionsForNode(instanceId);
             node.destroy();
             this.nodes.delete(instanceId);
+
+            if (this.minimap) {
+                this.minimap.updateConnections(this.connections.getConnectionData());
+            }
         }
     }
 
