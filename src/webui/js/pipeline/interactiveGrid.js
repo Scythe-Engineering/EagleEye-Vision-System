@@ -18,6 +18,12 @@ export class InteractiveGrid {
         this.maxDotSize = 4;
         this.cursorInfluenceRadius = 150;
 
+        // Cross grid settings (for areas far from operations)
+        this.baseCrossSpacing = 200;
+        this.crossLineLength = 10; // Half-width of the cross arms
+        this.crossLineWidth = 1;
+        this.crossOpacity = 0.3;
+
         // Operation-related properties
         this.operationPositions = [];
         this.operationInfluenceRadius = 200;
@@ -219,6 +225,68 @@ export class InteractiveGrid {
         return { size, opacity };
     }
 
+    /**
+     * Calculate cross grid spacing based on zoom level
+     * Spacing doubles at thresholds: 1x, 0.5x, 0.25x, etc.
+     */
+    getCrossSpacing() {
+        if (this.scale >= 1.0) {
+            return this.baseCrossSpacing;
+        } else if (this.scale >= 0.5) {
+            return this.baseCrossSpacing * 2;
+        } else if (this.scale >= 0.25) {
+            return this.baseCrossSpacing * 4;
+        } else if (this.scale >= 0.125) {
+            return this.baseCrossSpacing * 8;
+        } else {
+            return this.baseCrossSpacing * 16;
+        }
+    }
+
+    /**
+     * Get cross size - constant screen size regardless of zoom
+     */
+    getCrossSize() {
+        return 10;
+    }
+
+    /**
+     * Calculate cross opacity based on distance from operations
+     * Fades in gradually beyond the fade distance
+     */
+    calculateCrossOpacity(distanceToOperation) {
+        const fadeStart = this.operationFadeDistance;
+        const fadeEnd = this.operationFadeDistance + 200;
+
+        if (distanceToOperation <= fadeStart) {
+            return 0;
+        } else if (distanceToOperation >= fadeEnd) {
+            return this.crossOpacity;
+        } else {
+            const fadeProgress =
+                (distanceToOperation - fadeStart) / (fadeEnd - fadeStart);
+            return this.crossOpacity * fadeProgress;
+        }
+    }
+
+    /**
+     * Draw a cross marker at the given screen coordinates
+     */
+    drawCross(screenX, screenY, size, opacity) {
+        this.ctx.strokeStyle = `rgba(128, 128, 128, ${opacity})`;
+        this.ctx.lineWidth = 1.5;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(screenX - size, screenY);
+        this.ctx.lineTo(screenX + size, screenY);
+        this.ctx.stroke();
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(screenX, screenY - size);
+        this.ctx.lineTo(screenX, screenY + size);
+        this.ctx.stroke();
+    }
+
     draw() {
         if (!this.ctx) return;
 
@@ -258,8 +326,9 @@ export class InteractiveGrid {
                     // Convert world position to screen position for drawing
                     const screen = this.worldToScreen(worldX, worldY);
 
-                    // Scale dot size with zoom level (but not too much)
-                    const scaledSize = size * Math.pow(this.scale, 0.5);
+                    // Keep dot size more consistent across zoom levels
+                    const scaledSize =
+                        size * Math.max(0.8, Math.min(1.2, this.scale));
 
                     this.ctx.fillStyle = `rgba(128, 128, 128, ${opacity})`;
                     this.ctx.beginPath();
@@ -271,6 +340,45 @@ export class InteractiveGrid {
                         Math.PI * 2,
                     );
                     this.ctx.fill();
+                }
+            }
+        }
+
+        // Draw cross markers in areas far from operations
+        const crossSpacing = this.getCrossSpacing();
+        const crossSize = this.getCrossSize();
+
+        const crossStartX = Math.floor(topLeft.x / crossSpacing) * crossSpacing;
+        const crossStartY = Math.floor(topLeft.y / crossSpacing) * crossSpacing;
+        const crossEndX =
+            Math.ceil(bottomRight.x / crossSpacing) * crossSpacing;
+        const crossEndY =
+            Math.ceil(bottomRight.y / crossSpacing) * crossSpacing;
+
+        for (
+            let worldX = crossStartX;
+            worldX <= crossEndX;
+            worldX += crossSpacing
+        ) {
+            for (
+                let worldY = crossStartY;
+                worldY <= crossEndY;
+                worldY += crossSpacing
+            ) {
+                const distanceToOperation = this.getDistanceToNearestOperation(
+                    worldX,
+                    worldY,
+                );
+
+                // Calculate cross opacity based on distance
+                const crossOpacity =
+                    this.operationPositions.length === 0
+                        ? this.crossOpacity
+                        : this.calculateCrossOpacity(distanceToOperation);
+
+                if (crossOpacity > 0.01) {
+                    const screen = this.worldToScreen(worldX, worldY);
+                    this.drawCross(screen.x, screen.y, crossSize, crossOpacity);
                 }
             }
         }
