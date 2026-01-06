@@ -1,9 +1,76 @@
 {
-    "basic_test": {
+    "basic_test": {},
+    "FaceTime HD Camera": {
         "test": [
             {
+                "action_name": "device_input",
+                "action_params": {},
+                "position": {
+                    "x": 100,
+                    "y": 80
+                },
+                "uuid": "op-mk2wto82-f3kv",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk2wto82-f3kv",
+                        "from_port": "frame",
+                        "to_uuid": "op-mk2wu7n4-64pk",
+                        "to_port": "frame",
+                        "data_type": "frame"
+                    },
+                    {
+                        "from_uuid": "op-mk2wto82-f3kv",
+                        "from_port": "frame",
+                        "to_uuid": "op-mk2wu5tu-3lj9",
+                        "to_port": "frame",
+                        "data_type": "frame"
+                    }
+                ]
+            },
+            {
+                "action_name": "detect_apriltags",
+                "action_params": {},
+                "position": {
+                    "x": 420,
+                    "y": -20
+                },
+                "uuid": "op-mk2wu5tu-3lj9",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk2wu5tu-3lj9",
+                        "from_port": "detections",
+                        "to_uuid": "op-mk2wua3z-h966",
+                        "to_port": "frame",
+                        "data_type": "detections"
+                    }
+                ]
+            },
+            {
                 "action_name": "color_threshold_detection",
-                "action_params": {}
+                "action_params": {},
+                "position": {
+                    "x": 420,
+                    "y": 80
+                },
+                "uuid": "op-mk2wu7n4-64pk",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk2wu7n4-64pk",
+                        "from_port": "detections",
+                        "to_uuid": "op-mk2wua3z-h966",
+                        "to_port": "camera_pose",
+                        "data_type": "detections"
+                    }
+                ]
+            },
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust",
+                "action_params": {},
+                "position": {
+                    "x": 860,
+                    "y": -20
+                },
+                "uuid": "op-mk2wua3z-h966"
             }
         ]
     }

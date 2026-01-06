@@ -3,7 +3,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
 
 import cv2
 import numpy as np
@@ -14,8 +14,15 @@ from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
+from src.utils.logging.logger import Logger
 
 debug_mode = False
+
+
+class Operation(TypedDict):
+    instance: object
+    connections: List[str]
+    name: str
 
 
 class Pipeline:
@@ -28,8 +35,8 @@ class Pipeline:
         camera_bus_id: str,
         compute_pool: ComputePool,
         network_table: NetworkTable,
+        logger: Logger,
         camera_manager: CameraThreadManager | None = None,
-        logger=None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -52,7 +59,11 @@ class Pipeline:
 
         self.thread_running = False
         self.thread = None
-        self.operations = self._initialize_operations()
+        self.operations: dict[str, Operation] = self._initialize_operations()
+        
+        if not self.operations:
+            raise ValueError("No operations configured in pipeline")
+        
         self.operation_time_history: List[deque[float]] = [
             deque(maxlen=50) for _ in range(len(self.operations))
         ]
@@ -77,28 +88,33 @@ class Pipeline:
         components = snake_str.split("_")
         return "".join(word.capitalize() for word in components)
 
-    def _initialize_operations(self) -> List[Any]:
+    def _initialize_operations(self) -> dict[str, Operation]:
         """Initialize operation instances based on configuration.
 
         Returns:
-            List of initialized operation instances.
+            Dict of initialized operation instances with uuids as keys.
         """
-        operations = []
+        operations: dict[str, Operation] = {}
 
         for operation_config in self.pipeline_config:
             action_name = operation_config["action_name"]
             action_params = operation_config.get("action_params", {})
+            action_uuid = operation_config.get("uuid", None)
+            action_connections = operation_config.get("connections", [])
+            
+            if not action_uuid:
+                raise(Exception(Colors.YELLOW + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline" + Colors.RESET))
 
             operation_instance = self._create_operation_instance(
                 action_name, action_params
             )
-            operations.append(operation_instance)
+            operations[action_uuid]: Operation = {"instance": operation_instance, "connections": action_connections, "name": action_name}
 
         return operations
 
     def _create_operation_instance(
         self, action_name: str, action_params: Dict[str, Any]
-    ) -> Any:
+    ) -> type:
         """Create an operation instance based on action name and parameters.
 
         Args:
@@ -196,9 +212,6 @@ class Pipeline:
         Raises:
             ValueError: If pipeline operations are empty or input validation fails.
         """
-        if not self.operations:
-            raise ValueError("No operations configured in pipeline")
-
         current_data = input_data
 
         time_elapsed = 0.0
