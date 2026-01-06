@@ -303,6 +303,16 @@ async function handleCameraSelection() {
     if (selectedCamera) {
         await fetchPipelinesForCamera(selectedCamera.name);
         populatePipelineDropdown();
+        
+        // Clear pipeline if camera has no pipelines
+        if (pipelines.length === 0) {
+            pipeline = [];
+            selectedPipeline = null;
+            // Render with empty connections to clear both operations and connections from flowchart
+            await renderCurrentPipeline({ connections: [] });
+        } else {
+            await renderCurrentPipeline();
+        }
         await checkAndTriggerAutoFill();
         updateDeleteButtonVisibility();
     }
@@ -784,8 +794,23 @@ async function createNewPipeline() {
             }
         }, 10);
 
+        // Automatically add device_input operation
+        const deviceInputOp = operations.find((op) => op.id === "device_input.py");
+        if (deviceInputOp) {
+            const deviceInputItem = {
+                ...deviceInputOp,
+                instanceId: uid(deviceInputOp.id + "-"),
+                uuid: uid("op-"),
+                config: {},
+                originalConfig: {},
+                position: { x: 100, y: 100 },
+                requiresRestart: false,
+            };
+            pipeline.push(deviceInputItem);
+        }
+
         console.log(
-            "[PIPELINE] Re-rendering empty pipeline for new pipeline creation",
+            "[PIPELINE] Re-rendering pipeline with camera_input for new pipeline creation",
             {
                 pipelineName: newPipelineName,
                 timestamp: new Date().toISOString(),
@@ -1357,16 +1382,7 @@ export async function initPipelineCreator() {
         handleDragStartWithLogging,
     );
 
-    await renderCurrentPipeline();
-
-    await checkBackendRestartStatus();
-
-    isInitialized = true;
-
-    if (globalThis.showBackendRestartIndicator) {
-        globalThis.showBackendRestartIndicator();
-    }
-
+    // Initialize globalThis.pipelineCreator BEFORE rendering so it's available during placeholder checks
     globalThis.pipelineCreator = {
         autoSavePipeline: autoSavePipeline,
         updateRestartIndicator: updateRestartIndicator,
@@ -1382,4 +1398,14 @@ export async function initPipelineCreator() {
         get: () => selectedPipeline,
         enumerable: true,
     });
+
+    await renderCurrentPipeline();
+
+    await checkBackendRestartStatus();
+
+    isInitialized = true;
+
+    if (globalThis.showBackendRestartIndicator) {
+        globalThis.showBackendRestartIndicator();
+    }
 }

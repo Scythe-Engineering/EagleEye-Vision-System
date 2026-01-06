@@ -337,19 +337,19 @@ export class FlowchartRenderer {
 
         const placeholder = document.getElementById("pipelinePlaceholder");
         if (placeholder) {
-            const shouldShow = pipeline.length === 0;
+            const selectedPipeline = window.pipelineCreator?.selectedPipeline;
+            const shouldShow = !selectedPipeline;
             placeholder.classList.toggle("hidden", !shouldShow);
 
             if (shouldShow) {
+                const mainText = placeholder.querySelector("p.text-lg");
                 const hintText = placeholder.querySelector("p:last-child");
-                if (hintText && !window.pipelineCreator?.selectedPipeline) {
-                    hintText.textContent =
-                        "Create a new pipeline first using the button above";
+                if (mainText) {
+                    mainText.textContent = "Make a new pipeline";
+                }
+                if (hintText) {
+                    hintText.textContent = "Use the New Pipeline button above";
                     hintText.style.color = "#f9c845";
-                } else if (hintText) {
-                    hintText.textContent =
-                        "Double-click to fit view • Scroll to zoom • Drag to pan";
-                    hintText.style.color = "#666";
                 }
             }
         }
@@ -906,7 +906,10 @@ export function renderPipeline(
 ) {
     pipelineContainer.innerHTML = "";
 
-    if (pipeline.length === 0) {
+    const selectedPipeline = window.pipelineCreator?.selectedPipeline;
+    const shouldShowPlaceholder = !selectedPipeline;
+
+    if (shouldShowPlaceholder) {
         pipelinePlaceholder.classList.remove("hidden");
         callbacks.updateRunButton();
         return;
