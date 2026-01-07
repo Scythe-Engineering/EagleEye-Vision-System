@@ -19,9 +19,17 @@ from src.utils.logging.logger import Logger
 debug_mode = False
 
 
+class Connection(TypedDict):
+    from_uuid: str
+    from_port: str
+    to_uuid: str
+    to_port: str
+    data_type: str
+
+
 class Operation(TypedDict):
     instance: object
-    connections: List[str]
+    connections: List[Connection]
     name: str
 
 
@@ -60,10 +68,10 @@ class Pipeline:
         self.thread_running = False
         self.thread = None
         self.operations: dict[str, Operation] = self._initialize_operations()
-        
+
         if not self.operations:
             raise ValueError("No operations configured in pipeline")
-        
+
         self.operation_time_history: List[deque[float]] = [
             deque(maxlen=50) for _ in range(len(self.operations))
         ]
@@ -101,14 +109,24 @@ class Pipeline:
             action_params = operation_config.get("action_params", {})
             action_uuid = operation_config.get("uuid", None)
             action_connections = operation_config.get("connections", [])
-            
+
             if not action_uuid:
-                raise(Exception(Colors.YELLOW + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline" + Colors.RESET))
+                raise (
+                    Exception(
+                        Colors.YELLOW
+                        + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline"
+                        + Colors.RESET
+                    )
+                )
 
             operation_instance = self._create_operation_instance(
                 action_name, action_params
             )
-            operations[action_uuid]: Operation = {"instance": operation_instance, "connections": action_connections, "name": action_name}
+            operations[action_uuid]: Operation = {
+                "instance": operation_instance,
+                "connections": action_connections,
+                "name": action_name,
+            }
 
         return operations
 
@@ -240,12 +258,17 @@ class Pipeline:
 
         if debug_mode and self.logger:
             print_timing_summary(
-                self.operations, self.operation_time_history, self.total_time_history, logger=self.logger
+                self.operations,
+                self.operation_time_history,
+                self.total_time_history,
+                logger=self.logger,
             )
 
         if visualize:
             if visualization_operation_name is None:
-                raise ValueError("Visualization operation name is required when visualize is True")
+                raise ValueError(
+                    "Visualization operation name is required when visualize is True"
+                )
             return self._visualize(input_data.copy(), visualization_operation_name)
 
     def get_operation_by_class_name(self, class_name: str) -> Any:
