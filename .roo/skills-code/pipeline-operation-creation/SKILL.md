@@ -136,7 +136,7 @@ class YoloDetectionImplementation:
 - **Type hints**: All parameters and return values
 - **Google-style docstrings**: For all functions
 - **Black formatting**: Python code
-- **No comments**: Use descriptive variable names instead
+- **Architectural comments**: Encouraged for complex blocks and non-obvious design decisions; avoid line-by-line comments
 - **Descriptive names**: No single-letter variables
 
 ## Common Gotchas

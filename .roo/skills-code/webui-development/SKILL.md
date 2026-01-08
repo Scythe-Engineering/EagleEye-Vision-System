@@ -131,7 +131,7 @@ Key endpoints:
 - **Prettier formatting**: tabWidth: 4 (from package.json)
 - **Type hints**: Use JSDoc comments for public functions
 - **Descriptive names**: No single-letter variables
-- **No comments**: Self-documenting code preferred
+- **Architectural comments**: Encouraged for complex blocks and non-obvious design decisions; avoid line-by-line comments
 
 ## Common Gotchas
 
