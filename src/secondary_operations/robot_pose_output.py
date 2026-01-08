@@ -1,10 +1,10 @@
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class RobotPoseOutput(SecondaryOperation):
+class RobotPoseOutput(OperationInstance):
     def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Output the robot pose to the web interface.
 

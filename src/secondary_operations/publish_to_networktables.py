@@ -3,10 +3,10 @@ from typing import Any
 
 from networktables import NetworkTable
 from src.utils.flatpack_schema.registry import registry
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class PublishToNetworktables(SecondaryOperation):
+class PublishToNetworktables(OperationInstance):
     def __init__(
         self,
         network_table: NetworkTable,

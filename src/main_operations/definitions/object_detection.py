@@ -8,9 +8,10 @@ from src.main_operations.modules.object_detection.yolo_detection.implementation 
     ObjectDetectionImplementation,
 )
 from src.utils.device_management_utils.compute_pool import ComputePool
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class ObjectDetectionDefinition:
+class ObjectDetectionDefinition(OperationInstance):
     """Main operation definition for generic object detection.
 
     Input: np.ndarray BGR frame (H, W, 3) uint8.

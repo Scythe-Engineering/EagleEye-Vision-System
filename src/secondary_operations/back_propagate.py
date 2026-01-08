@@ -1,7 +1,5 @@
 from typing import Any, Optional
 
-import numpy as np
-
 from src.config.utils.pipeline import Pipeline
 
 

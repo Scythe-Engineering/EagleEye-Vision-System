@@ -1,8 +1,8 @@
 from typing import Any
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class DeviceInput(SecondaryOperation):
+class DeviceInput(OperationInstance):
     """Device input operation that provides the initial device frame."""
 
     def __init__(self) -> None:

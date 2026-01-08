@@ -3,10 +3,10 @@ import numpy as np
 import cv2
 import subprocess
 from src.utils.colors import Colors
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class CameraAdjust(SecondaryOperation):
+class CameraAdjust(OperationInstance):
     def __init__(
         self,
         brightness: float = 0.0,

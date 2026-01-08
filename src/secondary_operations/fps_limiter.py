@@ -3,10 +3,10 @@ from typing import Any
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class FpsLimiter(SecondaryOperation):
+class FpsLimiter(OperationInstance):
     """Limits the frame rate by sleeping to maintain a target FPS.
 
     This operation records the time between runs and sleeps for the remaining

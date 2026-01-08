@@ -1,8 +1,8 @@
 import numpy as np
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class FlattenPose(SecondaryOperation):
+class FlattenPose(OperationInstance):
     """Flatten a pose matrix to have no z position component and preserve only y-axis rotation."""
 
     def run(self, pose: np.ndarray) -> np.ndarray:

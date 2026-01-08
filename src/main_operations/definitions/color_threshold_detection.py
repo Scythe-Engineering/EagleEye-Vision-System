@@ -7,9 +7,10 @@ from src.main_operations.modules.object_detection.color_threshold_detection.impl
     ColorThresholdDetectionImplementation,
 )
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class ColorThresholdDetectionDefinition:
+class ColorThresholdDetectionDefinition(OperationInstance):
     """Color-based object detection with preprocessing and multi-object support.
 
     This operation performs:
@@ -69,7 +70,7 @@ class ColorThresholdDetectionDefinition:
         self.distortion_coefficients: Optional[np.ndarray] = None
         if self.intrinsics_path is not None:
             self._load_camera_parameters()
-            
+
         if color_ranges is None:
             raise ValueError("Color ranges are required")
         if self.camera_matrix is None:
@@ -99,7 +100,7 @@ class ColorThresholdDetectionDefinition:
     def _load_camera_parameters(self) -> None:
         """Load camera intrinsics from file or resolve from camera bus ID."""
         intrinsics_path = self.intrinsics_path
-        
+
         if not isinstance(intrinsics_path, str):
             raise ValueError("Intrinsics path must be a string")
 
@@ -133,7 +134,7 @@ class ColorThresholdDetectionDefinition:
             return point
 
         point_reshaped = point.reshape(1, 1, 2).astype(np.float32)
-        undistorted = cv2.undistortPoints( # type: ignore
+        undistorted = cv2.undistortPoints(  # type: ignore
             point_reshaped,
             self.camera_matrix,
             self.distortion_coefficients,

@@ -3,7 +3,7 @@ from typing import Any
 
 from networktables import NetworkTable
 from src.config.utils.pipeline import Pipeline
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
 def _snake_to_camel(snake_str: str) -> str:
@@ -19,7 +19,7 @@ def _snake_to_camel(snake_str: str) -> str:
     return "".join(word.capitalize() for word in components)
 
 
-class UpdateAttributeWithNetworktables(SecondaryOperation):
+class UpdateAttributeWithNetworktables(OperationInstance):
     def __init__(
         self,
         pipeline: Pipeline,

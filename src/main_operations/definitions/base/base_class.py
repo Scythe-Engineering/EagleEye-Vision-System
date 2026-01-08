@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 
-class SecondaryOperation(ABC):
+class OperationInstance(ABC):
     """
     Base class for secondary operations
     """

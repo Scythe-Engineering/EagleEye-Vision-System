@@ -1,10 +1,10 @@
 import numpy as np
 from typing import List, Dict, Any, Optional
 from threading import Lock
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class GroundPlaneIntersection(SecondaryOperation):
+class GroundPlaneIntersection(OperationInstance):
     """Ground plane intersection for 3D position estimation.
 
     This operation calculates the 3D intersection points of detection bounding boxes

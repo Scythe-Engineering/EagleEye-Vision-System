@@ -1,9 +1,9 @@
 import numpy as np
 from typing import Optional, Dict
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class ExtractPose(SecondaryOperation):
+class ExtractPose(OperationInstance):
     """Extract 2D pose data (position and rotation) from a 4x4 transformation matrix."""
 
     def __init__(self) -> None:

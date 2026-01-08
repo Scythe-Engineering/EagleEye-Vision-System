@@ -6,15 +6,16 @@ import numpy as np
 
 # Import the Rust module (built automatically)
 try:
-    from temporal_acceleration import TemporalAcceleration # type: ignore
+    from temporal_acceleration import TemporalAcceleration  # type: ignore
 except ImportError:
     TemporalAcceleration = None
 
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class TemporalAccelerationPreprocessorRustDefinition:
+class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
     """Definition for temporal acceleration-based ROI generation using Rust implementation.
 
     This operation consumes back-propagated poses and predicts ROIs for

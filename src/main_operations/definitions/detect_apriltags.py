@@ -6,9 +6,10 @@ from ..modules.apriltags.apriltag_detector import AprilTagDetector
 from pupil_apriltags import Detection
 from ..modules.apriltags.apriltag_detector import CustomDetection
 from typing import List, Optional
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class DetectApriltagsDefinition:
+class DetectApriltagsDefinition(OperationInstance):
     """Definition for AprilTag detection operations."""
 
     def __init__(

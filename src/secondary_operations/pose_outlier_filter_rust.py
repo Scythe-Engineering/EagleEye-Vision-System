@@ -7,10 +7,10 @@ try:
 except ImportError:
     RustPoseOutlierFilter = None
 
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class PoseOutlierFilterRust(SecondaryOperation):
+class PoseOutlierFilterRust(OperationInstance):
     """Rust-based pose outlier filter for high-performance pose filtering.
 
     This is a Python wrapper around a Rust implementation of the pose outlier filter.

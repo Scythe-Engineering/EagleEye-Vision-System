@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Sequence
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class DetectedObjectsOutput(SecondaryOperation):
+class DetectedObjectsOutput(OperationInstance):
     def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Initialize detected objects output operation.
 

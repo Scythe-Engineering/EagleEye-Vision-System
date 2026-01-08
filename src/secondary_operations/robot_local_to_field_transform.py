@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import numpy as np
-from src.secondary_operations.base_class import SecondaryOperation
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class RobotLocalToFieldTransform(SecondaryOperation):
+class RobotLocalToFieldTransform(OperationInstance):
     def __init__(self) -> None:
         """Initialize robot-local to field transform operation.
 
