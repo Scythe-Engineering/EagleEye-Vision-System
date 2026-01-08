@@ -1,9 +1,10 @@
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class RobotPoseOutput:
+class RobotPoseOutput(SecondaryOperation):
     def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Output the robot pose to the web interface.
 
@@ -23,25 +24,3 @@ class RobotPoseOutput:
         self.web_interface.update_robot_position(pose)
         self._last_sent_pose = pose.copy()
         return pose
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the robot pose output.
-
-        This operation outputs pose data to the web interface only,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for output-only operations.
-        """
-        return None
-
-    def update_config(self, _: dict) -> None:
-        """Update the configuration of the robot pose output. No live-updatable parameters available.
-
-        Args:
-            json_config: JSON configuration for the robot pose output (ignored).
-        """
-        pass

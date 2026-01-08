@@ -132,17 +132,3 @@ class BackPropagate:
             raw_pipeline_name = json_config["target_pipeline_name"]
             self.target_pipeline_name = raw_pipeline_name if raw_pipeline_name else None
             self._invalidate_cache()
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the back propagation operation outputs.
-
-        This operation is a pass-through that may modify data flow,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for pass-through operations.
-        """
-        return None

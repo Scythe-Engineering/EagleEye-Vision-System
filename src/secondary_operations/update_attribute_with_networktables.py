@@ -3,6 +3,7 @@ from typing import Any
 
 from networktables import NetworkTable
 from src.config.utils.pipeline import Pipeline
+from src.secondary_operations.base_class import SecondaryOperation
 
 
 def _snake_to_camel(snake_str: str) -> str:
@@ -18,7 +19,7 @@ def _snake_to_camel(snake_str: str) -> str:
     return "".join(word.capitalize() for word in components)
 
 
-class UpdateAttributeWithNetworktables:
+class UpdateAttributeWithNetworktables(SecondaryOperation):
     def __init__(
         self,
         pipeline: Pipeline,
@@ -72,17 +73,3 @@ class UpdateAttributeWithNetworktables:
             self.attribute_name = json_config["attribute_name"]
         if "network_table_key" in json_config:
             self.network_table_key = json_config["network_table_key"]
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the network tables updater outputs.
-
-        This operation is a pass-through that doesn't modify data,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for pass-through operations.
-        """
-        return None

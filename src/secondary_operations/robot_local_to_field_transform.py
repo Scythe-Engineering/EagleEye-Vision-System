@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import numpy as np
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class RobotLocalToFieldTransform:
+class RobotLocalToFieldTransform(SecondaryOperation):
     def __init__(self) -> None:
         """Initialize robot-local to field transform operation.
 
@@ -97,22 +98,3 @@ class RobotLocalToFieldTransform:
             transformed_detections.append(updated_detection)
 
         return transformed_detections
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Return frame unchanged since visualization occurs in web interface.
-
-        Args:
-            frame: Input frame.
-
-        Returns:
-            The input frame unchanged.
-        """
-        return frame
-
-    def update_config(self, _: Dict[str, Any]) -> None:
-        """Update configuration parameters (no live parameters available).
-
-        Args:
-            _: Unused configuration dictionary.
-        """
-        return None

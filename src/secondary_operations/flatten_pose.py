@@ -1,7 +1,8 @@
 import numpy as np
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class FlattenPose:
+class FlattenPose(SecondaryOperation):
     """Flatten a pose matrix to have no z position component and preserve only y-axis rotation."""
 
     def run(self, pose: np.ndarray) -> np.ndarray:
@@ -34,25 +35,3 @@ class FlattenPose:
         flattened_pose[2, 2] = 1.0
 
         return flattened_pose
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the flatten pose outputs.
-
-        This operation returns pose transformation data only,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for transform-only operations.
-        """
-        return None
-
-    def update_config(self, _: dict) -> None:
-        """Update the configuration of the flatten pose operation. No live-updatable parameters available.
-
-        Args:
-            json_config: JSON configuration for the flatten pose operation (ignored).
-        """
-        pass

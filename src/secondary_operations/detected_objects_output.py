@@ -4,9 +4,10 @@ from typing import Any, Dict, List, Sequence
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class DetectedObjectsOutput:
+class DetectedObjectsOutput(SecondaryOperation):
     def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Initialize detected objects output operation.
 
@@ -90,18 +91,3 @@ class DetectedObjectsOutput:
         self.web_interface.update_detected_objects(payloads)
         self._last_signature = signature
         return detections
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Return frame unchanged since visualization happens in web interface.
-
-        Args:
-            frame: Input frame.
-
-        Returns:
-            The input frame unchanged.
-        """
-        return frame
-
-    def update_config(self, _: Dict[str, Any]) -> None:
-        """Update configuration parameters (no live parameters available)."""
-        return None

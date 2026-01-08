@@ -3,9 +3,10 @@ import numpy as np
 import cv2
 import subprocess
 from src.utils.colors import Colors
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class CameraAdjust:
+class CameraAdjust(SecondaryOperation):
     def __init__(
         self,
         brightness: float = 0.0,
@@ -53,13 +54,13 @@ class CameraAdjust:
         """
         return frame
 
-    def update_config(self, params: Dict[str, Any]) -> None:
+    def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update configuration and apply to hardware device controls.
 
         Args:
-            params: Mapping of parameter names to new values.
+            json_config: Mapping of parameter names to new values.
         """
-        for key, value in params.items():
+        for key, value in json_config.items():
             if hasattr(self, key):
                 setattr(self, key, value)
         self._apply_device_controls()

@@ -5,9 +5,10 @@ from threading import Lock
 from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.apriltag_detector import CustomDetection
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class TagFilter:
+class TagFilter(SecondaryOperation):
     """Filter AprilTag detections based on whitelist or blacklist of tag IDs."""
 
     def __init__(

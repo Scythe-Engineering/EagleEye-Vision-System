@@ -1,7 +1,8 @@
 from typing import Any
+from src.secondary_operations.base_class import SecondaryOperation
 
 
-class DeviceInput:
+class DeviceInput(SecondaryOperation):
     """Device input operation that provides the initial device frame."""
 
     def __init__(self) -> None:
@@ -16,24 +17,7 @@ class DeviceInput:
         Returns:
             The input frame.
         """
-        print("DeviceInput.run() should not be called during normal operation, frame should be injected into next operations instead.")
+        print(
+            "DeviceInput.run() should not be called during normal operation, frame should be injected into next operations instead."
+        )
         return frame
-
-    def visualize(self, frame: Any) -> Any:
-        """Return the frame for visualization.
-
-        Args:
-            frame: Input frame.
-
-        Returns:
-            The input frame unchanged.
-        """
-        return frame
-
-    def update_config(self, _: dict) -> None:
-        """Update the configuration (no parameters to update).
-
-        Args:
-            json_config: Configuration (ignored).
-        """
-        pass
