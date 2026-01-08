@@ -5,6 +5,8 @@ from typing import Dict
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.device_management_utils.compute_pool import ComputePool
+from src.utils.logging.logger import Logger
+from src.utils.colors import Colors
 from networktables import NetworkTable
 
 # Find project root by walking up from this file's directory until we find 'src'
@@ -52,8 +54,8 @@ def generate_all_pipelines(
     compute_pool: ComputePool,
     network_table: NetworkTable,
     camera_manager,
+    logger: Logger,
     pipeline_config: str | None = None,
-    logger=None,
 ) -> Dict[str, Dict[str, Pipeline]]:
     """Generate all pipelines from the pipeline_config.json file.
 
@@ -86,15 +88,21 @@ def generate_all_pipelines(
         for pipeline_name in config_data[camera_name].keys():
             config = config_data[camera_name][pipeline_name]
 
-            pipeline = Pipeline(
-                config,
-                web_interface,
-                camera_name,
-                compute_pool,
-                network_table,
-                camera_manager,
-                logger=logger,
-            )
+            try:
+                pipeline = Pipeline(
+                    config,
+                    web_interface,
+                    camera_name,
+                    compute_pool,
+                    network_table,
+                    logger,
+                    camera_manager,
+                )
+            except Exception as e:
+                logger.log(
+                    f"{Colors.RED}Error creating pipeline for camera {camera_name} and pipeline {pipeline_name}: {e}{Colors.RESET}"
+                )
+                continue
             pipelines[camera_name][pipeline_name] = pipeline
             pipeline_count += 1
 

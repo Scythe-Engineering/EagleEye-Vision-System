@@ -1,3 +1,87 @@
 {
-    "basic_test": {}
+    "basic_test": {
+        "test": [
+            {
+                "action_name": "device_input",
+                "action_params": {},
+                "position": {
+                    "x": 100,
+                    "y": 100
+                },
+                "uuid": "op-mk60jqlu-vb7",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk60jqlu-vb7",
+                        "from_port": "frame",
+                        "to_uuid": "op-mk60jrt5-9es1",
+                        "to_port": "frame",
+                        "data_type": "frame"
+                    }
+                ]
+            },
+            {
+                "action_name": "detect_apriltags",
+                "action_params": {},
+                "position": {
+                    "x": 400,
+                    "y": 100
+                },
+                "uuid": "op-mk60jrt5-9es1",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk60jrt5-9es1",
+                        "from_port": "detections",
+                        "to_uuid": "op-mk60k0f0-5bb0",
+                        "to_port": "detections",
+                        "data_type": "detections"
+                    }
+                ]
+            },
+            {
+                "action_name": "pnp_camera_localization",
+                "action_params": {},
+                "position": {
+                    "x": 700,
+                    "y": 100
+                },
+                "uuid": "op-mk60k0f0-5bb0",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk60k0f0-5bb0",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mk60kmaw-kwwt",
+                        "to_port": "pose_3d",
+                        "data_type": "camera_pose"
+                    }
+                ]
+            },
+            {
+                "action_name": "flatten_pose",
+                "action_params": {},
+                "position": {
+                    "x": 1060,
+                    "y": 100
+                },
+                "uuid": "op-mk60kmaw-kwwt",
+                "connections": [
+                    {
+                        "from_uuid": "op-mk60kmaw-kwwt",
+                        "from_port": "pose_2d",
+                        "to_uuid": "op-mk60ks00-1rdu",
+                        "to_port": "pose",
+                        "data_type": "pose_2d"
+                    }
+                ]
+            },
+            {
+                "action_name": "robot_pose_output",
+                "action_params": {},
+                "position": {
+                    "x": 1360,
+                    "y": 100
+                },
+                "uuid": "op-mk60ks00-1rdu"
+            }
+        ]
+    }
 }

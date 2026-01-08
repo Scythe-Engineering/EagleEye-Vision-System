@@ -565,7 +565,9 @@ import { BACKEND_BASE_URL } from "../config.js";
         }
     }
 
-    function showNoVisualizationMessage(operationName) {
+    function showVisualizationErrorMessage(
+        message = "Error getting visualization",
+    ) {
         const { liveViewPanel } = findOverlayElements();
         if (!liveViewPanel) return;
 
@@ -580,22 +582,43 @@ import { BACKEND_BASE_URL } from "../config.js";
             imgEl.classList.add("hidden");
         }
 
-        // Hide default placeholder and text
+        // Hide default placeholder and all text elements
         const placeholderEl = liveViewContainer.querySelector(
             "[data-role='live-view-placeholder']",
         );
         const textElements = liveViewContainer.querySelectorAll("p");
-
-        if (placeholderEl) placeholderEl.style.display = "none";
-        textElements.forEach((p) => (p.style.display = "none"));
-
-        // Show the no visualization message
         const noVisMessage = liveViewContainer.querySelector(
             "#noVisualizationMessage",
         );
-        if (noVisMessage) {
-            noVisMessage.classList.remove("hidden");
+
+        if (placeholderEl) {
+            placeholderEl.style.display = "none";
+            placeholderEl.classList.add("hidden");
         }
+        textElements.forEach((p) => {
+            p.style.display = "none";
+            p.classList.add("hidden");
+        });
+        if (noVisMessage) {
+            noVisMessage.style.display = "none";
+            noVisMessage.classList.add("hidden");
+        }
+
+        // Create or update error message element as a styled box
+        let errorMsgEl = liveViewContainer.querySelector(
+            "#visualizationErrorMessage",
+        );
+        if (!errorMsgEl) {
+            errorMsgEl = createElement("div", {
+                id: "visualizationErrorMessage",
+                className:
+                    "w-full bg-red-900/20 border-2 border-red-500/50 rounded-xl shadow-lg p-6 text-center text-red-400 text-lg font-medium mx-auto my-8",
+            });
+            liveViewContainer.appendChild(errorMsgEl);
+        }
+        errorMsgEl.textContent = message;
+        errorMsgEl.style.display = "block";
+        errorMsgEl.classList.remove("hidden");
     }
 
     function init() {
@@ -684,13 +707,24 @@ import { BACKEND_BASE_URL } from "../config.js";
                     action: actionNameForApi,
                     timestamp: new Date().toISOString(),
                 });
-                await fetch(
+                const startResponse = await fetch(
                     `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(actionNameForApi)}`,
                     {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                     },
                 );
+
+                if (startResponse.status !== 200) {
+                    console.warn(
+                        "[SETTINGS] start_visualize returned non-200 status:",
+                        startResponse.status,
+                    );
+                    showVisualizationErrorMessage(
+                        "Error getting visualization",
+                    );
+                    return;
+                }
 
                 _currentVisCamera = selectedCameraName;
                 _currentVisPipeline = selectedPipelineName;
@@ -723,18 +757,22 @@ import { BACKEND_BASE_URL } from "../config.js";
                 const noVisMessage = liveViewContainer.querySelector(
                     "#noVisualizationMessage",
                 );
+                const errorMsg = liveViewContainer.querySelector(
+                    "#visualizationErrorMessage",
+                );
 
                 if (placeholderEl) placeholderEl.style.display = "none";
                 textElements.forEach((p) => (p.style.display = "none"));
                 if (noVisMessage) noVisMessage.classList.add("hidden");
+                if (errorMsg) errorMsg.classList.add("hidden");
 
                 imgEl.classList.remove("hidden");
 
                 // Start polling at 10Hz (every 100ms)
                 if (_visInterval) clearInterval(_visInterval);
-                let hasNoVisualization = false;
+                let hasError = false;
                 _visInterval = setInterval(async () => {
-                    if (hasNoVisualization) {
+                    if (hasError) {
                         return;
                     }
                     try {
@@ -744,24 +782,14 @@ import { BACKEND_BASE_URL } from "../config.js";
                         });
 
                         if (!response.ok) {
-                            // Check if it's a "no visualization" response
-                            if (response.status === 500) {
-                                const errorText = await response.text();
-                                if (
-                                    errorText.includes(
-                                        "Function has no visualization",
-                                    )
-                                ) {
-                                    hasNoVisualization = true;
-                                    if (_visInterval) {
-                                        clearInterval(_visInterval);
-                                        _visInterval = null;
-                                    }
-                                    showNoVisualizationMessage(operationName);
-                                    return;
-                                }
+                            hasError = true;
+                            if (_visInterval) {
+                                clearInterval(_visInterval);
+                                _visInterval = null;
                             }
-                            // Silently ignore other errors to prevent console spam
+                            showVisualizationErrorMessage(
+                                "Error getting visualization",
+                            );
                             return;
                         }
 
@@ -773,23 +801,31 @@ import { BACKEND_BASE_URL } from "../config.js";
                         _currentVisObjectUrl = objectUrl;
                         imgEl.src = objectUrl;
                     } catch (err) {
-                        // Silently ignore errors to prevent console spam
-                        // Errors are expected when operations don't support visualization
+                        hasError = true;
+                        if (_visInterval) {
+                            clearInterval(_visInterval);
+                            _visInterval = null;
+                        }
+                        console.warn(
+                            "[SETTINGS] Error processing visualization frame:",
+                            err,
+                        );
                     }
                 }, 100);
             } catch (err) {
                 console.warn("Failed to start visualization:", err);
+                showVisualizationErrorMessage("Error getting visualization");
             }
         };
 
         // Fetch config data from server
         fetchConfigData(operationName, isSecondary)
-            .then((config) => {
+            .then(async (config) => {
                 if (!config) {
                     body.innerHTML =
                         '<div class="text-center text-red-400 py-8">Failed to load configuration</div>';
-                    // Try to start visualization anyway (best-effort)
-                    startVisIfReady();
+                    // Wait for visualization to be set up before returning
+                    await startVisIfReady();
                     return;
                 }
 
@@ -830,15 +866,15 @@ import { BACKEND_BASE_URL } from "../config.js";
                 }
                 if (cancelBtn) cancelBtn.onclick = () => close();
 
-                // Start visualization now that modal content is ready
-                startVisIfReady();
+                // Start visualization now that modal content is ready - wait for it to complete
+                await startVisIfReady();
             })
-            .catch((error) => {
+            .catch(async (error) => {
                 console.error("Error loading config:", error);
                 body.innerHTML =
                     '<div class="text-center text-red-400 py-8">Error loading configuration</div>';
-                // Best-effort start
-                startVisIfReady();
+                // Wait for visualization to be set up
+                await startVisIfReady();
             });
 
         overlay.classList.remove("hidden");
@@ -915,15 +951,31 @@ import { BACKEND_BASE_URL } from "../config.js";
                 const textElements = liveViewContainer.querySelectorAll("p");
 
                 if (imgEl) imgEl.classList.add("hidden");
-                if (placeholderEl) placeholderEl.style.display = "";
-                textElements.forEach((p) => (p.style.display = ""));
+                if (placeholderEl) {
+                    placeholderEl.style.display = "";
+                    placeholderEl.classList.remove("hidden");
+                }
+                textElements.forEach((p) => {
+                    p.style.display = "";
+                    p.classList.remove("hidden");
+                });
 
                 // Hide no visualization message
                 const noVisMessage = liveViewContainer.querySelector(
                     "#noVisualizationMessage",
                 );
                 if (noVisMessage) {
+                    noVisMessage.style.display = "none";
                     noVisMessage.classList.add("hidden");
+                }
+
+                // Hide error message
+                const errorMsg = liveViewContainer.querySelector(
+                    "#visualizationErrorMessage",
+                );
+                if (errorMsg) {
+                    errorMsg.style.display = "none";
+                    errorMsg.classList.add("hidden");
                 }
 
                 // Reset the text back to default

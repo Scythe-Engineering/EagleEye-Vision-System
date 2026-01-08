@@ -1120,9 +1120,9 @@ class EagleEyeInterface:
                 action_params = self._reorder_operation_params(
                     operation_name, operation["action_params"]
                 )
-                
+
                 operation["action_params"] = action_params
-    
+
                 reordered_pipeline.append(operation)
 
             return reordered_pipeline
@@ -1148,7 +1148,7 @@ class EagleEyeInterface:
     ) -> tuple[dict, int]:
         """
         Save the pipeline config. Json should be of the following at least, other data allowed:
-        
+
         {
             action_name: str,
             action_params: dict (param name: param value),
@@ -1174,7 +1174,10 @@ class EagleEyeInterface:
                 current_config[camera_name][pipeline_name] = []
 
             # Merge operations while preserving existing data and enabling reordering
-            existing_ops = {op["action_name"]: op for op in current_config[camera_name][pipeline_name]}
+            existing_ops = {
+                op["action_name"]: op
+                for op in current_config[camera_name][pipeline_name]
+            }
             updated_operations = []
             for operation in new_data:
                 operation_name = operation["action_name"]
@@ -1245,16 +1248,24 @@ class EagleEyeInterface:
         Returns:
             A response message and HTTP status code.
         """
-        self.pipeline_objects_callback()[camera_name][pipeline_name].start_visualize(
-            operation_name
-        )
+        try:
+            self.pipeline_objects_callback()[camera_name][
+                pipeline_name
+            ].start_visualize(operation_name)
+        except KeyError:
+            return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized successfully"}, 200
 
     def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
         """
         Stop visualizing the pipeline.
         """
-        self.pipeline_objects_callback()[camera_name][pipeline_name].stop_visualize()
+        try:
+            self.pipeline_objects_callback()[camera_name][
+                pipeline_name
+            ].stop_visualize()
+        except KeyError:
+            return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized stopped"}, 200
 
     def visualize(self, camera_name: str, pipeline_name: str) -> Response:
@@ -1263,7 +1274,10 @@ class EagleEyeInterface:
 
         Returns the image as JPEG binary data.
         """
-        pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+        try:
+            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+        except KeyError:
+            return Response("Pipeline not found", status=404, mimetype="text/plain")
 
         # Get visualization data from pipeline
         with pipeline.visualization_data_lock:

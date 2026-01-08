@@ -1,7 +1,11 @@
 from __future__ import annotations
-from typing import Any
-from src.config.utils.thread_object import ThreadObject
+
+from typing import TYPE_CHECKING, Any
+
 from src.main_operations.definitions.base.base_class import OperationInstance
+
+if TYPE_CHECKING:
+    from src.config.utils.thread_object import ThreadObject
 
 
 class Operation:
@@ -143,5 +147,7 @@ class Connection:
         self.to_port: str = to_port
         self.data_type: str = data_type
 
+        self.from_operation.add_output_connection(self)
+        self.to_operation.add_input_connection(self)
         self.from_operation.add_output_connection(self)
         self.to_operation.add_input_connection(self)
