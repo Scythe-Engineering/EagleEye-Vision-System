@@ -30,6 +30,8 @@ dependencies = [
   "onnxruntime",
   "linuxpy",
   "maturin",
+  "pydantic",
+  "mypy",
   "memryx; sys_platform == 'linux'",
 ]
 
