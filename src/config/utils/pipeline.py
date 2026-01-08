@@ -3,34 +3,23 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict
 
 import cv2
 import numpy as np
 from networktables import NetworkTable
 
-from src.config.utils.print_timing_summary import print_timing_summary
+from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 from src.utils.logging.logger import Logger
+from src.config.utils.operation import Operation, Connection
+from src.main_operations.definitions.base.base_class import OperationInstance
+from src.config.utils.flow_manager import FlowManager
 
 debug_mode = False
-
-
-class Connection(TypedDict):
-    from_uuid: str
-    from_port: str
-    to_uuid: str
-    to_port: str
-    data_type: str
-
-
-class Operation(TypedDict):
-    instance: object
-    connections: List[Connection]
-    name: str
 
 
 class Pipeline:
@@ -72,12 +61,10 @@ class Pipeline:
         if not self.operations:
             raise ValueError("No operations configured in pipeline")
 
-        self.operation_time_history: List[deque[float]] = [
-            deque(maxlen=50) for _ in range(len(self.operations))
-        ]
+        self.flow_manager = FlowManager(self.operations)
+
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
-        self.all_total_times: List[float] = []
 
         self.set_visualize = False
         self.visualization_data = None
@@ -103,36 +90,85 @@ class Pipeline:
             Dict of initialized operation instances with uuids as keys.
         """
         operations: dict[str, Operation] = {}
+        all_connections_unprocessed: list[dict[str, str]] = []
 
+        # Gather all connections and operations from config
         for operation_config in self.pipeline_config:
             action_name = operation_config["action_name"]
             action_params = operation_config.get("action_params", {})
             action_uuid = operation_config.get("uuid", None)
-            action_connections = operation_config.get("connections", [])
+
+            for connection in operation_config.get("connections", []):
+                all_connections_unprocessed.append(connection)
 
             if not action_uuid:
-                raise (
-                    Exception(
-                        Colors.YELLOW
-                        + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline"
-                        + Colors.RESET
-                    )
+                raise ValueError(
+                    Colors.YELLOW
+                    + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline"
+                    + Colors.RESET
                 )
 
             operation_instance = self._create_operation_instance(
                 action_name, action_params
             )
-            operations[action_uuid]: Operation = {
-                "instance": operation_instance,
-                "connections": action_connections,
-                "name": action_name,
-            }
+            operations[action_uuid]: Operation = Operation(
+                instance=operation_instance,
+                uuid=action_uuid,
+                name=action_name,
+            )
+
+        # link all connections once all operations are created
+        for connection in all_connections_unprocessed:
+            try:
+                from_operation = operations[connection["from_uuid"]]
+            except KeyError:
+                raise ValueError(
+                    f"Connection issue: operation {connection['from_uuid']} not found"
+                )
+            try:
+                to_operation = operations[connection["to_uuid"]]
+            except KeyError:
+                raise ValueError(
+                    f"Connection issue: operation {connection['to_uuid']} not found"
+                )
+
+            try:
+                # connection will register itself with operations when it is created
+                Connection(
+                    from_operation=from_operation,
+                    from_port=connection["from_port"],
+                    to_operation=to_operation,
+                    to_port=connection["to_port"],
+                    data_type=connection["data_type"],
+                )
+            except KeyError as e:
+                raise ValueError(
+                    f"Malformed connection data: missing key {e} in connection {connection}"
+                )
+
+        detect_connection_cycles(operations)
+
+        orphan_operations = [
+            operation
+            for operation in operations.values()
+            if not operation.has_input_connections
+        ]
+        if len(orphan_operations) > 0:
+            print(
+                Colors.YELLOW
+                + f"WARNING: Orphan Operation!! Operations {[op.name for op in orphan_operations]} have no input connections"
+                + Colors.RESET
+            )
+            for operation in orphan_operations:
+                operations.pop(
+                    operation.uuid
+                )  # remove orphan operation, more important to make the rest work than crash
 
         return operations
 
     def _create_operation_instance(
         self, action_name: str, action_params: Dict[str, Any]
-    ) -> type:
+    ) -> OperationInstance:
         """Create an operation instance based on action name and parameters.
 
         Args:
@@ -206,6 +242,12 @@ class Pipeline:
             ):
                 init_params["logger"] = self.logger
 
+            # check if operation class is a subclass of OperationInstance
+            if not issubclass(operation_class, OperationInstance):
+                raise ValueError(
+                    f"Operation {action_name} is not a subclass of OperationInstance"
+                )
+
             return operation_class(**init_params)
 
         except TypeError as e:
@@ -216,53 +258,28 @@ class Pipeline:
         input_data: np.ndarray,
         visualize: bool = False,
         visualization_operation_name: str | None = None,
-    ) -> Any | None:
-        """Run the pipeline with the given input data.
+    ) -> np.ndarray | None:
+        """Run the pipeline with the given input data using FlowManager.
 
         Args:
             input_data: Input data to process through the pipeline.
             visualize: Whether to visualize the pipeline.
+            visualization_operation_name: Name of operation to visualize up to.
 
         Returns:
-            If visualize is True, returns a dictionary with the frame and visualization data.
-            Otherwise, returns nothing
+            If visualize is True, returns the visualized frame.
+            Otherwise, returns None.
 
         Raises:
-            ValueError: If pipeline operations are empty or input validation fails.
+            ValueError: If visualization_operation_name is required but not provided.
         """
-        current_data = input_data
+        start_time = time.time()
 
-        time_elapsed = 0.0
+        self.flow_manager.run_flow(input_data)
 
-        for i, operation in enumerate(self.operations):
-            try:
-                start_time = time.time()
-                current_data = operation.run(current_data)
-                if current_data is None and i != len(self.operations) - 1:
-                    if debug_mode and self.logger:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline{Colors.RESET}"
-                        )
-                    break
-                end_time = time.time()
-                elapsed = end_time - start_time
-                self.operation_time_history[i].append(elapsed)
-                time_elapsed += elapsed
-            except Exception as _:
-                raise RuntimeError(
-                    f"Error in operation {i} ({type(operation).__name__})"
-                ) from _
+        elapsed = time.time() - start_time
         with self.total_time_history_lock:
-            self.total_time_history.append(time_elapsed)
-        self.all_total_times.append(time_elapsed)
-
-        if debug_mode and self.logger:
-            print_timing_summary(
-                self.operations,
-                self.operation_time_history,
-                self.total_time_history,
-                logger=self.logger,
-            )
+            self.total_time_history.append(elapsed)
 
         if visualize:
             if visualization_operation_name is None:
@@ -270,6 +287,8 @@ class Pipeline:
                     "Visualization operation name is required when visualize is True"
                 )
             return self._visualize(input_data.copy(), visualization_operation_name)
+
+        return None
 
     def get_operation_by_class_name(self, class_name: str) -> Any:
         """Get an operation by its class name.
@@ -279,9 +298,9 @@ class Pipeline:
         """
         return next(
             (
-                op
-                for op in self.operations
-                if op.__class__.__name__.strip("Definition")
+                op.instance
+                for op in self.operations.values()
+                if op.instance.__class__.__name__.strip("Definition")
                 == class_name.strip("Definition")
             ),
             None,
@@ -314,14 +333,14 @@ class Pipeline:
             return None
         return pipeline_objects[target_camera_name].get(pipeline_name)
 
-    def update_operations_config(self, operations_config: List[Dict[str, Any]]) -> None:
+    def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> None:
         """Update the configuration of multiple operations in the pipeline.
 
         This method allows live updating of operation parameters that are marked as
         restart_for_change: false in their configuration definition files.
 
         Args:
-            operations_config: List of operation configurations, where each config
+            operations_config: list of operation configurations, where each config
                 is a dictionary with 'action_name' and 'action_params' keys.
                 Format should match the pipeline configuration JSON format.
         """
@@ -449,9 +468,13 @@ class Pipeline:
         normalized_target = (
             action_name.lower().replace("_", "") if action_name else None
         )
-        for operation in self.operations:
-            start_frame = operation.visualize(start_frame)
-            current_op_name = operation.__class__.__name__.lower().replace(
+        for operation in self.operations.values():
+            if hasattr(operation.instance, "visualize"):
+                result = operation.instance.visualize(start_frame)
+                if result is not None:
+                    start_frame = result
+
+            current_op_name = operation.instance.__class__.__name__.lower().replace(
                 "definition", ""
             )
             if normalized_target and current_op_name == normalized_target:
