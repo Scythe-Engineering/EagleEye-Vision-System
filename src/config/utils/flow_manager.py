@@ -1,25 +1,286 @@
-from src.config.utils.pipeline import Operation, Connection
+from __future__ import annotations
+from typing import Any
+
+from src.config.utils.operation import Operation
+from src.config.utils.thread_object import ThreadObject
+
+
+def recursive_forward_flow_register(
+    operations: list[Operation],
+    time_step: int,
+    time_step_groups: list[list[Operation]] | None = None,
+) -> list[list[Operation]]:
+    """Recursively register the forward flow of operations.
+
+    Args:
+        operations (dict[str, Operation]): The dictionary of operations to look at.
+        time_step (int): The current time step.
+
+    Returns:
+        list[list[str]]: The forward flow of operations.
+    """
+    if time_step_groups is None:
+        time_step_groups = []
+
+    time_step += 1
+
+    valid_group: list[Operation] = []
+    for operation in operations:
+        if operation.all_inputs_solved():
+            valid_group.append(operation)
+
+    if len(valid_group) == 0:
+        return time_step_groups
+
+    # once valid groups are found set time_step for all operations in the group
+    for operation in valid_group:
+        operation.execution_timestep = time_step
+
+    time_step_groups.append(valid_group)
+
+    next_operations: list[Operation] = []
+
+    for operation in valid_group:
+        output_connections = operation.get_output_connections()
+        for connection in output_connections:
+            if connection.to_operation not in next_operations:
+                next_operations.append(connection.to_operation)
+
+    time_step_groups = recursive_forward_flow_register(
+        next_operations, time_step, time_step_groups
+    )
+
+    return time_step_groups
+
+
+def _validate_operation_timestep(operation: Operation) -> None:
+    """Validate that an operation has an execution timestep assigned.
+
+    Args:
+        operation: The operation to validate.
+
+    Raises:
+        ValueError: If operation has no execution timestep.
+    """
+    if operation.execution_timestep is None:
+        raise ValueError(
+            f"Operation {operation.name} has no execution timestep assigned"
+        )
+
+
+def _get_downstream_timesteps(output_connections: list) -> list[int]:
+    """Extract execution timesteps from downstream operations.
+
+    Args:
+        output_connections: List of output connections from an operation.
+
+    Returns:
+        list[int]: List of execution timesteps from downstream operations.
+
+    Raises:
+        ValueError: If any downstream operation has no execution timestep.
+    """
+    downstream_timesteps: list[int] = []
+    for conn in output_connections:
+        _validate_operation_timestep(conn.to_operation)
+        downstream_timesteps.append(conn.to_operation.execution_timestep)
+    return downstream_timesteps
+
+
+def _calculate_completion_timestep(operation: Operation) -> int:
+    """Calculate the completion timestep for a single operation.
+
+    Args:
+        operation: The operation to calculate completion timestep for.
+
+    Returns:
+        int: The completion timestep for the operation.
+
+    Raises:
+        ValueError: If operation or downstream operation has no execution timestep.
+    """
+    _validate_operation_timestep(operation)
+
+    output_connections = operation.get_output_connections()
+    if not output_connections:
+        assert operation.execution_timestep is not None
+        return operation.execution_timestep
+
+    downstream_timesteps = _get_downstream_timesteps(output_connections)
+    return min(downstream_timesteps) - 1
+
+
+def backward_flow_register(
+    time_step_groups: list[list[Operation]],
+) -> None:
+    """Calculate and set finish timestep for operations based on forward flow.
+
+    Uses the forward flow timesteps to determine the latest timestep by which
+    each operation must be complete. This is the minimum timestep of all
+    downstream operations minus 1.
+
+    Args:
+        time_step_groups: The forward flow time step groups from forward pass.
+    """
+    for group in time_step_groups:
+        for operation in group:
+            finish_timestep = _calculate_completion_timestep(operation)
+            operation.finish_timestep = finish_timestep
 
 
 class FlowManager:
     def __init__(self, operations: dict[str, Operation]):
-        self.operations = operations
-        self.start_operation = self._find_start_operation()
+        self.operations: dict[str, Operation] = operations
+        self.start_operation: Operation = self._find_start_operation()
+        self.start_operation.execution_timestep = 0
 
-    def forward_pass_operation_order(self) -> list[list[str]]:
+        self.execution_time_groups: list[list[Operation]] = (
+            self.forward_pass_operation_order()
+        )
+
+        # set the finish timestep for each operation
+        backward_flow_register(self.execution_time_groups)
+
+        self.num_threads = self._calculate_required_threads()
+
+        self.thread_objects: list[ThreadObject] = [
+            ThreadObject(len(self.execution_time_groups))
+            for _ in range(self.num_threads)
+        ]
+
+        for operation_group in self.execution_time_groups:
+            for operation in operation_group:
+                if operation.execution_timestep is None:
+                    raise ValueError(
+                        f"Operation {operation.name} has no execution timestep, thread occupy failed"
+                    )
+                if operation.finish_timestep is None:
+                    raise ValueError(
+                        f"Operation {operation.name} has no finish timestep, thread occupy failed"
+                    )
+
+                sorted_threads = sorted(
+                    self.thread_objects,
+                    key=lambda thread: thread.number_of_occupied_timesteps,
+                )
+
+                # remove threads that are occupied
+                available_threads = [
+                    thread
+                    for thread in sorted_threads
+                    if not thread.is_occupied(operation.execution_timestep)
+                ]
+
+                available_threads[0].occupy(operation)
+                operation.set_thread_object(available_threads[0])
+
+        self.operation_outputs: dict[str, Any] = {}
+
+    def run_flow(self, input_data: Any) -> None:
+        """Run the flow of operations using timestep-based parallel execution.
+
+        Args:
+            input_data: The input data to pass to the flow.
+        """
+        self.operation_outputs.clear()
+        self.operation_outputs[self.start_operation.uuid] = input_data
+
+        max_timestep = len(self.execution_time_groups)
+
+        for current_timestep in range(max_timestep):
+            operation_group = self.execution_time_groups[current_timestep]
+
+            for operation in operation_group:
+                input_for_op = self._gather_operation_inputs(operation)
+
+                thread_obj = operation.get_thread_object()
+                if thread_obj is None:
+                    raise ValueError(f"Operation {operation.name} has no thread object")
+                thread_obj.set_needs_processing(input_for_op, current_timestep)
+
+            for operation in self.operations.values():
+                if operation.finish_timestep == current_timestep:
+                    thread_obj = operation.get_thread_object()
+                    if thread_obj is None:
+                        raise ValueError(
+                            f"Operation {operation.name} has no thread object"
+                        )
+
+                    thread_obj.wait_done_processing()
+                    output_data = thread_obj.get_output_data()
+                    self.operation_outputs[operation.uuid] = output_data
+
+    def _gather_operation_inputs(self, operation: Operation) -> Any:
+        """Gather input data for an operation from upstream operations.
+
+        Args:
+            operation: The operation that needs inputs.
+
+        Returns:
+            Input data for the operation (single value or dict of inputs).
+
+        Raises:
+            ValueError: If operation has no input connections.
+        """
+        input_connections = operation.get_input_connections()
+
+        if len(input_connections) == 0:
+            raise ValueError(f"Operation {operation.name} has no input connections")
+
+        if len(input_connections) == 1:
+            conn = input_connections[0]
+            return self.operation_outputs[conn.from_operation.uuid]
+        else:
+            inputs: dict[str, Any] = {}
+            for conn in input_connections:
+                inputs[conn.to_port] = self.operation_outputs[conn.from_operation.uuid]
+            return inputs
+
+    def _calculate_required_threads(self) -> int:
+        """Calculate the number of threads needed to run all operations concurrently.
+
+        Analyzes the execution timeline to determine how many operations can run
+        simultaneously at any given timestep, accounting for operations that span
+        multiple timesteps.
+
+        Returns:
+            int: The number of threads required based on maximum concurrent operations.
+        """
+        num_operations_active_at_timestep: dict[int, int] = {}
+
+        for operation in self.operations.values():
+            start_time = operation.execution_timestep
+            finish_time = operation.finish_timestep
+
+            if start_time is None or finish_time is None:
+                continue
+
+            for time_step in range(start_time, finish_time + 1):
+                if time_step not in num_operations_active_at_timestep:
+                    num_operations_active_at_timestep[time_step] = 0
+                num_operations_active_at_timestep[time_step] += 1
+
+        return (
+            max(num_operations_active_at_timestep.values())
+            if num_operations_active_at_timestep
+            else 0
+        )
+
+    def forward_pass_operation_order(self) -> list[list[Operation]]:
         """Returns the starting execution time of each operation in the flow. Returned as execution groups."""
+        first_operations: list[Operation] = [
+            connection.from_operation
+            for connection in self.start_operation.get_input_connections()
+        ]
 
-        visited_operations: list[str] = []
-        first_connections: list[Connection] = self.start_operation["connections"]
-
-        for connecion in first_connections:
-            next_operation_uuid = connecion["to_uuid"]
-            if next_operation_uuid not in visited_operations:
-                visited_operations.append(next_operation_uuid)
+        execution_time_groups: list[list[Operation]] = recursive_forward_flow_register(
+            first_operations, 0, []
+        )
+        return execution_time_groups
 
     def _find_start_operation(self) -> Operation:
         """Finds the starting operation in the flow, always is the device_input operation name."""
         for uuid, operation_data in self.operations.items():
-            if operation_data.get("name") == "device_input":
+            if operation_data.name == "device_input":
                 return self.operations[uuid]
         raise ValueError("No starting operation (device_input) found in operations.")
