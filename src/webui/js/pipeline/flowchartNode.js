@@ -133,7 +133,7 @@ export class FlowchartNode {
                 border-bottom: 1px solid #404040;
                 border-radius: 10px 10px 0 0;
             ">
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
                     <span style="
                         background-color: ${categoryColor};
                         color: white;
@@ -143,6 +143,7 @@ export class FlowchartNode {
                         border-radius: 4px;
                         text-transform: uppercase;
                         letter-spacing: 0.5px;
+                        flex-shrink: 0;
                     ">${escapeHtml(this.operationData.type || "OP")}</span>
                     <span style="
                         color: white;
@@ -152,9 +153,11 @@ export class FlowchartNode {
                         overflow: hidden;
                         text-overflow: ellipsis;
                         white-space: nowrap;
+                        flex: 1;
+                        min-width: 0;
                     ">${escapeHtml(this.operationData.name)}</span>
                 </div>
-                <div style="display: flex; gap: 4px;">
+                <div style="display: flex; gap: 4px; flex-shrink: 0;">
                     <button class="node-settings-btn" title="Settings" style="
                         padding: 4px;
                         background: transparent;

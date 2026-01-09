@@ -576,32 +576,32 @@ import { BACKEND_BASE_URL } from "../config.js";
         );
         if (!liveViewContainer) return;
 
-        // Hide the image if it's visible
-        const imgEl = liveViewContainer.querySelector("#operationLiveImage");
-        if (imgEl) {
-            imgEl.classList.add("hidden");
+        // Override parent container's flex centering to allow full width while maintaining vertical centering
+        liveViewContainer.style.justifyContent = "stretch";
+        liveViewContainer.style.alignItems = "center";
+
+        // Find the main content wrapper (the .text-center div)
+        const contentWrapper = liveViewContainer.querySelector(".text-center");
+
+        // Store references to elements we need to restore later
+        if (!liveViewContainer._storedElements && contentWrapper) {
+            liveViewContainer._storedElements = {
+                contentWrapper: contentWrapper,
+                placeholder: contentWrapper.querySelector(
+                    "[data-role='live-view-placeholder']",
+                ),
+                textElements: Array.from(contentWrapper.querySelectorAll("p")),
+                noVisMessage: contentWrapper.querySelector(
+                    "#noVisualizationMessage",
+                ),
+                imgEl: contentWrapper.querySelector("#operationLiveImage"),
+                parentContainer: liveViewContainer,
+            };
         }
 
-        // Hide default placeholder and all text elements
-        const placeholderEl = liveViewContainer.querySelector(
-            "[data-role='live-view-placeholder']",
-        );
-        const textElements = liveViewContainer.querySelectorAll("p");
-        const noVisMessage = liveViewContainer.querySelector(
-            "#noVisualizationMessage",
-        );
-
-        if (placeholderEl) {
-            placeholderEl.style.display = "none";
-            placeholderEl.classList.add("hidden");
-        }
-        textElements.forEach((p) => {
-            p.style.display = "none";
-            p.classList.add("hidden");
-        });
-        if (noVisMessage) {
-            noVisMessage.style.display = "none";
-            noVisMessage.classList.add("hidden");
+        // Remove content wrapper from DOM to ensure error message takes full width
+        if (contentWrapper) {
+            contentWrapper.remove();
         }
 
         // Create or update error message element as a styled box
@@ -612,12 +612,14 @@ import { BACKEND_BASE_URL } from "../config.js";
             errorMsgEl = createElement("div", {
                 id: "visualizationErrorMessage",
                 className:
-                    "w-full bg-red-900/20 border-2 border-red-500/50 rounded-xl shadow-lg p-6 text-center text-red-400 text-lg font-medium mx-auto my-8",
+                    "block w-full bg-red-900/20 border-2 border-red-500/50 rounded-xl shadow-lg p-6 text-center text-red-400 text-lg font-medium my-8",
             });
             liveViewContainer.appendChild(errorMsgEl);
         }
         errorMsgEl.textContent = message;
         errorMsgEl.style.display = "block";
+        errorMsgEl.style.width = "100%";
+        errorMsgEl.style.position = "relative";
         errorMsgEl.classList.remove("hidden");
     }
 
@@ -737,6 +739,19 @@ import { BACKEND_BASE_URL } from "../config.js";
                 const liveViewContainer = liveViewPanelEl.querySelector(
                     "[data-role='live-view-container']",
                 );
+
+                // Find or restore content wrapper
+                let contentWrapper =
+                    liveViewContainer.querySelector(".text-center");
+                if (
+                    !contentWrapper &&
+                    liveViewContainer._storedElements?.contentWrapper
+                ) {
+                    contentWrapper =
+                        liveViewContainer._storedElements.contentWrapper;
+                    liveViewContainer.appendChild(contentWrapper);
+                }
+
                 let imgEl = liveViewContainer.querySelector(
                     "#operationLiveImage",
                 );
@@ -746,14 +761,20 @@ import { BACKEND_BASE_URL } from "../config.js";
                     imgEl.alt = "Live visualization";
                     imgEl.className =
                         "mx-auto mt-4 rounded-lg max-w-full max-h-[60vh]";
-                    liveViewContainer.appendChild(imgEl);
+                    if (contentWrapper) {
+                        contentWrapper.appendChild(imgEl);
+                    } else {
+                        liveViewContainer.appendChild(imgEl);
+                    }
                 }
 
-                // Hide placeholder content when showing live image
+                // Remove placeholder content completely when showing live image
                 const placeholderEl = liveViewContainer.querySelector(
                     "[data-role='live-view-placeholder']",
                 );
-                const textElements = liveViewContainer.querySelectorAll("p");
+                const textElements = Array.from(
+                    liveViewContainer.querySelectorAll("p"),
+                );
                 const noVisMessage = liveViewContainer.querySelector(
                     "#noVisualizationMessage",
                 );
@@ -761,12 +782,26 @@ import { BACKEND_BASE_URL } from "../config.js";
                     "#visualizationErrorMessage",
                 );
 
-                if (placeholderEl) placeholderEl.style.display = "none";
-                textElements.forEach((p) => (p.style.display = "none"));
-                if (noVisMessage) noVisMessage.classList.add("hidden");
-                if (errorMsg) errorMsg.classList.add("hidden");
+                // Store elements for potential restoration if visualization fails
+                if (!liveViewContainer._storedElements && contentWrapper) {
+                    liveViewContainer._storedElements = {
+                        contentWrapper: contentWrapper,
+                        placeholder: placeholderEl,
+                        textElements: textElements,
+                        noVisMessage: noVisMessage,
+                        imgEl: imgEl,
+                        parentContainer: liveViewContainer,
+                    };
+                }
+
+                // Remove elements from DOM
+                if (placeholderEl) placeholderEl.remove();
+                textElements.forEach((p) => p.remove());
+                if (noVisMessage) noVisMessage.remove();
+                if (errorMsg) errorMsg.remove();
 
                 imgEl.classList.remove("hidden");
+                imgEl.style.display = "block";
 
                 // Start polling at 10Hz (every 100ms)
                 if (_visInterval) clearInterval(_visInterval);
@@ -942,31 +977,50 @@ import { BACKEND_BASE_URL } from "../config.js";
                 "[data-role='live-view-container']",
             );
             if (liveViewContainer) {
+                // Reset container flex styles to original state
+                liveViewContainer.style.justifyContent = "";
+                liveViewContainer.style.alignItems = "";
+
                 const imgEl = liveViewContainer.querySelector(
                     "#operationLiveImage",
                 );
-                const placeholderEl = liveViewContainer.querySelector(
-                    "[data-role='live-view-placeholder']",
-                );
-                const textElements = liveViewContainer.querySelectorAll("p");
 
                 if (imgEl) imgEl.classList.add("hidden");
-                if (placeholderEl) {
-                    placeholderEl.style.display = "";
-                    placeholderEl.classList.remove("hidden");
-                }
-                textElements.forEach((p) => {
-                    p.style.display = "";
-                    p.classList.remove("hidden");
-                });
 
-                // Hide no visualization message
-                const noVisMessage = liveViewContainer.querySelector(
-                    "#noVisualizationMessage",
-                );
-                if (noVisMessage) {
-                    noVisMessage.style.display = "none";
-                    noVisMessage.classList.add("hidden");
+                // Restore previously removed elements back to DOM
+                const storedElements = liveViewContainer._storedElements;
+                if (storedElements) {
+                    const contentWrapper = storedElements.contentWrapper;
+                    if (contentWrapper) {
+                        liveViewContainer.appendChild(contentWrapper);
+
+                        // Restore placeholder elements into the content wrapper
+                        if (storedElements.placeholder) {
+                            contentWrapper.appendChild(
+                                storedElements.placeholder,
+                            );
+                        }
+                        if (storedElements.textElements) {
+                            storedElements.textElements.forEach((p) => {
+                                contentWrapper.appendChild(p);
+                            });
+                        }
+                        if (storedElements.noVisMessage) {
+                            contentWrapper.appendChild(
+                                storedElements.noVisMessage,
+                            );
+                            storedElements.noVisMessage.style.display = "none";
+                            storedElements.noVisMessage.classList.add("hidden");
+                        }
+                        if (storedElements.imgEl) {
+                            contentWrapper.appendChild(storedElements.imgEl);
+                            storedElements.imgEl.classList.add("hidden");
+                            storedElements.imgEl.style.display = "none";
+                        }
+                    }
+
+                    // Clear stored references
+                    delete liveViewContainer._storedElements;
                 }
 
                 // Hide error message
