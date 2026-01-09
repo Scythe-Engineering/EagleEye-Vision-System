@@ -19,6 +19,7 @@ from pathlib import Path
 import hashlib
 import json
 import time
+import os
 
 
 # ANSI color codes for colored console output
@@ -40,6 +41,12 @@ class RustModuleBuilder:
         self.build_cache_file = root_dir / ".build_cache.json"
         self.CARGO_TOML_FILENAME = "Cargo.toml"
         self.logger = logger
+
+    def _get_clean_env(self) -> dict:
+        """Get environment with CONDA_PREFIX unset to avoid maturin conflicts."""
+        env = os.environ.copy()
+        env.pop("CONDA_PREFIX", None)
+        return env
 
     def _log(self, message: str) -> None:
         """Log a message using the logger if available, otherwise print."""
@@ -135,6 +142,7 @@ class RustModuleBuilder:
             cwd=module_dir,
             capture_output=True,
             text=True,
+            env=self._get_clean_env(),
         )
 
         if result.returncode == 0:
@@ -161,6 +169,7 @@ class RustModuleBuilder:
                 cwd=self.root_dir.parent,  # Run from workspace root
                 capture_output=True,
                 text=True,
+                env=self._get_clean_env(),
             )
 
             if result.returncode == 0:
@@ -216,6 +225,7 @@ class RustModuleBuilder:
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
+                env=self._get_clean_env(),
             )
         else:
             # Fallback to direct maturin build
@@ -227,6 +237,7 @@ class RustModuleBuilder:
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
+                env=self._get_clean_env(),
             )
 
         if result.returncode == 0:
@@ -252,14 +263,15 @@ class RustModuleBuilder:
     def check_dependencies(self) -> bool:
         """Check if required build dependencies are available."""
         try:
+            env = self._get_clean_env()
             # Check cargo
-            subprocess.run(["cargo", "--version"], capture_output=True, check=True)
+            subprocess.run(["cargo", "--version"], capture_output=True, check=True, env=env)
 
             # Check maturin
-            result = subprocess.run(["maturin", "--version"], capture_output=True)
+            result = subprocess.run(["maturin", "--version"], capture_output=True, env=env)
             if result.returncode != 0:
                 self._log(f"{Colors.YELLOW}Installing maturin...{Colors.RESET}")
-                subprocess.run(["uv", "pip", "install", "maturin"], check=True)
+                subprocess.run(["uv", "pip", "install", "maturin"], check=True, env=env)
 
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
