@@ -1,8 +1,12 @@
 from __future__ import annotations
+import traceback
+from time import sleep
 from typing import Any
+from line_profiler import profile
 
 from src.config.utils.operation import Operation
 from src.config.utils.thread_object import ThreadObject
+from src.utils.logging.logger import Logger
 
 
 def recursive_forward_flow_register(
@@ -21,8 +25,6 @@ def recursive_forward_flow_register(
     """
     if time_step_groups is None:
         time_step_groups = []
-
-    time_step += 1
 
     valid_group: list[Operation] = []
     for operation in operations:
@@ -47,7 +49,7 @@ def recursive_forward_flow_register(
                 next_operations.append(connection.to_operation)
 
     time_step_groups = recursive_forward_flow_register(
-        next_operations, time_step, time_step_groups
+        next_operations, time_step + 1, time_step_groups
     )
 
     return time_step_groups
@@ -129,9 +131,11 @@ def backward_flow_register(
 
 
 class FlowManager:
-    def __init__(self, operations: dict[str, Operation]):
+    def __init__(self, operations: dict[str, Operation], logger: Logger):
         self.operations: dict[str, Operation] = operations
+        self.logger = logger
         self.start_operation: Operation = self._find_start_operation()
+
         self.start_operation.execution_timestep = 0
 
         self.execution_time_groups: list[list[Operation]] = (
@@ -142,6 +146,16 @@ class FlowManager:
         backward_flow_register(self.execution_time_groups)
 
         self.num_threads = self._calculate_required_threads()
+
+        self.logger.log(f"Number of threads: {self.num_threads}")
+
+        # Pre-compute operations by finish timestep for faster lookup
+        self.operations_by_finish_timestep: dict[int, list[Operation]] = {}
+        for op in self.operations.values():
+            if op.finish_timestep is not None:
+                if op.finish_timestep not in self.operations_by_finish_timestep:
+                    self.operations_by_finish_timestep[op.finish_timestep] = []
+                self.operations_by_finish_timestep[op.finish_timestep].append(op)
 
         self.thread_objects: list[ThreadObject] = [
             ThreadObject(len(self.execution_time_groups))
@@ -176,8 +190,46 @@ class FlowManager:
 
         self.operation_outputs: dict[str, Any] = {}
 
+    @profile
     def run_flow(self, input_data: Any) -> None:
-        """Run the flow of operations using timestep-based parallel execution.
+        """Run the flow of operations using timestep-based execution.
+
+        Automatically uses direct execution for single-threaded pipelines,
+        or threaded execution for multi-threaded pipelines.
+
+        Args:
+            input_data: The input data to pass to the flow.
+        """
+        if self.num_threads == 1:
+            self._run_flow_direct(input_data)
+        else:
+            self._run_flow_threaded(input_data)
+
+    @profile
+    def _run_flow_direct(self, input_data: Any) -> None:
+        """Direct execution without thread signaling for linear pipelines.
+
+        Args:
+            input_data: The input data to pass to the flow.
+        """
+        self.operation_outputs.clear()
+        self.operation_outputs[self.start_operation.uuid] = input_data
+
+        for operation_group in self.execution_time_groups:
+            for operation in operation_group:
+                input_for_op = self._gather_operation_inputs(operation)
+
+                try:
+                    output = operation.instance.run(input_for_op)
+                    self.operation_outputs[operation.uuid] = output
+                except Exception as e:
+                    raise ValueError(
+                        f"Operation {operation.name} had an error: {traceback.format_exc()}"
+                    ) from e
+
+    @profile
+    def _run_flow_threaded(self, input_data: Any) -> None:
+        """Threaded execution for parallel pipelines.
 
         Args:
             input_data: The input data to pass to the flow.
@@ -196,19 +248,41 @@ class FlowManager:
                 thread_obj = operation.get_thread_object()
                 if thread_obj is None:
                     raise ValueError(f"Operation {operation.name} has no thread object")
-                thread_obj.set_needs_processing(input_for_op, current_timestep)
+                try:
+                    thread_obj.set_needs_processing(input_for_op, current_timestep)
+                except Exception as _:
+                    sleep(1)  # wait a bit before trying again
+                    raise ValueError(
+                        f"Operation {operation.name} had an error setting needs_processing: {traceback.format_exc()}"
+                    )
 
-            for operation in self.operations.values():
-                if operation.finish_timestep == current_timestep:
-                    thread_obj = operation.get_thread_object()
-                    if thread_obj is None:
-                        raise ValueError(
-                            f"Operation {operation.name} has no thread object"
-                        )
+            # Use pre-computed finish timestep lookup
+            for operation in self.operations_by_finish_timestep.get(
+                current_timestep, []
+            ):
+                thread_obj = operation.get_thread_object()
+                if thread_obj is None:
+                    raise ValueError(f"Operation {operation.name} has no thread object")
 
-                    thread_obj.wait_done_processing()
-                    output_data = thread_obj.get_output_data()
-                    self.operation_outputs[operation.uuid] = output_data
+                not_timed_out = thread_obj.wait_done_processing()
+                if not not_timed_out:
+                    # Reset thread state on timeout before raising error
+                    thread_obj.reset_state()
+                    sleep(1)  # wait a bit before trying again
+                    raise ValueError(
+                        f"Operation {operation.name} timed out after 5 seconds"
+                    )
+
+                if thread_obj.had_error:
+                    error_msg = thread_obj.error
+                    # Reset thread state after error before raising exception
+                    thread_obj.reset_state()
+                    raise ValueError(
+                        f"Operation {operation.name} had an error: {error_msg}"
+                    )
+
+                output_data = thread_obj.get_output_data()
+                self.operation_outputs[operation.uuid] = output_data
 
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.
@@ -269,8 +343,8 @@ class FlowManager:
     def forward_pass_operation_order(self) -> list[list[Operation]]:
         """Returns the starting execution time of each operation in the flow. Returned as execution groups."""
         first_operations: list[Operation] = [
-            connection.from_operation
-            for connection in self.start_operation.get_input_connections()
+            connection.to_operation
+            for connection in self.start_operation.get_output_connections()
         ]
 
         execution_time_groups: list[list[Operation]] = recursive_forward_flow_register(

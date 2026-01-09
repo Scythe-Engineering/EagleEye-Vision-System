@@ -39,7 +39,11 @@
             },
             {
                 "action_name": "pnp_camera_localization",
-                "action_params": {},
+                "action_params": {
+                    "camera_parameters_path": "{project_root}/files/pnp_camera_localization/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/pnp_camera_localization/apriltag_map_path/frc2025r2.json",
+                    "jump_threshold": 2
+                },
                 "position": {
                     "x": 700,
                     "y": 100

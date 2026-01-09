@@ -122,6 +122,9 @@ class Operation:
             for conn in self.input_connections
         )
 
+    def __str__(self) -> str:
+        return f"Operation {self.name} with UUID {self.uuid} with output connections {[str(conn) for conn in self.output_connections]} and input connections {[str(conn) for conn in self.input_connections]}"
+
 
 class Connection:
     def __init__(
@@ -149,5 +152,6 @@ class Connection:
 
         self.from_operation.add_output_connection(self)
         self.to_operation.add_input_connection(self)
-        self.from_operation.add_output_connection(self)
-        self.to_operation.add_input_connection(self)
+
+    def __str__(self) -> str:
+        return f"Connection from {self.from_operation.name}:{self.from_operation.uuid}:{self.from_port} to {self.to_operation.name}:{self.to_operation.uuid}:{self.to_port}"

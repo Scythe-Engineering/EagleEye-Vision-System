@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import traceback
 from typing import TYPE_CHECKING, Any
+from line_profiler import profile
 
 if TYPE_CHECKING:
     from src.config.utils.operation import Operation
@@ -14,16 +15,13 @@ class ThreadObject:
             False
         ] * number_of_timesteps
 
-        self.needs_processing: threading.Event = threading.Event()
-        self.done_processing: threading.Event = threading.Event()
-
-        self.data_lock = (
-            threading.Lock()
-        )  # not strictly necessary, but provides extra thread safety
+        self.condition = threading.Condition()
+        self.state: str = "idle"  # "idle", "processing", "done", "error"
+        self.had_error: bool = False
 
         self.input_data: Any = None
         self.output_data: Any = None
-        self.error: Exception | None = None
+        self.error: str | None = None
 
         self.current_timestep: int = 0
 
@@ -34,43 +32,68 @@ class ThreadObject:
         )
         self.processing_thread_object.start()
 
+    def _set_error(self, error: str) -> None:
+        """
+        Set the error message for the thread.
+
+        Args:
+            error (str): The error message to set.
+        """
+        print(error)
+        self.error = error
+
+    @profile
     def processing_thread(self) -> None:
         """The processing thread for the thread object.
 
         This thread is responsible for processing the input data and setting the output data.
         """
         while True:
-            self.needs_processing.wait()
+            with self.condition:
+                self.condition.wait_for(lambda: self.state == "processing")
 
-            with self.data_lock:
-                time_step = self.current_timestep
-                input_data = self.input_data
+                self.had_error = False
                 self.error = None
 
+                time_step = self.current_timestep
+                input_data = self.input_data
                 obligation = self.operation_obligations[time_step]
+
                 if obligation is True:
-                    self.error = ValueError(
-                        f"Thread should already be occupied at time step {time_step}"
+                    self._set_error(
+                        f"Thread should already be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}"
                     )
                     self.output_data = None
+                    self.had_error = True
+                    self.state = "error"
                 elif obligation is False:
-                    self.error = ValueError(
-                        f"Thread should not be occupied at time step {time_step}"
+                    self._set_error(
+                        f"Thread should not be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}"
                     )
                     self.output_data = None
+                    self.had_error = True
+                    self.state = "error"
                 else:
+                    # Release condition lock during operation execution
+                    self.condition.release()
                     try:
-                        self.output_data = obligation.run(input_data)
-                    except Exception as e:
-                        self.error = e
+                        output_data = obligation.run(input_data)
+                        # Re-acquire lock to update state
+                        self.condition.acquire()
+                        self.output_data = output_data
+                        self.state = "done"
+                    except Exception as _:
+                        self.condition.acquire()
                         self.output_data = None
-                        print(
+                        self._set_error(
                             f"Error in operation {obligation.name}: {traceback.format_exc()}"
                         )
+                        self.had_error = True
+                        self.state = "error"
 
-            self.needs_processing.clear()
-            self.done_processing.set()
+                self.condition.notify()
 
+    @profile
     def set_needs_processing(self, input_data: Any, time_step: int) -> None:
         """Set the needs_processing flag and input data for the thread.
 
@@ -81,31 +104,41 @@ class ThreadObject:
         Raises:
             ValueError: If the thread is already processing.
         """
-        if self.needs_processing.is_set():
-            raise ValueError(
-                "Thread already processing. Something is very verrryyy wrong."
-            )
+        with self.condition:
+            if self.state == "processing":
+                raise ValueError(
+                    "Thread already processing. Something is very verrryyy wrong."
+                )
 
-        with self.data_lock:
             self.current_timestep = time_step
             self.input_data = input_data
-        self.needs_processing.set()
+            self.state = "processing"
+            self.condition.notify()
 
+    @profile
     def is_done_processing(self) -> bool:
         """Check if the thread is done processing.
 
         Returns:
             bool: True if the thread is done processing, False otherwise.
         """
-        return self.done_processing.is_set()
+        with self.condition:
+            return self.state in ("done", "error")
 
-    def wait_done_processing(self) -> None:
+    @profile
+    def wait_done_processing(self) -> bool:
         """
         Wait for the thread to finish processing.
-        """
-        if not self.is_done_processing():
-            self.done_processing.wait()
 
+        Returns:
+            bool: False if the thread timed out, True otherwise.
+        """
+        with self.condition:
+            return self.condition.wait_for(
+                lambda: self.state in ("done", "error"), timeout=5
+            )
+
+    @profile
     def get_output_data(self) -> Any:
         """Retrieve the output data after processing is complete.
 
@@ -117,14 +150,27 @@ class ThreadObject:
         Raises:
             ValueError: If the thread is not done processing.
         """
-        if not self.done_processing.is_set():
-            raise ValueError(
-                "Thread not done processing. Make sure to call is_done_processing() first."
-            )
+        with self.condition:
+            if self.state not in ("done", "error"):
+                raise ValueError(
+                    "Thread not done processing operation. Make sure to call is_done_processing() first."
+                )
 
-        with self.data_lock:
-            self.done_processing.clear()
-            return self.output_data
+            output_data = self.output_data
+            self.state = "idle"
+            return output_data
+
+    def reset_state(self) -> None:
+        """Reset the thread state to allow for reprocessing after an error.
+
+        This method clears error flags and resets processing state to allow
+        the thread to be reused after a failure.
+        """
+        with self.condition:
+            self.had_error = False
+            self.error = None
+            self.output_data = None
+            self.state = "idle"
 
     # functions for initializing the flow, not runtime execution
     def is_occupied(self, time_step: int) -> bool:

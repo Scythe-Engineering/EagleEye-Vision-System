@@ -4,6 +4,7 @@ import time
 import traceback
 from collections import deque
 from typing import Any, Dict
+from line_profiler import profile
 
 import cv2
 import numpy as np
@@ -61,7 +62,7 @@ class Pipeline:
         if not self.operations:
             raise ValueError("No operations configured in pipeline")
 
-        self.flow_manager = FlowManager(self.operations)
+        self.flow_manager = FlowManager(self.operations, self.logger)
 
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
@@ -156,7 +157,7 @@ class Pipeline:
             != "device_input"  # device_input is a special case and will never have an input connection
         ]
         if len(orphan_operations) > 0:
-            print(
+            self.logger.log(
                 Colors.YELLOW
                 + f"WARNING: Orphan Operation!! Operations {[op.name for op in orphan_operations]} have no input connections"
                 + Colors.RESET
@@ -255,6 +256,7 @@ class Pipeline:
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
 
+    @profile
     def run(
         self,
         input_data: np.ndarray,

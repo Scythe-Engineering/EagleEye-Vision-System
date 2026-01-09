@@ -1,3 +1,4 @@
+import traceback
 import os
 import json
 from pathlib import Path
@@ -98,9 +99,9 @@ def generate_all_pipelines(
                     logger,
                     camera_manager,
                 )
-            except Exception as e:
+            except Exception as _:
                 logger.log(
-                    f"{Colors.RED}Error creating pipeline for camera {camera_name} and pipeline {pipeline_name}: {e}{Colors.RESET}"
+                    f"{Colors.RED}Error creating pipeline for camera {camera_name} and pipeline {pipeline_name}: {traceback.format_exc()}{Colors.RESET}"
                 )
                 continue
             pipelines[camera_name][pipeline_name] = pipeline
