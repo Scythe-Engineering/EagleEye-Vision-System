@@ -152,6 +152,8 @@ class Pipeline:
             operation
             for operation in operations.values()
             if not operation.has_input_connections
+            and operation.name
+            != "device_input"  # device_input is a special case and will never have an input connection
         ]
         if len(orphan_operations) > 0:
             print(
