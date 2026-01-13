@@ -59,6 +59,7 @@ export class FlowchartConnections {
         toNode,
         toPortName,
         dataType,
+        isDefault = false,
     ) {
         if (this.connections.has(connectionId)) {
             this.updateConnection(
@@ -68,6 +69,16 @@ export class FlowchartConnections {
                 toNode,
                 toPortName,
             );
+            // Update default state if it already exists
+            const existing = this.connections.get(connectionId);
+            if (existing) {
+                existing.isDefault = isDefault;
+                if (isDefault) {
+                    existing.path.setAttribute("stroke-dasharray", "5,5");
+                } else {
+                    existing.path.removeAttribute("stroke-dasharray");
+                }
+            }
             return;
         }
 
@@ -156,6 +167,7 @@ export class FlowchartConnections {
             toNodeId: toNode.instanceId,
             toPortName,
             dataType,
+            isDefault: isDefault || false,
             isAnimating: false,
         });
 
@@ -166,6 +178,11 @@ export class FlowchartConnections {
             toNode,
             toPortName,
         );
+
+        // Apply default visual style
+        if (isDefault) {
+            path.setAttribute("stroke-dasharray", "5,5");
+        }
 
         // Fade in label after initial position is set
         requestAnimationFrame(() => {
@@ -179,17 +196,17 @@ export class FlowchartConnections {
             "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
 
         group.addEventListener("mouseenter", () => {
-            path.setAttribute(
-                "stroke-width",
-                (this.connectionWidth + 2).toString(),
-            );
-            path.style.filter =
-                "drop-shadow(0 0 4px " + this.connectionColor + ")";
+            const connectionId = group.getAttribute("data-connection-id");
+            if (connectionId) {
+                this.setHoverState(connectionId, true);
+            }
         });
 
         group.addEventListener("mouseleave", () => {
-            path.setAttribute("stroke-width", this.connectionWidth.toString());
-            path.style.filter = "none";
+            const connectionId = group.getAttribute("data-connection-id");
+            if (connectionId) {
+                this.setHoverState(connectionId, false);
+            }
         });
 
         group.addEventListener("click", (e) => {
@@ -495,25 +512,40 @@ export class FlowchartConnections {
         this.connections.clear();
     }
 
-    highlightConnection(connectionId, highlight = true) {
+    setHoverState(connectionId, isHovered) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
 
-        if (highlight) {
-            connection.path.setAttribute("stroke", "#ffffff");
+        if (isHovered) {
+            const hoverColor = connection.isCycle
+                ? "#ff4444"
+                : this.connectionColor;
             connection.path.setAttribute(
                 "stroke-width",
                 (this.connectionWidth + 2).toString(),
             );
-            connection.path.style.filter = "drop-shadow(0 0 4px #ffffff)";
+            connection.path.style.filter = `drop-shadow(0 0 4px ${hoverColor})`;
         } else {
-            connection.path.setAttribute("stroke", this.connectionColor);
-            connection.path.setAttribute(
-                "stroke-width",
-                this.connectionWidth.toString(),
-            );
-            connection.path.style.filter = "none";
+            if (connection.isCycle) {
+                connection.path.setAttribute("stroke", "#ff4444");
+                connection.path.setAttribute(
+                    "stroke-width",
+                    this.connectionWidth.toString(),
+                );
+                connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
+            } else {
+                connection.path.setAttribute("stroke", this.connectionColor);
+                connection.path.setAttribute(
+                    "stroke-width",
+                    this.connectionWidth.toString(),
+                );
+                connection.path.style.filter = "none";
+            }
         }
+    }
+
+    highlightConnection(connectionId, highlight = true) {
+        this.setHoverState(connectionId, highlight);
     }
 
     getConnectionsForPort(nodeInstanceId, portName, portType) {

@@ -4,6 +4,7 @@ import { FlowchartNode } from "./flowchartNode.js";
 import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
 import { findCycles } from "./graphUtils.js";
+import { pipelineStore } from "./PipelineStore.js";
 
 let descriptionPopup = null;
 
@@ -340,7 +341,8 @@ export class FlowchartRenderer {
         const placeholder = document.getElementById("pipelinePlaceholder");
 
         if (placeholder) {
-            const selectedPipeline = window.pipelineCreator?.selectedPipeline;
+            const selectedPipeline =
+                pipelineStore.state.currentPipeline.pipelineName;
             const shouldShow = !selectedPipeline;
             placeholder.classList.toggle("hidden", !shouldShow);
 
@@ -857,9 +859,16 @@ export class FlowchartRenderer {
             "input",
         );
 
-        existingConnections.forEach((id) =>
-            this.connections.removeConnection(id),
-        );
+        existingConnections.forEach((id) => {
+            this.connections.removeConnection(id);
+            const parts = id.split("-");
+            if (parts.length >= 4) {
+                const [fromId, fromPortName, toId, toPortName] = parts;
+                pipelineStore.removeConnection(
+                    `${pipelineStore.instanceIdToUuid.get(fromId)}-${fromPortName}-${pipelineStore.instanceIdToUuid.get(toId)}-${toPortName}`,
+                );
+            }
+        });
 
         const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;
 
@@ -871,6 +880,15 @@ export class FlowchartRenderer {
             toPort,
             fromPort, // Use output port name as data type for now
             false, // isDefault - new connections are not default by default
+        );
+
+        pipelineStore.addConnection(
+            fromNode.instanceId,
+            fromPort,
+            toNode.instanceId,
+            toPort,
+            fromPort,
+            false,
         );
 
         if (this.minimap) {
@@ -889,9 +907,9 @@ export class FlowchartRenderer {
         const cycleConnectionIds = findCycles(this.nodes, connectionsData);
 
         // Reset all highlights first
-        this.connections.connections.forEach((conn) => {
-            this.connections.setCycleHighlight(conn.id, false);
-        });
+        for (const [connectionId, conn] of this.connections.connections) {
+            this.connections.setCycleHighlight(connectionId, false);
+        }
 
         // Highlight cycles
         cycleConnectionIds.forEach((id) => {
@@ -914,6 +932,22 @@ export class FlowchartRenderer {
     }
 
     handleConnectionRemoved(connectionId) {
+        const parts = connectionId.split("-");
+        if (parts.length >= 4) {
+            const fromId = parts[0];
+            const fromPort = parts[1];
+            const toId = parts[2];
+            const toPort = parts[3];
+
+            const fromUuid = pipelineStore.instanceIdToUuid.get(fromId);
+            const toUuid = pipelineStore.instanceIdToUuid.get(toId);
+
+            if (fromUuid && toUuid) {
+                const storeConnectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
+                pipelineStore.removeConnection(storeConnectionKey);
+            }
+        }
+
         if (this.minimap) {
             this.minimap.updateConnections(
                 this.connections.getConnectionData(),
@@ -924,6 +958,22 @@ export class FlowchartRenderer {
     }
 
     handleConnectionChanged(connectionId) {
+        const parts = connectionId.split("-");
+        if (parts.length >= 4) {
+            const fromId = parts[0];
+            const fromPort = parts[1];
+            const toId = parts[2];
+            const toPort = parts[3];
+
+            const fromUuid = pipelineStore.instanceIdToUuid.get(fromId);
+            const toUuid = pipelineStore.instanceIdToUuid.get(toId);
+
+            if (fromUuid && toUuid) {
+                const storeConnectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
+                pipelineStore.toggleConnectionDefault(storeConnectionKey);
+            }
+        }
+
         if (this.minimap) {
             this.minimap.updateConnections(
                 this.connections.getConnectionData(),

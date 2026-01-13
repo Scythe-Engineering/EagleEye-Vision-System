@@ -2,10 +2,10 @@
     "basic_test": {
         "test": [
             {
-                "action_name": "device_input",
+                "action_name": "device_input.py",
                 "action_params": {},
                 "position": {
-                    "x": 100,
+                    "x": -260,
                     "y": 100
                 },
                 "uuid": "op-mk60jqlu-vb7",
@@ -13,17 +13,18 @@
                     {
                         "from_uuid": "op-mk60jqlu-vb7",
                         "from_port": "frame",
-                        "to_uuid": "op-mk60jrt5-9es1",
+                        "to_uuid": "op-mkcoqjzs-g79z",
                         "to_port": "frame",
-                        "data_type": "frame"
+                        "data_type": "frame",
+                        "is_default": false
                     }
                 ]
             },
             {
-                "action_name": "detect_apriltags",
+                "action_name": "detect_apriltags.py",
                 "action_params": {},
                 "position": {
-                    "x": 400,
+                    "x": 380,
                     "y": 100
                 },
                 "uuid": "op-mk60jrt5-9es1",
@@ -33,12 +34,13 @@
                         "from_port": "detections",
                         "to_uuid": "op-mk60k0f0-5bb0",
                         "to_port": "detections",
-                        "data_type": "detections"
+                        "data_type": "detections",
+                        "is_default": false
                     }
                 ]
             },
             {
-                "action_name": "pnp_camera_localization",
+                "action_name": "pnp_camera_localization.py",
                 "action_params": {
                     "camera_parameters_path": "{project_root}/files/pnp_camera_localization/camera_parameters_path/intrinsics.json",
                     "apriltag_map_path": "{project_root}/files/pnp_camera_localization/apriltag_map_path/frc2025r2.json",
@@ -55,12 +57,21 @@
                         "from_port": "camera_pose",
                         "to_uuid": "op-mk60kmaw-kwwt",
                         "to_port": "pose_3d",
-                        "data_type": "camera_pose"
+                        "data_type": "camera_pose",
+                        "is_default": false
+                    },
+                    {
+                        "from_uuid": "op-mk60k0f0-5bb0",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mkcoqjzs-g79z",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": true
                     }
                 ]
             },
             {
-                "action_name": "flatten_pose",
+                "action_name": "flatten_pose.py",
                 "action_params": {},
                 "position": {
                     "x": 1060,
@@ -73,18 +84,39 @@
                         "from_port": "pose_2d",
                         "to_uuid": "op-mk60ks00-1rdu",
                         "to_port": "pose",
-                        "data_type": "pose_2d"
+                        "data_type": "pose_2d",
+                        "is_default": false
                     }
                 ]
             },
             {
-                "action_name": "robot_pose_output",
+                "action_name": "robot_pose_output.py",
                 "action_params": {},
                 "position": {
                     "x": 1360,
                     "y": 100
                 },
-                "uuid": "op-mk60ks00-1rdu"
+                "uuid": "op-mk60ks00-1rdu",
+                "connections": []
+            },
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust.py",
+                "action_params": {},
+                "position": {
+                    "x": 40,
+                    "y": -100
+                },
+                "uuid": "op-mkcoqjzs-g79z",
+                "connections": [
+                    {
+                        "from_uuid": "op-mkcoqjzs-g79z",
+                        "from_port": "processed_frame",
+                        "to_uuid": "op-mk60jrt5-9es1",
+                        "to_port": "frame",
+                        "data_type": "processed_frame",
+                        "is_default": false
+                    }
+                ]
             }
         ]
     }

@@ -12,8 +12,9 @@ import {
     handleDragLeavePipeline,
     handleDropOnPipeline,
 } from "./dragDrop.js";
-import { uid } from "./utils.js";
+import { uid, debounce } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
+import { pipelineStore } from "./PipelineStore.js";
 
 function handleDragStartWithLogging(
     event,
@@ -56,14 +57,15 @@ function handleDropOnPipelineWithLogging(
     pipelinePlaceholder,
     callbacks,
 ) {
-    const pipelineOrderBefore = pipeline.map((item) => ({
-        id: item.id,
-        name: item.name,
-        instanceId: item.instanceId,
+    const pipelineNodes = pipelineStore.getNodes();
+    const pipelineOrderBefore = pipelineNodes.map((node) => ({
+        id: node.operationId,
+        name: node.name,
+        instanceId: node.instanceId,
     }));
 
     console.log("[PIPELINE] Drop operation started", {
-        pipelineLengthBefore: pipeline.length,
+        pipelineLengthBefore: pipelineNodes.length,
         pipelineOrderBefore,
         dropTarget: event.target,
         timestamp: new Date().toISOString(),
@@ -78,14 +80,15 @@ function handleDropOnPipelineWithLogging(
         callbacks,
     );
 
-    const pipelineOrderAfter = pipeline.map((item) => ({
-        id: item.id,
-        name: item.name,
-        instanceId: item.instanceId,
+    const pipelineNodesAfter = pipelineStore.getNodes();
+    const pipelineOrderAfter = pipelineNodesAfter.map((node) => ({
+        id: node.operationId,
+        name: node.name,
+        instanceId: node.instanceId,
     }));
 
     console.log("[PIPELINE] Drop operation completed", {
-        pipelineLengthAfter: pipeline.length,
+        pipelineLengthAfter: pipelineNodesAfter.length,
         pipelineOrderAfter,
         orderChanged:
             JSON.stringify(pipelineOrderBefore.map((p) => p.instanceId)) !==
@@ -97,16 +100,7 @@ function handleDropOnPipelineWithLogging(
     return result;
 }
 
-let operations = [];
-let pipeline = [];
 let isInitialized = false;
-let restartRequiredOperations = new Map();
-let cameras = [];
-let selectedCamera = null;
-let pipelines = [];
-let selectedPipeline = null;
-let isAutoSaving = false;
-let pendingAutoSave = false;
 
 let flowchartRenderer = null;
 let useFlowchartMode = true;
@@ -123,6 +117,34 @@ let deletePipelineButton;
 let restartIndicator;
 let flowchartCanvas;
 
+const autoSavePipeline = debounce(autoSavePipelineImpl, 500);
+
+function getOperations() {
+    return pipelineStore.state.operations;
+}
+
+function getPipeline() {
+    return pipelineStore.getNodesForRenderer();
+}
+
+function getCameras() {
+    return pipelineStore.state.cameras;
+}
+
+function getSelectedCamera() {
+    const cameraName = pipelineStore.state.currentPipeline.cameraName;
+    return pipelineStore.state.cameras.find((c) => c.name === cameraName);
+}
+
+function getPipelines() {
+    return pipelineStore.state.pipelines;
+}
+
+function getSelectedPipeline() {
+    const pipelineName = pipelineStore.state.currentPipeline.pipelineName;
+    return pipelineStore.state.pipelines.find((p) => p.name === pipelineName);
+}
+
 async function fetchAvailableOperations() {
     try {
         const response = await fetch(
@@ -133,7 +155,7 @@ async function fetchAvailableOperations() {
         }
         const data = await response.json();
 
-        operations = data.operations.map((op) => ({
+        const operations = data.operations.map((op) => ({
             id: op.name,
             name: op.name
                 .replaceAll(".py", "")
@@ -146,10 +168,11 @@ async function fetchAvailableOperations() {
             isSecondary: op.is_secondary,
         }));
 
+        pipelineStore.setOperations(operations);
         console.log("Loaded operations from server:", operations);
     } catch (error) {
         console.error("Failed to fetch operations:", error);
-        operations = [];
+        pipelineStore.setOperations([]);
     }
 }
 
@@ -163,28 +186,30 @@ async function fetchAvailableCameras() {
         }
         const data = await response.json();
 
-        cameras = Object.entries(data).map(([name, urlSafeName]) => ({
+        const cameras = Object.entries(data).map(([name, urlSafeName]) => ({
             name: name,
             urlSafeName: urlSafeName,
         }));
 
+        pipelineStore.setCameras(cameras);
         console.log("Loaded cameras from server:", cameras);
     } catch (error) {
         console.error("Failed to fetch cameras:", error);
-        cameras = [];
+        pipelineStore.setCameras([]);
     }
 }
 
 function populateCameraDropdown() {
     cameraSelect.innerHTML = "";
 
+    const cameras = pipelineStore.state.cameras;
     if (!Array.isArray(cameras) || cameras.length === 0) {
         const option = document.createElement("option");
         option.disabled = true;
         option.selected = true;
         option.textContent = "No cameras available";
         cameraSelect.appendChild(option);
-        selectedCamera = null;
+        pipelineStore.setCurrentCamera(null);
         return;
     }
 
@@ -195,7 +220,7 @@ function populateCameraDropdown() {
         option.textContent = camera.name;
         if (index === 0) {
             option.selected = true;
-            selectedCamera = camera;
+            pipelineStore.setCurrentCamera(camera.name);
         }
         cameraSelect.appendChild(option);
     }
@@ -211,17 +236,18 @@ async function fetchPipelinesForCamera(cameraName) {
         }
         const pipelineNames = await response.json();
 
-        pipelines = pipelineNames.map((name) => ({
+        const pipelines = pipelineNames.map((name) => ({
             name: name,
             displayName: name
                 .replaceAll("_", " ")
                 .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
         }));
 
+        pipelineStore.setPipelines(pipelines);
         console.log("Loaded pipelines from server:", pipelines);
     } catch (error) {
         console.error("Failed to fetch pipelines:", error);
-        pipelines = [];
+        pipelineStore.setPipelines([]);
     }
 }
 
@@ -252,6 +278,7 @@ function populatePipelineDropdown(selectedPipelineName = null) {
     pipelineSelect.appendChild(defaultOption);
 
     let foundSelectedPipeline = false;
+    const pipelines = getPipelines();
 
     for (let index = 0; index < pipelines.length; index++) {
         const pipelineItem = pipelines[index];
@@ -264,7 +291,7 @@ function populatePipelineDropdown(selectedPipelineName = null) {
             (selectedPipelineName === null && index === 0)
         ) {
             option.selected = true;
-            selectedPipeline = pipelineItem;
+            pipelineStore.setCurrentPipeline(pipelineItem.name);
             foundSelectedPipeline = true;
         }
 
@@ -284,32 +311,35 @@ function populatePipelineDropdown(selectedPipelineName = null) {
         );
         if (firstOption) {
             firstOption.selected = true;
-            selectedPipeline = pipelines[0];
+            pipelineStore.setCurrentPipeline(pipelines[0].name);
         }
     }
 
     if (pipelines.length === 0) {
-        selectedPipeline = null;
+        pipelineStore.setCurrentPipeline(null);
     }
 }
 
 async function handleCameraSelection() {
     const selectedValue = cameraSelect.value;
-    selectedCamera = cameras.find(
+    const cameras = getCameras();
+    const selectedCamera = cameras.find(
         (camera) => camera.urlSafeName === selectedValue,
     );
+    if (selectedCamera) {
+        pipelineStore.setCurrentCamera(selectedCamera.name);
+    }
     console.log("Selected camera:", selectedCamera);
 
     if (selectedCamera) {
         await fetchPipelinesForCamera(selectedCamera.name);
         populatePipelineDropdown();
 
-        // Clear pipeline if camera has no pipelines
+        const pipelines = getPipelines();
         if (pipelines.length === 0) {
-            pipeline = [];
-            selectedPipeline = null;
-            // Render with empty connections to clear both operations and connections from flowchart
-            await renderCurrentPipeline({ connections: [] });
+            pipelineStore.clearPipeline();
+            pipelineStore.setCurrentPipeline(null);
+            await renderCurrentPipeline();
         } else {
             await renderCurrentPipeline();
         }
@@ -320,16 +350,21 @@ async function handleCameraSelection() {
 
 async function handlePipelineSelection() {
     const selectedValue = pipelineSelect.value;
-    selectedPipeline = pipelines.find(
+    const pipelines = getPipelines();
+    const selectedPipeline = pipelines.find(
         (pipelineItem) => pipelineItem.name === selectedValue,
     );
     console.log("Selected pipeline:", selectedPipeline);
 
-    if (selectedPipeline && selectedCamera) {
-        await loadPipelineIntoBuilder(
-            selectedCamera.name,
-            selectedPipeline.name,
-        );
+    if (selectedPipeline) {
+        pipelineStore.setCurrentPipeline(selectedPipeline.name);
+        const selectedCamera = getSelectedCamera();
+        if (selectedCamera) {
+            await loadPipelineIntoBuilder(
+                selectedCamera.name,
+                selectedPipeline.name,
+            );
+        }
     }
 
     updateDeleteButtonVisibility();
@@ -337,22 +372,17 @@ async function handlePipelineSelection() {
 
 async function loadPipelineIntoBuilder(cameraName, pipelineName) {
     try {
+        const operations = getOperations();
         if (operations.length === 0) {
             console.warn("Operations not loaded yet, cannot load pipeline");
             return;
         }
-
-        pipeline = [];
 
         const pipelineConfig = await fetchPipelineConfig(
             cameraName,
             pipelineName,
         );
 
-        // Build UUID to instanceId mapping for connection restoration
-        const uuidToInstanceId = new Map();
-
-        // Collect connections from ALL nodes
         const allConnections = [];
         pipelineConfig.forEach((configItem) => {
             if (
@@ -363,67 +393,9 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             }
         });
 
-        for (let index = 0; index < pipelineConfig.length; index++) {
-            const configItem = pipelineConfig[index];
-            let operation = operations.find(
-                (op) => op.id === configItem.action_name + ".py",
-            );
+        pipelineStore.loadPipelineData(pipelineConfig, allConnections);
 
-            if (!operation) {
-                operation = operations.find(
-                    (op) => op.id === configItem.action_name,
-                );
-            }
-
-            if (!operation) {
-                operation = operations.find(
-                    (op) =>
-                        op.name.toLowerCase().replaceAll(/\s+/g, "_") ===
-                        configItem.action_name,
-                );
-            }
-
-            if (operation) {
-                // Use UUID from config or generate new one
-                const itemUuid = configItem.uuid || uid("op-");
-                const instanceId = `${operation.id}_${Date.now()}_${index}`;
-
-                const pipelineItem = {
-                    ...operation,
-                    instanceId: instanceId,
-                    uuid: itemUuid,
-                    config: configItem.action_params || {},
-                    originalConfig: configItem.action_params || {},
-                    name: operation.name,
-                    requiresRestart: false,
-                    position: configItem.position || null,
-                };
-                pipeline.push(pipelineItem);
-                uuidToInstanceId.set(itemUuid, instanceId);
-            } else {
-                console.warn(
-                    `Operation ${configItem.action_name} not found in available operations. Available operations:`,
-                    operations.map((op) => op.id),
-                );
-            }
-        }
-
-        // Convert UUID-based connections to instanceId-based connections for rendering
-        let instanceIdConnections = null;
-        if (allConnections.length > 0) {
-            instanceIdConnections = allConnections
-                .map((conn) => ({
-                    fromNodeId: uuidToInstanceId.get(conn.from_uuid),
-                    toNodeId: uuidToInstanceId.get(conn.to_uuid),
-                    fromPortName: conn.from_port,
-                    toPortName: conn.to_port,
-                    dataType: conn.data_type || conn.from_port,
-                    isDefault: conn.is_default || false,
-                }))
-                .filter((conn) => conn.fromNodeId && conn.toNodeId);
-        }
-
-        await renderCurrentPipeline(instanceIdConnections);
+        await renderCurrentPipeline();
 
         updateRunButton();
     } catch (error) {
@@ -431,15 +403,12 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
     }
 }
 
-async function renderCurrentPipeline(connectionsData = null) {
-    if (useFlowchartMode && flowchartRenderer) {
-        // When connectionsData is provided, we're loading from config - don't preserve existing connections
-        // When connectionsData is null, we're doing normal operations - preserve existing connections
-        const options =
-            connectionsData !== null
-                ? { connections: connectionsData }
-                : { preserveConnections: true };
+async function renderCurrentPipeline() {
+    const pipeline = getPipeline();
+    const connections = pipelineStore.getConnectionsForRenderer();
 
+    if (useFlowchartMode && flowchartRenderer) {
+        const options = { connections };
         await flowchartRenderer.renderPipeline(pipeline, options);
     } else {
         renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
@@ -454,16 +423,20 @@ async function renderCurrentPipeline(connectionsData = null) {
 
 async function checkAndTriggerAutoFill() {
     try {
+        const cameras = getCameras();
+        const pipelines = getPipelines();
+
         if (cameraSelect?.value) {
             const selectedCameraValue = cameraSelect.value;
             const cameraObj = cameras.find(
                 (c) => c.urlSafeName === selectedCameraValue,
             );
             if (cameraObj) {
-                selectedCamera = cameraObj;
+                pipelineStore.setCurrentCamera(cameraObj.name);
             }
         }
 
+        const selectedCamera = getSelectedCamera();
         if (!selectedCamera) {
             console.log("No camera selected, skipping auto-fill");
             return;
@@ -485,7 +458,7 @@ async function checkAndTriggerAutoFill() {
             return;
         }
 
-        selectedPipeline = pipelineObj;
+        pipelineStore.setCurrentPipeline(pipelineObj.name);
 
         console.log(
             "Both camera and pipeline are pre-selected, triggering auto-fill",
@@ -497,33 +470,31 @@ async function checkAndTriggerAutoFill() {
 }
 
 async function removeFromPipeline(instanceId) {
-    const removedOperation = pipeline.find(
-        (item) => item.instanceId === instanceId,
-    );
+    const removedNode = pipelineStore.getNode(instanceId);
     console.log("[PIPELINE] Removing operation from pipeline", {
-        removedOperation: removedOperation
+        removedOperation: removedNode
             ? {
-                  id: removedOperation.id,
-                  name: removedOperation.name,
-                  instanceId: removedOperation.instanceId,
+                  id: removedNode.operationId,
+                  name: removedNode.name,
+                  instanceId: removedNode.instanceId,
               }
             : null,
-        pipelineLengthBefore: pipeline.length,
+        pipelineLengthBefore: pipelineStore.getNodes().length,
         timestamp: new Date().toISOString(),
     });
 
-    pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
+    pipelineStore.removeNode(instanceId);
 
     if (useFlowchartMode && flowchartRenderer) {
         flowchartRenderer.removeNode(instanceId);
     }
 
     console.log("[PIPELINE] Pipeline after removal", {
-        pipelineLengthAfter: pipeline.length,
-        remainingOperations: pipeline.map((op) => ({
-            id: op.id,
-            name: op.name,
-            instanceId: op.instanceId,
+        pipelineLengthAfter: pipelineStore.getNodes().length,
+        remainingOperations: pipelineStore.getNodes().map((node) => ({
+            id: node.operationId,
+            name: node.name,
+            instanceId: node.instanceId,
         })),
         timestamp: new Date().toISOString(),
     });
@@ -533,7 +504,7 @@ async function removeFromPipeline(instanceId) {
 
     console.log("Operation removed from pipeline - requiring backend restart");
     await updateRestartIndicator(true);
-    restartRequiredOperations.clear();
+    pipelineStore.clearRestartRequired();
 }
 
 function runPipeline() {
@@ -673,88 +644,21 @@ function openOperationSettings(opOrItem) {
 
 function updateRunButton() {
     if (runButton) {
-        runButton.disabled = pipeline.length === 0;
+        runButton.disabled = pipelineStore.getNodes().length === 0;
     }
 }
 
-async function autoSavePipeline() {
+async function autoSavePipelineImpl() {
+    const selectedCamera = getSelectedCamera();
+    const selectedPipeline = getSelectedPipeline();
+
     if (!selectedCamera || !selectedPipeline) {
         console.log("No camera or pipeline selected, skipping auto-save");
         return;
     }
 
-    if (isAutoSaving) {
-        pendingAutoSave = true;
-        return;
-    }
-    isAutoSaving = true;
     try {
-        // Get connections from flowchart renderer if available
-        let connections = [];
-        if (
-            useFlowchartMode &&
-            flowchartRenderer &&
-            flowchartRenderer.connections
-        ) {
-            const connectionData =
-                flowchartRenderer.connections.getConnectionData();
-            connections = connectionData
-                .map((conn) => {
-                    // Map instanceId back to UUID
-                    const fromItem = pipeline.find(
-                        (item) => item.instanceId === conn.fromNodeId,
-                    );
-                    const toItem = pipeline.find(
-                        (item) => item.instanceId === conn.toNodeId,
-                    );
-
-                    return {
-                        from_uuid: fromItem?.uuid || null,
-                        from_port: conn.fromPortName,
-                        to_uuid: toItem?.uuid || null,
-                        to_port: conn.toPortName,
-                        data_type: conn.dataType || conn.fromPortName,
-                        is_default: conn.isDefault || false,
-                    };
-                })
-                .filter((conn) => conn.from_uuid && conn.to_uuid);
-        }
-
-        // Group connections by source UUID
-        const connectionsBySourceUuid = new Map();
-        connections.forEach((conn) => {
-            if (!connectionsBySourceUuid.has(conn.from_uuid)) {
-                connectionsBySourceUuid.set(conn.from_uuid, []);
-            }
-            connectionsBySourceUuid.get(conn.from_uuid).push(conn);
-        });
-
-        const pipelineConfig = pipeline.map((item) => {
-            const configParams = {};
-            if (item.config) {
-                for (const key of Object.keys(item.config)) {
-                    const value = item.config[key];
-                    if (value !== undefined && value !== null) {
-                        configParams[key] = value;
-                    }
-                }
-            }
-
-            const nodeConfig = {
-                action_name: item.id.replaceAll(".py", ""),
-                action_params: configParams,
-                position: item.position || null,
-                uuid: item.uuid || uid("op-"),
-            };
-
-            // Add this node's outgoing connections if any exist
-            const nodeConnections = connectionsBySourceUuid.get(item.uuid);
-            if (nodeConnections && nodeConnections.length > 0) {
-                nodeConfig.connections = nodeConnections;
-            }
-
-            return nodeConfig;
-        });
+        const pipelineConfig = pipelineStore.exportToConfig();
 
         const response = await fetch(
             `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
@@ -767,18 +671,14 @@ async function autoSavePipeline() {
         if (!response.ok)
             throw new Error(`HTTP error! status: ${response.status}`);
         await response.json();
+        console.log("Pipeline auto-saved successfully");
     } catch (error) {
         console.error("Failed to auto-save pipeline:", error);
-    } finally {
-        isAutoSaving = false;
-        if (pendingAutoSave) {
-            pendingAutoSave = false;
-            autoSavePipeline();
-        }
     }
 }
 
 async function createNewPipeline() {
+    const selectedCamera = getSelectedCamera();
     if (!selectedCamera) {
         alert("Please select a camera first.");
         return;
@@ -791,6 +691,7 @@ async function createNewPipeline() {
 
     const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
 
+    const pipelines = getPipelines();
     const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
     if (existingPipeline) {
         if (
@@ -803,49 +704,43 @@ async function createNewPipeline() {
     }
 
     try {
-        pipeline.length = 0;
-        pipeline = [];
+        pipelineStore.clearPipeline();
 
         const newPipelineObj = {
             name: pipelineFileName,
             displayName: newPipelineName.trim(),
         };
 
-        selectedPipeline = newPipelineObj;
-
-        const existingIndex = pipelines.findIndex(
+        const currentPipelines = pipelineStore.state.pipelines;
+        const existingIndex = currentPipelines.findIndex(
             (p) => p.name === pipelineFileName,
         );
         if (existingIndex >= 0) {
-            pipelines[existingIndex] = newPipelineObj;
+            currentPipelines[existingIndex] = newPipelineObj;
         } else {
-            pipelines.push(newPipelineObj);
+            currentPipelines.push(newPipelineObj);
         }
 
+        pipelineStore.setCurrentPipeline(pipelineFileName);
         populatePipelineDropdown(pipelineFileName);
 
         setTimeout(() => {
-            if (pipelineSelect && selectedPipeline) {
-                pipelineSelect.value = selectedPipeline.name;
-                console.log("Dropdown value set to:", selectedPipeline.name);
+            if (pipelineSelect) {
+                pipelineSelect.value = pipelineFileName;
+                console.log("Dropdown value set to:", pipelineFileName);
             }
         }, 10);
 
         // Automatically add device_input operation
+        const operations = getOperations();
         const deviceInputOp = operations.find(
             (op) => op.id === "device_input.py",
         );
         if (deviceInputOp) {
-            const deviceInputItem = {
-                ...deviceInputOp,
-                instanceId: uid(deviceInputOp.id + "-"),
-                uuid: uid("op-"),
-                config: {},
-                originalConfig: {},
-                position: { x: 100, y: 100 },
-                requiresRestart: false,
-            };
-            pipeline.push(deviceInputItem);
+            pipelineStore.addNode(
+                { id: deviceInputOp.id, config: {} },
+                { x: 100, y: 100 },
+            );
         }
 
         console.log(
@@ -863,13 +758,13 @@ async function createNewPipeline() {
         // Save the empty pipeline to backend so it persists
         await autoSavePipeline();
 
-        restartRequiredOperations.clear();
+        pipelineStore.clearRestartRequired();
         await updateRestartIndicator(false);
 
         console.log("New pipeline created:", newPipelineName);
-        console.log("Pipeline state:", pipeline);
-        console.log("Selected pipeline:", selectedPipeline);
-        console.log("Pipelines list:", pipelines);
+        console.log("Pipeline state:", pipelineStore.getNodes());
+        console.log("Selected pipeline:", getSelectedPipeline());
+        console.log("Pipelines list:", getPipelines());
     } catch (error) {
         console.error("Failed to create new pipeline:", error);
         alert(
@@ -879,11 +774,13 @@ async function createNewPipeline() {
 }
 
 async function deleteCurrentPipeline() {
+    const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
         alert("No pipeline selected to delete.");
         return;
     }
 
+    const selectedCamera = getSelectedCamera();
     if (!selectedCamera) {
         alert("No camera selected.");
         return;
@@ -917,7 +814,8 @@ async function deleteCurrentPipeline() {
         const result = await response.json();
         console.log("Pipeline deleted from backend:", result);
 
-        const pipelineIndex = pipelines.findIndex(
+        const currentPipelines = pipelineStore.state.pipelines;
+        const pipelineIndex = currentPipelines.findIndex(
             (p) => p.name === pipelineToDelete.name,
         );
 
@@ -927,15 +825,13 @@ async function deleteCurrentPipeline() {
             return;
         }
 
-        pipelines.splice(pipelineIndex, 1);
+        currentPipelines.splice(pipelineIndex, 1);
 
         console.log("Deleted pipeline:", pipelineToDelete.name);
-        console.log("Remaining pipelines:", pipelines);
+        console.log("Remaining pipelines:", currentPipelines);
 
-        pipeline.length = 0;
-        pipeline = [];
-
-        selectedPipeline = null;
+        pipelineStore.clearPipeline();
+        pipelineStore.setCurrentPipeline(null);
 
         populatePipelineDropdown();
 
@@ -955,6 +851,8 @@ async function deleteCurrentPipeline() {
 
 function updateDeleteButtonVisibility() {
     if (deletePipelineButton) {
+        const selectedPipeline = getSelectedPipeline();
+        const selectedCamera = getSelectedCamera();
         if (selectedPipeline && selectedCamera) {
             deletePipelineButton.classList.remove("hidden");
         } else {
@@ -1155,6 +1053,7 @@ async function refreshPipelineCreator() {
 
         await fetchAvailableOperations();
 
+        const operations = getOperations();
         if (operationsList && operations.length > 0) {
             renderOperations(
                 operations,
@@ -1167,10 +1066,12 @@ async function refreshPipelineCreator() {
         await fetchAvailableCameras();
         populateCameraDropdown();
 
+        const selectedCamera = getSelectedCamera();
         if (selectedCamera) {
             await fetchPipelinesForCamera(selectedCamera.name);
             populatePipelineDropdown();
 
+            const selectedPipeline = getSelectedPipeline();
             if (selectedPipeline) {
                 await loadPipelineIntoBuilder(
                     selectedCamera.name,
@@ -1188,6 +1089,9 @@ async function refreshPipelineCreator() {
 }
 
 async function handleFlowchartPipelineChange(changeEvent) {
+    const selectedPipeline = getSelectedPipeline();
+    const selectedCamera = getSelectedCamera();
+
     if (!selectedPipeline) {
         if (!selectedCamera) {
             alert("Please select a camera first, then create a new pipeline.");
@@ -1203,36 +1107,25 @@ async function handleFlowchartPipelineChange(changeEvent) {
 
         await createNewPipeline();
 
-        if (!selectedPipeline) {
+        if (!getSelectedPipeline()) {
             return;
         }
     }
 
     if (changeEvent.type === "add") {
-        const operation = operations.find(
-            (op) => op.id === changeEvent.operationId,
+        const node = pipelineStore.addNode(
+            { id: changeEvent.operationId },
+            changeEvent.position,
         );
-        if (!operation) {
+        if (!node) {
             console.warn(`Operation ${changeEvent.operationId} not found`);
             return;
         }
 
-        const newItem = {
-            ...operation,
-            instanceId: uid(operation.id + "-"),
-            uuid: uid("op-"),
-            config: {},
-            originalConfig: {},
-            position: changeEvent.position,
-            requiresRestart: false,
-        };
-
-        pipeline.push(newItem);
-
         await renderCurrentPipeline();
         autoSavePipeline();
         updateRestartIndicator(true);
-        restartRequiredOperations.clear();
+        pipelineStore.clearRestartRequired();
     }
 }
 
@@ -1305,6 +1198,7 @@ export async function initPipelineCreator() {
         pipelineSelect.addEventListener("change", handlePipelineSelection);
     }
 
+    const selectedCamera = getSelectedCamera();
     if (selectedCamera) {
         await fetchPipelinesForCamera(selectedCamera.name);
         populatePipelineDropdown();
@@ -1322,17 +1216,17 @@ export async function initPipelineCreator() {
                 handleDragEnterPipeline(e),
             );
             element.addEventListener("dragover", (e) => {
-                if (!selectedPipeline) {
+                if (!getSelectedPipeline()) {
                     e.preventDefault();
                     return;
                 }
-                handleDragOverPipeline(e, pipeline, pipelineContainer);
+                handleDragOverPipeline(e, getPipeline(), pipelineContainer);
             });
             element.addEventListener("dragleave", (e) =>
-                handleDragLeavePipeline(e, pipeline, pipelinePlaceholder),
+                handleDragLeavePipeline(e, getPipeline(), pipelinePlaceholder),
             );
             element.addEventListener("drop", async (e) => {
-                if (!selectedPipeline) {
+                if (!getSelectedPipeline()) {
                     console.log(
                         "[PIPELINE] Cannot drop operations: no pipeline selected",
                     );
@@ -1340,21 +1234,22 @@ export async function initPipelineCreator() {
                     return;
                 }
 
-                const pipelineLengthBefore = pipeline.length;
-                const pipelineOrderBefore = pipeline
+                const pipelineNodes = getPipeline();
+                const pipelineLengthBefore = pipelineNodes.length;
+                const pipelineOrderBefore = pipelineNodes
                     .map((item) => item.instanceId)
                     .join(",");
 
                 handleDropOnPipelineWithLogging(
                     e,
-                    pipeline,
-                    operations,
+                    pipelineNodes,
+                    getOperations(),
                     pipelineContainer,
                     pipelinePlaceholder,
                     {
                         renderPipeline: () =>
                             renderPipeline(
-                                pipeline,
+                                getPipeline(),
                                 pipelineContainer,
                                 pipelinePlaceholder,
                                 {
@@ -1370,11 +1265,12 @@ export async function initPipelineCreator() {
                     },
                 );
 
-                const pipelineOrderAfter = pipeline
+                const pipelineNodesAfter = getPipeline();
+                const pipelineOrderAfter = pipelineNodesAfter
                     .map((item) => item.instanceId)
                     .join(",");
                 const structureChanged =
-                    pipeline.length !== pipelineLengthBefore ||
+                    pipelineNodesAfter.length !== pipelineLengthBefore ||
                     pipelineOrderBefore !== pipelineOrderAfter;
 
                 if (structureChanged) {
@@ -1382,7 +1278,7 @@ export async function initPipelineCreator() {
                         "[PIPELINE] Pipeline structure changed - requiring backend restart",
                     );
                     await updateRestartIndicator(true);
-                    restartRequiredOperations.clear();
+                    pipelineStore.clearRestartRequired();
                     autoSavePipeline();
                 }
             });
@@ -1434,7 +1330,7 @@ export async function initPipelineCreator() {
     };
 
     Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {
-        get: () => selectedPipeline,
+        get: () => getSelectedPipeline(),
         enumerable: true,
     });
 
