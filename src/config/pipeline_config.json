@@ -5,8 +5,8 @@
                 "action_name": "device_input.py",
                 "action_params": {},
                 "position": {
-                    "x": -260,
-                    "y": 100
+                    "x": -440,
+                    "y": 60
                 },
                 "uuid": "op-mk60jqlu-vb7",
                 "connections": [
@@ -24,7 +24,7 @@
                 "action_name": "detect_apriltags.py",
                 "action_params": {},
                 "position": {
-                    "x": 380,
+                    "x": 360,
                     "y": 100
                 },
                 "uuid": "op-mk60jrt5-9es1",
@@ -47,7 +47,7 @@
                     "jump_threshold": 2
                 },
                 "position": {
-                    "x": 700,
+                    "x": 720,
                     "y": 100
                 },
                 "uuid": "op-mk60k0f0-5bb0",
@@ -66,7 +66,7 @@
                         "to_uuid": "op-mkcoqjzs-g79z",
                         "to_port": "camera_pose",
                         "data_type": "camera_pose",
-                        "is_default": true
+                        "is_default": false
                     }
                 ]
             },
@@ -103,8 +103,8 @@
                 "action_name": "temporal_acceleration_preprocessor_rust.py",
                 "action_params": {},
                 "position": {
-                    "x": 40,
-                    "y": -100
+                    "x": -80,
+                    "y": -140
                 },
                 "uuid": "op-mkcoqjzs-g79z",
                 "connections": [

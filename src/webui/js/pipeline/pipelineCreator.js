@@ -1311,7 +1311,7 @@ export async function initPipelineCreator() {
     }
 
     renderOperations(
-        operations,
+        getOperations(),
         operationsList,
         openOperationSettings,
         handleDragStartWithLogging,

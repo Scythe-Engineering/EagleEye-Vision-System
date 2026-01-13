@@ -177,6 +177,8 @@ export class FlowchartRenderer {
                 connectionWidth: 2,
                 onConnectionRemoved: this.handleConnectionRemoved.bind(this),
                 onConnectionChanged: this.handleConnectionChanged.bind(this),
+                onGetNode: (nodeId) => this.nodes.get(nodeId),
+                canvas: this.canvas,
             },
         );
 
@@ -1078,6 +1080,17 @@ export class FlowchartRenderer {
 
             if (fromNode && toNode) {
                 const connectionId = `${conn.fromNodeId}-${conn.fromPortName}-${conn.toNodeId}-${conn.toPortName}`;
+                const fromUuid = pipelineStore.instanceIdToUuid.get(
+                    conn.fromNodeId,
+                );
+                const toUuid = pipelineStore.instanceIdToUuid.get(
+                    conn.toNodeId,
+                );
+                const storeConnectionKey =
+                    fromUuid && toUuid
+                        ? `${fromUuid}-${conn.fromPortName}-${toUuid}-${conn.toPortName}`
+                        : null;
+
                 this.connections.createConnection(
                     connectionId,
                     fromNode,

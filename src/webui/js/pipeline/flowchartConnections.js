@@ -1,5 +1,5 @@
 /**
- * FlowchartConnections - SVG bezier curve connection management with data type labels
+ * FlowchartConnections - SVG orthogonal connection management with data type labels
  */
 
 export class FlowchartConnections {
@@ -9,9 +9,10 @@ export class FlowchartConnections {
         this.connectionColor = options.connectionColor || "#f9c845";
         this.connectionWidth = options.connectionWidth || 2;
         this.labelFontSize = options.labelFontSize || 10;
-        this.curveTension = options.curveTension || 0.5;
         this.onConnectionRemoved = options.onConnectionRemoved || (() => {});
         this.onConnectionChanged = options.onConnectionChanged || (() => {});
+        this.onGetNode = options.onGetNode || (() => null);
+        this.canvas = options.canvas || null;
 
         this.setupDefs();
     }
@@ -228,12 +229,17 @@ export class FlowchartConnections {
             e.stopPropagation();
             const connectionId = group.getAttribute("data-connection-id");
             if (connectionId) {
-                this.showContextMenu(e.clientX, e.clientY, connectionId);
+                this.showContextMenu(
+                    e.clientX,
+                    e.clientY,
+                    connectionId,
+                    this.canvas,
+                );
             }
         });
     }
 
-    showContextMenu(x, y, connectionId) {
+    showContextMenu(x, y, connectionId, canvas = null) {
         // Remove existing context menu if any
         const existingMenu = document.getElementById("connection-context-menu");
         if (existingMenu) {
@@ -267,6 +273,7 @@ export class FlowchartConnections {
         toggleItem.style.fontSize = "13px";
         toggleItem.style.fontWeight = "500";
         toggleItem.style.transition = "background-color 0.15s ease";
+        toggleItem.style.borderTop = "1px solid #404040";
 
         toggleItem.addEventListener("mouseenter", () => {
             toggleItem.style.backgroundColor = "#3a3a3a";
@@ -380,7 +387,7 @@ export class FlowchartConnections {
 
         if (!fromPos || !toPos) return;
 
-        const pathD = this.calculateBezierPath(fromPos, toPos);
+        const pathD = this.calculateOrthogonalPath(fromPos, toPos);
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
 
@@ -406,31 +413,93 @@ export class FlowchartConnections {
         }
     }
 
-    calculateBezierPath(from, to) {
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        const controlPointOffset = Math.max(
-            50,
-            Math.min(150, distance * this.curveTension),
-        );
-
-        // Start slightly away from the beginning node and end slightly before the end node
-        const startOffset = 10; // pixels to offset from start
-        const endOffset = 10; // pixels to offset from end
+    calculateOrthogonalPath(from, to) {
+        const startOffset = 10;
+        const endOffset = 10;
+        const cornerRadius = 12;
 
         const startX = from.x + startOffset;
         const startY = from.y;
         const endX = to.x - endOffset;
         const endY = to.y;
 
-        const cp1x = startX + controlPointOffset;
-        const cp1y = startY;
-        const cp2x = endX - controlPointOffset;
-        const cp2y = endY;
+        const midX = startX + (endX - startX) / 2;
+        return this.buildSimpleOrthogonalPath(
+            startX,
+            startY,
+            endX,
+            endY,
+            midX,
+            cornerRadius,
+        );
+    }
 
-        return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+    buildSimpleOrthogonalPath(startX, startY, endX, endY, midX, cornerRadius) {
+        const segments = [];
+        segments.push(`M ${startX} ${startY}`);
+
+        // Determine the overall horizontal direction of the connection
+        const horizontalDirection = Math.sign(endX - startX);
+
+        this.addHorizontalSegment(segments, startX, startY, midX, cornerRadius);
+        this.addVerticalSegment(
+            segments,
+            midX,
+            startY,
+            endY,
+            cornerRadius,
+            horizontalDirection,
+        );
+
+        // After vertical segment ends at endY, the corner should lead towards endX
+        const lastCornerX =
+            midX + (horizontalDirection > 0 ? cornerRadius : -cornerRadius);
+        this.addHorizontalSegment(segments, lastCornerX, endY, endX, 0);
+
+        return segments.join(" ");
+    }
+
+    addHorizontalSegment(segments, fromX, y, toX, radius) {
+        if (Math.abs(toX - fromX) < radius) {
+            segments.push(`L ${toX} ${y}`);
+            return;
+        }
+
+        const direction = Math.sign(toX - fromX);
+        segments.push(`L ${toX - radius * direction} ${y}`);
+    }
+
+    addVerticalSegment(
+        segments,
+        x,
+        fromY,
+        toY,
+        radius,
+        horizontalDirection = 1,
+    ) {
+        if (Math.abs(toY - fromY) < radius * 2) {
+            segments.push(`L ${x} ${toY}`);
+            return;
+        }
+
+        const direction = Math.sign(toY - fromY);
+        const startCornerY = fromY + radius * direction;
+        const endCornerY = toY - radius * direction;
+
+        segments.push(`Q ${x} ${fromY}, ${x} ${startCornerY}`);
+
+        if (Math.abs(endCornerY - startCornerY) > 1) {
+            segments.push(`L ${x} ${endCornerY}`);
+        }
+
+        // Adjust the final corner based on horizontal direction
+        // For rightward connections (positive), curve right; for leftward, curve left
+        const horizontalOffset = radius * horizontalDirection;
+        segments.push(`Q ${x} ${toY}, ${x + horizontalOffset} ${toY}`);
+    }
+
+    calculateMultiSegmentPath(from, to) {
+        return this.calculateOrthogonalPath(from, to);
     }
 
     updateLabel(connection) {
@@ -463,6 +532,25 @@ export class FlowchartConnections {
 
         text.setAttribute("x", "0");
         text.setAttribute("y", "0");
+    }
+
+    updateConnectionPath(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        const fromNode = this.onGetNode(connection.fromNodeId);
+        const toNode = this.onGetNode(connection.toNodeId);
+
+        if (!fromNode || !toNode) return;
+
+        const fromPos = fromNode.getOutputPortPosition(connection.fromPortName);
+        const toPos = toNode.getInputPortPosition(connection.toPortName);
+
+        if (!fromPos || !toPos) return;
+
+        const pathData = this.calculateMultiSegmentPath(fromPos, toPos);
+        connection.path.setAttribute("d", pathData);
+        connection.hitArea.setAttribute("d", pathData);
     }
 
     updateAllConnections(nodeMap) {
@@ -609,7 +697,10 @@ export class FlowchartConnections {
 
         // Render immediately at start position
         const initialEndPos = { x: startPos.x + 1, y: startPos.y };
-        const initialPathD = this.calculateBezierPath(startPos, initialEndPos);
+        const initialPathD = this.calculateOrthogonalPath(
+            startPos,
+            initialEndPos,
+        );
         tempPath.setAttribute("d", initialPathD);
 
         this.svgLayer.appendChild(tempPath);
@@ -637,7 +728,7 @@ export class FlowchartConnections {
 
         return {
             update: (endPos) => {
-                const pathD = this.calculateBezierPath(startPos, endPos);
+                const pathD = this.calculateOrthogonalPath(startPos, endPos);
                 tempPath.setAttribute("d", pathD);
             },
             remove: () => {

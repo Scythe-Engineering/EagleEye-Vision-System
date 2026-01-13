@@ -78,7 +78,10 @@ class PipelineStore {
                 try {
                     callback(data);
                 } catch (error) {
-                    console.error(`Error in event listener for ${event}:`, error);
+                    console.error(
+                        `Error in event listener for ${event}:`,
+                        error,
+                    );
                 }
             });
         }
@@ -119,10 +122,7 @@ class PipelineStore {
 
     normalizeOperationId(id) {
         if (!id) return "";
-        return id
-            .replace(/\.py$/, "")
-            .toLowerCase()
-            .replace(/\s+/g, "_");
+        return id.replace(/\.py$/, "").toLowerCase().replace(/\s+/g, "_");
     }
 
     findOperation(actionName) {
@@ -228,7 +228,14 @@ class PipelineStore {
         return true;
     }
 
-    addConnection(fromId, fromPort, toId, toPort, dataType = null, isDefault = false) {
+    addConnection(
+        fromId,
+        fromPort,
+        toId,
+        toPort,
+        dataType = null,
+        isDefault = false,
+    ) {
         const fromUuid = this.resolveToUuid(fromId);
         const toUuid = this.resolveToUuid(toId);
 
@@ -301,7 +308,8 @@ class PipelineStore {
     }
 
     toggleConnectionDefault(connectionKey) {
-        const connection = this.state.currentPipeline.connections.get(connectionKey);
+        const connection =
+            this.state.currentPipeline.connections.get(connectionKey);
         if (!connection) return false;
 
         connection.isDefault = !connection.isDefault;
@@ -356,25 +364,30 @@ class PipelineStore {
     }
 
     getConnectionsForRenderer() {
-        return this.getConnections().map((conn) => {
-            const fromInstanceId = this.resolveToInstanceId(conn.fromUuid);
-            const toInstanceId = this.resolveToInstanceId(conn.toUuid);
+        return this.getConnections()
+            .map((conn) => {
+                const fromInstanceId = this.resolveToInstanceId(conn.fromUuid);
+                const toInstanceId = this.resolveToInstanceId(conn.toUuid);
 
-            if (!fromInstanceId || !toInstanceId) {
-                console.warn("Could not resolve instanceIds for connection", conn);
-                return null;
-            }
+                if (!fromInstanceId || !toInstanceId) {
+                    console.warn(
+                        "Could not resolve instanceIds for connection",
+                        conn,
+                    );
+                    return null;
+                }
 
-            return {
-                id: `${fromInstanceId}-${conn.fromPort}-${toInstanceId}-${conn.toPort}`,
-                fromNodeId: fromInstanceId,
-                toNodeId: toInstanceId,
-                fromPortName: conn.fromPort,
-                toPortName: conn.toPort,
-                dataType: conn.dataType,
-                isDefault: conn.isDefault,
-            };
-        }).filter(Boolean);
+                return {
+                    id: `${fromInstanceId}-${conn.fromPort}-${toInstanceId}-${conn.toPort}`,
+                    fromNodeId: fromInstanceId,
+                    toNodeId: toInstanceId,
+                    fromPortName: conn.fromPort,
+                    toPortName: conn.toPort,
+                    dataType: conn.dataType,
+                    isDefault: conn.isDefault,
+                };
+            })
+            .filter(Boolean);
     }
 
     setNodeRestartRequired(identifier, required) {
@@ -387,7 +400,8 @@ class PipelineStore {
             this.state.ui.restartRequiredNodes.delete(uuid);
         }
 
-        const hasAnyRestartRequired = this.state.ui.restartRequiredNodes.size > 0;
+        const hasAnyRestartRequired =
+            this.state.ui.restartRequiredNodes.size > 0;
         this.state.ui.restartRequired = hasAnyRestartRequired;
 
         this.emit("restart:changed", {
@@ -443,7 +457,7 @@ class PipelineStore {
         });
 
         connectionsData.forEach((conn) => {
-            this.addConnection(
+            const connectionKey = this.addConnection(
                 conn.from_uuid,
                 conn.from_port,
                 conn.to_uuid,
@@ -466,16 +480,18 @@ class PipelineStore {
         nodes.forEach((node) => {
             const nodeConnections = [];
 
-            for (const [key, conn] of this.state.currentPipeline.connections) {
+            for (const [_key, conn] of this.state.currentPipeline.connections) {
                 if (conn.fromUuid === node.uuid) {
-                    nodeConnections.push({
+                    const connData = {
                         from_uuid: conn.fromUuid,
                         from_port: conn.fromPort,
                         to_uuid: conn.toUuid,
                         to_port: conn.toPort,
                         data_type: conn.dataType,
                         is_default: conn.isDefault,
-                    });
+                    };
+
+                    nodeConnections.push(connData);
                 }
             }
 
