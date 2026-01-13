@@ -303,7 +303,7 @@ async function handleCameraSelection() {
     if (selectedCamera) {
         await fetchPipelinesForCamera(selectedCamera.name);
         populatePipelineDropdown();
-        
+
         // Clear pipeline if camera has no pipelines
         if (pipelines.length === 0) {
             pipeline = [];
@@ -351,11 +351,14 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
 
         // Build UUID to instanceId mapping for connection restoration
         const uuidToInstanceId = new Map();
-        
+
         // Collect connections from ALL nodes
         const allConnections = [];
-        pipelineConfig.forEach(configItem => {
-            if (configItem.connections && Array.isArray(configItem.connections)) {
+        pipelineConfig.forEach((configItem) => {
+            if (
+                configItem.connections &&
+                Array.isArray(configItem.connections)
+            ) {
                 allConnections.push(...configItem.connections);
             }
         });
@@ -408,13 +411,16 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         // Convert UUID-based connections to instanceId-based connections for rendering
         let instanceIdConnections = null;
         if (allConnections.length > 0) {
-            instanceIdConnections = allConnections.map(conn => ({
-                fromNodeId: uuidToInstanceId.get(conn.from_uuid),
-                toNodeId: uuidToInstanceId.get(conn.to_uuid),
-                fromPortName: conn.from_port,
-                toPortName: conn.to_port,
-                dataType: conn.data_type || conn.from_port
-            })).filter(conn => conn.fromNodeId && conn.toNodeId);
+            instanceIdConnections = allConnections
+                .map((conn) => ({
+                    fromNodeId: uuidToInstanceId.get(conn.from_uuid),
+                    toNodeId: uuidToInstanceId.get(conn.to_uuid),
+                    fromPortName: conn.from_port,
+                    toPortName: conn.to_port,
+                    dataType: conn.data_type || conn.from_port,
+                    isDefault: conn.is_default || false,
+                }))
+                .filter((conn) => conn.fromNodeId && conn.toNodeId);
         }
 
         await renderCurrentPipeline(instanceIdConnections);
@@ -429,9 +435,10 @@ async function renderCurrentPipeline(connectionsData = null) {
     if (useFlowchartMode && flowchartRenderer) {
         // When connectionsData is provided, we're loading from config - don't preserve existing connections
         // When connectionsData is null, we're doing normal operations - preserve existing connections
-        const options = connectionsData !== null
-            ? { connections: connectionsData }
-            : { preserveConnections: true };
+        const options =
+            connectionsData !== null
+                ? { connections: connectionsData }
+                : { preserveConnections: true };
 
         await flowchartRenderer.renderPipeline(pipeline, options);
     } else {
@@ -684,26 +691,38 @@ async function autoSavePipeline() {
     try {
         // Get connections from flowchart renderer if available
         let connections = [];
-        if (useFlowchartMode && flowchartRenderer && flowchartRenderer.connections) {
-            const connectionData = flowchartRenderer.connections.getConnectionData();
-            connections = connectionData.map(conn => {
-                // Map instanceId back to UUID
-                const fromItem = pipeline.find(item => item.instanceId === conn.fromNodeId);
-                const toItem = pipeline.find(item => item.instanceId === conn.toNodeId);
-                
-                return {
-                    from_uuid: fromItem?.uuid || null,
-                    from_port: conn.fromPortName,
-                    to_uuid: toItem?.uuid || null,
-                    to_port: conn.toPortName,
-                    data_type: conn.dataType || conn.fromPortName
-                };
-            }).filter(conn => conn.from_uuid && conn.to_uuid);
+        if (
+            useFlowchartMode &&
+            flowchartRenderer &&
+            flowchartRenderer.connections
+        ) {
+            const connectionData =
+                flowchartRenderer.connections.getConnectionData();
+            connections = connectionData
+                .map((conn) => {
+                    // Map instanceId back to UUID
+                    const fromItem = pipeline.find(
+                        (item) => item.instanceId === conn.fromNodeId,
+                    );
+                    const toItem = pipeline.find(
+                        (item) => item.instanceId === conn.toNodeId,
+                    );
+
+                    return {
+                        from_uuid: fromItem?.uuid || null,
+                        from_port: conn.fromPortName,
+                        to_uuid: toItem?.uuid || null,
+                        to_port: conn.toPortName,
+                        data_type: conn.dataType || conn.fromPortName,
+                        is_default: conn.isDefault || false,
+                    };
+                })
+                .filter((conn) => conn.from_uuid && conn.to_uuid);
         }
 
         // Group connections by source UUID
         const connectionsBySourceUuid = new Map();
-        connections.forEach(conn => {
+        connections.forEach((conn) => {
             if (!connectionsBySourceUuid.has(conn.from_uuid)) {
                 connectionsBySourceUuid.set(conn.from_uuid, []);
             }
@@ -720,20 +739,20 @@ async function autoSavePipeline() {
                     }
                 }
             }
-            
+
             const nodeConfig = {
                 action_name: item.id.replaceAll(".py", ""),
                 action_params: configParams,
                 position: item.position || null,
                 uuid: item.uuid || uid("op-"),
             };
-            
+
             // Add this node's outgoing connections if any exist
             const nodeConnections = connectionsBySourceUuid.get(item.uuid);
             if (nodeConnections && nodeConnections.length > 0) {
                 nodeConfig.connections = nodeConnections;
             }
-            
+
             return nodeConfig;
         });
 
@@ -813,7 +832,9 @@ async function createNewPipeline() {
         }, 10);
 
         // Automatically add device_input operation
-        const deviceInputOp = operations.find((op) => op.id === "device_input.py");
+        const deviceInputOp = operations.find(
+            (op) => op.id === "device_input.py",
+        );
         if (deviceInputOp) {
             const deviceInputItem = {
                 ...deviceInputOp,

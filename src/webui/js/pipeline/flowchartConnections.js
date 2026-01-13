@@ -11,6 +11,7 @@ export class FlowchartConnections {
         this.labelFontSize = options.labelFontSize || 10;
         this.curveTension = options.curveTension || 0.5;
         this.onConnectionRemoved = options.onConnectionRemoved || (() => {});
+        this.onConnectionChanged = options.onConnectionChanged || (() => {});
 
         this.setupDefs();
     }
@@ -18,13 +19,19 @@ export class FlowchartConnections {
     setupDefs() {
         let defs = this.svgLayer.querySelector("defs");
         if (!defs) {
-            defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+            defs = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "defs",
+            );
             this.svgLayer.insertBefore(defs, this.svgLayer.firstChild);
         }
-        
+
         const markerId = "flowchart-arrow";
         if (!defs.querySelector(`#${markerId}`)) {
-            const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+            const marker = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "marker",
+            );
             marker.setAttribute("id", markerId);
             marker.setAttribute("viewBox", "0 0 10 10");
             marker.setAttribute("refX", "8");
@@ -32,74 +39,111 @@ export class FlowchartConnections {
             marker.setAttribute("markerWidth", "6");
             marker.setAttribute("markerHeight", "6");
             marker.setAttribute("orient", "auto-start-reverse");
-            
-            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+            const path = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "path",
+            );
             path.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
             path.setAttribute("fill", this.connectionColor);
-            
+
             marker.appendChild(path);
             defs.appendChild(marker);
         }
-        
     }
 
-    createConnection(connectionId, fromNode, fromPortName, toNode, toPortName, dataType) {
+    createConnection(
+        connectionId,
+        fromNode,
+        fromPortName,
+        toNode,
+        toPortName,
+        dataType,
+    ) {
         if (this.connections.has(connectionId)) {
-            this.updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName);
+            this.updateConnection(
+                connectionId,
+                fromNode,
+                fromPortName,
+                toNode,
+                toPortName,
+            );
             return;
         }
-        
-        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        const group = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "g",
+        );
         group.setAttribute("data-connection-id", connectionId);
         group.setAttribute("pointer-events", "visibleStroke");
-        
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+        const path = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+        );
         path.setAttribute("fill", "none");
         path.setAttribute("stroke", this.connectionColor);
         path.setAttribute("stroke-width", this.connectionWidth.toString());
         path.setAttribute("stroke-linecap", "round");
         path.setAttribute("marker-end", "url(#flowchart-arrow)");
-        path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease";
+        path.style.transition =
+            "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease";
         path.setAttribute("pointer-events", "none");
-        
-        const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "path");
+
+        const hitArea = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+        );
         hitArea.setAttribute("fill", "none");
         hitArea.setAttribute("stroke", "transparent");
         hitArea.setAttribute("stroke-width", "20");
         hitArea.style.cursor = "pointer";
         hitArea.setAttribute("pointer-events", "auto");
-        
-        const labelGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        const labelGroup = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "g",
+        );
         labelGroup.setAttribute("class", "connection-label");
         labelGroup.style.opacity = "0";
         labelGroup.style.transition = "opacity 0.3s ease";
-        
-        const labelBackground = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+
+        const labelBackground = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "rect",
+        );
         labelBackground.setAttribute("fill", "#1f1f1f");
         labelBackground.setAttribute("stroke", "#404040");
         labelBackground.setAttribute("stroke-width", "1");
         labelBackground.setAttribute("rx", "4");
         labelBackground.setAttribute("ry", "4");
-        
-        const labelText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+
+        const labelText = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "text",
+        );
         labelText.setAttribute("fill", "#a0a0a0");
         labelText.setAttribute("font-size", this.labelFontSize.toString());
-        labelText.setAttribute("font-family", "system-ui, -apple-system, sans-serif");
+        labelText.setAttribute(
+            "font-family",
+            "system-ui, -apple-system, sans-serif",
+        );
         labelText.setAttribute("text-anchor", "middle");
         labelText.setAttribute("dominant-baseline", "middle");
         labelText.textContent = dataType || fromPortName;
-        
+
         labelGroup.appendChild(labelBackground);
         labelGroup.appendChild(labelText);
-        
+
         group.appendChild(hitArea);
         group.appendChild(path);
         group.appendChild(labelGroup);
-        
+
         this.setupHoverEffects(group, path);
-        
+
         this.svgLayer.appendChild(group);
-        
+
         this.connections.set(connectionId, {
             group,
             path,
@@ -112,11 +156,17 @@ export class FlowchartConnections {
             toNodeId: toNode.instanceId,
             toPortName,
             dataType,
-            isAnimating: false
+            isAnimating: false,
         });
-        
-        this.updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName);
-        
+
+        this.updateConnection(
+            connectionId,
+            fromNode,
+            fromPortName,
+            toNode,
+            toPortName,
+        );
+
         // Fade in label after initial position is set
         requestAnimationFrame(() => {
             labelGroup.style.opacity = "1";
@@ -125,11 +175,16 @@ export class FlowchartConnections {
 
     setupHoverEffects(group, path) {
         // Add smooth transition for all animatable properties
-        path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease, filter 0.15s ease, opacity 0.15s ease";
-        
+        path.style.transition =
+            "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
+
         group.addEventListener("mouseenter", () => {
-            path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
-            path.style.filter = "drop-shadow(0 0 4px " + this.connectionColor + ")";
+            path.setAttribute(
+                "stroke-width",
+                (this.connectionWidth + 2).toString(),
+            );
+            path.style.filter =
+                "drop-shadow(0 0 4px " + this.connectionColor + ")";
         });
 
         group.addEventListener("mouseleave", () => {
@@ -149,31 +204,179 @@ export class FlowchartConnections {
                 }, 150);
             }
         });
+
+        // Context menu for right-click
+        group.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const connectionId = group.getAttribute("data-connection-id");
+            if (connectionId) {
+                this.showContextMenu(e.clientX, e.clientY, connectionId);
+            }
+        });
+    }
+
+    showContextMenu(x, y, connectionId) {
+        // Remove existing context menu if any
+        const existingMenu = document.getElementById("connection-context-menu");
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+
+        const menu = document.createElement("div");
+        menu.id = "connection-context-menu";
+        menu.style.position = "fixed";
+        menu.style.left = x + "px";
+        menu.style.top = y + "px";
+        menu.style.backgroundColor = "#2a2a2a";
+        menu.style.border = "1px solid #404040";
+        menu.style.borderRadius = "6px";
+        menu.style.padding = "4px 0";
+        menu.style.zIndex = "10000";
+        menu.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
+        menu.style.minWidth = "160px";
+
+        const connection = this.connections.get(connectionId);
+        const isDefault = connection?.isDefault || false;
+
+        // Toggle Default option
+        const toggleItem = document.createElement("div");
+        toggleItem.textContent = isDefault
+            ? "Remove Default Status"
+            : "Set as Default Connection";
+        toggleItem.style.padding = "8px 12px";
+        toggleItem.style.cursor = "pointer";
+        toggleItem.style.color = "#f9c845";
+        toggleItem.style.fontSize = "13px";
+        toggleItem.style.fontWeight = "500";
+        toggleItem.style.transition = "background-color 0.15s ease";
+
+        toggleItem.addEventListener("mouseenter", () => {
+            toggleItem.style.backgroundColor = "#3a3a3a";
+        });
+        toggleItem.addEventListener("mouseleave", () => {
+            toggleItem.style.backgroundColor = "transparent";
+        });
+        toggleItem.addEventListener("click", () => {
+            this.toggleDefault(connectionId);
+            menu.remove();
+        });
+
+        // Remove option
+        const removeItem = document.createElement("div");
+        removeItem.textContent = "Remove Connection";
+        removeItem.style.padding = "8px 12px";
+        removeItem.style.cursor = "pointer";
+        removeItem.style.color = "#ff6b6b";
+        removeItem.style.fontSize = "13px";
+        removeItem.style.fontWeight = "500";
+        removeItem.style.transition = "background-color 0.15s ease";
+        removeItem.style.borderTop = "1px solid #404040";
+
+        removeItem.addEventListener("mouseenter", () => {
+            removeItem.style.backgroundColor = "#3a3a3a";
+        });
+        removeItem.addEventListener("mouseleave", () => {
+            removeItem.style.backgroundColor = "transparent";
+        });
+        removeItem.addEventListener("click", () => {
+            // Fade out before removal
+            const connection = this.connections.get(connectionId);
+            if (connection) {
+                connection.path.style.opacity = "0";
+                setTimeout(() => {
+                    this.removeConnection(connectionId);
+                    this.onConnectionRemoved(connectionId);
+                }, 150);
+            }
+            menu.remove();
+        });
+
+        menu.appendChild(toggleItem);
+        menu.appendChild(removeItem);
+        document.body.appendChild(menu);
+
+        // Close menu when clicking elsewhere
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener("click", closeMenu);
+            }
+        };
+
+        setTimeout(() => {
+            document.addEventListener("click", closeMenu);
+        }, 10);
+    }
+
+    toggleDefault(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.isDefault = !connection.isDefault;
+
+        // Update visual style
+        if (connection.isDefault) {
+            connection.path.setAttribute("stroke-dasharray", "5,5");
+        } else {
+            connection.path.removeAttribute("stroke-dasharray");
+        }
+
+        // Reset cycle highlight if toggling default
+        if (connection.isCycle) {
+            this.setCycleHighlight(connectionId, false);
+        }
+
+        // Trigger callback for saving and cycle detection
+        if (this.onConnectionChanged) {
+            this.onConnectionChanged(connectionId);
+        }
+    }
+
+    setCycleHighlight(connectionId, isCycle) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.isCycle = isCycle;
+
+        if (isCycle) {
+            connection.path.setAttribute("stroke", "#ff4444");
+            connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
+        } else {
+            // Restore original color (respecting default state)
+            if (connection.isDefault) {
+                connection.path.setAttribute("stroke", this.connectionColor);
+                connection.path.style.filter = "none";
+            } else {
+                connection.path.setAttribute("stroke", this.connectionColor);
+                connection.path.style.filter = "none";
+            }
+        }
     }
 
     updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
-        
+
         const fromPos = fromNode.getOutputPortPosition(fromPortName);
         const toPos = toNode.getInputPortPosition(toPortName);
-        
+
         if (!fromPos || !toPos) return;
-        
+
         const pathD = this.calculateBezierPath(fromPos, toPos);
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
-        
+
         // Start animation loop for label if not already running
         if (!connection.isAnimating) {
             connection.isAnimating = true;
             const startTime = performance.now();
             const duration = 300; // Match CSS transition duration
-            
+
             const animate = (currentTime) => {
                 const elapsed = currentTime - startTime;
                 this.updateLabel(connection);
-                
+
                 if (elapsed < duration) {
                     requestAnimationFrame(animate);
                 } else {
@@ -190,23 +393,26 @@ export class FlowchartConnections {
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        const controlPointOffset = Math.max(50, Math.min(150, distance * this.curveTension));
-        
+
+        const controlPointOffset = Math.max(
+            50,
+            Math.min(150, distance * this.curveTension),
+        );
+
         // Start slightly away from the beginning node and end slightly before the end node
         const startOffset = 10; // pixels to offset from start
         const endOffset = 10; // pixels to offset from end
-        
+
         const startX = from.x + startOffset;
         const startY = from.y;
         const endX = to.x - endOffset;
         const endY = to.y;
-        
+
         const cp1x = startX + controlPointOffset;
         const cp1y = startY;
         const cp2x = endX - controlPointOffset;
         const cp2y = endY;
-        
+
         return `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
     }
 
@@ -215,29 +421,29 @@ export class FlowchartConnections {
         const labelGroup = connection.labelGroup;
         const text = connection.labelText;
         const background = connection.labelBackground;
-        
+
         // Get the point at the middle of the path (50% along the length)
         const pathLength = path.getTotalLength();
         const midPoint = path.getPointAtLength(pathLength / 2);
-        
+
         const midX = midPoint.x;
         const midY = midPoint.y;
-        
+
         const textBBox = text.getBBox();
         const padding = 6;
-        
+
         const bgWidth = textBBox.width + padding * 2;
         const bgHeight = textBBox.height + padding;
-        
+
         // Use transform on the group to move everything together
         labelGroup.setAttribute("transform", `translate(${midX}, ${midY})`);
-        
+
         // Position background and text relative to the group center (0,0)
         background.setAttribute("x", (-bgWidth / 2).toString());
         background.setAttribute("y", (-bgHeight / 2).toString());
         background.setAttribute("width", bgWidth.toString());
         background.setAttribute("height", bgHeight.toString());
-        
+
         text.setAttribute("x", "0");
         text.setAttribute("y", "0");
     }
@@ -246,9 +452,15 @@ export class FlowchartConnections {
         for (const [connectionId, connection] of this.connections) {
             const fromNode = nodeMap.get(connection.fromNodeId);
             const toNode = nodeMap.get(connection.toNodeId);
-            
+
             if (fromNode && toNode) {
-                this.updateConnection(connectionId, fromNode, connection.fromPortName, toNode, connection.toPortName);
+                this.updateConnection(
+                    connectionId,
+                    fromNode,
+                    connection.fromPortName,
+                    toNode,
+                    connection.toPortName,
+                );
             }
         }
     }
@@ -263,14 +475,17 @@ export class FlowchartConnections {
 
     removeConnectionsForNode(nodeInstanceId) {
         const toRemove = [];
-        
+
         for (const [connectionId, connection] of this.connections) {
-            if (connection.fromNodeId === nodeInstanceId || connection.toNodeId === nodeInstanceId) {
+            if (
+                connection.fromNodeId === nodeInstanceId ||
+                connection.toNodeId === nodeInstanceId
+            ) {
                 toRemove.push(connectionId);
             }
         }
-        
-        toRemove.forEach(id => this.removeConnection(id));
+
+        toRemove.forEach((id) => this.removeConnection(id));
     }
 
     clearAllConnections() {
@@ -283,84 +498,111 @@ export class FlowchartConnections {
     highlightConnection(connectionId, highlight = true) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
-        
+
         if (highlight) {
             connection.path.setAttribute("stroke", "#ffffff");
-            connection.path.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
+            connection.path.setAttribute(
+                "stroke-width",
+                (this.connectionWidth + 2).toString(),
+            );
             connection.path.style.filter = "drop-shadow(0 0 4px #ffffff)";
         } else {
             connection.path.setAttribute("stroke", this.connectionColor);
-            connection.path.setAttribute("stroke-width", this.connectionWidth.toString());
+            connection.path.setAttribute(
+                "stroke-width",
+                this.connectionWidth.toString(),
+            );
             connection.path.style.filter = "none";
         }
     }
 
     getConnectionsForPort(nodeInstanceId, portName, portType) {
         const result = [];
-        
+
         for (const [connectionId, connection] of this.connections) {
-            if (portType === "output" && 
-                connection.fromNodeId === nodeInstanceId && 
-                connection.fromPortName === portName) {
+            if (
+                portType === "output" &&
+                connection.fromNodeId === nodeInstanceId &&
+                connection.fromPortName === portName
+            ) {
                 result.push(connectionId);
-            } else if (portType === "input" && 
-                       connection.toNodeId === nodeInstanceId && 
-                       connection.toPortName === portName) {
+            } else if (
+                portType === "input" &&
+                connection.toNodeId === nodeInstanceId &&
+                connection.toPortName === portName
+            ) {
                 result.push(connectionId);
             }
         }
-        
+
         return result;
     }
 
     createTemporaryConnection(startPos, options = {}) {
-        const tempPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const tempPath = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+        );
         tempPath.setAttribute("fill", "none");
         tempPath.setAttribute("stroke", this.connectionColor);
-        
+
         // Check if we're morphing from a hovered connection
         const isFromHover = options.fromHover || false;
-        
+
         if (isFromHover) {
             // Start with hovered state (thicker, solid line)
-            tempPath.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
+            tempPath.setAttribute(
+                "stroke-width",
+                (this.connectionWidth + 2).toString(),
+            );
             tempPath.setAttribute("stroke-dasharray", "0");
             tempPath.setAttribute("opacity", "1");
-            tempPath.style.filter = "drop-shadow(0 0 4px " + this.connectionColor + ")";
+            tempPath.style.filter =
+                "drop-shadow(0 0 4px " + this.connectionColor + ")";
         } else {
             // Start invisible for new connections
-            tempPath.setAttribute("stroke-width", (this.connectionWidth + 2).toString());
+            tempPath.setAttribute(
+                "stroke-width",
+                (this.connectionWidth + 2).toString(),
+            );
             tempPath.setAttribute("stroke-dasharray", "5,5");
             tempPath.setAttribute("opacity", "0");
         }
-        
+
         tempPath.id = "temp-connection";
-        
+
         // Add transition for morphing effect
-        tempPath.style.transition = "opacity 0.2s ease, stroke-width 0.2s ease, stroke-dasharray 0.2s ease, filter 0.2s ease";
-        
+        tempPath.style.transition =
+            "opacity 0.2s ease, stroke-width 0.2s ease, stroke-dasharray 0.2s ease, filter 0.2s ease";
+
         // Render immediately at start position
         const initialEndPos = { x: startPos.x + 1, y: startPos.y };
         const initialPathD = this.calculateBezierPath(startPos, initialEndPos);
         tempPath.setAttribute("d", initialPathD);
-        
+
         this.svgLayer.appendChild(tempPath);
-        
+
         // Trigger transition to dragging state
         requestAnimationFrame(() => {
             if (isFromHover) {
                 // Morph from hover state to drag state
                 tempPath.setAttribute("stroke-dasharray", "5,5");
-                tempPath.setAttribute("stroke-width", this.connectionWidth.toString());
+                tempPath.setAttribute(
+                    "stroke-width",
+                    this.connectionWidth.toString(),
+                );
                 tempPath.setAttribute("opacity", "0.7");
                 tempPath.style.filter = "none";
             } else {
                 // Fade in for new connections
                 tempPath.setAttribute("opacity", "0.7");
-                tempPath.setAttribute("stroke-width", this.connectionWidth.toString());
+                tempPath.setAttribute(
+                    "stroke-width",
+                    this.connectionWidth.toString(),
+                );
             }
         });
-        
+
         return {
             update: (endPos) => {
                 const pathD = this.calculateBezierPath(startPos, endPos);
@@ -369,7 +611,7 @@ export class FlowchartConnections {
             remove: () => {
                 tempPath.setAttribute("opacity", "0");
                 setTimeout(() => tempPath.remove(), 200);
-            }
+            },
         };
     }
 
@@ -382,10 +624,34 @@ export class FlowchartConnections {
                 fromPortName: connection.fromPortName,
                 toNodeId: connection.toNodeId,
                 toPortName: connection.toPortName,
-                dataType: connection.dataType
+                dataType: connection.dataType,
+                isDefault: connection.isDefault || false,
             });
         }
         return data;
+    }
+
+    updateConnectionVisuals(connectionId, isDefault, isCycle) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        // Update default state
+        connection.isDefault = isDefault;
+        if (isDefault) {
+            connection.path.setAttribute("stroke-dasharray", "5,5");
+        } else {
+            connection.path.removeAttribute("stroke-dasharray");
+        }
+
+        // Update cycle state
+        connection.isCycle = isCycle;
+        if (isCycle) {
+            connection.path.setAttribute("stroke", "#ff4444");
+            connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
+        } else {
+            connection.path.setAttribute("stroke", this.connectionColor);
+            connection.path.style.filter = "none";
+        }
     }
 
     destroy() {

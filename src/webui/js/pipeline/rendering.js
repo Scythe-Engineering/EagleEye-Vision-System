@@ -3,6 +3,7 @@ import { FlowchartCanvas } from "./flowchartCanvas.js";
 import { FlowchartNode } from "./flowchartNode.js";
 import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
+import { findCycles } from "./graphUtils.js";
 
 let descriptionPopup = null;
 
@@ -174,6 +175,7 @@ export class FlowchartRenderer {
                 connectionColor: "#f9c845",
                 connectionWidth: 2,
                 onConnectionRemoved: this.handleConnectionRemoved.bind(this),
+                onConnectionChanged: this.handleConnectionChanged.bind(this),
             },
         );
 
@@ -336,7 +338,7 @@ export class FlowchartRenderer {
         }
 
         const placeholder = document.getElementById("pipelinePlaceholder");
-        
+
         if (placeholder) {
             const selectedPipeline = window.pipelineCreator?.selectedPipeline;
             const shouldShow = !selectedPipeline;
@@ -352,33 +354,44 @@ export class FlowchartRenderer {
                     hintText.textContent = "Use the New Pipeline button above";
                     hintText.style.color = "#f9c845";
                 }
-                
+
                 // Set focus area on grid to a 50x50 square at center of placeholder
                 if (this.canvas && this.canvas.getInteractiveGrid) {
                     const placeholderRect = placeholder.getBoundingClientRect();
-                    const containerRect = this.canvasContainer.getBoundingClientRect();
-                    
+                    const containerRect =
+                        this.canvasContainer.getBoundingClientRect();
+
                     // Calculate center of placeholder in screen coordinates
-                    const centerScreenX = placeholderRect.left + placeholderRect.width / 2;
-                    const centerScreenY = placeholderRect.top + placeholderRect.height / 2;
-                    
+                    const centerScreenX =
+                        placeholderRect.left + placeholderRect.width / 2;
+                    const centerScreenY =
+                        placeholderRect.top + placeholderRect.height / 2;
+
                     // Create 50x50 unit square centered on placeholder center in screen coordinates
                     const squareScreenLeft = centerScreenX - 25;
                     const squareScreenTop = centerScreenY - 25;
-                    
+
                     // Convert to world coordinates accounting for canvas transforms
                     const relativeRect = {
-                        x: (squareScreenLeft - containerRect.left - this.canvas.translateX) / this.canvas.scale,
-                        y: (squareScreenTop - containerRect.top - this.canvas.translateY) / this.canvas.scale,
+                        x:
+                            (squareScreenLeft -
+                                containerRect.left -
+                                this.canvas.translateX) /
+                            this.canvas.scale,
+                        y:
+                            (squareScreenTop -
+                                containerRect.top -
+                                this.canvas.translateY) /
+                            this.canvas.scale,
                         width: 50 / this.canvas.scale,
                         height: 50 / this.canvas.scale,
                     };
                     this.canvas.getInteractiveGrid().setFocusArea(relativeRect);
                 }
-                
+
                 // Disable zoom and pan when placeholder is shown
                 this.canvas.setPlaceholderVisible(true);
-                
+
                 // Clear minimap when no pipeline is selected
                 if (this.minimap) {
                     this.minimap.updateNodes([]);
@@ -389,7 +402,7 @@ export class FlowchartRenderer {
                 if (this.canvas && this.canvas.getInteractiveGrid) {
                     this.canvas.getInteractiveGrid().clearFocusArea();
                 }
-                
+
                 // Enable zoom and pan when placeholder is hidden
                 this.canvas.setPlaceholderVisible(false);
             }
@@ -436,7 +449,9 @@ export class FlowchartRenderer {
                 }),
             );
             this.minimap.updateNodes(nodeDataList);
-            this.minimap.updateConnections(this.connections.getConnectionData());
+            this.minimap.updateConnections(
+                this.connections.getConnectionData(),
+            );
         }
 
         // Update grid with operation positions
@@ -514,7 +529,9 @@ export class FlowchartRenderer {
                 height: 80,
             }));
             this.minimap.updateNodes(nodeDataList);
-            this.minimap.updateConnections(this.connections.getConnectionData());
+            this.minimap.updateConnections(
+                this.connections.getConnectionData(),
+            );
         }
 
         // Update grid with new operation positions during dragging
@@ -853,14 +870,33 @@ export class FlowchartRenderer {
             toNode,
             toPort,
             fromPort, // Use output port name as data type for now
+            false, // isDefault - new connections are not default by default
         );
 
         if (this.minimap) {
-            this.minimap.updateConnections(this.connections.getConnectionData());
+            this.minimap.updateConnections(
+                this.connections.getConnectionData(),
+            );
         }
 
         this.cancelConnecting();
         this.callbacks.autoSavePipeline();
+        this.updateCycleHighlights();
+    }
+
+    updateCycleHighlights() {
+        const connectionsData = this.connections.getConnectionData();
+        const cycleConnectionIds = findCycles(this.nodes, connectionsData);
+
+        // Reset all highlights first
+        this.connections.connections.forEach((conn) => {
+            this.connections.setCycleHighlight(conn.id, false);
+        });
+
+        // Highlight cycles
+        cycleConnectionIds.forEach((id) => {
+            this.connections.setCycleHighlight(id, true);
+        });
     }
 
     cancelConnecting() {
@@ -879,9 +915,22 @@ export class FlowchartRenderer {
 
     handleConnectionRemoved(connectionId) {
         if (this.minimap) {
-            this.minimap.updateConnections(this.connections.getConnectionData());
+            this.minimap.updateConnections(
+                this.connections.getConnectionData(),
+            );
         }
         this.callbacks.autoSavePipeline();
+        this.updateCycleHighlights();
+    }
+
+    handleConnectionChanged(connectionId) {
+        if (this.minimap) {
+            this.minimap.updateConnections(
+                this.connections.getConnectionData(),
+            );
+        }
+        this.callbacks.autoSavePipeline();
+        this.updateCycleHighlights();
     }
 
     handleViewportChange(viewportState) {
@@ -898,8 +947,13 @@ export class FlowchartRenderer {
             this.nodes.delete(instanceId);
 
             if (this.minimap) {
-                this.minimap.updateConnections(this.connections.getConnectionData());
+                this.minimap.updateConnections(
+                    this.connections.getConnectionData(),
+                );
             }
+
+            // Trigger cycle detection after node removal
+            this.updateCycleHighlights();
         }
     }
 
@@ -943,10 +997,8 @@ export class FlowchartRenderer {
         const scale = Math.min(scaleX, scaleY, 1);
 
         this.canvas.scale = scale;
-        this.canvas.translateX =
-            containerRect.width / 2 - centerX * scale;
-        this.canvas.translateY =
-            containerRect.height / 2 - centerY * scale;
+        this.canvas.translateX = containerRect.width / 2 - centerX * scale;
+        this.canvas.translateY = containerRect.height / 2 - centerY * scale;
 
         this.canvas.updateTransform();
     }
@@ -983,9 +1035,13 @@ export class FlowchartRenderer {
                     toNode,
                     conn.toPortName,
                     conn.dataType || conn.fromPortName,
+                    conn.isDefault || false,
                 );
             }
         });
+
+        // Update cycle highlights after restoring connections
+        this.updateCycleHighlights();
     }
 }
 
