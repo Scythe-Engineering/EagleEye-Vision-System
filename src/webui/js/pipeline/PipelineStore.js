@@ -235,6 +235,7 @@ class PipelineStore {
         toPort,
         dataType = null,
         isDefault = false,
+        customWaypoints = null,
     ) {
         const fromUuid = this.resolveToUuid(fromId);
         const toUuid = this.resolveToUuid(toId);
@@ -270,6 +271,7 @@ class PipelineStore {
             toPort,
             dataType,
             isDefault: isDefault || false,
+            customWaypoints: customWaypoints || null,
         };
 
         this.state.currentPipeline.connections.set(connectionKey, connection);
@@ -285,6 +287,24 @@ class PipelineStore {
         });
 
         return connectionKey;
+    }
+
+    updateConnectionWaypoints(connectionKey, customWaypoints) {
+        const connection = this.state.currentPipeline.connections.get(connectionKey);
+        if (!connection) return false;
+
+        connection.customWaypoints = customWaypoints;
+
+        this.emit("connection:waypoints:changed", {
+            key: connectionKey,
+            customWaypoints,
+        });
+        this.emit("pipeline:changed", {
+            type: "connection:waypoints:changed",
+            key: connectionKey,
+        });
+
+        return true;
     }
 
     removeConnection(connectionKey) {
@@ -385,6 +405,7 @@ class PipelineStore {
                     toPortName: conn.toPort,
                     dataType: conn.dataType,
                     isDefault: conn.isDefault,
+                    customWaypoints: conn.customWaypoints || null,
                 };
             })
             .filter(Boolean);
@@ -464,6 +485,7 @@ class PipelineStore {
                 conn.to_port,
                 conn.data_type,
                 conn.is_default || false,
+                conn.custom_waypoints || null,
             );
         });
 
@@ -489,6 +511,7 @@ class PipelineStore {
                         to_port: conn.toPort,
                         data_type: conn.dataType,
                         is_default: conn.isDefault,
+                        custom_waypoints: conn.customWaypoints || null,
                     };
 
                     nodeConnections.push(connData);

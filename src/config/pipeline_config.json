@@ -5,8 +5,8 @@
                 "action_name": "device_input.py",
                 "action_params": {},
                 "position": {
-                    "x": -440,
-                    "y": 60
+                    "x": -380,
+                    "y": 100
                 },
                 "uuid": "op-mk60jqlu-vb7",
                 "connections": [
@@ -16,7 +16,8 @@
                         "to_uuid": "op-mkcoqjzs-g79z",
                         "to_port": "frame",
                         "data_type": "frame",
-                        "is_default": false
+                        "is_default": false,
+                        "custom_waypoints": null
                     }
                 ]
             },
@@ -35,7 +36,8 @@
                         "to_uuid": "op-mk60k0f0-5bb0",
                         "to_port": "detections",
                         "data_type": "detections",
-                        "is_default": false
+                        "is_default": false,
+                        "custom_waypoints": null
                     }
                 ]
             },
@@ -58,7 +60,8 @@
                         "to_uuid": "op-mk60kmaw-kwwt",
                         "to_port": "pose_3d",
                         "data_type": "camera_pose",
-                        "is_default": false
+                        "is_default": false,
+                        "custom_waypoints": null
                     },
                     {
                         "from_uuid": "op-mk60k0f0-5bb0",
@@ -66,7 +69,33 @@
                         "to_uuid": "op-mkcoqjzs-g79z",
                         "to_port": "camera_pose",
                         "data_type": "camera_pose",
-                        "is_default": false
+                        "is_default": true,
+                        "custom_waypoints": [
+                            {
+                                "x": 961,
+                                "y": 160.99993393290913
+                            },
+                            {
+                                "x": 980,
+                                "y": 160.99993393290913
+                            },
+                            {
+                                "x": 980,
+                                "y": 220
+                            },
+                            {
+                                "x": -120,
+                                "y": 220
+                            },
+                            {
+                                "x": -120,
+                                "y": -55.00014800898941
+                            },
+                            {
+                                "x": -90,
+                                "y": -55.00014800898941
+                            }
+                        ]
                     }
                 ]
             },
@@ -85,7 +114,8 @@
                         "to_uuid": "op-mk60ks00-1rdu",
                         "to_port": "pose",
                         "data_type": "pose_2d",
-                        "is_default": false
+                        "is_default": false,
+                        "custom_waypoints": null
                     }
                 ]
             },
@@ -103,8 +133,8 @@
                 "action_name": "temporal_acceleration_preprocessor_rust.py",
                 "action_params": {},
                 "position": {
-                    "x": -80,
-                    "y": -140
+                    "x": -60,
+                    "y": 100
                 },
                 "uuid": "op-mkcoqjzs-g79z",
                 "connections": [
@@ -114,7 +144,8 @@
                         "to_uuid": "op-mk60jrt5-9es1",
                         "to_port": "frame",
                         "data_type": "processed_frame",
-                        "is_default": false
+                        "is_default": false,
+                        "custom_waypoints": null
                     }
                 ]
             }

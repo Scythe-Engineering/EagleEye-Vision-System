@@ -513,18 +513,20 @@ export class FlowchartRenderer {
             item.position = position;
         }
 
-        this.connections.updateAllConnections(this.nodes);
+        if (this.positionChangeDebounce) {
+            clearTimeout(this.positionChangeDebounce);
+            this.positionChangeDebounce = null;
+        }
 
-        // Update grid with new operation positions
-        this.updateGridOperationPositions();
+        const changedNodeIds = new Set([node.instanceId]);
+        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
 
-        this.callbacks.autoSavePipeline();
-    }
+        this.connections.connections.forEach((connection) => {
+            if (connection.fromNodeId === node.instanceId || connection.toNodeId === node.instanceId) {
+                delete connection.lastPosKey;
+            }
+        });
 
-    handleNodePositionChange(node, position) {
-        this.connections.updateAllConnections(this.nodes);
-
-        // Update minimap when node position changes
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
                 instanceId: n.instanceId,
@@ -538,8 +540,33 @@ export class FlowchartRenderer {
             );
         }
 
-        // Update grid with new operation positions during dragging
         this.updateGridOperationPositions();
+
+        this.callbacks.autoSavePipeline();
+    }
+
+    handleNodePositionChange(node, position) {
+        const changedNodeIds = new Set([node.instanceId]);
+        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
+
+        if (!this.positionChangeDebounce) {
+            this.positionChangeDebounce = setTimeout(() => {
+                if (this.minimap) {
+                    const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
+                        instanceId: n.instanceId,
+                        position: n.getPosition(),
+                        width: 200,
+                        height: 80,
+                    }));
+                    this.minimap.updateNodes(nodeDataList);
+                    this.minimap.updateConnections(
+                        this.connections.getConnectionData(),
+                    );
+                }
+                this.updateGridOperationPositions();
+                this.positionChangeDebounce = null;
+            }, 16);
+        }
     }
 
     /**
@@ -972,7 +999,19 @@ export class FlowchartRenderer {
 
             if (fromUuid && toUuid) {
                 const storeConnectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
-                pipelineStore.toggleConnectionDefault(storeConnectionKey);
+
+                const customWaypoints = this.connections.getCustomWaypoints(connectionId);
+                if (customWaypoints !== undefined) {
+                    pipelineStore.updateConnectionWaypoints(storeConnectionKey, customWaypoints);
+                }
+
+                const connectionData = this.connections.connections.get(connectionId);
+                if (connectionData) {
+                    const storeConnection = pipelineStore.state.currentPipeline.connections.get(storeConnectionKey);
+                    if (storeConnection && storeConnection.isDefault !== connectionData.isDefault) {
+                        pipelineStore.toggleConnectionDefault(storeConnectionKey);
+                    }
+                }
             }
         }
 
@@ -1099,11 +1138,11 @@ export class FlowchartRenderer {
                     conn.toPortName,
                     conn.dataType || conn.fromPortName,
                     conn.isDefault || false,
+                    conn.customWaypoints || null,
                 );
             }
         });
 
-        // Update cycle highlights after restoring connections
         this.updateCycleHighlights();
     }
 }

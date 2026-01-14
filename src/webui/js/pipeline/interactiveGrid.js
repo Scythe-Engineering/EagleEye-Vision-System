@@ -117,9 +117,12 @@ export class InteractiveGrid {
      * Update the viewport transform state from FlowchartCanvas
      */
     updateViewport(translateX, translateY, scale) {
-        this.translateX = translateX;
-        this.translateY = translateY;
-        this.scale = scale;
+        if (this.translateX !== translateX || this.translateY !== translateY || this.scale !== scale) {
+            this.translateX = translateX;
+            this.translateY = translateY;
+            this.scale = scale;
+            this.requestRedraw();
+        }
     }
 
     /**
@@ -132,9 +135,9 @@ export class InteractiveGrid {
             width: 200,
             height: 80,
         }));
-        // Clear caches when operations change
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.requestRedraw();
     }
 
     /**
@@ -142,9 +145,9 @@ export class InteractiveGrid {
      */
     setFocusArea(area) {
         this.focusArea = area;
-        // Clear caches when focus area changes
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.requestRedraw();
     }
 
     /**
@@ -152,9 +155,9 @@ export class InteractiveGrid {
      */
     clearFocusArea() {
         this.focusArea = null;
-        // Clear caches when focus area changes
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.requestRedraw();
     }
 
     /**
@@ -540,11 +543,19 @@ export class InteractiveGrid {
     }
 
     startAnimation() {
+        this.needsRedraw = true;
         const animate = () => {
-            this.draw();
+            if (this.needsRedraw) {
+                this.draw();
+                this.needsRedraw = false;
+            }
             this.animationFrame = requestAnimationFrame(animate);
         };
         animate();
+    }
+
+    requestRedraw() {
+        this.needsRedraw = true;
     }
 
     destroy() {

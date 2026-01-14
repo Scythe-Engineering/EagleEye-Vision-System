@@ -2,6 +2,8 @@
  * FlowchartConnections - SVG orthogonal connection management with data type labels
  */
 
+import { ManualPathCreator } from "./manualPathCreator.js";
+
 export class FlowchartConnections {
     constructor(svgLayer, options = {}) {
         this.svgLayer = svgLayer;
@@ -13,6 +15,15 @@ export class FlowchartConnections {
         this.onConnectionChanged = options.onConnectionChanged || (() => {});
         this.onGetNode = options.onGetNode || (() => null);
         this.canvas = options.canvas || null;
+
+        this.manualPathCreator = new ManualPathCreator(svgLayer, {
+            canvas: this.canvas,
+            connectionColor: this.connectionColor,
+            gridSpacing: this.canvas?.gridSpacing || 20,
+            cornerRadius: 12,
+            onComplete: this.handleManualPathComplete.bind(this),
+            onCancel: this.handleManualPathCancel.bind(this),
+        });
 
         this.setupDefs();
     }
@@ -61,6 +72,7 @@ export class FlowchartConnections {
         toPortName,
         dataType,
         isDefault = false,
+        customWaypoints = null,
     ) {
         if (this.connections.has(connectionId)) {
             this.updateConnection(
@@ -70,7 +82,6 @@ export class FlowchartConnections {
                 toNode,
                 toPortName,
             );
-            // Update default state if it already exists
             const existing = this.connections.get(connectionId);
             if (existing) {
                 existing.isDefault = isDefault;
@@ -78,6 +89,10 @@ export class FlowchartConnections {
                     existing.path.setAttribute("stroke-dasharray", "5,5");
                 } else {
                     existing.path.removeAttribute("stroke-dasharray");
+                }
+                if (customWaypoints) {
+                    existing.customWaypoints = customWaypoints;
+                    this.updateConnectionWithWaypoints(connectionId);
                 }
             }
             return;
@@ -100,7 +115,7 @@ export class FlowchartConnections {
         path.setAttribute("stroke-linecap", "round");
         path.setAttribute("marker-end", "url(#flowchart-arrow)");
         path.style.transition =
-            "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease";
+            "stroke 0.15s ease, stroke-width 0.15s ease";
         path.setAttribute("pointer-events", "none");
 
         const hitArea = document.createElementNS(
@@ -170,15 +185,20 @@ export class FlowchartConnections {
             dataType,
             isDefault: isDefault || false,
             isAnimating: false,
+            customWaypoints: customWaypoints ? [...customWaypoints] : null,
         });
 
-        this.updateConnection(
-            connectionId,
-            fromNode,
-            fromPortName,
-            toNode,
-            toPortName,
-        );
+        if (customWaypoints && customWaypoints.length >= 2) {
+            this.updateConnectionWithWaypoints(connectionId);
+        } else {
+            this.updateConnection(
+                connectionId,
+                fromNode,
+                fromPortName,
+                toNode,
+                toPortName,
+            );
+        }
 
         // Apply default visual style
         if (isDefault) {
@@ -192,9 +212,8 @@ export class FlowchartConnections {
     }
 
     setupHoverEffects(group, path) {
-        // Add smooth transition for all animatable properties
         path.style.transition =
-            "stroke 0.15s ease, stroke-width 0.15s ease, d 0.3s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
+            "stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
 
         group.addEventListener("mouseenter", () => {
             const connectionId = group.getAttribute("data-connection-id");
@@ -223,7 +242,6 @@ export class FlowchartConnections {
             }
         });
 
-        // Context menu for right-click
         group.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -232,14 +250,13 @@ export class FlowchartConnections {
                 this.showContextMenu(
                     e.clientX,
                     e.clientY,
-                    connectionId,
-                    this.canvas,
+                    connectionId
                 );
             }
         });
     }
 
-    showContextMenu(x, y, connectionId, canvas = null) {
+    showContextMenu(x, y, connectionId) {
         // Remove existing context menu if any
         const existingMenu = document.getElementById("connection-context-menu");
         if (existingMenu) {
@@ -316,6 +333,53 @@ export class FlowchartConnections {
             menu.remove();
         });
 
+        const manualPathItem = document.createElement("div");
+        const hasCustomPath = connection?.customWaypoints !== null;
+        manualPathItem.textContent = hasCustomPath
+            ? "Edit Custom Path"
+            : "Manually Create Path";
+        manualPathItem.style.padding = "8px 12px";
+        manualPathItem.style.cursor = "pointer";
+        manualPathItem.style.color = "#60a5fa";
+        manualPathItem.style.fontSize = "13px";
+        manualPathItem.style.fontWeight = "500";
+        manualPathItem.style.transition = "background-color 0.15s ease";
+
+        manualPathItem.addEventListener("mouseenter", () => {
+            manualPathItem.style.backgroundColor = "#3a3a3a";
+        });
+        manualPathItem.addEventListener("mouseleave", () => {
+            manualPathItem.style.backgroundColor = "transparent";
+        });
+        manualPathItem.addEventListener("click", () => {
+            this.startManualPathCreation(connectionId);
+            menu.remove();
+        });
+
+        const resetPathItem = document.createElement("div");
+        resetPathItem.textContent = "Reset to Auto Path";
+        resetPathItem.style.padding = "8px 12px";
+        resetPathItem.style.cursor = hasCustomPath ? "pointer" : "not-allowed";
+        resetPathItem.style.color = hasCustomPath ? "#a78bfa" : "#666666";
+        resetPathItem.style.fontSize = "13px";
+        resetPathItem.style.fontWeight = "500";
+        resetPathItem.style.transition = "background-color 0.15s ease";
+
+        if (hasCustomPath) {
+            resetPathItem.addEventListener("mouseenter", () => {
+                resetPathItem.style.backgroundColor = "#3a3a3a";
+            });
+            resetPathItem.addEventListener("mouseleave", () => {
+                resetPathItem.style.backgroundColor = "transparent";
+            });
+            resetPathItem.addEventListener("click", () => {
+                this.resetToAutoPath(connectionId);
+                menu.remove();
+            });
+        }
+
+        menu.appendChild(manualPathItem);
+        menu.appendChild(resetPathItem);
         menu.appendChild(toggleItem);
         menu.appendChild(removeItem);
         document.body.appendChild(menu);
@@ -378,7 +442,7 @@ export class FlowchartConnections {
         }
     }
 
-    updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName) {
+    updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName, skipCache = false) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
 
@@ -387,30 +451,48 @@ export class FlowchartConnections {
 
         if (!fromPos || !toPos) return;
 
-        const pathD = this.calculateOrthogonalPath(fromPos, toPos);
+        if (!skipCache) {
+            const posKey = `${fromPos.x},${fromPos.y},${toPos.x},${toPos.y}`;
+            if (connection.lastPosKey === posKey) {
+                return;
+            }
+            connection.lastPosKey = posKey;
+        }
+
+        let pathD;
+        if (connection.customWaypoints && connection.customWaypoints.length >= 2) {
+            const startOffset = 10;
+            const endOffset = 10;
+            const newStartPoint = { x: fromPos.x + startOffset, y: fromPos.y };
+            const newEndPoint = { x: toPos.x - endOffset, y: toPos.y };
+
+            const len = connection.customWaypoints.length;
+            const updatedWaypoints = connection.customWaypoints.map((wp, index) => {
+                if (index === 0) {
+                    return { ...newStartPoint };
+                }
+                if (index === 1 && len > 2) {
+                    return { x: wp.x, y: newStartPoint.y };
+                }
+                if (index === len - 2 && len > 2) {
+                    return { x: wp.x, y: newEndPoint.y };
+                }
+                if (index === len - 1) {
+                    return { ...newEndPoint };
+                }
+                return { ...wp };
+            });
+
+            connection.customWaypoints = updatedWaypoints;
+            pathD = this.buildPathFromWaypoints(updatedWaypoints);
+        } else {
+            pathD = this.calculateOrthogonalPath(fromPos, toPos);
+        }
+
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
 
-        // Start animation loop for label if not already running
-        if (!connection.isAnimating) {
-            connection.isAnimating = true;
-            const startTime = performance.now();
-            const duration = 300; // Match CSS transition duration
-
-            const animate = (currentTime) => {
-                const elapsed = currentTime - startTime;
-                this.updateLabel(connection);
-
-                if (elapsed < duration) {
-                    requestAnimationFrame(animate);
-                } else {
-                    connection.isAnimating = false;
-                    // Final update to ensure precision
-                    this.updateLabel(connection);
-                }
-            };
-            requestAnimationFrame(animate);
-        }
+        this.updateLabel(connection);
     }
 
     calculateOrthogonalPath(from, to) {
@@ -508,27 +590,25 @@ export class FlowchartConnections {
         const text = connection.labelText;
         const background = connection.labelBackground;
 
-        // Get the point at the middle of the path (50% along the length)
         const pathLength = path.getTotalLength();
         const midPoint = path.getPointAtLength(pathLength / 2);
 
-        const midX = midPoint.x;
-        const midY = midPoint.y;
+        labelGroup.setAttribute("transform", `translate(${midPoint.x}, ${midPoint.y})`);
 
-        const textBBox = text.getBBox();
-        const padding = 6;
+        if (!connection.labelDimensions) {
+            const textBBox = text.getBBox();
+            const padding = 6;
+            connection.labelDimensions = {
+                width: textBBox.width + padding * 2,
+                height: textBBox.height + padding
+            };
+        }
 
-        const bgWidth = textBBox.width + padding * 2;
-        const bgHeight = textBBox.height + padding;
-
-        // Use transform on the group to move everything together
-        labelGroup.setAttribute("transform", `translate(${midX}, ${midY})`);
-
-        // Position background and text relative to the group center (0,0)
-        background.setAttribute("x", (-bgWidth / 2).toString());
-        background.setAttribute("y", (-bgHeight / 2).toString());
-        background.setAttribute("width", bgWidth.toString());
-        background.setAttribute("height", bgHeight.toString());
+        const { width, height } = connection.labelDimensions;
+        background.setAttribute("x", (-width / 2).toString());
+        background.setAttribute("y", (-height / 2).toString());
+        background.setAttribute("width", width.toString());
+        background.setAttribute("height", height.toString());
 
         text.setAttribute("x", "0");
         text.setAttribute("y", "0");
@@ -553,8 +633,14 @@ export class FlowchartConnections {
         connection.hitArea.setAttribute("d", pathData);
     }
 
-    updateAllConnections(nodeMap) {
+    updateAllConnections(nodeMap, changedNodeIds = null, skipCache = false) {
         for (const [connectionId, connection] of this.connections) {
+            if (changedNodeIds &&
+                !changedNodeIds.has(connection.fromNodeId) &&
+                !changedNodeIds.has(connection.toNodeId)) {
+                continue;
+            }
+
             const fromNode = nodeMap.get(connection.fromNodeId);
             const toNode = nodeMap.get(connection.toNodeId);
 
@@ -565,6 +651,7 @@ export class FlowchartConnections {
                     connection.fromPortName,
                     toNode,
                     connection.toPortName,
+                    skipCache,
                 );
             }
         }
@@ -749,6 +836,7 @@ export class FlowchartConnections {
                 toPortName: connection.toPortName,
                 dataType: connection.dataType,
                 isDefault: connection.isDefault || false,
+                customWaypoints: connection.customWaypoints || null,
             });
         }
         return data;
@@ -777,7 +865,162 @@ export class FlowchartConnections {
         }
     }
 
+    startManualPathCreation(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        const fromNode = this.onGetNode(connection.fromNodeId);
+        const toNode = this.onGetNode(connection.toNodeId);
+
+        if (!fromNode || !toNode) return;
+
+        const fromPos = fromNode.getOutputPortPosition(connection.fromPortName);
+        const toPos = toNode.getInputPortPosition(connection.toPortName);
+
+        if (!fromPos || !toPos) return;
+
+        const startOffset = 10;
+        const endOffset = 10;
+        const startPoint = { x: fromPos.x + startOffset, y: fromPos.y };
+        const endPoint = { x: toPos.x - endOffset, y: toPos.y };
+
+        connection.path.style.opacity = "0.2";
+        connection.hitArea.style.opacity = "0.2";
+
+        this.manualPathCreator.start(connectionId, startPoint, endPoint);
+    }
+
+    handleManualPathComplete(connectionId, waypoints) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.customWaypoints = waypoints;
+        connection.path.style.opacity = "1";
+        connection.hitArea.style.opacity = "1";
+
+        this.updateConnectionWithWaypoints(connectionId);
+
+        if (this.onConnectionChanged) {
+            this.onConnectionChanged(connectionId);
+        }
+    }
+
+    handleManualPathCancel(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.path.style.opacity = "1";
+        connection.hitArea.style.opacity = "1";
+    }
+
+    resetToAutoPath(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.customWaypoints = null;
+
+        const fromNode = this.onGetNode(connection.fromNodeId);
+        const toNode = this.onGetNode(connection.toNodeId);
+
+        if (fromNode && toNode) {
+            this.updateConnection(
+                connectionId,
+                fromNode,
+                connection.fromPortName,
+                toNode,
+                connection.toPortName
+            );
+        }
+
+        if (this.onConnectionChanged) {
+            this.onConnectionChanged(connectionId);
+        }
+    }
+
+    updateConnectionWithWaypoints(connectionId) {
+        const connection = this.connections.get(connectionId);
+        if (!connection || !connection.customWaypoints) return;
+
+        const pathD = this.buildPathFromWaypoints(connection.customWaypoints);
+        connection.path.setAttribute("d", pathD);
+        connection.hitArea.setAttribute("d", pathD);
+
+        this.updateLabel(connection);
+    }
+
+    buildPathFromWaypoints(waypoints) {
+        if (!waypoints || waypoints.length < 2) return "";
+
+        const cornerRadius = 12;
+        const segments = [];
+        segments.push(`M ${waypoints[0].x} ${waypoints[0].y}`);
+
+        for (let i = 1; i < waypoints.length; i++) {
+            const prev = waypoints[i - 1];
+            const curr = waypoints[i];
+            const next = waypoints[i + 1];
+
+            if (next && i < waypoints.length - 1) {
+                const maxRadiusPrev = Math.min(
+                    Math.abs(curr.x - prev.x) / 2,
+                    Math.abs(curr.y - prev.y) / 2
+                );
+                const maxRadiusNext = Math.min(
+                    Math.abs(next.x - curr.x) / 2,
+                    Math.abs(next.y - curr.y) / 2
+                );
+                const radius = Math.min(
+                    cornerRadius,
+                    Math.max(maxRadiusPrev, 1),
+                    Math.max(maxRadiusNext, 1)
+                );
+
+                if (radius > 0) {
+                    const isHorizontalToCurr = Math.abs(curr.x - prev.x) > Math.abs(curr.y - prev.y);
+
+                    if (isHorizontalToCurr) {
+                        const dirX = Math.sign(curr.x - prev.x);
+                        const dirY = Math.sign(next.y - curr.y);
+
+                        segments.push(`L ${curr.x - radius * dirX} ${curr.y}`);
+                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`);
+                    } else {
+                        const dirY = Math.sign(curr.y - prev.y);
+                        const dirX = Math.sign(next.x - curr.x);
+
+                        segments.push(`L ${curr.x} ${curr.y - radius * dirY}`);
+                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`);
+                    }
+                } else {
+                    segments.push(`L ${curr.x} ${curr.y}`);
+                }
+            } else {
+                segments.push(`L ${curr.x} ${curr.y}`);
+            }
+        }
+
+        return segments.join(" ");
+    }
+
+    setCustomWaypoints(connectionId, waypoints) {
+        const connection = this.connections.get(connectionId);
+        if (!connection) return;
+
+        connection.customWaypoints = waypoints;
+        if (waypoints) {
+            this.updateConnectionWithWaypoints(connectionId);
+        }
+    }
+
+    getCustomWaypoints(connectionId) {
+        const connection = this.connections.get(connectionId);
+        return connection?.customWaypoints || null;
+    }
+
     destroy() {
+        if (this.manualPathCreator) {
+            this.manualPathCreator.destroy();
+        }
         this.clearAllConnections();
     }
 }
