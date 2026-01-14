@@ -11,21 +11,10 @@ class RobotLocalToFieldTransform(OperationInstance):
         """Initialize robot-local to field transform operation.
 
         This operation converts detection positions expressed in the robot's
-        local coordinate frame into field coordinates using the latest robot
+        local coordinate frame into field coordinates using the robot
         pose transform.
         """
         self._latest_robot_transform: np.ndarray | None = None
-
-    def back_propagate_input(self, robot_transform: Any) -> None:
-        """Receive the latest robot transform via back propagation.
-
-        Args:
-            robot_transform: Robot pose as a 4x4 world-from-robot transform.
-        """
-        matrix = np.asarray(robot_transform, dtype=float)
-        if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
-            raise ValueError("Robot transform must be a finite 4x4 matrix.")
-        self._latest_robot_transform = matrix
 
     @staticmethod
     def _extract_local_position(detection: Dict[str, Any]) -> np.ndarray | None:
@@ -64,21 +53,30 @@ class RobotLocalToFieldTransform(OperationInstance):
         translation_vector = self._latest_robot_transform[:3, 3]
         return rotation_matrix @ local_position + translation_vector
 
-    def run(
-        self, detections: List[Dict[str, Any]] | None
-    ) -> List[Dict[str, Any]] | None:
+    def run(self, input_data: Any) -> List[Dict[str, Any]] | None:
         """Convert robot-local detection positions to field coordinates.
 
         Args:
-            detections: List of detection dictionaries.
+            input_data: Input data - dict with 'detections' and optionally 'robot_pose' keys.
 
         Returns:
             Updated detections list with `position_3d` in field coordinates.
         """
+        if isinstance(input_data, dict):
+            detections = input_data.get("detections")
+            robot_pose = input_data.get("robot_pose")
+        else:
+            detections = input_data
+            robot_pose = None
+
+        if robot_pose is not None:
+            matrix = np.asarray(robot_pose, dtype=float)
+            if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
+                raise ValueError("Robot transform must be a finite 4x4 matrix.")
+            self._latest_robot_transform = matrix
+
         if detections is None:
             return None
-        if self._latest_robot_transform is None:
-            return detections
 
         transformed_detections: List[Dict[str, Any]] = []
         for detection in detections:
