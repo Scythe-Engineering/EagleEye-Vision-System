@@ -231,6 +231,13 @@ class FlowManager:
                 try:
                     output = operation.instance.run(input_for_op)
                     self.operation_outputs[operation.uuid] = output
+                except TypeError as e:
+                    if "None" in str(e):
+                        # Skip entire frame when operation can't handle None input
+                        return
+                    raise ValueError(
+                        f"Operation {operation.name} had an error: {traceback.format_exc()}"
+                    )
                 except Exception as e:
                     raise ValueError(
                         f"Operation {operation.name} had an error: {traceback.format_exc()}"
@@ -287,6 +294,13 @@ class FlowManager:
                     error_msg = thread_obj.error
                     # Reset thread state after error before raising exception
                     thread_obj.reset_state()
+                    # Skip entire frame if error is None-related TypeError
+                    if (
+                        error_msg is not None
+                        and "None" in error_msg
+                        and "TypeError" in error_msg
+                    ):
+                        return
                     raise ValueError(
                         f"Operation {operation.name} had an error: {error_msg}"
                     )
@@ -329,13 +343,17 @@ class FlowManager:
 
             for conn in input_connections:
                 if not conn.is_default:
-                    inputs[conn.to_port] = self.operation_outputs[conn.from_operation.uuid]
+                    inputs[conn.to_port] = self.operation_outputs[
+                        conn.from_operation.uuid
+                    ]
 
             for conn in input_connections:
                 if conn.is_default:
                     from_uuid = conn.from_operation.uuid
                     if from_uuid in self.previous_operation_outputs:
-                        inputs[conn.to_port] = self.previous_operation_outputs[from_uuid]
+                        inputs[conn.to_port] = self.previous_operation_outputs[
+                            from_uuid
+                        ]
 
             return inputs
 
