@@ -25,24 +25,37 @@ Hardware abstraction and compute device management:
 - **[Pool Management](./device_management_utils/POOL_MANAGEMENT.md)** - Device pooling and resource management
 - **[API Documentation](./device_management_utils/API_DOCUMENTATION.md)** - Device management API reference
 
-### [Secondary Operations](./secondary_operations/)
+### [Pipeline Operations](../md_docs/pipeline_docs/)
 
-Pipeline operations and data processing components:
+Complete documentation for all pipeline operations:
 
-- **[PublishToNetworktables Overview](./secondary_operations/PUBLISH_TO_NETWORKTABLES_OVERVIEW.md)** - NetworkTables publishing with Flatpack serialization
+- **[Pipeline Overview](../md_docs/pipeline_docs/PipelineOverview.md)** - Pipeline architecture and configuration
+- **[Implement Pipeline Operation](../md_docs/pipeline_docs/ImplementPipelineOperation.md)** - Guidelines for creating new operations
+- **[Main Operations](../md_docs/pipeline_docs/main_operations/)** - Primary computer vision operations
+- **[Secondary Operations](../md_docs/pipeline_docs/secondary_operations/)** - Post-processing and utility operations
+
+### [Rust Implementations](./rust_implementations/)
+
+High-performance Rust modules for critical vision processing operations:
+
+- **[Overview](./rust_implementations/RUST_MODULES_OVERVIEW.md)** - Rust modules architecture and build system
+- **[Pose Outlier Filter](../src/rust_implementations/modules/pose_outlier_filter/README.md)** - Pose validation and filtering
+- **[Temporal Acceleration](../src/rust_implementations/modules/temporal_acceleration/README.md)** - Region-of-interest prediction
 
 ## Quick Start
 
-1. **WebUI**: Start with [WebUI Overview](./webui/WEBUI_OVERVIEW.md) for understanding the interface
-2. **API Integration**: Refer to [API Documentation](./webui/API_DOCUMENTATION.md) for programmatic access
-3. **Hardware Setup**: Check [Device Management Utils Overview](./device_management_utils/DEVICE_MANAGEMENT_UTILS_OVERVIEW.md) for compute device configuration
+1. **Pipeline Operations**: Start with [Pipeline Overview](../md_docs/pipeline_docs/PipelineOverview.md) for understanding the pipeline architecture
+2. **WebUI**: Refer to [WebUI Overview](./webui/WEBUI_OVERVIEW.md) for understanding the interface
+3. **API Integration**: Check [API Documentation](./webui/API_DOCUMENTATION.md) for programmatic access
+4. **Hardware Setup**: Refer to [Device Management Utils Overview](./device_management_utils/DEVICE_MANAGEMENT_UTILS_OVERVIEW.md) for compute device configuration
 
 ## Last Updated
 
-- WebUI Documentation: November 10, 2025
-- Device Management Documentation: November 2, 2025
-- Secondary Operations Documentation: November 12, 2025
-- Overview Organization: November 12, 2025
+- WebUI Documentation: January 2025
+- Device Management Documentation: January 2025
+- Pipeline Documentation: January 2025
+- Rust Implementations: January 2025
+- Overview Organization: January 2025
 
 ---
 

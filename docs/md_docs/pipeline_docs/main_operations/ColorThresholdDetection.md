@@ -52,7 +52,7 @@ Each detection contains:
 
 - **Default**: `null` (uses default red color range)
 - **Restart Required**: No
-- **Description**: List of color range dictionaries for multi-object detection.
+- **Description**: List of color dictionaries for multi-object detection. Each dictionary must contain HSV color ranges.
 
 Each dictionary must contain:
 
@@ -60,25 +60,24 @@ Each dictionary must contain:
 {
     "name": "red",           # String name for the color
     "class_id": 0,           # Integer class identifier
-    "target_rgb": [1.0, 0.0, 0.0],    # Target RGB color [R, G, B] (0.0-1.0)
-    "threshold": 0.3         # Color tolerance (0.0-1.0, higher = more tolerance)
+    "lower_hsv": [0, 100, 100],    # Lower HSV bound [H, S, V]
+    "upper_hsv": [10, 255, 255]   # Upper HSV bound [H, S, V]
 }
 ```
 
-**RGB Values**:
+**HSV Values**:
 
-- R (Red): 0.0-1.0
-- G (Green): 0.0-1.0
-- B (Blue): 0.0-1.0
-- Threshold: 0.0-1.0 (color distance tolerance)
+- H (Hue): 0-179
+- S (Saturation): 0-255
+- V (Value): 0-255
 
-**Common Colors and Thresholds**:
+**Common HSV Color Ranges**:
 
-- Red: `target_rgb: [1.0, 0.0, 0.0]`, `threshold: 0.3`
-- Blue: `target_rgb: [0.0, 0.0, 1.0]`, `threshold: 0.3`
-- Green: `target_rgb: [0.0, 1.0, 0.0]`, `threshold: 0.3`
-- Yellow: `target_rgb: [1.0, 1.0, 0.0]`, `threshold: 0.3`
-- Orange: `target_rgb: [1.0, 0.5, 0.0]`, `threshold: 0.3`
+- Red: `lower_hsv: [0, 100, 100]`, `upper_hsv: [10, 255, 255]`
+- Blue: `lower_hsv: [100, 100, 100]`, `upper_hsv: [130, 255, 255]`
+- Green: `lower_hsv: [40, 50, 50]`, `upper_hsv: [80, 255, 255]`
+- Yellow: `lower_hsv: [20, 100, 100]`, `upper_hsv: [30, 255, 255]`
+- Orange: `lower_hsv: [10, 100, 100]`, `upper_hsv: [20, 255, 255]`
 
 ### `min_area` (int)
 
@@ -96,7 +95,7 @@ Each dictionary must contain:
 
 ### `blur_kernel_size` (int)
 
-- **Default**: 5
+- **Default**: 0
 - **Range**: 0-31
 - **Restart Required**: No
 - **Description**: Gaussian blur kernel size for noise reduction. Must be odd number. Set to 0 to disable blurring.
@@ -110,7 +109,7 @@ Each dictionary must contain:
 
 ### `morphology_iterations` (int)
 
-- **Default**: 2
+- **Default**: 0
 - **Range**: 1-10
 - **Restart Required**: No
 - **Description**: Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality.
@@ -128,27 +127,27 @@ Each dictionary must contain:
             {
                 "name": "red",
                 "class_id": 0,
-                "target_rgb": [1.0, 0.0, 0.0],
-                "threshold": 0.3
+                "lower_hsv": [0, 100, 100],
+                "upper_hsv": [10, 255, 255]
             },
             {
                 "name": "blue",
                 "class_id": 1,
-                "target_rgb": [0.0, 0.0, 1.0],
-                "threshold": 0.3
+                "lower_hsv": [100, 100, 100],
+                "upper_hsv": [130, 255, 255]
             },
             {
                 "name": "green",
                 "class_id": 2,
-                "target_rgb": [0.0, 1.0, 0.0],
-                "threshold": 0.3
+                "lower_hsv": [40, 50, 50],
+                "upper_hsv": [80, 255, 255]
             }
         ],
         "min_area": 100,
         "max_area": 50000,
-        "blur_kernel_size": 5,
+        "blur_kernel_size": 0,
         "morphology_kernel_size": 5,
-        "morphology_iterations": 2
+        "morphology_iterations": 0
     }
 }
 ```
@@ -164,14 +163,14 @@ color_ranges = [
     {
         "name": "red",
         "class_id": 0,
-        "target_rgb": [1.0, 0.0, 0.0],
-        "threshold": 0.3
+        "lower_hsv": [0, 100, 100],
+        "upper_hsv": [10, 255, 255]
     },
     {
         "name": "blue",
         "class_id": 1,
-        "target_rgb": [0.0, 0.0, 1.0],
-        "threshold": 0.3
+        "lower_hsv": [100, 100, 100],
+        "upper_hsv": [130, 255, 255]
     }
 ]
 
@@ -203,7 +202,7 @@ for detection in detections:
 - Higher `target_size` for better small object detection (e.g., 640)
 - Increase `morphology_iterations` for cleaner masks
 - Tune `min_area` and `max_area` based on expected object sizes
-- Fine-tune RGB ranges for specific lighting conditions
+- Fine-tune HSV ranges for specific lighting conditions
 
 ### Memory Usage
 
@@ -273,7 +272,7 @@ cv2.destroyAllWindows()
 1. Start with threshold = 0.3 for most applications
 2. If too many false positives, decrease threshold (more restrictive)
 3. If missing valid detections, increase threshold (more permissive)
-4. Adjust target_rgb values to match your specific color conditions
+4. Adjust lower_hsv and upper_hsv values to match your specific color conditions
 
 ### Morphological Operations
 

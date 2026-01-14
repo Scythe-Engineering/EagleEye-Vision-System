@@ -134,7 +134,8 @@ webui/
 
 - **Python**: Core application logic
 - **Flask**: Web framework
-- **Server-Sent Events (SSE)**: Real-time communication
+- **SocketIO**: Primary real-time communication for bidirectional messaging
+- **Server-Sent Events (SSE)**: Fallback real-time communication (single-client support)
 - **Flask-CORS**: Cross-origin resource sharing
 - **OpenCV**: Camera processing and streaming
 - **NumPy**: Numerical computations
@@ -143,7 +144,8 @@ webui/
 
 - **JavaScript (ES6)**: Client-side logic
 - **Three.js**: 3D visualization
-- **EventSource API**: Real-time communication (SSE)
+- **Socket.IO Client**: Primary real-time communication library
+- **EventSource API**: Fallback for SSE communication
 - **Tailwind CSS**: Utility-first styling
 - **HTML5**: Semantic markup
 
