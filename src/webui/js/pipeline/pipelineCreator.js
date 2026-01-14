@@ -766,7 +766,7 @@ async function createNewPipeline() {
         updateDeleteButtonVisibility();
 
         // Save the empty pipeline to backend so it persists
-        await autoSavePipeline();
+        await autoSavePipelineImpl();
 
         pipelineStore.clearRestartRequired();
         await updateRestartIndicator(false);
