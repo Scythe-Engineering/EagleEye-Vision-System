@@ -178,6 +178,11 @@ export class FlowchartRenderer {
                 onConnectionRemoved: this.handleConnectionRemoved.bind(this),
                 onConnectionChanged: this.handleConnectionChanged.bind(this),
                 onGetNode: (nodeId) => this.nodes.get(nodeId),
+                onCheckDefaultAllowed: (nodeId, portName) => {
+                    const node = this.nodes.get(nodeId);
+                    if (!node) return false;
+                    return node.canInputPortBeDefault(portName);
+                },
                 canvas: this.canvas,
             },
         );

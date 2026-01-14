@@ -12,6 +12,7 @@ export class FlowchartNode {
         this.position = operationData.position || { x: 100, y: 100 };
         this.inputNodes = [];
         this.outputNodes = [];
+        this.inputNodeConfig = new Map();
         this.element = null;
         this.inputPorts = new Map();
         this.outputPorts = new Map();
@@ -43,7 +44,17 @@ export class FlowchartNode {
 
             if (response.ok) {
                 const configData = await response.json();
-                this.inputNodes = configData.input_nodes || ["data"];
+                const rawInputNodes = configData.input_nodes || ["data"];
+                this.inputNodes = rawInputNodes.map((node) => {
+                    if (typeof node === "object" && node.name) {
+                        this.inputNodeConfig.set(node.name, {
+                            hasDefault: node.has_default ?? false,
+                        });
+                        return node.name;
+                    }
+                    this.inputNodeConfig.set(node, { hasDefault: false });
+                    return node;
+                });
                 this.outputNodes = configData.output_nodes || ["data"];
                 this.configDataLoaded = true;
             }
@@ -535,6 +546,11 @@ export class FlowchartNode {
 
     getPosition() {
         return { ...this.position };
+    }
+
+    canInputPortBeDefault(portName) {
+        const config = this.inputNodeConfig.get(portName);
+        return config?.hasDefault ?? false;
     }
 
     destroy() {

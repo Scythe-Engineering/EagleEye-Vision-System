@@ -14,6 +14,8 @@ export class FlowchartConnections {
         this.onConnectionRemoved = options.onConnectionRemoved || (() => {});
         this.onConnectionChanged = options.onConnectionChanged || (() => {});
         this.onGetNode = options.onGetNode || (() => null);
+        this.onCheckDefaultAllowed =
+            options.onCheckDefaultAllowed || (() => true);
         this.canvas = options.canvas || null;
 
         this.manualPathCreator = new ManualPathCreator(svgLayer, {
@@ -114,8 +116,7 @@ export class FlowchartConnections {
         path.setAttribute("stroke-width", this.connectionWidth.toString());
         path.setAttribute("stroke-linecap", "round");
         path.setAttribute("marker-end", "url(#flowchart-arrow)");
-        path.style.transition =
-            "stroke 0.15s ease, stroke-width 0.15s ease";
+        path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease";
         path.setAttribute("pointer-events", "none");
 
         const hitArea = document.createElementNS(
@@ -247,11 +248,7 @@ export class FlowchartConnections {
             e.stopPropagation();
             const connectionId = group.getAttribute("data-connection-id");
             if (connectionId) {
-                this.showContextMenu(
-                    e.clientX,
-                    e.clientY,
-                    connectionId
-                );
+                this.showContextMenu(e.clientX, e.clientY, connectionId);
             }
         });
     }
@@ -274,34 +271,46 @@ export class FlowchartConnections {
         menu.style.padding = "4px 0";
         menu.style.zIndex = "10000";
         menu.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
-        menu.style.minWidth = "160px";
+        menu.style.minWidth = "200px";
 
         const connection = this.connections.get(connectionId);
         const isDefault = connection?.isDefault || false;
+        const defaultAllowed = this.onCheckDefaultAllowed(
+            connection?.toNodeId,
+            connection?.toPortName,
+        );
 
         // Toggle Default option
         const toggleItem = document.createElement("div");
-        toggleItem.textContent = isDefault
-            ? "Remove Default Status"
-            : "Set as Default Connection";
+        if (!defaultAllowed && !isDefault) {
+            toggleItem.textContent = "Cannot Set Default";
+            toggleItem.style.cursor = "not-allowed";
+            toggleItem.style.color = "#666666";
+        } else {
+            toggleItem.textContent = isDefault
+                ? "Remove Default Status"
+                : "Set as Default Connection";
+            toggleItem.style.cursor = "pointer";
+            toggleItem.style.color = "#f9c845";
+        }
         toggleItem.style.padding = "8px 12px";
-        toggleItem.style.cursor = "pointer";
-        toggleItem.style.color = "#f9c845";
         toggleItem.style.fontSize = "13px";
         toggleItem.style.fontWeight = "500";
         toggleItem.style.transition = "background-color 0.15s ease";
         toggleItem.style.borderTop = "1px solid #404040";
 
-        toggleItem.addEventListener("mouseenter", () => {
-            toggleItem.style.backgroundColor = "#3a3a3a";
-        });
-        toggleItem.addEventListener("mouseleave", () => {
-            toggleItem.style.backgroundColor = "transparent";
-        });
-        toggleItem.addEventListener("click", () => {
-            this.toggleDefault(connectionId);
-            menu.remove();
-        });
+        if (defaultAllowed || isDefault) {
+            toggleItem.addEventListener("mouseenter", () => {
+                toggleItem.style.backgroundColor = "#3a3a3a";
+            });
+            toggleItem.addEventListener("mouseleave", () => {
+                toggleItem.style.backgroundColor = "transparent";
+            });
+            toggleItem.addEventListener("click", () => {
+                this.toggleDefault(connectionId);
+                menu.remove();
+            });
+        }
 
         // Remove option
         const removeItem = document.createElement("div");
@@ -442,7 +451,14 @@ export class FlowchartConnections {
         }
     }
 
-    updateConnection(connectionId, fromNode, fromPortName, toNode, toPortName, skipCache = false) {
+    updateConnection(
+        connectionId,
+        fromNode,
+        fromPortName,
+        toNode,
+        toPortName,
+        skipCache = false,
+    ) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
 
@@ -460,28 +476,33 @@ export class FlowchartConnections {
         }
 
         let pathD;
-        if (connection.customWaypoints && connection.customWaypoints.length >= 2) {
+        if (
+            connection.customWaypoints &&
+            connection.customWaypoints.length >= 2
+        ) {
             const startOffset = 10;
             const endOffset = 10;
             const newStartPoint = { x: fromPos.x + startOffset, y: fromPos.y };
             const newEndPoint = { x: toPos.x - endOffset, y: toPos.y };
 
             const len = connection.customWaypoints.length;
-            const updatedWaypoints = connection.customWaypoints.map((wp, index) => {
-                if (index === 0) {
-                    return { ...newStartPoint };
-                }
-                if (index === 1 && len > 2) {
-                    return { x: wp.x, y: newStartPoint.y };
-                }
-                if (index === len - 2 && len > 2) {
-                    return { x: wp.x, y: newEndPoint.y };
-                }
-                if (index === len - 1) {
-                    return { ...newEndPoint };
-                }
-                return { ...wp };
-            });
+            const updatedWaypoints = connection.customWaypoints.map(
+                (wp, index) => {
+                    if (index === 0) {
+                        return { ...newStartPoint };
+                    }
+                    if (index === 1 && len > 2) {
+                        return { x: wp.x, y: newStartPoint.y };
+                    }
+                    if (index === len - 2 && len > 2) {
+                        return { x: wp.x, y: newEndPoint.y };
+                    }
+                    if (index === len - 1) {
+                        return { ...newEndPoint };
+                    }
+                    return { ...wp };
+                },
+            );
 
             connection.customWaypoints = updatedWaypoints;
             pathD = this.buildPathFromWaypoints(updatedWaypoints);
@@ -593,14 +614,17 @@ export class FlowchartConnections {
         const pathLength = path.getTotalLength();
         const midPoint = path.getPointAtLength(pathLength / 2);
 
-        labelGroup.setAttribute("transform", `translate(${midPoint.x}, ${midPoint.y})`);
+        labelGroup.setAttribute(
+            "transform",
+            `translate(${midPoint.x}, ${midPoint.y})`,
+        );
 
         if (!connection.labelDimensions) {
             const textBBox = text.getBBox();
             const padding = 6;
             connection.labelDimensions = {
                 width: textBBox.width + padding * 2,
-                height: textBBox.height + padding
+                height: textBBox.height + padding,
             };
         }
 
@@ -635,9 +659,11 @@ export class FlowchartConnections {
 
     updateAllConnections(nodeMap, changedNodeIds = null, skipCache = false) {
         for (const [connectionId, connection] of this.connections) {
-            if (changedNodeIds &&
+            if (
+                changedNodeIds &&
                 !changedNodeIds.has(connection.fromNodeId) &&
-                !changedNodeIds.has(connection.toNodeId)) {
+                !changedNodeIds.has(connection.toNodeId)
+            ) {
                 continue;
             }
 
@@ -928,7 +954,7 @@ export class FlowchartConnections {
                 fromNode,
                 connection.fromPortName,
                 toNode,
-                connection.toPortName
+                connection.toPortName,
             );
         }
 
@@ -963,33 +989,38 @@ export class FlowchartConnections {
             if (next && i < waypoints.length - 1) {
                 const maxRadiusPrev = Math.min(
                     Math.abs(curr.x - prev.x) / 2,
-                    Math.abs(curr.y - prev.y) / 2
+                    Math.abs(curr.y - prev.y) / 2,
                 );
                 const maxRadiusNext = Math.min(
                     Math.abs(next.x - curr.x) / 2,
-                    Math.abs(next.y - curr.y) / 2
+                    Math.abs(next.y - curr.y) / 2,
                 );
                 const radius = Math.min(
                     cornerRadius,
                     Math.max(maxRadiusPrev, 1),
-                    Math.max(maxRadiusNext, 1)
+                    Math.max(maxRadiusNext, 1),
                 );
 
                 if (radius > 0) {
-                    const isHorizontalToCurr = Math.abs(curr.x - prev.x) > Math.abs(curr.y - prev.y);
+                    const isHorizontalToCurr =
+                        Math.abs(curr.x - prev.x) > Math.abs(curr.y - prev.y);
 
                     if (isHorizontalToCurr) {
                         const dirX = Math.sign(curr.x - prev.x);
                         const dirY = Math.sign(next.y - curr.y);
 
                         segments.push(`L ${curr.x - radius * dirX} ${curr.y}`);
-                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`);
+                        segments.push(
+                            `Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`,
+                        );
                     } else {
                         const dirY = Math.sign(curr.y - prev.y);
                         const dirX = Math.sign(next.x - curr.x);
 
                         segments.push(`L ${curr.x} ${curr.y - radius * dirY}`);
-                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`);
+                        segments.push(
+                            `Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`,
+                        );
                     }
                 } else {
                     segments.push(`L ${curr.x} ${curr.y}`);

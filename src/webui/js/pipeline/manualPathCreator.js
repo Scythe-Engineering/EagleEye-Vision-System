@@ -27,6 +27,14 @@ export class ManualPathCreator {
         this.boundHandleClick = this.handleClick.bind(this);
         this.boundHandleKeyDown = this.handleKeyDown.bind(this);
         this.boundHandleContextMenu = this.handleContextMenu.bind(this);
+        this.boundHandleWheel = this.handleWheel.bind(this);
+        this.boundHandleMouseDown = this.handleMouseDown.bind(this);
+        this.boundHandleMouseUp = this.handleMouseUp.bind(this);
+        this.boundHandlePanMove = this.handlePanMove.bind(this);
+
+        this.isPanning = false;
+        this.panStartX = 0;
+        this.panStartY = 0;
     }
 
     start(connectionId, startPoint, endPoint) {
@@ -159,6 +167,8 @@ export class ManualPathCreator {
                 (${waypointCount} corner${waypointCount !== 1 ? 's' : ''} added)
                 <br>
                 <span style="color: #888;">Click near the <span style="color: #f87171;">red endpoint</span> to finish • Press <kbd style="background: #404040; padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> to cancel</span>
+                <br>
+                <span style="color: #888;">Scroll to zoom • Middle mouse to pan</span>
             </div>
         `;
     }
@@ -167,6 +177,8 @@ export class ManualPathCreator {
         this.overlay.addEventListener("mousemove", this.boundHandleMouseMove);
         this.overlay.addEventListener("click", this.boundHandleClick);
         this.overlay.addEventListener("contextmenu", this.boundHandleContextMenu);
+        this.overlay.addEventListener("wheel", this.boundHandleWheel, { passive: false });
+        this.overlay.addEventListener("mousedown", this.boundHandleMouseDown);
         window.addEventListener("keydown", this.boundHandleKeyDown);
     }
 
@@ -175,12 +187,16 @@ export class ManualPathCreator {
             this.overlay.removeEventListener("mousemove", this.boundHandleMouseMove);
             this.overlay.removeEventListener("click", this.boundHandleClick);
             this.overlay.removeEventListener("contextmenu", this.boundHandleContextMenu);
+            this.overlay.removeEventListener("wheel", this.boundHandleWheel);
+            this.overlay.removeEventListener("mousedown", this.boundHandleMouseDown);
         }
         window.removeEventListener("keydown", this.boundHandleKeyDown);
+        window.removeEventListener("mousemove", this.boundHandlePanMove);
+        window.removeEventListener("mouseup", this.boundHandleMouseUp);
     }
 
     handleMouseMove(e) {
-        if (!this.isActive || !this.canvas) return;
+        if (!this.isActive || !this.canvas || this.isPanning) return;
 
         const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
         const snappedPos = this.canvas.snapPositionToGrid(worldPos.x, worldPos.y);
@@ -228,6 +244,69 @@ export class ManualPathCreator {
         e.preventDefault();
         e.stopPropagation();
         this.cancel();
+    }
+
+    handleWheel(e) {
+        if (!this.canvas) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const canvasContainer = this.canvas.container;
+        const wheelEvent = new WheelEvent("wheel", {
+            deltaY: e.deltaY,
+            deltaX: e.deltaX,
+            deltaMode: e.deltaMode,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            bubbles: true,
+            cancelable: true,
+        });
+
+        canvasContainer.dispatchEvent(wheelEvent);
+    }
+
+    handleMouseDown(e) {
+        if (e.button === 1) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.isPanning = true;
+            this.panStartX = e.clientX;
+            this.panStartY = e.clientY;
+            this.overlay.style.cursor = "grabbing";
+
+            window.addEventListener("mousemove", this.boundHandlePanMove);
+            window.addEventListener("mouseup", this.boundHandleMouseUp);
+        }
+    }
+
+    handlePanMove(e) {
+        if (!this.isPanning || !this.canvas) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const deltaX = e.clientX - this.panStartX;
+        const deltaY = e.clientY - this.panStartY;
+
+        this.canvas.translateX += deltaX;
+        this.canvas.translateY += deltaY;
+        this.canvas.updateTransform();
+
+        this.panStartX = e.clientX;
+        this.panStartY = e.clientY;
+    }
+
+    handleMouseUp(e) {
+        if (e.button === 1 && this.isPanning) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.isPanning = false;
+            this.overlay.style.cursor = "crosshair";
+
+            window.removeEventListener("mousemove", this.boundHandlePanMove);
+            window.removeEventListener("mouseup", this.boundHandleMouseUp);
+        }
     }
 
     addWaypoint(snappedPos) {
@@ -387,6 +466,7 @@ export class ManualPathCreator {
 
     cleanup() {
         this.isActive = false;
+        this.isPanning = false;
         this.detachEventListeners();
 
         if (this.overlay) {
