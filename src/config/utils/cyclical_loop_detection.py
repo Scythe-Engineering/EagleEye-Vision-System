@@ -30,7 +30,11 @@ def detect_connection_cycles(operations: dict[str, Operation]) -> None:
         recursion_stack.add(node_uuid)
 
         operation = operations[node_uuid]
-        for output_conn in operation.output_connections:
+        non_default_connections = [
+            conn for conn in operation.output_connections if not conn.is_default
+        ]
+
+        for output_conn in non_default_connections:
             neighbor_uuid = output_conn.to_operation.uuid
             parent_map[neighbor_uuid] = node_uuid
 

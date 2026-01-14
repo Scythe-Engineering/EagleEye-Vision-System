@@ -12,7 +12,7 @@ import {
     handleDragLeavePipeline,
     handleDropOnPipeline,
 } from "./dragDrop.js";
-import { uid, debounce } from "./utils.js";
+import { debounce } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
 
@@ -534,13 +534,23 @@ function openOperationSettings(opOrItem) {
 
         const previousConfig = { ...opOrItem.config };
 
-        opOrItem.config = values;
-        opOrItem.requiresRestart = requiresRestart || false;
-        console.log("Updated opOrItem.config:", opOrItem.config);
-        console.log(
-            "Updated opOrItem.requiresRestart:",
-            opOrItem.requiresRestart,
-        );
+        // Update the actual node in PipelineStore, not just the copy
+        const node = pipelineStore.getNode(opOrItem.instanceId);
+        if (node) {
+            pipelineStore.updateNodeConfig(opOrItem.instanceId, values);
+            node.requiresRestart = requiresRestart || false;
+            console.log("Updated node.config:", node.config);
+            console.log("Updated node.requiresRestart:", node.requiresRestart);
+        } else {
+            // Fallback to updating the copy if node not found (shouldn't happen)
+            opOrItem.config = values;
+            opOrItem.requiresRestart = requiresRestart || false;
+            console.log("Updated opOrItem.config:", opOrItem.config);
+            console.log(
+                "Updated opOrItem.requiresRestart:",
+                opOrItem.requiresRestart,
+            );
+        }
 
         console.log("Calling autoSavePipeline...");
         autoSavePipeline();

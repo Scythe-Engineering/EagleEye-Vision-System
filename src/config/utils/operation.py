@@ -112,14 +112,23 @@ class Operation:
         self.has_output_connections = True
 
     def all_inputs_solved(self) -> bool:
-        """Check if all inputs of the operation are solved.
+        """Check if all non-default inputs of the operation are solved.
+
+        Default connections use previous frame data and are always available.
 
         Returns:
-            bool: True if all inputs are solved, False otherwise.
+            bool: True if all non-default inputs are solved, False otherwise.
         """
+        non_default_connections = [
+            conn for conn in self.input_connections if not conn.is_default
+        ]
+
+        if not non_default_connections:
+            return True
+
         return all(
             conn.from_operation.execution_timestep is not None
-            for conn in self.input_connections
+            for conn in non_default_connections
         )
 
     def __str__(self) -> str:
@@ -134,6 +143,7 @@ class Connection:
         to_operation: Operation,
         to_port: str,
         data_type: str,
+        is_default: bool = False,
     ) -> None:
         """Initializes the Connection class.
 
@@ -143,12 +153,14 @@ class Connection:
             to_operation (Operation): The operation that receives data through this connection.
             to_port (str): The input port name on the to_operation.
             data_type (str): The type of data transmitted through this connection.
+            is_default (bool, optional): Whether this connection is a default connection from the from_operation. Defaults to False.
         """
         self.from_operation: Operation = from_operation
         self.from_port: str = from_port
         self.to_operation: Operation = to_operation
         self.to_port: str = to_port
         self.data_type: str = data_type
+        self.is_default: bool = is_default
 
         self.from_operation.add_output_connection(self)
         self.to_operation.add_input_connection(self)

@@ -44,7 +44,10 @@ def recursive_forward_flow_register(
 
     for operation in valid_group:
         output_connections = operation.get_output_connections()
-        for connection in output_connections:
+        non_default_connections = [
+            conn for conn in output_connections if not conn.is_default
+        ]
+        for connection in non_default_connections:
             if connection.to_operation not in next_operations:
                 next_operations.append(connection.to_operation)
 
@@ -73,6 +76,8 @@ def _validate_operation_timestep(operation: Operation) -> None:
 def _get_downstream_timesteps(output_connections: list) -> list[int]:
     """Extract execution timesteps from downstream operations.
 
+    Skips default connections since they're temporal dependencies.
+
     Args:
         output_connections: List of output connections from an operation.
 
@@ -84,6 +89,8 @@ def _get_downstream_timesteps(output_connections: list) -> list[int]:
     """
     downstream_timesteps: list[int] = []
     for conn in output_connections:
+        if conn.is_default:
+            continue
         _validate_operation_timestep(conn.to_operation)
         downstream_timesteps.append(conn.to_operation.execution_timestep)
     return downstream_timesteps
@@ -189,6 +196,7 @@ class FlowManager:
                 operation.set_thread_object(available_threads[0])
 
         self.operation_outputs: dict[str, Any] = {}
+        self.previous_operation_outputs: dict[str, Any] = {}
 
     @profile
     def run_flow(self, input_data: Any) -> None:
@@ -212,6 +220,7 @@ class FlowManager:
         Args:
             input_data: The input data to pass to the flow.
         """
+        self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
         self.operation_outputs[self.start_operation.uuid] = input_data
 
@@ -234,6 +243,7 @@ class FlowManager:
         Args:
             input_data: The input data to pass to the flow.
         """
+        self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
         self.operation_outputs[self.start_operation.uuid] = input_data
 
@@ -287,6 +297,9 @@ class FlowManager:
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.
 
+        Default connections use previous frame outputs, non-default use current frame.
+        First frame: default inputs are skipped (None or missing dict key).
+
         Args:
             operation: The operation that needs inputs.
 
@@ -303,11 +316,27 @@ class FlowManager:
 
         if len(input_connections) == 1:
             conn = input_connections[0]
-            return self.operation_outputs[conn.from_operation.uuid]
+            if conn.is_default:
+                from_uuid = conn.from_operation.uuid
+                if from_uuid in self.previous_operation_outputs:
+                    return self.previous_operation_outputs[from_uuid]
+                else:
+                    return None
+            else:
+                return self.operation_outputs[conn.from_operation.uuid]
         else:
             inputs: dict[str, Any] = {}
+
             for conn in input_connections:
-                inputs[conn.to_port] = self.operation_outputs[conn.from_operation.uuid]
+                if not conn.is_default:
+                    inputs[conn.to_port] = self.operation_outputs[conn.from_operation.uuid]
+
+            for conn in input_connections:
+                if conn.is_default:
+                    from_uuid = conn.from_operation.uuid
+                    if from_uuid in self.previous_operation_outputs:
+                        inputs[conn.to_port] = self.previous_operation_outputs[from_uuid]
+
             return inputs
 
     def _calculate_required_threads(self) -> int:
@@ -345,6 +374,7 @@ class FlowManager:
         first_operations: list[Operation] = [
             connection.to_operation
             for connection in self.start_operation.get_output_connections()
+            if not connection.is_default
         ]
 
         execution_time_groups: list[list[Operation]] = recursive_forward_flow_register(

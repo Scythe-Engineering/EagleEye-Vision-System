@@ -95,7 +95,7 @@ class Pipeline:
 
         # Gather all connections and operations from config
         for operation_config in self.pipeline_config:
-            action_name = operation_config["action_name"]
+            action_name = operation_config["action_name"].removesuffix(".py")
             action_params = operation_config.get("action_params", {})
             action_uuid = operation_config.get("uuid", None)
 
@@ -141,6 +141,7 @@ class Pipeline:
                     to_operation=to_operation,
                     to_port=connection["to_port"],
                     data_type=connection["data_type"],
+                    is_default=bool(connection.get("is_default", False)),
                 )
             except KeyError as e:
                 raise ValueError(
@@ -185,6 +186,7 @@ class Pipeline:
             ValueError: If action_name is not recognized or module cannot be imported.
         """
         try:
+            action_name = action_name.removesuffix(".py")
             class_name = self._snake_to_camel(action_name)
 
             # Try to import from main_operations/definitions first
@@ -203,7 +205,7 @@ class Pipeline:
                     operation_class = getattr(module, class_name)
                 except (ImportError, AttributeError):
                     raise ValueError(
-                        f"Could not find class for action: {class_name} at {action_name}"
+                        f"Could not find class for action: {class_name} at {action_name} with path {module_path}"
                     )
 
             # Create a shallow copy to avoid mutating the original action_params

@@ -1175,19 +1175,19 @@ class EagleEyeInterface:
 
             # Merge operations while preserving existing data and enabling reordering
             existing_ops = {
-                op["action_name"]: op
-                for op in current_config[camera_name][pipeline_name]
+                op["uuid"]: op for op in current_config[camera_name][pipeline_name]
             }
             updated_operations = []
             for operation in new_data:
+                operation_uuid = operation["uuid"]
                 operation_name = operation["action_name"]
                 operation_params = self._reorder_operation_params(
                     operation_name, operation["action_params"]
                 )
 
-                if operation_name in existing_ops:
+                if operation_uuid in existing_ops:
                     # Merge incoming data into existing operation
-                    merged_op = existing_ops[operation_name].copy()
+                    merged_op = existing_ops[operation_uuid].copy()
                     for key, value in operation.items():
                         if key == "action_params":
                             merged_op["action_params"].update(operation_params)

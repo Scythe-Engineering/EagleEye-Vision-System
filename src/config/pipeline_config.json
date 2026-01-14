@@ -131,7 +131,13 @@
             },
             {
                 "action_name": "temporal_acceleration_preprocessor_rust.py",
-                "action_params": {},
+                "action_params": {
+                    "camera_parameters_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/apriltag_map_path/frc2025r2.json",
+                    "padding_factor": 0.35,
+                    "max_regions": 20,
+                    "min_region_size_px": 16
+                },
                 "position": {
                     "x": -60,
                     "y": 100
