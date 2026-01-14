@@ -3,11 +3,12 @@
     "description": "Updates robot attributes and sensor data through NetworkTables communication protocol for real-time data sharing with robo-rio",
     "category": "net",
     "input_nodes": [
-        "data"
+        {
+            "name": "data",
+            "has_default": false
+        }
     ],
-    "output_nodes": [
-        "data"
-    ],
+    "output_nodes": ["data"],
     "parameters": {
         "action_name": {
             "type": "str",

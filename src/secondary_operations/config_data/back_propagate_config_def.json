@@ -3,11 +3,12 @@
     "description": "Back propagates input data to a specified operation earlier in the pipeline by calling its back_propagate_input method, then passes the input through",
     "category": "proc",
     "input_nodes": [
-        "data"
+        {
+            "name": "data",
+            "has_default": false
+        }
     ],
-    "output_nodes": [
-        "data"
-    ],
+    "output_nodes": ["data"],
     "parameters": {
         "action_name": {
             "type": "str",

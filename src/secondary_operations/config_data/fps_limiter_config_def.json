@@ -3,11 +3,12 @@
     "description": "Limits frame rate by sleeping to maintain target FPS",
     "category": "proc",
     "input_nodes": [
-        "data"
+        {
+            "name": "data",
+            "has_default": false
+        }
     ],
-    "output_nodes": [
-        "data"
-    ],
+    "output_nodes": ["data"],
     "parameters": {
         "fps": {
             "type": "float",

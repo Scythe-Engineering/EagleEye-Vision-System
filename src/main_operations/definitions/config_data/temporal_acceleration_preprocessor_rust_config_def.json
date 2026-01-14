@@ -3,8 +3,14 @@
     "description": "High-performance Rust implementation for predicting ROIs for AprilTag detection using extrapolated camera motion.",
     "category": "prep",
     "input_nodes": [
-        "frame",
-        "camera_pose"
+        {
+            "name": "frame",
+            "has_default": false
+        },
+        {
+            "name": "camera_pose",
+            "has_default": true
+        }
     ],
     "output_nodes": [
         "processed_frame"

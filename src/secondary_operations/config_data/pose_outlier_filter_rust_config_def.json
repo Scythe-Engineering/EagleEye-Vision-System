@@ -3,7 +3,10 @@
     "description": "Rust-based pose outlier filter for high-performance filtering of pose measurements to reject outliers using predictive gating based on historical pose data and constant velocity assumptions",
     "category": "filt",
     "input_nodes": [
-        "pose"
+        {
+            "name": "pose",
+            "has_default": false
+        }
     ],
     "output_nodes": [
         "filtered_pose"

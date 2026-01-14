@@ -3,11 +3,12 @@
     "description": "Ground plane intersection for 3D position estimation",
     "category": "proc",
     "input_nodes": [
-        "detections"
+        {
+            "name": "detections",
+            "has_default": false
+        }
     ],
-    "output_nodes": [
-        "positions_3d"
-    ],
+    "output_nodes": ["positions_3d"],
     "parameters": {
         "camera_height": {
             "type": "float",

@@ -3,11 +3,15 @@
     "description": "Convert robot-local detection coordinates to field coordinates using back-propagated robot pose.",
     "category": "proc",
     "input_nodes": [
-        "detections",
-        "robot_pose"
+        {
+            "name": "detections",
+            "has_default": false
+        },
+        {
+            "name": "robot_pose",
+            "has_default": true
+        }
     ],
-    "output_nodes": [
-        "field_detections"
-    ],
+    "output_nodes": ["field_detections"],
     "parameters": {}
 }

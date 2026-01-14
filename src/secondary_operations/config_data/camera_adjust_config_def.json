@@ -3,12 +3,16 @@
     "description": "Hardware-accelerated camera adjustments for brightness, contrast, saturation, gain, and exposure.",
     "category": "prep",
     "input_nodes": [
-        "frame",
-        "detections"
+        {
+            "name": "frame",
+            "has_default": false
+        },
+        {
+            "name": "detections",
+            "has_default": true
+        }
     ],
-    "output_nodes": [
-        "frame"
-    ],
+    "output_nodes": ["frame"],
     "parameters": {
         "brightness": {
             "type": "float",
