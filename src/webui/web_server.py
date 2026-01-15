@@ -15,6 +15,7 @@ from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
+from src.config.utils.pipeline import Pipeline
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
 from src.webui.web_server_utils.serve_static_files import (
@@ -39,8 +40,8 @@ CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5001"]
 class EagleEyeInterface:
     def __init__(
         self,
-        restart_callback: Callable,
-        pipeline_objects_callback: Callable,
+        restart_callback: Callable[[], None],
+        pipeline_objects_callback: Callable[[], dict[str, dict[str, Pipeline]]],
         dev_mode: bool = False,
         logger: Logger | None = None,
     ):

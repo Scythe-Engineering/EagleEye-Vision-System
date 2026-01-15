@@ -4,8 +4,7 @@ import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
-from time import sleep
-from typing import List
+from typing import List, Optional
 
 current_dir = Path(__file__).parent
 
@@ -25,7 +24,7 @@ class MessageEntry:
 
 
 class MessageSequence:
-    """Represents a single log message or a collapsed sequence."""
+    """Represents a collapsed sequence of repeated messages."""
 
     def __init__(
         self, timestamp: str, messages: List[MessageEntry], repeat_count: int = 1
@@ -35,10 +34,13 @@ class MessageSequence:
         self.repeat_count = repeat_count
 
     def try_add_messages(self, messages: List[MessageEntry]) -> bool:
-        """Try to add a message to the sequence.
+        """Try to add messages to the sequence.
+
+        Args:
+            messages: List of messages to try adding
 
         Returns:
-            True if the message was added, False otherwise
+            True if the messages were added, False otherwise
         """
         if len(messages) != len(self.messages):
             return False
@@ -66,64 +68,85 @@ class MessageSequence:
 
 
 class MessageHistory:
-    """Represents the history of messages."""
+    """Manages message history with automatic sequence detection and memory limits."""
 
-    def __init__(self, max_sequence_search_length: int = 10):
+    def __init__(
+        self, max_size: int = 10000, max_sequence_search_length: int = 10
+    ):
+        self.max_size = max_size
         self.max_sequence_search_length = max_sequence_search_length
         self.messages: List[MessageEntry | MessageSequence] = []
+        self.dirty = False
 
-    def add_message(self, message: MessageEntry):
+    def add_message(self, message: MessageEntry) -> None:
+        """Add a message to history and detect sequences.
+
+        Args:
+            message: The message to add
+        """
         self.messages.append(message)
+
+        if len(self.messages) > self.max_size:
+            self.messages.pop(0)
+            self.dirty = True
+
+        old_len = len(self.messages)
         self.detect_and_collapse_sequences()
+        if len(self.messages) != old_len:
+            self.dirty = True
 
     def to_file_lines(self) -> List[str]:
-        """Convert the message history to file lines."""
+        """Convert the message history to file lines.
+
+        Returns:
+            List of formatted log lines
+        """
         lines = []
         for item in self.messages:
             lines.extend(item.to_file_lines())
         return lines
 
     def detect_and_collapse_sequences(self) -> None:
-        """Detect and collapse sequences in the message history."""
+        """Detect and collapse sequences in recent message history."""
         if len(self.messages) == 0:
             return
 
+        search_window = min(
+            self.max_sequence_search_length * 3, len(self.messages)
+        )
+
         for chunk_size in range(
-            1, min(self.max_sequence_search_length, len(self.messages)) + 1
+            min(self.max_sequence_search_length, search_window), 0, -1
         ):
             if len(self.messages) < chunk_size:
                 continue
 
             current_chunk = self._extract_chunk_from_end(chunk_size)
-            
-            if current_chunk is False:
-                continue
-            
-            if len(current_chunk) != chunk_size: # type: ignore
+
+            if current_chunk is None:
                 continue
 
-            if self._try_add_to_existing_sequence(current_chunk, chunk_size): # type: ignore
+            if self._try_add_to_existing_sequence(current_chunk, chunk_size):
                 return
 
-            if self._try_create_from_matching_chunks(current_chunk, chunk_size): # type: ignore
+            if self._try_create_from_matching_chunks(current_chunk, chunk_size):
                 return
 
-    def _extract_chunk_from_end(self, chunk_size: int) -> List[MessageEntry] | bool:
+    def _extract_chunk_from_end(self, chunk_size: int) -> Optional[List[MessageEntry]]:
         """Extract the last chunk_size messages from history.
 
         Args:
             chunk_size: Number of messages to extract
 
         Returns:
-            List of MessageEntry objects from the end of history or False if the chunk has a MessageSequence
+            List of MessageEntry objects from the end of history, or None if any item is a MessageSequence
         """
         chunk: List[MessageEntry] = []
         for i in range(chunk_size):
             idx = len(self.messages) - 1 - i
             if isinstance(self.messages[idx], MessageSequence):
-                return False
-            else:
-                chunk.insert(0, self.messages[idx]) # type: ignore
+                return None
+            chunk.insert(0, self.messages[idx])
         return chunk
 
     def _try_add_to_existing_sequence(
@@ -142,10 +165,12 @@ class MessageHistory:
             return False
 
         prev_idx = len(self.messages) - chunk_size - 1
-        if not isinstance(self.messages[prev_idx], MessageSequence):
+        prev_item = self.messages[prev_idx]
+
+        if not isinstance(prev_item, MessageSequence):
             return False
 
-        if self.messages[prev_idx].try_add_messages(current_chunk):
+        if prev_item.try_add_messages(current_chunk):
             self.messages = self.messages[:-chunk_size]
             return True
 
@@ -167,25 +192,34 @@ class MessageHistory:
             return False
 
         if chunk_size == 1:
-            if isinstance(self.messages[-2], MessageSequence):
+            prev_item = self.messages[-2]
+            if isinstance(prev_item, MessageSequence):
+                if len(prev_item.messages) == 1 and prev_item.messages[0].message == current_chunk[0].message:
+                    prev_item.repeat_count += 1
+                    self.messages = self.messages[:-1]
+                    return True
                 return False
 
-            if current_chunk[0].message == self.messages[-2].message:
+            if isinstance(prev_item, MessageEntry) and current_chunk[0].message == prev_item.message:
                 messages_list = list(current_chunk)
                 timestamp = current_chunk[0].timestamp
                 new_sequence = MessageSequence(timestamp, messages_list, repeat_count=2)
                 self.messages = self.messages[:-2] + [new_sequence]
                 return True
-            else:
-                return False
-
-        previous_chunk = self._extract_chunk_from_end(chunk_size * 2)[:chunk_size] # type: ignore Will be never be bool
-        if len(previous_chunk) != chunk_size:
             return False
+
+        if len(self.messages) < chunk_size * 2:
+            return False
+
+        previous_chunk = self._extract_chunk_from_end(chunk_size * 2)
+        if previous_chunk is None or len(previous_chunk) != chunk_size * 2:
+            return False
+
+        previous_chunk_first_half = previous_chunk[:chunk_size]
 
         messages_match = all(
             prev.message == curr.message
-            for prev, curr in zip(previous_chunk, current_chunk)
+            for prev, curr in zip(previous_chunk_first_half, current_chunk)
         )
 
         if not messages_match:
@@ -205,19 +239,20 @@ class MessageHistory:
 
 
 class Logger:
-    """Thread-safe logger that processes messages asynchronously with sequence deduplication in file only."""
+    """Thread-safe logger with append-only writes and sequence deduplication."""
 
     def __init__(
         self,
         log_directory: str = "logs",
         max_file_size_mb: int = 50,
+        max_history_size: int = 10000,
     ) -> None:
         """Initialize the logger with queue and processing thread.
 
         Args:
             log_directory: Directory to store log files
             max_file_size_mb: Maximum log file size in MB before rotation
-            min_sequence_length: Minimum length of sequences to detect (default 2)
+            max_history_size: Maximum number of messages to keep in memory
         """
         self.log_directory = current_dir / log_directory
         self.log_directory.mkdir(exist_ok=True)
@@ -225,7 +260,9 @@ class Logger:
 
         self.message_queue: queue.Queue = queue.Queue()
         self.current_log_file = self._create_log_file()
-        self.message_history: MessageHistory = MessageHistory()
+        self.message_history: MessageHistory = MessageHistory(max_size=max_history_size)
+        self.lock = threading.Lock()
+        self.last_written_index = 0
 
         self.processing_thread = threading.Thread(
             target=self._process_queue, daemon=True
@@ -253,26 +290,55 @@ class Logger:
         log_file.touch()
         return log_file
 
-    def _check_file_rotation(self) -> None:
-        """Rotate to a new log file if current file exceeds maximum size."""
-        if self.current_log_file.stat().st_size >= self.max_file_size_bytes:
-            self.current_log_file = self._create_log_file()
-            self._write_full_history()
+    def _check_and_rotate_file(self) -> bool:
+        """Check if file rotation is needed and rotate if necessary.
 
-    def _write_full_history(self) -> None:
-        """Write the complete message history to the log file."""
-        self._check_file_rotation()
-
+        Returns:
+            True if file was rotated, False otherwise
+        """
         try:
-            with open(self.current_log_file, "w", encoding="utf-8") as f:
-                f.writelines(
-                    [
-                        re.sub(r"\x1b\[[0-9;]*m", "", line)
-                        for line in self.message_history.to_file_lines()
-                    ]
-                )
+            if self.current_log_file.stat().st_size >= self.max_file_size_bytes:
+                self.current_log_file = self._create_log_file()
+                self.last_written_index = 0
+                return True
         except Exception:
             traceback.print_exc()
+        return False
+
+    def _strip_ansi_codes(self, text: str) -> str:
+        """Remove ANSI color codes from text.
+
+        Args:
+            text: Text potentially containing ANSI codes
+
+        Returns:
+            Text with ANSI codes removed
+        """
+        return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+    def _write_to_file(self) -> None:
+        """Write pending messages to file (append or full rewrite)."""
+        with self.lock:
+            try:
+                rotated = self._check_and_rotate_file()
+
+                if self.message_history.dirty or rotated:
+                    with open(self.current_log_file, "w", encoding="utf-8") as f:
+                        for line in self.message_history.to_file_lines():
+                            f.write(self._strip_ansi_codes(line))
+                    self.message_history.dirty = False
+                    self.last_written_index = len(self.message_history.messages)
+                else:
+                    new_messages = self.message_history.messages[self.last_written_index:]
+                    if new_messages:
+                        with open(self.current_log_file, "a", encoding="utf-8") as f:
+                            for item in new_messages:
+                                for line in item.to_file_lines():
+                                    f.write(self._strip_ansi_codes(line))
+                        self.last_written_index = len(self.message_history.messages)
+
+            except Exception:
+                traceback.print_exc()
 
     def _process_queue(self) -> None:
         """Process messages from the queue and write to file.
@@ -283,14 +349,13 @@ class Logger:
             try:
                 timestamp, message = self.message_queue.get(timeout=1)
 
-                entry = MessageEntry(timestamp, message)
-                self.message_history.add_message(entry)
+                with self.lock:
+                    entry = MessageEntry(timestamp, message)
+                    self.message_history.add_message(entry)
 
-                self._write_full_history()
+                self._write_to_file()
 
-                sleep(0.01)
             except queue.Empty:
-                sleep(0.01)
                 continue
 
             except Exception:
