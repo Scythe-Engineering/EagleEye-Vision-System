@@ -410,6 +410,7 @@ async function renderCurrentPipeline() {
     if (useFlowchartMode && flowchartRenderer) {
         const options = { connections };
         await flowchartRenderer.renderPipeline(pipeline, options);
+        await fetchAndUpdateThreadInfo();
     } else {
         renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
@@ -418,6 +419,59 @@ async function renderCurrentPipeline() {
             handleDragStart: handleDragStartWithLogging,
             handleDragEnd: handleDragEndWithLogging,
         });
+    }
+}
+
+async function fetchAndUpdateThreadInfo() {
+    const selectedCamera = getSelectedCamera();
+    const selectedPipeline = getSelectedPipeline();
+
+    if (
+        !selectedCamera ||
+        !selectedPipeline ||
+        pipelineStore.isRestartRequired()
+    ) {
+        hideAllThreadBadges();
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `${BACKEND_BASE_URL}/get-pipeline-thread-info/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+        );
+
+        if (!response.ok) {
+            console.warn("Failed to fetch thread info:", response.status);
+            hideAllThreadBadges();
+            return;
+        }
+
+        const data = await response.json();
+
+        if (flowchartRenderer) {
+            const nodes = flowchartRenderer.nodes;
+
+            for (const [instanceId, node] of nodes) {
+                const uuid = pipelineStore.instanceIdToUuid.get(instanceId);
+                if (uuid && data.operations) {
+                    const threadInfo = data.operations[uuid];
+                    node.updateThreadInfo(threadInfo);
+                } else {
+                    node.hideThreadBadge();
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error fetching thread info:", error);
+        hideAllThreadBadges();
+    }
+}
+
+function hideAllThreadBadges() {
+    if (flowchartRenderer) {
+        for (const node of flowchartRenderer.nodes.values()) {
+            node.hideThreadBadge();
+        }
     }
 }
 
@@ -903,6 +957,10 @@ async function updateRestartIndicator(show = false) {
         restartIndicator.classList.add("hidden");
         restartIndicator.classList.remove("backend-state-warning");
     }
+
+    if (show) {
+        hideAllThreadBadges();
+    }
 }
 
 async function handleRestartBackend() {
@@ -1136,6 +1194,7 @@ async function handleFlowchartPipelineChange(changeEvent) {
         autoSavePipeline();
         updateRestartIndicator(true);
         pipelineStore.clearRestartRequired();
+        hideAllThreadBadges();
     }
 }
 

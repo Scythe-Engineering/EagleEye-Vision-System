@@ -134,6 +134,9 @@ export class FlowchartNode {
             this.outputNodes.length,
         );
 
+        const threadColor = this.getThreadColor(this.threadInfo?.thread);
+        const timestep = this.threadInfo?.timestep ?? null;
+
         this.element.innerHTML = `
             <div class="node-header" style="
                 display: flex;
@@ -143,7 +146,26 @@ export class FlowchartNode {
                 background: linear-gradient(180deg, #2a2a2a 0%, #232323 100%);
                 border-bottom: 1px solid #404040;
                 border-radius: 10px 10px 0 0;
+                position: relative;
             ">
+                <div class="thread-badge" style="
+                    position: absolute;
+                    top: -12px;
+                    left: -12px;
+                    width: 24px;
+                    height: 24px;
+                    background-color: ${threadColor};
+                    border: 2px solid #404040;
+                    border-radius: 6px;
+                    display: ${timestep !== null ? "flex" : "none"};
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: white;
+                    z-index: 10;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                ">${timestep !== null ? timestep : ""}</div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
                     <span style="
                         background-color: ${categoryColor};
@@ -551,6 +573,53 @@ export class FlowchartNode {
     canInputPortBeDefault(portName) {
         const config = this.inputNodeConfig.get(portName);
         return config?.hasDefault ?? false;
+    }
+
+    getThreadColor(threadNumber) {
+        if (!threadNumber || threadNumber <= 0) return null;
+
+        const threadColors = [
+            "#ff6b6b", // Red
+            "#4ecdc4", // Teal
+            "#45b7d1", // Blue
+            "#96ceb4", // Light Green
+            "#ffeaa7", // Light Yellow
+            "#dfe6e9", // Light Gray
+            "#fd79a8", // Pink
+            "#a29bfe", // Light Purple
+            "#00b894", // Green
+            "#e17055", // Orange
+        ];
+
+        return threadColors[(threadNumber - 1) % threadColors.length];
+    }
+
+    updateThreadInfo(threadInfo) {
+        this.threadInfo = threadInfo;
+        const badge = this.element?.querySelector(".thread-badge");
+        if (!badge) return;
+
+        if (
+            !threadInfo ||
+            threadInfo.timestep === null ||
+            threadInfo.timestep === undefined
+        ) {
+            badge.style.display = "none";
+        } else {
+            badge.style.display = "flex";
+            badge.style.backgroundColor = this.getThreadColor(
+                threadInfo.thread,
+            );
+            badge.textContent = threadInfo.timestep;
+        }
+    }
+
+    hideThreadBadge() {
+        this.threadInfo = null;
+        const badge = this.element?.querySelector(".thread-badge");
+        if (badge) {
+            badge.style.display = "none";
+        }
     }
 
     destroy() {
