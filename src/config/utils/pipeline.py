@@ -151,7 +151,9 @@ class Pipeline:
 
             # Load config_def to check if operation is a data source
             config_def = self._load_config_def(action_name)
-            is_data_source = config_def.get("is_data_source", False) if config_def else False
+            is_data_source = (
+                config_def.get("is_data_source", False) if config_def else False
+            )
 
             operations[action_uuid]: Operation = Operation(
                 instance=operation_instance,
@@ -338,48 +340,16 @@ class Pipeline:
 
         return None
 
-    def get_operation_by_class_name(self, class_name: str) -> Any:
-        """Get an operation by its class name.
+    def get_operation_by_uuid(self, operation_uuid: str) -> Operation | None:
+        """Get an operation by its UUID.
 
         Args:
-            class_name: The name of the operation class.
-        """
-        return next(
-            (
-                op.instance
-                for op in self.operations.values()
-                if op.instance.__class__.__name__.strip("Definition")
-                == class_name.strip("Definition")
-            ),
-            None,
-        )
-
-    def get_pipeline_by_name(
-        self,
-        pipeline_name: str,
-        camera_name: str | None = None,
-    ) -> None:
-        """Retrieve a pipeline by name for the specified camera.
-
-        Args:
-            pipeline_name: Name of the pipeline to retrieve.
-            camera_name: Optional camera identifier; defaults to the current pipeline camera.
+            operation_uuid: The UUID of the operation.
 
         Returns:
-            Pipeline | None: The matching pipeline instance if found, otherwise None.
+            The operation with the given UUID, or None if not found.
         """
-        pipeline_objects_callback = getattr(
-            self.web_interface, "pipeline_objects_callback", None
-        )
-        if pipeline_objects_callback is None:
-            return None
-        pipeline_objects = pipeline_objects_callback()
-        target_camera_name = (
-            camera_name if camera_name is not None else self.camera_bus_id
-        )
-        if target_camera_name not in pipeline_objects:
-            return None
-        return pipeline_objects[target_camera_name].get(pipeline_name)
+        return self.operations.get(operation_uuid)
 
     def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> None:
         """Update the configuration of multiple operations in the pipeline.
@@ -389,44 +359,42 @@ class Pipeline:
 
         Args:
             operations_config: list of operation configurations, where each config
-                is a dictionary with 'action_name' and 'action_params' keys.
+                is a dictionary with 'uuid', 'action_name', and 'action_params' keys.
                 Format should match the pipeline configuration JSON format.
         """
         for operation_config in operations_config:
+            action_uuid = operation_config.get("uuid")
             action_name = operation_config.get("action_name")
             action_params = operation_config.get("action_params", {})
 
-            if not action_name:
+            if not action_uuid:
                 continue
 
-            # Convert action_name to class name format for lookup
-            class_name = self._snake_to_camel(action_name)
+            # Find the operation instance by UUID
+            operation_wrapper = self.get_operation_by_uuid(action_uuid)
 
-            # Find the operation instance
-            operation = self.get_operation_by_class_name(class_name)
-
-            if operation is not None and hasattr(operation, "update_config"):
-                try:
-                    operation.update_config(action_params)
-                    if debug_mode and self.logger:
-                        self.logger.log(
-                            f"{Colors.GREEN}Updated config for {action_name}: {action_params}{Colors.RESET}"
-                        )
-                except Exception as e:
-                    if self.logger:
-                        self.logger.log(
-                            f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
-                        )
-            elif operation is not None:
-                if debug_mode and self.logger:
+            if operation_wrapper is not None:
+                operation = operation_wrapper.instance
+                if hasattr(operation, "update_config"):
+                    try:
+                        operation.update_config(action_params)
+                        if debug_mode and self.logger:
+                            self.logger.log(
+                                f"{Colors.GREEN}Updated config for {action_name} ({action_uuid}): {action_params}{Colors.RESET}"
+                            )
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.log(
+                                f"{Colors.RED}Error updating config for {action_name} ({action_uuid}): {e}{Colors.RESET}"
+                            )
+                elif debug_mode and self.logger:
                     self.logger.log(
-                        f"{Colors.YELLOW}Operation {action_name} does not support config updates{Colors.RESET}"
+                        f"{Colors.YELLOW}Operation {action_name} ({action_uuid}) does not support config updates{Colors.RESET}"
                     )
-            else:
-                if debug_mode and self.logger:
-                    self.logger.log(
-                        f"{Colors.RED}Operation {action_name} not found in pipeline{Colors.RESET}"
-                    )
+            elif debug_mode and self.logger:
+                self.logger.log(
+                    f"{Colors.RED}Operation {action_name} ({action_uuid}) not found in pipeline{Colors.RESET}"
+                )
 
     def thread_run(
         self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
