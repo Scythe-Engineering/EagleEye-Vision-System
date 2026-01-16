@@ -15,6 +15,7 @@ import {
 import { debounce } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
+import { showDanger } from "../ui/notificationSystem.js";
 
 function handleDragStartWithLogging(
     event,
@@ -171,6 +172,7 @@ async function fetchAvailableOperations() {
         pipelineStore.setOperations(operations);
         console.log("Loaded operations from server:", operations);
     } catch (error) {
+        showDanger("Failed to fetch operations");
         console.error("Failed to fetch operations:", error);
         pipelineStore.setOperations([]);
     }
@@ -194,6 +196,7 @@ async function fetchAvailableCameras() {
         pipelineStore.setCameras(cameras);
         console.log("Loaded cameras from server:", cameras);
     } catch (error) {
+        showDanger("Failed to fetch cameras");
         console.error("Failed to fetch cameras:", error);
         pipelineStore.setCameras([]);
     }
@@ -246,6 +249,7 @@ async function fetchPipelinesForCamera(cameraName) {
         pipelineStore.setPipelines(pipelines);
         console.log("Loaded pipelines from server:", pipelines);
     } catch (error) {
+        showDanger("Failed to fetch pipelines");
         console.error("Failed to fetch pipelines:", error);
         pipelineStore.setPipelines([]);
     }
@@ -264,6 +268,7 @@ async function fetchPipelineConfig(cameraName, pipelineName) {
         console.log("Loaded pipeline config from server:", pipelineConfig);
         return pipelineConfig;
     } catch (error) {
+        showDanger("Failed to fetch pipeline config");
         console.error("Failed to fetch pipeline config:", error);
         return [];
     }
@@ -399,6 +404,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
 
         updateRunButton();
     } catch (error) {
+        showDanger("Failed to load pipeline");
         console.error("Failed to load pipeline:", error);
     }
 }
@@ -525,6 +531,13 @@ async function checkAndTriggerAutoFill() {
 
 async function removeFromPipeline(instanceId) {
     const removedNode = pipelineStore.getNode(instanceId);
+
+    // Prevent removal of device_input operation - it's required and auto-inserted
+    if (removedNode && removedNode.operationId === "device_input.py") {
+        showDanger("Cannot remove device input operation - it is required");
+        return;
+    }
+
     console.log("[PIPELINE] Removing operation from pipeline", {
         removedOperation: removedNode
             ? {
@@ -936,6 +949,7 @@ async function updateRestartIndicator(show = false) {
             `Backend notified: restart ${show ? "required" : "not required"}`,
         );
     } catch (error) {
+        showDanger("Failed to notify backend about restart requirement");
         console.error(
             "Failed to notify backend about restart requirement:",
             error,

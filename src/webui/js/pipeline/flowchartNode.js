@@ -212,6 +212,7 @@ export class FlowchartNode {
                         display: flex;
                         align-items: center;
                         justify-content: center;
+                        ${this.operationData.id === "device_input.py" ? "display: none;" : ""}
                     ">
                         <img src="../../../assets/delete.svg" alt="Delete" style="width: 14px; height: 14px; filter: grayscale(100%); transition: filter 0.15s;" />
                     </button>

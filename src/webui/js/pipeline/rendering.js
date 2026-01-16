@@ -72,6 +72,10 @@ export function renderOperations(
 ) {
     operationsList.innerHTML = "";
     operations.forEach((op, index) => {
+        // Skip device_input operation - it's auto-inserted and cannot be manually added
+        if (op.id === "device_input.py") {
+            return;
+        }
         const el = document.createElement("div");
         el.draggable = true;
         el.className =
@@ -527,7 +531,10 @@ export class FlowchartRenderer {
         this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
 
         this.connections.connections.forEach((connection) => {
-            if (connection.fromNodeId === node.instanceId || connection.toNodeId === node.instanceId) {
+            if (
+                connection.fromNodeId === node.instanceId ||
+                connection.toNodeId === node.instanceId
+            ) {
                 delete connection.lastPosKey;
             }
         });
@@ -557,12 +564,14 @@ export class FlowchartRenderer {
         if (!this.positionChangeDebounce) {
             this.positionChangeDebounce = setTimeout(() => {
                 if (this.minimap) {
-                    const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
-                        instanceId: n.instanceId,
-                        position: n.getPosition(),
-                        width: 200,
-                        height: 80,
-                    }));
+                    const nodeDataList = Array.from(this.nodes.values()).map(
+                        (n) => ({
+                            instanceId: n.instanceId,
+                            position: n.getPosition(),
+                            width: 200,
+                            height: 80,
+                        }),
+                    );
                     this.minimap.updateNodes(nodeDataList);
                     this.minimap.updateConnections(
                         this.connections.getConnectionData(),
@@ -1005,16 +1014,29 @@ export class FlowchartRenderer {
             if (fromUuid && toUuid) {
                 const storeConnectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
 
-                const customWaypoints = this.connections.getCustomWaypoints(connectionId);
+                const customWaypoints =
+                    this.connections.getCustomWaypoints(connectionId);
                 if (customWaypoints !== undefined) {
-                    pipelineStore.updateConnectionWaypoints(storeConnectionKey, customWaypoints);
+                    pipelineStore.updateConnectionWaypoints(
+                        storeConnectionKey,
+                        customWaypoints,
+                    );
                 }
 
-                const connectionData = this.connections.connections.get(connectionId);
+                const connectionData =
+                    this.connections.connections.get(connectionId);
                 if (connectionData) {
-                    const storeConnection = pipelineStore.state.currentPipeline.connections.get(storeConnectionKey);
-                    if (storeConnection && storeConnection.isDefault !== connectionData.isDefault) {
-                        pipelineStore.toggleConnectionDefault(storeConnectionKey);
+                    const storeConnection =
+                        pipelineStore.state.currentPipeline.connections.get(
+                            storeConnectionKey,
+                        );
+                    if (
+                        storeConnection &&
+                        storeConnection.isDefault !== connectionData.isDefault
+                    ) {
+                        pipelineStore.toggleConnectionDefault(
+                            storeConnectionKey,
+                        );
                     }
                 }
             }
@@ -1191,7 +1213,7 @@ export function renderPipeline(
             <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
               <img src="../../../assets/settings.svg" alt="Settings" class="w-4 h-4 icon-grayscale" />
             </button>
-            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
+            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove" style="${item.id === "device_input.py" ? "display: none;" : ""}"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
           </div>
         </div>
       `;

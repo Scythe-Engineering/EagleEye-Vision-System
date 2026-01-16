@@ -18,6 +18,15 @@
                         "data_type": "frame",
                         "is_default": false,
                         "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mk60jqlu-vb7",
+                        "from_port": "frame",
+                        "to_uuid": "op-mkh3fc5l-gtks",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
                     }
                 ]
             },
@@ -96,6 +105,40 @@
                                 "y": 185.00004793691684
                             }
                         ]
+                    },
+                    {
+                        "from_uuid": "op-mk60k0f0-5bb0",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mkh3fvk1-fevc",
+                        "to_port": "robot_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": [
+                            {
+                                "x": 961,
+                                "y": 160.99993217222533
+                            },
+                            {
+                                "x": 980,
+                                "y": 160.99993217222533
+                            },
+                            {
+                                "x": 980,
+                                "y": 80
+                            },
+                            {
+                                "x": 680,
+                                "y": 80
+                            },
+                            {
+                                "x": 680,
+                                "y": 44.99992111259118
+                            },
+                            {
+                                "x": 710,
+                                "y": 44.99992111259118
+                            }
+                        ]
                     }
                 ]
             },
@@ -103,8 +146,8 @@
                 "action_name": "flatten_pose.py",
                 "action_params": {},
                 "position": {
-                    "x": 1060,
-                    "y": 60
+                    "x": 1080,
+                    "y": 100
                 },
                 "uuid": "op-mk60kmaw-kwwt",
                 "connections": [
@@ -150,6 +193,76 @@
                         "to_uuid": "op-mk60jrt5-9es1",
                         "to_port": "frame",
                         "data_type": "processed_frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "color_threshold_detection.py",
+                "action_params": {},
+                "position": {
+                    "x": -60,
+                    "y": -40
+                },
+                "uuid": "op-mkh3fc5l-gtks",
+                "connections": [
+                    {
+                        "from_uuid": "op-mkh3fc5l-gtks",
+                        "from_port": "detections",
+                        "to_uuid": "op-mkh3fhl7-2j0j",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "ground_plane_intersection.py",
+                "action_params": {},
+                "position": {
+                    "x": 360,
+                    "y": -40
+                },
+                "uuid": "op-mkh3fhl7-2j0j",
+                "connections": [
+                    {
+                        "from_uuid": "op-mkh3fhl7-2j0j",
+                        "from_port": "positions_3d",
+                        "to_uuid": "op-mkh3fvk1-fevc",
+                        "to_port": "detections",
+                        "data_type": "positions_3d",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detected_objects_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 1080,
+                    "y": -40
+                },
+                "uuid": "op-mkh3fqm1-5adr",
+                "connections": []
+            },
+            {
+                "action_name": "robot_local_to_field_transform.py",
+                "action_params": {},
+                "position": {
+                    "x": 720,
+                    "y": -40
+                },
+                "uuid": "op-mkh3fvk1-fevc",
+                "connections": [
+                    {
+                        "from_uuid": "op-mkh3fvk1-fevc",
+                        "from_port": "field_detections",
+                        "to_uuid": "op-mkh3fqm1-5adr",
+                        "to_port": "detections",
+                        "data_type": "field_detections",
                         "is_default": false,
                         "custom_waypoints": null
                     }
