@@ -1,4 +1,6 @@
 import importlib
+import json
+import os
 import threading
 import time
 import traceback
@@ -84,6 +86,40 @@ class Pipeline:
         components = snake_str.split("_")
         return "".join(word.capitalize() for word in components)
 
+    def _load_config_def(self, action_name: str) -> dict[str, Any] | None:
+        """Load the config_def.json file for an operation.
+
+        Args:
+            action_name: Name of the action (without .py extension).
+
+        Returns:
+            Config definition dictionary, or None if not found.
+        """
+        # Try secondary operations first
+        config_path = os.path.join(
+            "src",
+            "secondary_operations",
+            "config_data",
+            f"{action_name}_config_def.json",
+        )
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                return json.load(f)
+
+        # Try main operations
+        config_path = os.path.join(
+            "src",
+            "main_operations",
+            "definitions",
+            "config_data",
+            f"{action_name}_config_def.json",
+        )
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                return json.load(f)
+
+        return None
+
     def _initialize_operations(self) -> dict[str, Operation]:
         """Initialize operation instances based on configuration.
 
@@ -112,10 +148,16 @@ class Pipeline:
             operation_instance = self._create_operation_instance(
                 action_name, action_params
             )
+
+            # Load config_def to check if operation is a data source
+            config_def = self._load_config_def(action_name)
+            is_data_source = config_def.get("is_data_source", False) if config_def else False
+
             operations[action_uuid]: Operation = Operation(
                 instance=operation_instance,
                 uuid=action_uuid,
                 name=action_name,
+                is_data_source=is_data_source,
             )
 
         # link all connections once all operations are created
@@ -154,8 +196,8 @@ class Pipeline:
             operation
             for operation in operations.values()
             if not operation.has_input_connections
-            and operation.name
-            != "device_input"  # device_input is a special case and will never have an input connection
+            and not operation.is_data_source  # Data sources don't need input connections
+            and operation.name != "device_input"  # device_input is a special case
         ]
         if len(orphan_operations) > 0:
             self.logger.log(

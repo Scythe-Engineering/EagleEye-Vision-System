@@ -9,16 +9,19 @@ if TYPE_CHECKING:
 
 
 class Operation:
-    def __init__(self, instance: OperationInstance, uuid: str, name: str) -> None:
+    def __init__(self, instance: OperationInstance, uuid: str, name: str, is_data_source: bool = False) -> None:
         """Initializes the Operation class.
+
         Args:
             instance (object): The instance of the operation.
             uuid (str): The UUID of the operation.
             name (str): The name of the operation.
+            is_data_source (bool): Whether this operation generates its own data.
         """
         self.instance: OperationInstance = instance
         self.uuid: str = uuid
         self.name: str = name
+        self.is_data_source: bool = is_data_source
 
         self.input_connections: list[Connection] = []
         self.output_connections: list[Connection] = []

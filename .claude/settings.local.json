@@ -5,7 +5,8 @@
       "Bash(find:*)",
       "Bash(wc:*)",
       "Bash(grep:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(ls:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

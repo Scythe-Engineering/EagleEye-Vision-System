@@ -313,16 +313,21 @@ class FlowManager:
 
         Default connections use previous frame outputs, non-default use current frame.
         First frame: default inputs are skipped (None or missing dict key).
+        Data source operations return None (they generate their own data).
 
         Args:
             operation: The operation that needs inputs.
 
         Returns:
-            Input data for the operation (single value or dict of inputs).
+            Input data for the operation (single value or dict of inputs), or None for data sources.
 
         Raises:
-            ValueError: If operation has no input connections.
+            ValueError: If operation has no input connections and is not a data source.
         """
+        # Data source operations generate their own data - no input gathering needed
+        if operation.is_data_source:
+            return None
+
         input_connections = operation.get_input_connections()
 
         if len(input_connections) == 0:
@@ -388,17 +393,94 @@ class FlowManager:
         )
 
     def forward_pass_operation_order(self) -> list[list[Operation]]:
-        """Returns the starting execution time of each operation in the flow. Returned as execution groups."""
+        """Returns the starting execution time of each operation in the flow.
+
+        Data sources execute one timestep before their data is needed to get the most
+        up-to-date value possible. Uses a two-pass approach:
+        1. First pass: Include data sources at timestep 0 so dependents can get timesteps
+        2. Second pass: Move data sources to min_dependent_timestep - 1 for fresh data
+
+        Returns:
+            list[list[Operation]]: Operations grouped by execution timestep.
+        """
+        # Get operations downstream of device_input
         first_operations: list[Operation] = [
             connection.to_operation
             for connection in self.start_operation.get_output_connections()
             if not connection.is_default
         ]
 
+        # Add data sources to first_operations so dependents can get timesteps
+        # Data sources have no inputs, so all_inputs_solved() returns True
+        data_sources = self._find_data_source_operations()
+        for data_source in data_sources:
+            if data_source not in first_operations:
+                first_operations.append(data_source)
+
+        # First pass: assign timesteps to all operations
+        # Data sources get timestep 0 initially (no inputs)
         execution_time_groups: list[list[Operation]] = recursive_forward_flow_register(
             first_operations, 0, []
         )
+
+        # Second pass: move data sources to one timestep before they're needed
+        # This ensures the most up-to-date data is used
+        for data_source in data_sources:
+            min_dependent_timestep = self._find_min_dependent_timestep(data_source)
+
+            if min_dependent_timestep is None:
+                continue  # No dependents, keep at current timestep
+
+            old_timestep = data_source.execution_timestep
+            new_timestep = max(0, min_dependent_timestep - 1)
+
+            # Only move if new timestep is later (more up-to-date data)
+            if old_timestep is not None and new_timestep > old_timestep:
+                # Remove from current group
+                if data_source in execution_time_groups[old_timestep]:
+                    execution_time_groups[old_timestep].remove(data_source)
+
+                # Update timestep
+                data_source.execution_timestep = new_timestep
+
+                # Ensure group exists
+                while new_timestep >= len(execution_time_groups):
+                    execution_time_groups.append([])
+
+                # Add to new group
+                execution_time_groups[new_timestep].append(data_source)
+
         return execution_time_groups
+
+    def _find_min_dependent_timestep(self, operation: Operation) -> int | None:
+        """Find the minimum timestep among operations that depend on this operation.
+
+        Args:
+            operation: The operation to find dependent timesteps for.
+
+        Returns:
+            The minimum timestep of dependent operations, or None if no dependents.
+        """
+        dependent_timesteps: list[int] = []
+
+        # Check direct downstream operations
+        for connection in operation.get_output_connections():
+            if connection.is_default:
+                continue
+
+            downstream_op = connection.to_operation
+            if downstream_op.execution_timestep is not None:
+                dependent_timesteps.append(downstream_op.execution_timestep)
+
+        return min(dependent_timesteps) if dependent_timesteps else None
+
+    def _find_data_source_operations(self) -> list[Operation]:
+        """Find all operations marked as data sources.
+
+        Returns:
+            list[Operation]: List of data source operations.
+        """
+        return [op for op in self.operations.values() if op.is_data_source]
 
     def _find_start_operation(self) -> Operation:
         """Finds the starting operation in the flow, always is the device_input operation name."""
