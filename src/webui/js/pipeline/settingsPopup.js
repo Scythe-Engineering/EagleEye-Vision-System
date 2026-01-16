@@ -638,6 +638,7 @@ import { BACKEND_BASE_URL } from "../config.js";
     function open({
         title,
         operationName,
+        operationUuid,
         isSecondary,
         initialValues,
         onSave,
@@ -730,7 +731,7 @@ import { BACKEND_BASE_URL } from "../config.js";
 
                 _currentVisCamera = selectedCameraName;
                 _currentVisPipeline = selectedPipelineName;
-                _currentVisAction = actionNameForApi;
+                _currentVisAction = operationUuid;
 
                 // Ensure an img element exists and hide placeholder
                 const liveViewPanelEl = document.getElementById(

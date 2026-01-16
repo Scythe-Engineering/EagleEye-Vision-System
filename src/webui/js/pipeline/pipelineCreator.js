@@ -106,6 +106,8 @@ let isInitialized = false;
 let flowchartRenderer = null;
 let useFlowchartMode = true;
 
+const restartRequiredOperations = new Map();
+
 let pipelineArea;
 let pipelineContainer;
 let pipelinePlaceholder;
@@ -582,6 +584,7 @@ function runPipeline() {
 function openOperationSettings(opOrItem) {
     const title = `${opOrItem.name || opOrItem.id || "Operation"} Settings`;
     const operationName = opOrItem.name || opOrItem.id;
+    const operationUuid = opOrItem.uuid || opOrItem.instanceId;
     const isSecondary = opOrItem.isSecondary || false;
     const initialValues = opOrItem.config || {};
 
@@ -643,6 +646,7 @@ function openOperationSettings(opOrItem) {
             globalThis.SettingsPopup.open({
                 title,
                 operationName,
+                operationUuid,
                 isSecondary,
                 initialValues,
                 onSave,

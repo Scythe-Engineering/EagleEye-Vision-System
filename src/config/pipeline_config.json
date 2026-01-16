@@ -200,7 +200,15 @@
             },
             {
                 "action_name": "color_threshold_detection.py",
-                "action_params": {},
+                "action_params": {
+                    "target_size": 320,
+                    "color_ranges": "",
+                    "min_area": 100,
+                    "max_area": 50000,
+                    "blur_kernel_size": 0,
+                    "morphology_kernel_size": 5,
+                    "morphology_iterations": 0
+                },
                 "position": {
                     "x": -60,
                     "y": -40

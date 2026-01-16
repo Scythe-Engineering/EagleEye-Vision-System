@@ -290,7 +290,7 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/start-visualize/<string:camera_name>/<string:pipeline_name>/<string:operation_name>",
+            "/start-visualize/<string:camera_name>/<string:pipeline_name>/<string:operation_uuid>",
             "start_visualize",
             self.start_visualize,
             methods=["POST"],
@@ -1245,7 +1245,7 @@ class EagleEyeInterface:
         return {"message": "Pipeline deleted successfully"}, 200
 
     def start_visualize(
-        self, camera_name: str, pipeline_name: str, operation_name: str
+        self, camera_name: str, pipeline_name: str, operation_uuid: str
     ) -> tuple[dict, int]:
         """
         Start visualizing the pipeline.
@@ -1253,15 +1253,17 @@ class EagleEyeInterface:
         Args:
             camera_name: Name of the camera whose pipeline should be visualized.
             pipeline_name: Name of the pipeline to visualize.
-            operation_name: Name of the operation to visualize.
+            operation_uuid: UUID of the operation instance to visualize.
 
         Returns:
             A response message and HTTP status code.
         """
         try:
-            self.pipeline_objects_callback()[camera_name][
-                pipeline_name
-            ].start_visualize(operation_name)
+            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+            operation = pipeline.get_operation_by_uuid(operation_uuid)
+            if operation is None:
+                return {"message": "Operation not found"}, 404
+            pipeline.start_visualize(operation.name)
         except KeyError:
             return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized successfully"}, 200
