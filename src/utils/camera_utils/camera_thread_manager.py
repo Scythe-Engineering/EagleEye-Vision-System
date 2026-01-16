@@ -1,15 +1,19 @@
+from __future__ import annotations
+
 import threading
 import time
 import traceback
-from typing import Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import numpy as np
 
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
-from src.webui.web_server import EagleEyeInterface
 from src.utils.logging.logger import Logger
+
+if TYPE_CHECKING:
+    from src.webui.web_server import EagleEyeInterface
 
 
 class CameraThreadManager:

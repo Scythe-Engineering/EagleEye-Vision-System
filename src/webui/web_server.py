@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 import traceback
 from pathlib import Path
 from threading import Thread
-from typing import Any, Callable, Generator, List
+from typing import TYPE_CHECKING, Any, Callable, Generator, List
 
 import cv2
 import numpy as np
@@ -15,9 +16,11 @@ from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
-from src.config.utils.pipeline import Pipeline
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+
+if TYPE_CHECKING:
+    from src.config.utils.pipeline import Pipeline
 from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,

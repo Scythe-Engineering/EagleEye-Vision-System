@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import json
 import os
@@ -5,7 +7,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 from line_profiler import profile
 
 import cv2
@@ -13,14 +15,16 @@ import numpy as np
 from networktables import NetworkTable
 
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
-from src.webui.web_server import EagleEyeInterface
 from src.utils.logging.logger import Logger
 from src.config.utils.operation import Operation, Connection
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.config.utils.flow_manager import FlowManager
+
+if TYPE_CHECKING:
+    from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+    from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
 
