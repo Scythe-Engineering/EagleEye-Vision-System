@@ -105,6 +105,9 @@ Configuration definition structure:
     "class_name": "OperationClassName",
     "description": "Brief description of what the operation does",
     "category": "cat",
+    "is_data_source": false,
+    "input_nodes": [],
+    "output_nodes": [],
     "parameters": {
         "parameter_name": {
             "type": "str|int|float|bool",
@@ -195,6 +198,39 @@ Example with parameters from main operation (`apriltag_cnn_preprocessor_config_d
             "min": 0.0,
             "max": 1.0,
             "required": false,
+            "restart_for_change": false
+        }
+    }
+}
+```
+
+### Data Source Operations
+
+Data source operations are special operations that generate their own data independently (no input connections). To create a data source operation:
+
+1. Set `"is_data_source": true` in the config_def.json file
+2. Set `"input_nodes": []` (empty array since data sources have no inputs)
+3. Define `"output_nodes"` with the output port names
+4. The `run()` method will receive `None` as input and should return the generated data
+
+Data sources execute one timestep before their data is needed to get the most up-to-date value possible. This is important for operations like `GetNetworktablesValue` that read from external sources where data may change between frames.
+
+Example data source config definition (`get_networktables_value_config_def.json`):
+
+```json
+{
+    "class_name": "GetNetworktablesValue",
+    "description": "Read data from NetworkTable and output it to downstream operations",
+    "category": "net",
+    "is_data_source": true,
+    "input_nodes": [],
+    "output_nodes": ["data"],
+    "parameters": {
+        "network_table_key": {
+            "type": "str",
+            "description": "Key to read from the network table",
+            "default": "",
+            "required": true,
             "restart_for_change": false
         }
     }

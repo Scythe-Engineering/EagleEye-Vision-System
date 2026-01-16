@@ -10,6 +10,7 @@ The divide between secondary and primary operations is complexity, secondary ope
 - **Operation types**:
     - **Main operations (definitions)**: implemented under `src/main_operations/definitions`. Each operation class typically ends with `Definition` (e.g., `ApriltagCnnPreprocessorDefinition`).
     - **Secondary operations**: implemented under `src/secondary_operations`. Each operation is a standalone class (e.g., `FlattenPose`, `RobotPoseOutput`).
+    - **Data source operations**: operations that generate their own data independently (no input connections). These are marked with `is_data_source: true` in their config_def.json file and execute one timestep before their data is needed to get the most up-to-date value possible. Examples include `GetNetworktablesValue` which reads from NetworkTables.
 - **Configuration-driven wiring**: Pipelines are created by reading `src/config/pipeline_config.json` via `generate_all_pipelines.py`.
 - **Compute resources**: The system relies on a `ComputePool` (from `src.utils.device_management_utils.compute_pool`) to allocate devices (CPU, MX3, CUDA, etc.). A `web_interface` (from `src.webui.web_server`) provides integration with the UI.
 
@@ -41,7 +42,7 @@ The divide between secondary and primary operations is complexity, secondary ope
     - `pose_outlier_filter_rust.py` (class `PoseOutlierFilterRust`)
     - `robot_local_to_field_transform.py` (class `RobotLocalToFieldTransform`)
     - `detected_objects_output.py` (class `DetectedObjectsOutput`)
-    - `update_attribute_with_networktables.py` (class `UpdateAttributeWithNetworktables`)
+    - `get_networktables_value.py` (class `GetNetworktablesValue`) - Data source operation that reads from NetworkTables
 - `src/config/pipeline_config.json` — The per-camera configuration mapping each pipeline step to an action name and parameters.
 
 ## Pipeline Configuration and UI
@@ -52,54 +53,54 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
 
 ```json
 {
-  "CAM0": [
-    {
-      "action_name": "device_input.py",
-      "action_params": {},
-      "position": {
-        "x": 100,
-        "y": 100
-      }
-    },
-    {
-      "action_name": "detect_apriltags.py",
-      "action_params": {
-        "families": "tag36h11"
-      },
-      "position": {
-        "x": 400,
-        "y": 120
-      }
-    },
-    {
-      "action_name": "pnp_camera_localization.py",
-      "action_params": {
-        "camera_parameters_path": "/path/to/camera_parameters.json",
-        "apriltag_map_path": "/path/to/apriltag_map.json",
-        "jump_threshold": 2
-      },
-      "position": {
-        "x": 700,
-        "y": 140
-      }
-    },
-    {
-      "action_name": "flatten_pose.py",
-      "action_params": {},
-      "position": {
-        "x": 1000,
-        "y": 160
-      }
-    },
-    {
-      "action_name": "robot_pose_output.py",
-      "action_params": {},
-      "position": {
-        "x": 1300,
-        "y": 180
-      }
-    }
-  ]
+    "CAM0": [
+        {
+            "action_name": "device_input.py",
+            "action_params": {},
+            "position": {
+                "x": 100,
+                "y": 100
+            }
+        },
+        {
+            "action_name": "detect_apriltags.py",
+            "action_params": {
+                "families": "tag36h11"
+            },
+            "position": {
+                "x": 400,
+                "y": 120
+            }
+        },
+        {
+            "action_name": "pnp_camera_localization.py",
+            "action_params": {
+                "camera_parameters_path": "/path/to/camera_parameters.json",
+                "apriltag_map_path": "/path/to/apriltag_map.json",
+                "jump_threshold": 2
+            },
+            "position": {
+                "x": 700,
+                "y": 140
+            }
+        },
+        {
+            "action_name": "flatten_pose.py",
+            "action_params": {},
+            "position": {
+                "x": 1000,
+                "y": 160
+            }
+        },
+        {
+            "action_name": "robot_pose_output.py",
+            "action_params": {},
+            "position": {
+                "x": 1300,
+                "y": 180
+            }
+        }
+    ]
 }
 ```
 
