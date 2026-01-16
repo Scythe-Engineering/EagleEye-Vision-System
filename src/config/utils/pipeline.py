@@ -534,3 +534,18 @@ class Pipeline:
         if self.thread is not None:
             self.thread.join()
             self.thread = None
+
+    def get_pipeline_thread_info(self) -> dict[str, Any]:
+        """Get total number of threads, thread assignment, and execution timestep for each operation.
+
+        Returns:
+            dict[str, Any]: Dictionary containing:
+                - 'total_threads': Total number of threads in the pipeline
+                - 'operations': Dictionary mapping operation UUID to dict with 'thread' and 'timestep'
+        """
+        thread_info = self.flow_manager.get_thread_and_timestep_info()
+
+        return {
+            "total_threads": self.flow_manager.num_threads,
+            "operations": thread_info,
+        }

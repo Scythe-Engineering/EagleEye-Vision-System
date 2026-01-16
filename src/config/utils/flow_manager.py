@@ -488,3 +488,29 @@ class FlowManager:
             if operation_data.name == "device_input":
                 return self.operations[uuid]
         raise ValueError("No starting operation (device_input) found in operations.")
+
+    def get_thread_and_timestep_info(self) -> dict[str, dict[str, int]]:
+        """Get thread number and execution timestep for each operation.
+
+        Returns:
+            dict[str, dict[str, int]]: Dictionary mapping operation UUID to a dict with
+                'thread' (1-indexed thread number) and 'timestep' (execution timestep).
+        """
+        result: dict[str, dict[str, int]] = {}
+
+        for uuid, operation in self.operations.items():
+            thread_number = 1
+            thread_obj = operation.assigned_thread_object
+
+            if thread_obj is not None:
+                for idx, thread in enumerate(self.thread_objects):
+                    if thread is thread_obj:
+                        thread_number = idx + 1
+                        break
+
+            result[uuid] = {
+                "thread": thread_number,
+                "timestep": operation.execution_timestep if operation.execution_timestep is not None else -1,
+            }
+
+        return result

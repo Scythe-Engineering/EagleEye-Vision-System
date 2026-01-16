@@ -346,6 +346,12 @@ class EagleEyeInterface:
             self.save_general_conf,
             methods=["POST"],
         )
+        self.app.add_url_rule(
+            "/get-pipeline-thread-info/<string:camera_name>/<string:pipeline_name>",
+            "get_pipeline_thread_info",
+            self.get_pipeline_thread_info,
+            methods=["GET"],
+        )
 
         # SSE stream for frontend (named events)
         self.app.add_url_rule(
@@ -1404,6 +1410,26 @@ class EagleEyeInterface:
         except Exception as e:
             self.logger.log(f"Error saving general configuration: {e}")
             return {"error": str(e)}, 500
+
+    def get_pipeline_thread_info(
+        self, camera_name: str, pipeline_name: str
+    ) -> tuple[dict, int]:
+        """
+        Get thread and timestep information for a pipeline.
+
+        Args:
+            camera_name: Name of camera.
+            pipeline_name: Name of pipeline.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing total_threads and operations dict
+                with thread and timestep for each operation, plus HTTP status code.
+        """
+        try:
+            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+            return pipeline.get_pipeline_thread_info(), 200
+        except KeyError:
+            return {"error": "Pipeline not found"}, 404
 
 
 if __name__ == "__main__":
