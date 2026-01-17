@@ -29,14 +29,356 @@ import { BACKEND_BASE_URL } from "../config.js";
         return el;
     }
 
+    function buildHsvPickerField(currentValue, fieldId, label, isEdited) {
+        const hsvValue = currentValue || [0, 0, 0];
+
+        const container = createElement("div", { className: "mb-4" });
+
+        const labelRow = createElement(
+            "div",
+            { className: "flex items-center mb-2" },
+            [label],
+        );
+        container.appendChild(labelRow);
+
+        const inputContainer = createElement("div", {
+            className: "relative flex gap-2 items-center",
+        });
+
+        const colorPreview = createElement("div", {
+            className: "w-10 h-10 rounded border-2 border-[#414141]",
+            style: `background-color: hsl(${hsvValue[0] * 2}, ${hsvValue[1] / 2.55}%, ${hsvValue[2] / 2.55}%)`,
+        });
+
+        const hsvInputs = createElement("div", {
+            className: "flex gap-2 flex-1",
+        });
+
+        const hInput = createElement("input", {
+            id: `${fieldId}-h`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "179",
+            step: "1",
+            value: hsvValue[0],
+        });
+        const hLabel = createElement("label", {
+            for: `${fieldId}-h`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "H",
+        });
+
+        const sInput = createElement("input", {
+            id: `${fieldId}-s`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "255",
+            step: "1",
+            value: hsvValue[1],
+        });
+        const sLabel = createElement("label", {
+            for: `${fieldId}-s`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "S",
+        });
+
+        const vInput = createElement("input", {
+            id: `${fieldId}-v`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "255",
+            step: "1",
+            value: hsvValue[2],
+        });
+        const vLabel = createElement("label", {
+            for: `${fieldId}-v`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "V",
+        });
+
+        const updateColor = () => {
+            const h = Math.max(0, Math.min(179, parseInt(hInput.value) || 0));
+            const s = Math.max(0, Math.min(255, parseInt(sInput.value) || 0));
+            const v = Math.max(0, Math.min(255, parseInt(vInput.value) || 0));
+            colorPreview.style.backgroundColor = `hsl(${h * 2}, ${s / 2.55}%, ${v / 2.55}%)`;
+        };
+
+        hInput.addEventListener("input", updateColor);
+        sInput.addEventListener("input", updateColor);
+        vInput.addEventListener("input", updateColor);
+
+        const hWrapper = createElement("div", { className: "flex-1" }, [
+            hLabel,
+            hInput,
+        ]);
+        const sWrapper = createElement("div", { className: "flex-1" }, [
+            sLabel,
+            sInput,
+        ]);
+        const vWrapper = createElement("div", { className: "flex-1" }, [
+            vLabel,
+            vInput,
+        ]);
+
+        hsvInputs.appendChild(hWrapper);
+        hsvInputs.appendChild(sWrapper);
+        hsvInputs.appendChild(vWrapper);
+
+        inputContainer.appendChild(colorPreview);
+        inputContainer.appendChild(hsvInputs);
+
+        const editedIndicator = createElement("div", {
+            className:
+                "absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-yellow-400 rounded-full",
+            title: "This field has been modified from its default value",
+            style: isEdited ? "" : "display: none;",
+        });
+        inputContainer.appendChild(editedIndicator);
+
+        container.appendChild(inputContainer);
+
+        return {
+            wrapper: container,
+            getValue: () => [
+                parseInt(hInput.value) || 0,
+                parseInt(sInput.value) || 0,
+                parseInt(vInput.value) || 0,
+            ],
+        };
+    }
+
+    function buildObjectField(
+        name,
+        def,
+        currentValue,
+        originalValue,
+        label,
+        operationName,
+        path,
+    ) {
+        const container = createElement("div", {
+            className:
+                "mb-4 bg-[#1a1a1a] border border-[#414141] rounded-lg p-4",
+        });
+
+        const header = createElement("div", {
+            className: "flex items-center justify-between mb-3",
+        });
+        const title = createElement("h4", {
+            className: "text-sm font-medium text-[#f9c845]",
+            text: def.description || name,
+        });
+        header.appendChild(title);
+        container.appendChild(header);
+
+        const body = createElement("div", {
+            className: "space-y-3",
+        });
+
+        const subFields = [];
+        const schema = def.schema || {};
+
+        Object.keys(schema).forEach((subName) => {
+            const subDef = schema[subName];
+            const subField = buildField(
+                subName,
+                subDef,
+                currentValue || {},
+                originalValue || {},
+                operationName,
+                path,
+            );
+            subFields.push({ name: subName, ...subField });
+            body.appendChild(subField.wrapper);
+        });
+
+        container.appendChild(body);
+
+        return {
+            wrapper: container,
+            getValue: () => {
+                const result = {};
+                subFields.forEach((f) => {
+                    result[f.name] = f.getValue();
+                });
+                return result;
+            },
+        };
+    }
+
+    function buildListField(
+        name,
+        def,
+        currentValue,
+        originalValue,
+        label,
+        operationName,
+        path,
+    ) {
+        const container = createElement("div", { className: "mb-4" });
+
+        const header = createElement("div", {
+            className: "flex items-center justify-between mb-2",
+        });
+        const title = createElement("h4", {
+            className: "text-sm font-medium text-[#f9c845]",
+            text: def.description || name,
+        });
+        header.appendChild(title);
+        container.appendChild(header);
+
+        const itemsContainer = createElement("div", {
+            className: "space-y-2",
+        });
+
+        const itemWrappers = [];
+        const itemFields = [];
+
+        const renderItem = (index, itemValue, itemOriginalValue) => {
+            const itemContainer = createElement("div", {
+                className:
+                    "bg-[#1a1a1a] border border-[#414141] rounded-lg p-3",
+            });
+
+            const itemHeader = createElement("div", {
+                className: "flex items-center justify-between mb-2",
+            });
+
+            const itemTitle = createElement("span", {
+                className: "text-xs text-[#ac8a2f]",
+                text: `Item ${index + 1}`,
+            });
+            itemHeader.appendChild(itemTitle);
+
+            const removeBtn = createElement("button", {
+                type: "button",
+                className:
+                    "px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-xs",
+                text: "Remove",
+                onclick: () => {
+                    const idx = itemWrappers.indexOf(itemContainer);
+                    if (idx > -1) {
+                        itemWrappers.splice(idx, 1);
+                        itemFields.splice(idx, 1);
+                        itemContainer.remove();
+                    }
+                },
+            });
+            itemHeader.appendChild(removeBtn);
+            itemContainer.appendChild(itemHeader);
+
+            const itemBody = createElement("div", {
+                className: "space-y-2",
+            });
+
+            if (def.item_type === "object" && def.schema) {
+                const subFields = [];
+                Object.keys(def.schema).forEach((subName) => {
+                    const subDef = def.schema[subName];
+                    const subField = buildField(
+                        subName,
+                        subDef,
+                        itemValue || {},
+                        itemOriginalValue || {},
+                        operationName,
+                        `${path}-${index}`,
+                    );
+                    subFields.push({ name: subName, ...subField });
+                    itemBody.appendChild(subField.wrapper);
+                });
+
+                itemFields.push({
+                    getValue: () => {
+                        const result = {};
+                        subFields.forEach((f) => {
+                            result[f.name] = f.getValue();
+                        });
+                        return result;
+                    },
+                });
+            } else {
+                const itemInput = createElement("input", {
+                    id: `${path}-${index}`,
+                    type:
+                        def.item_type === "int" || def.item_type === "float"
+                            ? "number"
+                            : "text",
+                    className:
+                        "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+                    value: itemValue !== undefined ? String(itemValue) : "",
+                });
+
+                if (def.item_type === "int") {
+                    itemInput.step = "1";
+                } else if (def.item_type === "float") {
+                    itemInput.step = "any";
+                }
+
+                itemBody.appendChild(itemInput);
+
+                itemFields.push({
+                    getValue: () => {
+                        if (def.item_type === "int") {
+                            return parseInt(itemInput.value, 10) || 0;
+                        } else if (def.item_type === "float") {
+                            return parseFloat(itemInput.value) || 0;
+                        }
+                        return itemInput.value;
+                    },
+                });
+            }
+
+            itemContainer.appendChild(itemBody);
+            itemsContainer.appendChild(itemContainer);
+            itemWrappers.push(itemContainer);
+        };
+
+        const listValue = Array.isArray(currentValue) ? currentValue : [];
+        const listOriginal = Array.isArray(originalValue) ? originalValue : [];
+
+        listValue.forEach((item, index) => {
+            renderItem(index, item, listOriginal[index]);
+        });
+
+        container.appendChild(itemsContainer);
+
+        const addBtn = createElement("button", {
+            type: "button",
+            className:
+                "w-full mt-2 px-3 py-2 bg-[#f9c845] text-[#232323] rounded-md hover:bg-[#d4a83a] transition-colors text-sm font-medium",
+            text: "Add Item",
+            onclick: () => {
+                const newIndex = itemWrappers.length;
+                const defaultValue =
+                    def.default || (def.item_type === "object" ? {} : "");
+                renderItem(newIndex, defaultValue, defaultValue);
+            },
+        });
+        container.appendChild(addBtn);
+
+        return {
+            wrapper: container,
+            getValue: () => {
+                return itemFields.map((f) => f.getValue());
+            },
+        };
+    }
+
     function buildField(
         name,
         def,
         currentValues,
         originalValues,
         operationName = null,
+        parentPath = "",
     ) {
-        const fieldId = `setting-${name}`;
+        const fieldId = `setting-${parentPath}${parentPath ? "-" : ""}${name}`;
         const label = createElement("label", {
             for: fieldId,
             className: "block text-sm font-medium text-[#f9c845] mb-1",
@@ -59,6 +401,37 @@ import { BACKEND_BASE_URL } from "../config.js";
             JSON.stringify(currentValue) !== JSON.stringify(originalValue);
 
         const isPathParameter = name.endsWith("_path") && def.type === "str";
+
+        // Handle UI hints for specialized editors
+        if (def.ui_hint === "hsv_picker") {
+            return buildHsvPickerField(currentValue, fieldId, label, isEdited);
+        }
+
+        // Handle object type - recursive rendering
+        if (def.type === "object" && def.schema) {
+            return buildObjectField(
+                name,
+                def,
+                currentValue,
+                originalValue,
+                label,
+                operationName,
+                `${parentPath}${parentPath ? "-" : ""}${name}`,
+            );
+        }
+
+        // Handle list type
+        if (def.type === "list") {
+            return buildListField(
+                name,
+                def,
+                currentValue,
+                originalValue,
+                label,
+                operationName,
+                `${parentPath}${parentPath ? "-" : ""}${name}`,
+            );
+        }
 
         if (isPathParameter && operationName) {
             input = createElement("select", {
@@ -499,9 +872,15 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
         };
 
-        // Set up event listeners for all inputs
-        const allInputs = modalBody.querySelectorAll("input, select");
-        allInputs.forEach((input) => {
+        const processedInputs = new WeakSet();
+
+        // Set up event listeners for a single input
+        const setupInputListener = (input) => {
+            if (processedInputs.has(input)) {
+                return;
+            }
+            processedInputs.add(input);
+
             if (
                 input.tagName.toLowerCase() !== "select" &&
                 input.type !== "checkbox"
@@ -523,7 +902,43 @@ import { BACKEND_BASE_URL } from "../config.js";
                     triggerAutoSave();
                 });
             }
+        };
+
+        // Set up event listeners for all existing inputs
+        const allInputs = modalBody.querySelectorAll("input, select");
+        allInputs.forEach((input) => {
+            setupInputListener(input);
         });
+
+        // Set up MutationObserver to handle dynamically added inputs
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const inputs = node.querySelectorAll
+                            ? node.querySelectorAll("input, select")
+                            : [];
+                        inputs.forEach((input) => {
+                            setupInputListener(input);
+                        });
+                        if (
+                            node.tagName === "INPUT" ||
+                            node.tagName === "SELECT"
+                        ) {
+                            setupInputListener(node);
+                        }
+                    }
+                });
+            });
+        });
+
+        observer.observe(modalBody, {
+            childList: true,
+            subtree: true,
+        });
+
+        // Store observer for cleanup
+        modalBody._autoSaveObserver = observer;
     }
 
     function findOverlayElements() {
