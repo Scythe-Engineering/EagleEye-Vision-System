@@ -202,7 +202,22 @@
                 "action_name": "color_threshold_detection.py",
                 "action_params": {
                     "target_size": 320,
-                    "color_ranges": "",
+                    "color_ranges": [
+                        {
+                            "class_id": 0,
+                            "lower_hsv": [
+                                0,
+                                0,
+                                0
+                            ],
+                            "name": "new_color",
+                            "upper_hsv": [
+                                179,
+                                255,
+                                255
+                            ]
+                        }
+                    ],
                     "min_area": 100,
                     "max_area": 50000,
                     "blur_kernel_size": 0,

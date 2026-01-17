@@ -105,6 +105,7 @@ class EagleEyeInterface:
             static_folder=current_path,
             static_url_path="",
         )
+        self.app.json.sort_keys = False
         CORS(
             self.app,
             resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}},
@@ -873,7 +874,7 @@ class EagleEyeInterface:
 
         try:
             with open(config_path, "r") as f:
-                return json.load(f)
+                return json.load(f, object_pairs_hook=dict)
         except FileNotFoundError:
             # Don't log errors for missing configs when trying both locations
             return {}

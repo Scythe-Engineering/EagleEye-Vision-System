@@ -184,6 +184,8 @@ import { BACKEND_BASE_URL } from "../config.js";
         const subFields = [];
         const schema = def.schema || {};
 
+        // Object.keys() preserves insertion order in ES2015+
+        // This maintains the field order as defined in the config JSON file
         Object.keys(schema).forEach((subName) => {
             const subDef = schema[subName];
             const subField = buildField(
@@ -781,6 +783,8 @@ import { BACKEND_BASE_URL } from "../config.js";
         const fields = [];
 
         const params = config?.parameters || {};
+        // Object.keys() preserves insertion order in ES2015+
+        // This maintains the parameter order as defined in the config JSON file
         Object.keys(params).forEach((key) => {
             const field = buildField(
                 key,
