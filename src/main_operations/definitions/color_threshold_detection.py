@@ -38,7 +38,7 @@ class ColorThresholdDetectionDefinition(OperationInstance):
         blur_kernel_size: int = 5,
         morphology_kernel_size: int = 5,
         morphology_iterations: int = 2,
-        intrinsics_path: Optional[str] = None,
+        camera_parameters_path: Optional[str] = None,
         pipeline: Any = None,
     ):
         """Initialize color threshold detection operation.
@@ -63,12 +63,12 @@ class ColorThresholdDetectionDefinition(OperationInstance):
                 (e.g., "0", "0-1") to auto-resolve path. If None, no undistortion applied.
             pipeline: Injected pipeline reference for accessing camera information
         """
-        self.intrinsics_path = intrinsics_path
+        self.camera_parameters_path = camera_parameters_path
         self.pipeline = pipeline
 
         self.camera_matrix: Optional[np.ndarray] = None
         self.distortion_coefficients: Optional[np.ndarray] = None
-        if self.intrinsics_path is not None:
+        if self.camera_parameters_path is not None:
             self._load_camera_parameters()
 
         if color_ranges is None:
@@ -77,7 +77,7 @@ class ColorThresholdDetectionDefinition(OperationInstance):
             raise ValueError("Camera matrix is required")
         if self.distortion_coefficients is None:
             raise ValueError("Distortion coefficients are required")
-        if not isinstance(self.intrinsics_path, str):
+        if not isinstance(self.camera_parameters_path, str):
             raise ValueError("Intrinsics path must be a string")
 
         self.delegate = ColorThresholdDetectionImplementation(
@@ -99,7 +99,7 @@ class ColorThresholdDetectionDefinition(OperationInstance):
 
     def _load_camera_parameters(self) -> None:
         """Load camera intrinsics from file or resolve from camera bus ID."""
-        intrinsics_path = self.intrinsics_path
+        intrinsics_path = self.camera_parameters_path
 
         if not isinstance(intrinsics_path, str):
             raise ValueError("Intrinsics path must be a string")

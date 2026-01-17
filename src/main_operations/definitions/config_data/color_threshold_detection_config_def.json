@@ -10,6 +10,13 @@
     ],
     "output_nodes": ["detections"],
     "parameters": {
+        "camera_parameters_path": {
+            "type": "str",
+            "description": "Path to the camera parameters file",
+            "default": "{project_root}/config/camera_parameters.json",
+            "required": true,
+            "restart_for_change": true
+        },
         "target_size": {
             "type": "int",
             "description": "Target size for square letterboxed image. Frame will be resized maintaining aspect ratio and padded to this size.",
@@ -24,7 +31,7 @@
             "item_type": "object",
             "description": "List of color ranges for multi-object detection. Each color range contains name, class_id, and HSV bounds.",
             "default": null,
-            "required": false,
+            "required": true,
             "restart_for_change": false,
             "schema": {
                 "name": {
