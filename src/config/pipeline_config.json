@@ -53,8 +53,8 @@
             {
                 "action_name": "pnp_camera_localization.py",
                 "action_params": {
-                    "camera_parameters_path": "{project_root}/files/pnp_camera_localization/camera_parameters_path/intrinsics.json",
-                    "apriltag_map_path": "{project_root}/files/pnp_camera_localization/apriltag_map_path/frc2025r2.json",
+                    "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
                     "jump_threshold": 2
                 },
                 "position": {
@@ -175,8 +175,8 @@
             {
                 "action_name": "temporal_acceleration_preprocessor_rust.py",
                 "action_params": {
-                    "camera_parameters_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/camera_parameters_path/intrinsics.json",
-                    "apriltag_map_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/apriltag_map_path/frc2025r2.json",
+                    "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
+                    "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
                     "padding_factor": 0.35,
                     "max_regions": 20,
                     "min_region_size_px": 16
@@ -204,13 +204,13 @@
                     "target_size": 320,
                     "color_ranges": [
                         {
+                            "name": "new_color",
                             "class_id": 0,
                             "lower_hsv": [
                                 0,
                                 0,
                                 0
                             ],
-                            "name": "new_color",
                             "upper_hsv": [
                                 179,
                                 255,
@@ -222,7 +222,8 @@
                     "max_area": 50000,
                     "blur_kernel_size": 0,
                     "morphology_kernel_size": 5,
-                    "morphology_iterations": 0
+                    "morphology_iterations": 0,
+                    "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json"
                 },
                 "position": {
                     "x": -60,
@@ -243,7 +244,12 @@
             },
             {
                 "action_name": "ground_plane_intersection.py",
-                "action_params": {},
+                "action_params": {
+                    "camera_height": 1,
+                    "camera_pitch": 0,
+                    "fov_horizontal": 60,
+                    "fov_vertical": 45
+                },
                 "position": {
                     "x": 360,
                     "y": -40

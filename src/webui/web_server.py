@@ -939,24 +939,18 @@ class EagleEyeInterface:
         }
         return extension_map.get(parameter_name, [])
 
-    def _ensure_operation_directory(
-        self, operation_name: str, parameter_name: str
-    ) -> Path:
+    def _ensure_parameter_directory(self, parameter_name: str) -> Path:
         """
-        Ensure the operation's parameter-specific file directory exists.
+        Ensure the parameter-specific file directory exists.
 
         Args:
-            operation_name: Name of the operation.
             parameter_name: Name of the parameter.
 
         Returns:
             Path to the parameter-specific directory.
         """
         files_base_dir = Path(src_path).parent / "files"
-        operation_dir = files_base_dir / operation_name.lower().replace(
-            " ", "_"
-        ).replace(".py", "")
-        parameter_dir = operation_dir / parameter_name
+        parameter_dir = files_base_dir / parameter_name
         parameter_dir.mkdir(parents=True, exist_ok=True)
         return parameter_dir
 
@@ -967,16 +961,14 @@ class EagleEyeInterface:
         Get list of available files for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
 
         Returns:
             Tuple of (response dict, status code).
         """
         try:
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             allowed_extensions = self._get_parameter_file_extensions(parameter_name)
 
             if not allowed_extensions:
@@ -1020,7 +1012,7 @@ class EagleEyeInterface:
         Upload a file for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
 
         Returns:
@@ -1046,9 +1038,7 @@ class EagleEyeInterface:
                     "error": f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}"
                 }, 400
 
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             file_path = parameter_dir / file.filename
 
             file.save(str(file_path))
@@ -1074,7 +1064,7 @@ class EagleEyeInterface:
         Delete a file for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
             filename: Name of the file to delete.
 
@@ -1082,9 +1072,7 @@ class EagleEyeInterface:
             Tuple of (response dict, status code).
         """
         try:
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             file_path = parameter_dir / filename
 
             if not file_path.exists():
