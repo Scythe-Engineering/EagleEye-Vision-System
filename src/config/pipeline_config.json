@@ -146,7 +146,7 @@
                 "action_name": "flatten_pose.py",
                 "action_params": {},
                 "position": {
-                    "x": 1080,
+                    "x": 1100,
                     "y": 100
                 },
                 "uuid": "op-mk60kmaw-kwwt",
@@ -166,7 +166,7 @@
                 "action_name": "robot_pose_output.py",
                 "action_params": {},
                 "position": {
-                    "x": 1360,
+                    "x": 1400,
                     "y": 100
                 },
                 "uuid": "op-mk60ks00-1rdu",
@@ -265,7 +265,7 @@
                 "action_name": "detected_objects_output.py",
                 "action_params": {},
                 "position": {
-                    "x": 1080,
+                    "x": 1120,
                     "y": -40
                 },
                 "uuid": "op-mkh3fqm1-5adr",
@@ -275,7 +275,7 @@
                 "action_name": "robot_local_to_field_transform.py",
                 "action_params": {},
                 "position": {
-                    "x": 720,
+                    "x": 760,
                     "y": -40
                 },
                 "uuid": "op-mkh3fvk1-fevc",

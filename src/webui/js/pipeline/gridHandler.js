@@ -12,7 +12,7 @@ export class InteractiveGridHandler {
         this.scrollX = 0;
         this.scrollY = 0;
         this.animationFrameId = null;
-        
+
         this.setupCanvas();
         this.setupEventListeners();
         this.startAnimation();
@@ -31,10 +31,10 @@ export class InteractiveGridHandler {
 
     setupEventListeners() {
         this.container.addEventListener("mousemove", (e) =>
-            this.handleMouseMove(e)
+            this.handleMouseMove(e),
         );
         this.container.addEventListener("mouseleave", () =>
-            this.handleMouseLeave()
+            this.handleMouseLeave(),
         );
         this.container.addEventListener("scroll", () => this.handleScroll());
     }
@@ -43,8 +43,10 @@ export class InteractiveGridHandler {
         const rect = this.canvas.getBoundingClientRect();
         const containerRect = this.container.getBoundingClientRect();
 
-        this.cursorX = event.clientX - containerRect.left + this.container.scrollLeft;
-        this.cursorY = event.clientY - containerRect.top + this.container.scrollTop;
+        this.cursorX =
+            event.clientX - containerRect.left + this.container.scrollLeft;
+        this.cursorY =
+            event.clientY - containerRect.top + this.container.scrollTop;
     }
 
     handleMouseLeave() {
@@ -63,7 +65,8 @@ export class InteractiveGridHandler {
         }
 
         const normalizedDistance = distance / this.influenceRadius;
-        const sizeIncrease = (1 - normalizedDistance) * (this.maxDotSize - this.dotSize);
+        const sizeIncrease =
+            (1 - normalizedDistance) * (this.maxDotSize - this.dotSize);
         return this.dotSize + sizeIncrease;
     }
 
@@ -111,10 +114,10 @@ export class InteractiveGridHandler {
             cancelAnimationFrame(this.animationFrameId);
         }
         this.container.removeEventListener("mousemove", (e) =>
-            this.handleMouseMove(e)
+            this.handleMouseMove(e),
         );
         this.container.removeEventListener("mouseleave", () =>
-            this.handleMouseLeave()
+            this.handleMouseLeave(),
         );
         this.container.removeEventListener("scroll", () => this.handleScroll());
         window.removeEventListener("resize", () => this.resizeCanvas());

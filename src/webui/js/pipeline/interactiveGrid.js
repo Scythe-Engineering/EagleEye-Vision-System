@@ -99,11 +99,13 @@ export class InteractiveGrid {
             const rect = this.containerRect;
             this.mouseScreenX = e.clientX - rect.left;
             this.mouseScreenY = e.clientY - rect.top;
+            this.requestRedraw();
         });
 
         this.container.addEventListener("mouseleave", () => {
             this.mouseScreenX = -1000;
             this.mouseScreenY = -1000;
+            this.requestRedraw();
         });
 
         const resizeObserver = new ResizeObserver(() => {
