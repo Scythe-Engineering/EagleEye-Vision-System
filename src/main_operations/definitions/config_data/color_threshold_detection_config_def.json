@@ -43,7 +43,8 @@
                     "description": "Lower HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
                     "default": [0, 0, 0],
                     "min_items": 3,
-                    "max_items": 3
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"]
                 },
                 "upper_hsv": {
                     "type": "list",
@@ -51,7 +52,8 @@
                     "description": "Upper HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
                     "default": [179, 255, 255],
                     "min_items": 3,
-                    "max_items": 3
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"]
                 }
             }
         },

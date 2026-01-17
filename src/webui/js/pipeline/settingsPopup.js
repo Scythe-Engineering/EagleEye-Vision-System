@@ -250,9 +250,14 @@ import { BACKEND_BASE_URL } from "../config.js";
                 className: "flex items-center justify-between mb-2",
             });
 
+            let itemLabel = `Item ${index + 1}`;
+            if (def.item_labels && Array.isArray(def.item_labels) && def.item_labels[index]) {
+                itemLabel = def.item_labels[index];
+            }
+
             const itemTitle = createElement("span", {
                 className: "text-xs text-[#ac8a2f]",
-                text: `Item ${index + 1}`,
+                text: itemLabel,
             });
             itemHeader.appendChild(itemTitle);
 
