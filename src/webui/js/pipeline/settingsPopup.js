@@ -239,6 +239,29 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         const itemWrappers = [];
         const itemFields = [];
+        const removeButtons = [];
+
+        const updateButtonStates = () => {
+            const currentCount = itemWrappers.length;
+            const minItems = def.min_items !== undefined ? def.min_items : 0;
+            const maxItems = def.max_items;
+
+            removeButtons.forEach(btn => {
+                if (currentCount <= minItems) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = '';
+                }
+            });
+
+            if (addBtn) {
+                if (maxItems !== undefined && currentCount >= maxItems) {
+                    addBtn.style.display = 'none';
+                } else {
+                    addBtn.style.display = '';
+                }
+            }
+        };
 
         const renderItem = (index, itemValue, itemOriginalValue) => {
             const itemContainer = createElement("div", {
@@ -271,10 +294,13 @@ import { BACKEND_BASE_URL } from "../config.js";
                     if (idx > -1) {
                         itemWrappers.splice(idx, 1);
                         itemFields.splice(idx, 1);
+                        removeButtons.splice(idx, 1);
                         itemContainer.remove();
+                        updateButtonStates();
                     }
                 },
             });
+            removeButtons.push(removeBtn);
             itemHeader.appendChild(removeBtn);
             itemContainer.appendChild(itemHeader);
 
@@ -353,7 +379,8 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         container.appendChild(itemsContainer);
 
-        const addBtn = createElement("button", {
+        let addBtn = null;
+        addBtn = createElement("button", {
             type: "button",
             className:
                 "w-full mt-2 px-3 py-2 bg-[#f9c845] text-[#232323] rounded-md hover:bg-[#d4a83a] transition-colors text-sm font-medium",
@@ -363,9 +390,12 @@ import { BACKEND_BASE_URL } from "../config.js";
                 const defaultValue =
                     def.default || (def.item_type === "object" ? {} : "");
                 renderItem(newIndex, defaultValue, defaultValue);
+                updateButtonStates();
             },
         });
         container.appendChild(addBtn);
+
+        updateButtonStates();
 
         return {
             wrapper: container,
