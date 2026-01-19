@@ -32,14 +32,16 @@ class ThreadObject:
         )
         self.processing_thread_object.start()
 
-    def _set_error(self, error: str) -> None:
+    def _set_error(self, error: str, print_error: bool = False) -> None:
         """
         Set the error message for the thread.
 
         Args:
             error (str): The error message to set.
+            print_error (bool): Whether to print the error to console.
         """
-        print(error)
+        if print_error:
+            print(error)
         self.error = error
 
     @profile
@@ -61,14 +63,16 @@ class ThreadObject:
 
                 if obligation is True:
                     self._set_error(
-                        f"Thread should already be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}"
+                        f"Thread should already be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}",
+                        print_error=True
                     )
                     self.output_data = None
                     self.had_error = True
                     self.state = "error"
                 elif obligation is False:
                     self._set_error(
-                        f"Thread should not be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}"
+                        f"Thread should not be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}",
+                        print_error=True
                     )
                     self.output_data = None
                     self.had_error = True
