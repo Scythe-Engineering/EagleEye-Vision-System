@@ -1161,11 +1161,11 @@ import { BACKEND_BASE_URL } from "../config.js";
                 console.log("[SETTINGS] Starting visualization", {
                     camera: selectedCameraName,
                     pipeline: selectedPipelineName,
-                    action: actionNameForApi,
+                    operationUuid,
                     timestamp: new Date().toISOString(),
                 });
                 const startResponse = await fetch(
-                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(actionNameForApi)}`,
+                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(operationUuid)}`,
                     {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
