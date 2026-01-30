@@ -292,3 +292,6 @@ general_conf.json
 src/webui/static/*
 !src/webui/static/background.png
 /plans
+
+files/*
+files/!apriltag_map_path
