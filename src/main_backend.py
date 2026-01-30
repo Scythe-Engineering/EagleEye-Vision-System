@@ -113,76 +113,7 @@ class MainBackend:
             self.known_cameras: Set[str] = set()
 
             self.compute_pool = ComputePool()
-
-            # Add CPU device if available
-            if available_devices.get("CPU"):
-                cpu_device = CPU()
-                self.compute_pool.add_compute_device(cpu_device)
-                self.logger.log(
-                    f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
-                )
-
-            # Set logger for MX3 module if available
-            if available_devices.get("MX3"):
-                from src.utils.device_management_utils.mx3_accelerator import (
-                    set_mx3_logger,
-                )
-
-                set_mx3_logger(self.logger)
-
-            # Add TPU devices if available
-            tpu_devices = available_devices.get("TPU", [])
-            if tpu_devices:
-                from src.utils.device_management_utils.mx3_accelerator import (
-                    MX3Accelerator,
-                )  # noqa: E402
-
-                for tpu_device in tpu_devices:
-                    if tpu_device.startswith("memx:"):
-                        try:
-                            # Extract device index from memx:X
-                            device_parts = tpu_device.split(":", 1)
-                            if len(device_parts) != 2:
-                                self.logger.log(
-                                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
-                                )
-                                continue
-
-                            device_index = device_parts[1]
-                            mx3_device = MX3Accelerator(
-                                device_id=f"MX3_{device_index}", logger=self.logger
-                            )
-                            self.compute_pool.add_compute_device(mx3_device)
-
-                            self.logger.log(
-                                f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
-                            )
-                        except Exception as e:
-                            self.logger.log(
-                                f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
-                            )
-
-            # Add GPU devices if available
-            gpu_devices = available_devices.get("GPU", [])
-            if gpu_devices:
-                from src.utils.device_management_utils.gpu import GPU  # noqa: E402
-
-                for gpu_index, gpu_device_name in enumerate(gpu_devices):
-                    try:
-                        gpu_device = GPU(device_id=f"GPU_{gpu_index}")
-                        self.compute_pool.add_compute_device(gpu_device)
-
-                        self.logger.log(
-                            f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
-                        )
-                    except RuntimeError as e:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                        )
-                    except Exception as e:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                        )
+            self._initialize_compute_devices()
 
             self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
                 self.web_interface,
@@ -227,6 +158,98 @@ class MainBackend:
                 )
         except KeyboardInterrupt:
             self.shutdown()
+
+    def _initialize_compute_devices(self) -> None:
+        """
+        Initialize and add all available compute devices to the compute pool.
+        """
+        # Add CPU device if available
+        if available_devices.get("CPU"):
+            cpu_device = CPU()
+            self.compute_pool.add_compute_device(cpu_device)
+            self.logger.log(
+                f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
+            )
+
+        # Set logger for MX3 module if available
+        if available_devices.get("MX3"):
+            from src.utils.device_management_utils.mx3_accelerator import (
+                set_mx3_logger,
+            )
+
+            set_mx3_logger(self.logger)
+
+        self._initialize_tpu_devices()
+        self._initialize_gpu_devices()
+
+    def _initialize_tpu_devices(self) -> None:
+        """
+        Add TPU devices to the compute pool.
+        """
+        tpu_devices = available_devices.get("TPU", [])
+        if not tpu_devices:
+            return
+
+        from src.utils.device_management_utils.mx3_accelerator import (  # noqa: E402
+            MX3Accelerator,
+        )
+
+        for tpu_device in tpu_devices:
+            if not tpu_device.startswith("memx:"):
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                )
+                continue
+
+            try:
+                # Extract device index from memx:X
+                device_parts = tpu_device.split(":", 1)
+                if len(device_parts) != 2:
+                    self.logger.log(
+                        f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                    )
+                    continue
+
+                device_index = device_parts[1]
+                mx3_device = MX3Accelerator(
+                    device_id=f"MX3_{device_index}", logger=self.logger
+                )
+                self.compute_pool.add_compute_device(mx3_device)
+
+                self.logger.log(
+                    f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
+                )
+
+    def _initialize_gpu_devices(self) -> None:
+        """
+        Add GPU devices to the compute pool.
+        """
+        gpu_devices = available_devices.get("GPU", [])
+        if not gpu_devices:
+            return
+
+        from src.utils.device_management_utils.gpu import GPU  # noqa: E402
+
+        for gpu_index, gpu_device_name in enumerate(gpu_devices):
+            try:
+                gpu_device = GPU(device_id=f"GPU_{gpu_index}")
+                self.compute_pool.add_compute_device(gpu_device)
+
+                self.logger.log(
+                    f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
+                )
+            except RuntimeError as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                )
 
     def get_pipelines(self) -> Dict[str, Dict[str, Pipeline]]:
         """
