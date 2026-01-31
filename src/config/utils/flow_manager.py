@@ -141,9 +141,6 @@ class FlowManager:
     def __init__(self, operations: dict[str, Operation], logger: Logger):
         self.operations: dict[str, Operation] = operations
         self.logger = logger
-        self.start_operation: Operation = self._find_start_operation()
-
-        self.start_operation.execution_timestep = 0
 
         self.execution_time_groups: list[list[Operation]] = (
             self.forward_pass_operation_order()
@@ -199,27 +196,20 @@ class FlowManager:
         self.previous_operation_outputs: dict[str, Any] = {}
 
     @profile
-    def run_flow(self, input_data: Any) -> None:
+    def run_flow(self) -> None:
         """Run the flow of operations using timestep-based execution.
 
         Automatically uses direct execution for single-threaded pipelines,
         or threaded execution for multi-threaded pipelines.
-
-        Args:
-            input_data: The input data to pass to the flow.
         """
         if self.num_threads == 1:
-            self._run_flow_direct(input_data)
+            self._run_flow_direct()
         else:
-            self._run_flow_threaded(input_data)
+            self._run_flow_threaded()
 
     @profile
-    def _run_flow_direct(self, input_data: Any) -> None:
-        """Direct execution without thread signaling for linear pipelines.
-
-        Args:
-            input_data: The input data to pass to the flow.
-        """
+    def _run_flow_direct(self) -> None:
+        """Direct execution without thread signaling for linear pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
 
@@ -243,12 +233,8 @@ class FlowManager:
                     ) from e
 
     @profile
-    def _run_flow_threaded(self, input_data: Any) -> None:
-        """Threaded execution for parallel pipelines.
-
-        Args:
-            input_data: The input data to pass to the flow.
-        """
+    def _run_flow_threaded(self) -> None:
+        """Threaded execution for parallel pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
 
@@ -401,19 +387,10 @@ class FlowManager:
         Returns:
             list[list[Operation]]: Operations grouped by execution timestep.
         """
-        # Get operations downstream of device_input
-        first_operations: list[Operation] = [
-            connection.to_operation
-            for connection in self.start_operation.get_output_connections()
-            if not connection.is_default
-        ]
-
-        # Add data sources to first_operations so dependents can get timesteps
+        # Start with all data sources as first operations
         # Data sources have no inputs, so all_inputs_solved() returns True
         data_sources = self._find_data_source_operations()
-        for data_source in data_sources:
-            if data_source not in first_operations:
-                first_operations.append(data_source)
+        first_operations: list[Operation] = data_sources.copy()
 
         # First pass: assign timesteps to all operations
         # Data sources get timestep 0 initially (no inputs)
@@ -479,13 +456,6 @@ class FlowManager:
             list[Operation]: List of data source operations.
         """
         return [op for op in self.operations.values() if op.is_data_source]
-
-    def _find_start_operation(self) -> Operation:
-        """Finds the starting operation in the flow, always is the device_input operation name."""
-        for uuid, operation_data in self.operations.items():
-            if operation_data.name == "device_input":
-                return self.operations[uuid]
-        raise ValueError("No starting operation (device_input) found in operations.")
 
     def get_thread_and_timestep_info(self) -> dict[str, dict[str, int]]:
         """Get thread number and execution timestep for each operation.

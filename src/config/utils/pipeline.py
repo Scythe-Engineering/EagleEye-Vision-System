@@ -200,7 +200,6 @@ class Pipeline:
             for operation in operations.values()
             if not operation.has_input_connections
             and not operation.is_data_source  # Data sources don't need input connections
-            and operation.name != "device_input"  # device_input is a special case
         ]
         if len(orphan_operations) > 0:
             self.logger.log(
@@ -306,14 +305,12 @@ class Pipeline:
     @profile
     def run(
         self,
-        input_data: Any = None,
         visualize: bool = False,
         visualization_operation_name: str | None = None,
     ) -> np.ndarray | None:
         """Run the pipeline using FlowManager.
 
         Args:
-            input_data: Unused (device_input fetches frames directly).
             visualize: Whether to visualize the pipeline.
             visualization_operation_name: Name of operation to visualize up to.
 
@@ -326,7 +323,7 @@ class Pipeline:
         """
         start_time = time.time()
 
-        self.flow_manager.run_flow(None)
+        self.flow_manager.run_flow()
 
         elapsed = time.time() - start_time
         with self.total_time_history_lock:
@@ -338,12 +335,21 @@ class Pipeline:
                     "Visualization operation name is required when visualize is True"
                 )
             # Get the frame from device_input for visualization
-            start_frame = self.flow_manager.operation_outputs.get(
-                self.flow_manager.start_operation.uuid
-            )
+            start_frame = self._get_device_input_frame()
             if start_frame is not None:
                 return self._visualize(start_frame.copy(), visualization_operation_name)
 
+        return None
+
+    def _get_device_input_frame(self) -> np.ndarray | None:
+        """Get the current frame from device_input operation.
+
+        Returns:
+            The frame from device_input, or None if not found or no frame available.
+        """
+        for operation in self.operations.values():
+            if operation.name == "device_input":
+                return self.flow_manager.operation_outputs.get(operation.uuid)
         return None
 
     def get_operation_by_uuid(self, operation_uuid: str) -> Operation | None:
@@ -439,14 +445,11 @@ class Pipeline:
 
                 if should_visualize:
                     visualization_frame = self.run(
-                        None,
                         visualize=True,
                         visualization_operation_name=operation_name_snapshot,
                     )
                     # Get the original frame from device_input for display
-                    frame = self.flow_manager.operation_outputs.get(
-                        self.flow_manager.start_operation.uuid
-                    )
+                    frame = self._get_device_input_frame()
                     if frame is not None and visualization_frame is not None:
                         # Only hold the lock for the assignment
                         with self.visualization_data_lock:
@@ -455,7 +458,7 @@ class Pipeline:
                                 "visualization_data": visualization_frame,
                             }
                 else:
-                    self.run(None)
+                    self.run()
             except Exception as _:
                 if self.logger:
                     self.logger.log(
