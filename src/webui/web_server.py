@@ -44,7 +44,7 @@ class EagleEyeInterface:
     def __init__(
         self,
         restart_callback: Callable[[], None],
-        pipeline_objects_callback: Callable[[], dict[str, dict[str, Pipeline]]],
+        pipeline_objects_callback: Callable[[], dict[str, Pipeline]],
         dev_mode: bool = False,
         logger: Logger | None = None,
     ):
@@ -1098,7 +1098,7 @@ class EagleEyeInterface:
         Get the config data for a pipeline.
 
         Args:
-            camera_name (str): The name of the camera.
+            camera_name (str): The name of the camera (unused, kept for API compatibility).
             pipeline_name (str): The name of the pipeline.
 
         Returns:
@@ -1106,11 +1106,9 @@ class EagleEyeInterface:
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
-            if camera_name not in config:
+            if pipeline_name not in config:
                 return []
-            if pipeline_name not in config[camera_name]:
-                return []
-            pipeline_config = config[camera_name][pipeline_name]
+            pipeline_config = config[pipeline_name]
 
             # Reorder parameters according to config definitions
             reordered_pipeline = []
@@ -1128,19 +1126,17 @@ class EagleEyeInterface:
 
     def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
         """
-        Get the names of the pipelines for a camera.
+        Get the names of all pipelines.
 
         Args:
-            camera_name (str): The name of the camera.
+            camera_name (str): The name of the camera (unused, kept for API compatibility).
 
         Returns:
-            list[str]: The names of the pipelines for the camera.
+            list[str]: The names of all pipelines.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
-            if camera_name not in config:
-                return []
-            return list(config[camera_name].keys())
+            return list(config.keys())
 
     def save_pipeline_config(
         self, camera_name: str, pipeline_name: str
@@ -1166,15 +1162,12 @@ class EagleEyeInterface:
             current_config = json.load(f)
             new_data = request.get_json()
 
-            if camera_name not in current_config:
-                current_config[camera_name] = {}
-
-            if pipeline_name not in current_config[camera_name]:
-                current_config[camera_name][pipeline_name] = []
+            if pipeline_name not in current_config:
+                current_config[pipeline_name] = []
 
             # Merge operations while preserving existing data and enabling reordering
             existing_ops = {
-                op["uuid"]: op for op in current_config[camera_name][pipeline_name]
+                op["uuid"]: op for op in current_config[pipeline_name]
             }
             updated_operations = []
             for operation in new_data:
@@ -1199,18 +1192,15 @@ class EagleEyeInterface:
 
                 updated_operations.append(merged_op)
 
-            current_config[camera_name][pipeline_name] = updated_operations
+            current_config[pipeline_name] = updated_operations
 
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
 
         # use callback to prevent circular imports
         pipeline_objects = self.pipeline_objects_callback()
-        if (
-            camera_name in pipeline_objects
-            and pipeline_name in pipeline_objects[camera_name]
-        ):
-            pipeline_objects[camera_name][pipeline_name].update_operations_config(
+        if pipeline_name in pipeline_objects:
+            pipeline_objects[pipeline_name].update_operations_config(
                 request.get_json()
             )
 
@@ -1219,14 +1209,15 @@ class EagleEyeInterface:
     def delete_pipeline(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
         """
         Delete a pipeline.
+
+        Args:
+            camera_name (str): The name of the camera (unused, kept for API compatibility).
+            pipeline_name (str): The name of the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             current_config = json.load(f)
-            if (
-                camera_name in current_config
-                and pipeline_name in current_config[camera_name]
-            ):
-                del current_config[camera_name][pipeline_name]
+            if pipeline_name in current_config:
+                del current_config[pipeline_name]
             else:
                 return {"message": "Pipeline not found"}, 404
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
@@ -1240,7 +1231,7 @@ class EagleEyeInterface:
         Start visualizing the pipeline.
 
         Args:
-            camera_name: Name of the camera whose pipeline should be visualized.
+            camera_name: Name of the camera (unused, kept for API compatibility).
             pipeline_name: Name of the pipeline to visualize.
             operation_uuid: UUID of the operation instance to visualize.
 
@@ -1248,7 +1239,7 @@ class EagleEyeInterface:
             A response message and HTTP status code.
         """
         try:
-            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
             operation = pipeline.get_operation_by_uuid(operation_uuid)
             if operation is None:
                 return {"message": "Operation not found"}, 404
@@ -1260,11 +1251,13 @@ class EagleEyeInterface:
     def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
         """
         Stop visualizing the pipeline.
+
+        Args:
+            camera_name: Name of the camera (unused, kept for API compatibility).
+            pipeline_name: Name of the pipeline.
         """
         try:
-            self.pipeline_objects_callback()[camera_name][
-                pipeline_name
-            ].stop_visualize()
+            self.pipeline_objects_callback()[pipeline_name].stop_visualize()
         except KeyError:
             return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized stopped"}, 200
@@ -1273,10 +1266,14 @@ class EagleEyeInterface:
         """
         Visualize the pipeline.
 
+        Args:
+            camera_name: Name of the camera (unused, kept for API compatibility).
+            pipeline_name: Name of the pipeline.
+
         Returns the image as JPEG binary data.
         """
         try:
-            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
         except KeyError:
             return Response("Pipeline not found", status=404, mimetype="text/plain")
 
@@ -1412,7 +1409,7 @@ class EagleEyeInterface:
         Get thread and timestep information for a pipeline.
 
         Args:
-            camera_name: Name of camera.
+            camera_name: Name of camera (unused, kept for API compatibility).
             pipeline_name: Name of pipeline.
 
         Returns:
@@ -1420,7 +1417,7 @@ class EagleEyeInterface:
                 with thread and timestep for each operation, plus HTTP status code.
         """
         try:
-            pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
             return pipeline.get_pipeline_thread_info(), 200
         except KeyError:
             return {"error": "Pipeline not found"}, 404

@@ -75,7 +75,11 @@ class CameraWorker:
     def get_cached_frame(self) -> Optional[np.ndarray]:
         """Thread-safe cached frame retrieval."""
         with self._lock:
-            return self._last_cached_frame.copy() if self._last_cached_frame is not None else None
+            return (
+                self._last_cached_frame.copy()
+                if self._last_cached_frame is not None
+                else None
+            )
 
     def start(self, worker_fn) -> None:
         """Start the camera worker thread."""
@@ -148,9 +152,7 @@ class CameraThreadManager:
         failure_tracker = FailureTracker(max_failures=10)
 
         camera_fps = camera.get_achieved_fps()
-        target_frame_time = (
-            1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
-        )
+        target_frame_time = 1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
 
         self.logger.log(
             f"{Colors.CYAN}Camera thread for {camera_name} is running at {camera_fps} target fps{Colors.RESET}"

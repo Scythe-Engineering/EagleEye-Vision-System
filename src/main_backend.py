@@ -80,7 +80,7 @@ class MainBackend:
             self.compute_pool = ComputePool()
             self._initialize_compute_devices()
 
-            self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
+            self.pipelines: Dict[str, Pipeline] = generate_all_pipelines(
                 self.web_interface,
                 self.compute_pool,
                 self.network_table,
@@ -88,18 +88,11 @@ class MainBackend:
                 logger=self.logger,
             )
 
-            available_cameras = self.camera_manager.get_all_camera_names()
-            for camera_name, pipelines in self.pipelines.items():
-                if camera_name in available_cameras:
-                    for pipeline_name, pipeline in pipelines.items():
-                        pipeline.thread_run(self.camera_manager, camera_name)
-                        self.logger.log(
-                            f"{Colors.GREEN}Started pipeline for camera bus id: {camera_name} and pipeline name: {pipeline_name}{Colors.RESET}"
-                        )
-                else:
-                    self.logger.log(
-                        f"{Colors.YELLOW}Pipeline bus id: {camera_name} was not found in available cameras{Colors.RESET}"
-                    )
+            for pipeline_name, pipeline in self.pipelines.items():
+                pipeline.thread_run(self.camera_manager)
+                self.logger.log(
+                    f"{Colors.GREEN}Started pipeline: {pipeline_name}{Colors.RESET}"
+                )
 
             if not self.known_cameras:
                 self.logger.log(
@@ -204,7 +197,7 @@ class MainBackend:
                     f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
                 )
 
-    def get_pipelines(self) -> Dict[str, Dict[str, Pipeline]]:
+    def get_pipelines(self) -> Dict[str, Pipeline]:
         """
         Get the pipelines.
         """

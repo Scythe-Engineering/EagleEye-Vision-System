@@ -36,7 +36,6 @@ class Pipeline:
         self,
         pipeline_config: dict,
         web_interface: EagleEyeInterface,
-        camera_bus_id: str,
         compute_pool: ComputePool,
         network_table: NetworkTable,
         logger: Logger,
@@ -47,15 +46,13 @@ class Pipeline:
         Args:
             pipeline_config: Dictionary containing pipeline configuration.
             web_interface: The web interface to use for the pipelines.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
             compute_pool: The compute pool to use for the pipelines.
             network_table: The network table to use for the pipelines.
-            camera_manager: The camera manager to use for the pipelines.
             logger: Logger instance for logging.
+            camera_manager: The camera manager to use for the pipelines.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
-        self.camera_bus_id = camera_bus_id
         self.compute_pool = compute_pool
         self.network_table = network_table
         self.camera_manager = camera_manager
@@ -309,14 +306,14 @@ class Pipeline:
     @profile
     def run(
         self,
-        input_data: np.ndarray,
+        input_data: Any = None,
         visualize: bool = False,
         visualization_operation_name: str | None = None,
     ) -> np.ndarray | None:
-        """Run the pipeline with the given input data using FlowManager.
+        """Run the pipeline using FlowManager.
 
         Args:
-            input_data: Input data to process through the pipeline.
+            input_data: Unused (device_input fetches frames directly).
             visualize: Whether to visualize the pipeline.
             visualization_operation_name: Name of operation to visualize up to.
 
@@ -329,7 +326,7 @@ class Pipeline:
         """
         start_time = time.time()
 
-        self.flow_manager.run_flow(input_data)
+        self.flow_manager.run_flow(None)
 
         elapsed = time.time() - start_time
         with self.total_time_history_lock:
@@ -340,7 +337,12 @@ class Pipeline:
                 raise ValueError(
                     "Visualization operation name is required when visualize is True"
                 )
-            return self._visualize(input_data.copy(), visualization_operation_name)
+            # Get the frame from device_input for visualization
+            start_frame = self.flow_manager.operation_outputs.get(
+                self.flow_manager.start_operation.uuid
+            )
+            if start_frame is not None:
+                return self._visualize(start_frame.copy(), visualization_operation_name)
 
         return None
 
@@ -401,79 +403,66 @@ class Pipeline:
                 )
 
     def thread_run(
-        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+        self, camera_thread_manager: CameraThreadManager
     ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
         self.thread_running = True
         self.thread = threading.Thread(
-            target=self._thread_run, args=(camera_thread_manager, camera_bus_id)
+            target=self._thread_run, args=(camera_thread_manager,)
         )
         self.thread.start()
 
     def _thread_run(
-        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+        self, camera_thread_manager: CameraThreadManager
     ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
-        if not camera_thread_manager.get_camera_ready(camera_bus_id):
-            if self.logger:
-                self.logger.log(
-                    f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
-                )
-            while not camera_thread_manager.get_camera_ready(camera_bus_id):
-                time.sleep(0.01)
-            if self.logger:
-                self.logger.log(
-                    f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
-                )
-
         if self.logger:
             self.logger.log(
-                f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
+                f"{Colors.CYAN}Starting pipeline thread{Colors.RESET}"
             )
         time.sleep(0.1)
 
         while self.thread_running:
-            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
-            if camera_frame_result is not None:
-                frame, _ = camera_frame_result
-                try:
-                    # Snapshot visualize state and target name atomically
-                    with self.visualization_data_lock:
-                        should_visualize = self.set_visualize
-                        operation_name_snapshot = self.visualization_operation_name
+            try:
+                # Snapshot visualize state and target name atomically
+                with self.visualization_data_lock:
+                    should_visualize = self.set_visualize
+                    operation_name_snapshot = self.visualization_operation_name
 
-                    if should_visualize:
-                        frame_copy = frame.copy()
-                        visualization_frame = self.run(
-                            frame,
-                            visualize=True,
-                            visualization_operation_name=operation_name_snapshot,
-                        )
+                if should_visualize:
+                    visualization_frame = self.run(
+                        None,
+                        visualize=True,
+                        visualization_operation_name=operation_name_snapshot,
+                    )
+                    # Get the original frame from device_input for display
+                    frame = self.flow_manager.operation_outputs.get(
+                        self.flow_manager.start_operation.uuid
+                    )
+                    if frame is not None and visualization_frame is not None:
                         # Only hold the lock for the assignment
                         with self.visualization_data_lock:
                             self.visualization_data = {
-                                "frame": frame_copy,
+                                "frame": frame.copy(),
                                 "visualization_data": visualization_frame,
                             }
-                    else:
-                        self.run(frame)
-                except Exception as _:
-                    if self.logger:
-                        self.logger.log(
-                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                        )
-            else:
-                time.sleep(0.01)
+                else:
+                    self.run(None)
+            except Exception as _:
+                if self.logger:
+                    self.logger.log(
+                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                    )
+
+            time.sleep(0.001)
 
     def _visualize(self, start_frame: np.ndarray, action_name: str) -> np.ndarray:
         """Visualize the pipeline up to the given action name.

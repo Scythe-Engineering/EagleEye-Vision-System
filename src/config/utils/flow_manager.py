@@ -222,7 +222,6 @@ class FlowManager:
         """
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
-        self.operation_outputs[self.start_operation.uuid] = input_data
 
         for operation_group in self.execution_time_groups:
             for operation in operation_group:
@@ -252,7 +251,6 @@ class FlowManager:
         """
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
-        self.operation_outputs[self.start_operation.uuid] = input_data
 
         max_timestep = len(self.execution_time_groups)
 

@@ -57,17 +57,19 @@ def generate_all_pipelines(
     camera_manager,
     logger: Logger,
     pipeline_config: str | None = None,
-) -> Dict[str, Dict[str, Pipeline]]:
+) -> Dict[str, Pipeline]:
     """Generate all pipelines from the pipeline_config.json file.
 
     Args:
         web_interface: The web interface to use for the pipelines.
         compute_pool: The compute pool to use for the pipelines.
         network_table: The network table to use for the pipelines.
+        camera_manager: The camera manager to use for the pipelines.
+        logger: Logger instance for logging.
         pipeline_config: The pipeline configuration to use for the pipelines. (Optional, mostly for testing)
 
     Returns:
-        A list of Pipeline objects.
+        Dictionary mapping pipeline names to Pipeline objects.
     """
     if pipeline_config is None:
         with open(
@@ -81,31 +83,26 @@ def generate_all_pipelines(
     # Replace placeholders in the configuration data
     config_data = replace_values(config_data)
 
-    pipelines: Dict[str, Dict[str, Pipeline]] = {}
+    pipelines: Dict[str, Pipeline] = {}
     pipeline_count = 0
 
-    for camera_name in config_data.keys():
-        pipelines[camera_name] = {}
-        for pipeline_name in config_data[camera_name].keys():
-            config = config_data[camera_name][pipeline_name]
-
-            try:
-                pipeline = Pipeline(
-                    config,
-                    web_interface,
-                    camera_name,
-                    compute_pool,
-                    network_table,
-                    logger,
-                    camera_manager,
-                )
-            except Exception as _:
-                logger.log(
-                    f"{Colors.RED}Error creating pipeline for camera {camera_name} and pipeline {pipeline_name}: {traceback.format_exc()}{Colors.RESET}"
-                )
-                continue
-            pipelines[camera_name][pipeline_name] = pipeline
-            pipeline_count += 1
+    for pipeline_name, config in config_data.items():
+        try:
+            pipeline = Pipeline(
+                config,
+                web_interface,
+                compute_pool,
+                network_table,
+                logger,
+                camera_manager,
+            )
+        except Exception as _:
+            logger.log(
+                f"{Colors.RED}Error creating pipeline {pipeline_name}: {traceback.format_exc()}{Colors.RESET}"
+            )
+            continue
+        pipelines[pipeline_name] = pipeline
+        pipeline_count += 1
 
     for device in compute_pool.get_compute_devices_by_type("MX3"):
         device.connect_streams(pipeline_count)
