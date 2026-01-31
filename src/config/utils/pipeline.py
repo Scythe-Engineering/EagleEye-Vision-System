@@ -34,22 +34,24 @@ class Pipeline:
 
     def __init__(
         self,
-        pipeline_config: dict,
+        pipeline_config: list[dict[str, Any]],
         web_interface: EagleEyeInterface,
         compute_pool: ComputePool,
         network_table: NetworkTable,
         logger: Logger,
         camera_manager: CameraThreadManager | None = None,
+        camera_bus_id: str | None = None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
         Args:
-            pipeline_config: Dictionary containing pipeline configuration.
+            pipeline_config: List containing pipeline configuration.
             web_interface: The web interface to use for the pipelines.
             compute_pool: The compute pool to use for the pipelines.
             network_table: The network table to use for the pipelines.
             logger: Logger instance for logging.
             camera_manager: The camera manager to use for the pipelines.
+            camera_bus_id: Camera name to associate with this pipeline.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
@@ -57,6 +59,7 @@ class Pipeline:
         self.network_table = network_table
         self.camera_manager = camera_manager
         self.logger = logger
+        self.camera_bus_id = camera_bus_id
 
         self.thread_running = False
         self.thread = None

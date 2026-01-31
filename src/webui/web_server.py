@@ -261,27 +261,27 @@ class EagleEyeInterface:
             methods=["DELETE"],
         )
         self.app.add_url_rule(
-            "/get-pipeline-config/<string:camera_name>/<string:pipeline_name>",
-            "get_pipeline_config",
-            self.get_pipeline_config,
+            "/get-pipeline-config/<string:pipeline_name>",
+            "get_pipeline_config_by_name",
+            self.get_pipeline_config_by_name,
             methods=["GET"],
         )
         self.app.add_url_rule(
-            "/get-pipeline-names-for-camera/<string:camera_name>",
-            "get_pipeline_names_for_camera",
-            self.get_pipeline_names_for_camera,
+            "/get-pipeline-names",
+            "get_pipeline_names",
+            self.get_pipeline_names,
             methods=["GET"],
         )
         self.app.add_url_rule(
-            "/save-pipeline-config/<string:camera_name>/<string:pipeline_name>",
-            "save_pipeline_config",
-            self.save_pipeline_config,
+            "/save-pipeline-config/<string:pipeline_name>",
+            "save_pipeline_config_by_name",
+            self.save_pipeline_config_by_name,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/delete-pipeline/<string:camera_name>/<string:pipeline_name>",
-            "delete_pipeline",
-            self.delete_pipeline,
+            "/delete-pipeline/<string:pipeline_name>",
+            "delete_pipeline_by_name",
+            self.delete_pipeline_by_name,
             methods=["DELETE"],
         )
         self.app.add_url_rule(
@@ -291,19 +291,19 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/start-visualize/<string:camera_name>/<string:pipeline_name>/<string:operation_uuid>",
+            "/start-visualize/<string:pipeline_name>/<string:operation_uuid>",
             "start_visualize",
             self.start_visualize,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/stop-visualize/<string:camera_name>/<string:pipeline_name>",
+            "/stop-visualize/<string:pipeline_name>",
             "stop_visualize",
             self.stop_visualize,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/visualize/<string:camera_name>/<string:pipeline_name>",
+            "/visualize/<string:pipeline_name>",
             "visualize",
             self.visualize,
             methods=["GET"],
@@ -351,7 +351,7 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/get-pipeline-thread-info/<string:camera_name>/<string:pipeline_name>",
+            "/get-pipeline-thread-info/<string:pipeline_name>",
             "get_pipeline_thread_info",
             self.get_pipeline_thread_info,
             methods=["GET"],
@@ -1093,12 +1093,11 @@ class EagleEyeInterface:
             self.log(f"Error deleting operation file: {e}")
             return {"error": str(e)}, 500
 
-    def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> list:
+    def get_pipeline_config_by_name(self, pipeline_name: str) -> list:
         """
-        Get the config data for a pipeline.
+        Get the config data for a pipeline by name.
 
         Args:
-            camera_name (str): The name of the camera (unused, kept for API compatibility).
             pipeline_name (str): The name of the pipeline.
 
         Returns:
@@ -1110,49 +1109,24 @@ class EagleEyeInterface:
                 return []
             pipeline_config = config[pipeline_name]
 
-            # Reorder parameters according to config definitions
-            reordered_pipeline = []
-            for operation in pipeline_config:
-                operation_name = operation["action_name"]
-                action_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
-                )
+        return self._reorder_pipeline_config(pipeline_config)
 
-                operation["action_params"] = action_params
-
-                reordered_pipeline.append(operation)
-
-            return reordered_pipeline
-
-    def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
+    def get_pipeline_names(self) -> list[str]:
         """
         Get the names of all pipelines.
-
-        Args:
-            camera_name (str): The name of the camera (unused, kept for API compatibility).
 
         Returns:
             list[str]: The names of all pipelines.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
-            return list(config.keys())
+        return list(config.keys())
 
-    def save_pipeline_config(
-        self, camera_name: str, pipeline_name: str
-    ) -> tuple[dict, int]:
+    def save_pipeline_config_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """
-        Save the pipeline config. Json should be of the following at least, other data allowed:
-
-        {
-            action_name: str,
-            action_params: dict (param name: param value),
-            action_connections: arr[str (op id's)],
-            action_position: dict (x:int, y:int)
-        }
+        Save the pipeline config by pipeline name.
 
         Args:
-            camera_name (str): The name of the camera.
             pipeline_name (str): The name of the pipeline.
 
         Returns:
@@ -1162,37 +1136,35 @@ class EagleEyeInterface:
             current_config = json.load(f)
             new_data = request.get_json()
 
-            if pipeline_name not in current_config:
-                current_config[pipeline_name] = []
+        if pipeline_name not in current_config:
+            current_config[pipeline_name] = []
 
-            # Merge operations while preserving existing data and enabling reordering
-            existing_ops = {
-                op["uuid"]: op for op in current_config[pipeline_name]
-            }
-            updated_operations = []
-            for operation in new_data:
-                operation_uuid = operation["uuid"]
-                operation_name = operation["action_name"]
-                operation_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
-                )
+        # Merge operations while preserving existing data and enabling reordering
+        existing_ops = {op["uuid"]: op for op in current_config[pipeline_name]}
+        updated_operations = []
+        for operation in new_data:
+            operation_uuid = operation["uuid"]
+            operation_name = operation["action_name"]
+            operation_params = self._reorder_operation_params(
+                operation_name, operation["action_params"]
+            )
 
-                if operation_uuid in existing_ops:
-                    # Merge incoming data into existing operation
-                    merged_op = existing_ops[operation_uuid].copy()
-                    for key, value in operation.items():
-                        if key == "action_params":
-                            merged_op["action_params"].update(operation_params)
-                        else:
-                            merged_op[key] = value
-                else:
-                    # New operation
-                    merged_op = operation.copy()
-                    merged_op["action_params"] = operation_params
+            if operation_uuid in existing_ops:
+                # Merge incoming data into existing operation
+                merged_op = existing_ops[operation_uuid].copy()
+                for key, value in operation.items():
+                    if key == "action_params":
+                        merged_op["action_params"].update(operation_params)
+                    else:
+                        merged_op[key] = value
+            else:
+                # New operation
+                merged_op = operation.copy()
+                merged_op["action_params"] = operation_params
 
-                updated_operations.append(merged_op)
+            updated_operations.append(merged_op)
 
-            current_config[pipeline_name] = updated_operations
+        current_config[pipeline_name] = updated_operations
 
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
@@ -1200,18 +1172,15 @@ class EagleEyeInterface:
         # use callback to prevent circular imports
         pipeline_objects = self.pipeline_objects_callback()
         if pipeline_name in pipeline_objects:
-            pipeline_objects[pipeline_name].update_operations_config(
-                request.get_json()
-            )
+            pipeline_objects[pipeline_name].update_operations_config(request.get_json())
 
         return {"message": "Pipeline config saved successfully"}, 200
 
-    def delete_pipeline(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+    def delete_pipeline_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """
-        Delete a pipeline.
+        Delete a pipeline by name.
 
         Args:
-            camera_name (str): The name of the camera (unused, kept for API compatibility).
             pipeline_name (str): The name of the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
@@ -1224,14 +1193,38 @@ class EagleEyeInterface:
             json.dump(current_config, f, indent=4)
         return {"message": "Pipeline deleted successfully"}, 200
 
+    def _reorder_pipeline_config(
+        self, pipeline_config: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Reorder operation parameters for a pipeline config list.
+
+        Args:
+            pipeline_config: Configuration list for the pipeline.
+
+        Returns:
+            Reordered pipeline config list.
+        """
+        reordered_pipeline = []
+        for operation in pipeline_config:
+            operation_name = operation["action_name"]
+            action_params = self._reorder_operation_params(
+                operation_name, operation["action_params"]
+            )
+
+            operation["action_params"] = action_params
+
+            reordered_pipeline.append(operation)
+
+        return reordered_pipeline
+
     def start_visualize(
-        self, camera_name: str, pipeline_name: str, operation_uuid: str
+        self, pipeline_name: str, operation_uuid: str
     ) -> tuple[dict, int]:
         """
         Start visualizing the pipeline.
 
         Args:
-            camera_name: Name of the camera (unused, kept for API compatibility).
             pipeline_name: Name of the pipeline to visualize.
             operation_uuid: UUID of the operation instance to visualize.
 
@@ -1248,12 +1241,11 @@ class EagleEyeInterface:
             return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized successfully"}, 200
 
-    def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+    def stop_visualize(self, pipeline_name: str) -> tuple[dict, int]:
         """
         Stop visualizing the pipeline.
 
         Args:
-            camera_name: Name of the camera (unused, kept for API compatibility).
             pipeline_name: Name of the pipeline.
         """
         try:
@@ -1262,12 +1254,11 @@ class EagleEyeInterface:
             return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized stopped"}, 200
 
-    def visualize(self, camera_name: str, pipeline_name: str) -> Response:
+    def visualize(self, pipeline_name: str) -> Response:
         """
         Visualize the pipeline.
 
         Args:
-            camera_name: Name of the camera (unused, kept for API compatibility).
             pipeline_name: Name of the pipeline.
 
         Returns the image as JPEG binary data.
@@ -1402,14 +1393,11 @@ class EagleEyeInterface:
             self.logger.log(f"Error saving general configuration: {e}")
             return {"error": str(e)}, 500
 
-    def get_pipeline_thread_info(
-        self, camera_name: str, pipeline_name: str
-    ) -> tuple[dict, int]:
+    def get_pipeline_thread_info(self, pipeline_name: str) -> tuple[dict, int]:
         """
         Get thread and timestep information for a pipeline.
 
         Args:
-            camera_name: Name of camera (unused, kept for API compatibility).
             pipeline_name: Name of pipeline.
 
         Returns:

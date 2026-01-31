@@ -2,7 +2,7 @@ import traceback
 import os
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.device_management_utils.compute_pool import ComputePool
@@ -50,6 +50,52 @@ def replace_values(config_data: dict) -> dict:
     return config_data
 
 
+def _resolve_device_input_camera_name(
+    pipeline_name: str, pipeline_config: list[dict[str, Any]], logger: Logger
+) -> str | None:
+    """Resolve the camera name from a pipeline's device_input operation.
+
+    Args:
+        pipeline_name: Name of the pipeline.
+        pipeline_config: Configuration list for the pipeline.
+        logger: Logger instance for logging.
+
+    Returns:
+        Camera name if valid, otherwise None.
+    """
+    device_input_configs = [
+        operation
+        for operation in pipeline_config
+        if operation.get("action_name") in {"device_input.py", "device_input"}
+    ]
+
+    if len(device_input_configs) == 0:
+        logger.log(
+            f"{Colors.RED}Error creating pipeline {pipeline_name}: missing device_input operation{Colors.RESET}"
+        )
+        return None
+
+    if len(device_input_configs) > 1:
+        logger.log(
+            f"{Colors.RED}Error creating pipeline {pipeline_name}: multiple device_input operations found{Colors.RESET}"
+        )
+        return None
+
+    action_params = device_input_configs[0].get("action_params", {})
+    camera_name = action_params.get("camera_name")
+
+    if not isinstance(camera_name, str) or not camera_name:
+        logger.log(
+            f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid camera_name in device_input{Colors.RESET}"
+        )
+        return None
+
+    logger.log(
+        f"{Colors.CYAN}Resolved camera '{camera_name}' for pipeline {pipeline_name}{Colors.RESET}"
+    )
+    return camera_name
+
+
 def generate_all_pipelines(
     web_interface: EagleEyeInterface,
     compute_pool: ComputePool,
@@ -88,6 +134,11 @@ def generate_all_pipelines(
 
     for pipeline_name, config in config_data.items():
         try:
+            camera_name = _resolve_device_input_camera_name(
+                pipeline_name, config, logger
+            )
+            if camera_name is None:
+                continue
             pipeline = Pipeline(
                 config,
                 web_interface,
@@ -95,6 +146,7 @@ def generate_all_pipelines(
                 network_table,
                 logger,
                 camera_manager,
+                camera_bus_id=camera_name,
             )
         except Exception as _:
             logger.log(

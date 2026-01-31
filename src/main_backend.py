@@ -88,7 +88,19 @@ class MainBackend:
                 logger=self.logger,
             )
 
+            available_cameras = set(self.camera_manager.get_all_camera_names())
             for pipeline_name, pipeline in self.pipelines.items():
+                camera_name = pipeline.camera_bus_id
+                if camera_name is None:
+                    self.logger.log(
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} has no camera configured. Skipping start.{Colors.RESET}"
+                    )
+                    continue
+                if camera_name not in available_cameras:
+                    self.logger.log(
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} camera '{camera_name}' not found. Skipping start.{Colors.RESET}"
+                    )
+                    continue
                 pipeline.thread_run(self.camera_manager)
                 self.logger.log(
                     f"{Colors.GREEN}Started pipeline: {pipeline_name}{Colors.RESET}"
