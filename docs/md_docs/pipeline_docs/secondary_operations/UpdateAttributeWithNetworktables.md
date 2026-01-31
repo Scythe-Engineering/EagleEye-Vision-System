@@ -1,5 +1,10 @@
 # UpdateAttributeWithNetworktables Operation Overview
 
+⚠️ **STATUS: WARNING**
+This operation is documented but NOT YET IMPLEMENTED. The implementation file is not found in `src/secondary_operations/`. The documentation reflects planned functionality that has not yet been coded. A refactor plan exists at `plans/update_attribute_with_networktables_refactor_plan.md`.
+
+---
+
 ## Overview
 
 The `UpdateAttributeWithNetworktables` operation is a secondary pipeline operation that enables dynamic runtime configuration of pipeline operations through NetworkTables. This operation bridges the gap between external robot control systems and the vision pipeline, allowing real-time parameter adjustments without pipeline restarts.

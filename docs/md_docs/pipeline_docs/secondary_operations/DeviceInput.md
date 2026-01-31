@@ -2,203 +2,216 @@
 
 ## Overview
 
-The `DeviceInput` operation is a special secondary pipeline operation that serves as the designated entry point for all vision pipelines. It marks where camera frames enter the processing chain and is automatically detected by the flow manager as the starting operation.
+The `DeviceInput` operation is a source operation that fetches camera frames from the camera thread manager. It serves as the entry point for all vision pipelines, retrieving frames from a specified camera and passing them into the processing chain for analysis.
 
 ## Architecture
 
-### Pipeline Entry Point
+### Frame Source Pattern
 
-The operation implements a simple pass-through pattern:
+The operation implements a camera frame fetching pattern:
 
-1. **Flow Manager Detection**: The flow manager searches for an operation named `"device_input"` to identify the pipeline start
-2. **Frame Injection**: Camera frames are injected directly into the next operation in the chain
-3. **Pass-Through**: If called directly, returns the input frame unchanged
+1. **Camera Manager Integration**: Connects to the CameraThreadManager to access camera threads
+2. **Frame Retrieval**: Calls `camera_manager.get_current_frame()` to fetch the latest frame
+3. **Frame Output**: Returns the frame as a numpy array or None if unavailable
 
 ## Key Features
 
-### Automatic Discovery
+### Camera Integration
 
-- **Name-Based Detection**: Flow manager locates the operation by name (`"device_input"`)
-- **Pipeline Start Point**: Always the first operation in execution order
-- **Error Handling**: Raises `ValueError` if no device_input operation is found
+- **Camera Thread Manager Access**: Retrieves frames from active camera threads
+- **Per-Camera Configuration**: Specifies which camera to read frames from via `camera_name` parameter
+- **Non-Blocking Retrieval**: Returns current frame if available, None otherwise
 
-### Frame Injection Pattern
+### Frame Data Handling
 
-- **Direct Injection**: Frames bypass the `run()` method and are injected into subsequent operations
-- **Warning on Direct Call**: Logs a warning if `run()` is called (should not happen in normal operation)
-- **No Processing**: Pure pass-through operation with no transformation logic
+- **Numpy Array Output**: Returns frames as `np.ndarray` for pipeline processing
+- **Graceful None Handling**: Returns None when camera is unavailable or no frame ready
+- **Type Safety**: Proper type hints for input/output data
 
 ## Configuration
 
 ### Required Parameters
 
-None - the operation requires no configuration parameters.
+- **camera_name** (`str`): Name of the camera to fetch frames from
 
 ### Constructor
 
 ```python
-def __init__(self) -> None:
-    """Initialize the device input operation."""
+def __init__(self, camera_manager: CameraThreadManager, camera_name: str) -> None:
+    """Initialize the device input operation.
+
+    Args:
+        camera_manager: Camera thread manager to fetch frames from.
+        camera_name: Name of the camera to read frames from.
+    """
 ```
 
 ## Data Flow
 
 ### Processing Flow
 
-1. **Pipeline Initialization**: Flow manager finds the device_input operation
-2. **Frame Injection**: Camera frames are injected into the next connected operation
-3. **Processing Continues**: Frame passes through the pipeline normally
+1. **Initialization**: DeviceInput is created with reference to camera manager and camera name
+2. **Frame Request**: `run()` method called to fetch current frame
+3. **Camera Lookup**: Calls `camera_manager.get_current_frame(camera_name)`
+4. **Frame Return**: Returns numpy array frame or None if unavailable
+5. **Pipeline Processing**: Returned frame enters next operation in pipeline
 
 ### Processing Steps
 
 ```
-Camera Frame
+Camera Thread Manager
        |
        v
-[DeviceInput] (entry point marker)
+[DeviceInput.run()]
        |
        v
-[Next Operation] (frame injected directly)
+get_current_frame(camera_name)
        |
        v
-...
+Return: np.ndarray | None
+       |
+       v
+[Next Operation in Pipeline]
 ```
 
 ## Usage Examples
 
 ### Basic Pipeline Configuration
 
-```json
-{
-    "operations": [
-        {
-            "type": "secondary",
-            "name": "device_input",
-            "position": {
-                "x": 100,
-                "y": 100
-            },
-            "connections": [
-                {
-                    "from_uuid": "device_input_uuid",
-                    "from_port": "frame",
-                    "to_uuid": "next_operation_uuid",
-                    "to_port": "frame",
-                    "data_type": "frame",
-                    "is_default": false
-                }
-            ]
-        }
-    ]
-}
+```python
+# DeviceInput is typically created by the pipeline manager
+device_input = DeviceInput(
+    camera_manager=camera_manager,
+    camera_name="Camera_0"
+)
+
+# Used in pipeline execution
+frame = device_input.run(None)  # input_data is unused for source operations
+if frame is not None:
+    # Frame available, pass to next operation
+    result = next_operation.run(frame)
 ```
 
-### Flow Manager Integration
+### Camera Manager Integration
 
-The flow manager automatically finds the device_input operation:
+DeviceInput connects to CameraThreadManager which manages camera capture threads:
 
 ```python
-def _find_start_operation(self) -> Operation:
-    """Finds the starting operation in the flow, always is the device_input operation name."""
-    for uuid, operation_data in self.operations.items():
-        if operation_data.name == "device_input":
-            return self.operations[uuid]
-    raise ValueError("No starting operation (device_input) found in operations.")
+# Camera manager maintains active camera threads
+camera_manager = CameraThreadManager(...)
+
+# DeviceInput retrieves frames from active threads
+frame_result = camera_manager.get_current_frame("Camera_0")
+if frame_result is not None:
+    frame, timestamp = frame_result
+    # frame is np.ndarray of current camera image
 ```
 
 ## Directory Structure
 
 ```
 src/secondary_operations/
- device_input.py           # Main operation implementation
+└── device_input.py           # Main operation implementation
 ```
 
 ## Technical Details
 
 ### Input/Output Types
 
-- **Input**: `Any` (typically `np.ndarray` for camera frames)
-- **Output**: `Any` (returns input unchanged)
+- **Input**: `Any` (unused - source operation doesn't require input)
+- **Output**: `np.ndarray | None` (video frame or None if unavailable)
 
 ### Method Signatures
 
 ```python
-def run(self, frame: Any) -> Any:
-    """Return the input frame unchanged. Should not be used, but if it is do not error.
+def run(self, input_data: Any) -> np.ndarray | None:
+    """Fetch the current frame from the configured camera.
 
     Args:
-        frame: Input camera frame.
+        input_data: Unused (data source operations don't use input).
 
     Returns:
-        The input frame.
+        Current camera frame as numpy array, or None if camera unavailable.
     """
-    print(
-        "DeviceInput.run() should not be called during normal operation, "
-        "frame should be injected into next operations instead."
-    )
-    return frame
+    frame_result = self.camera_manager.get_current_frame(self.camera_name)
+    if frame_result is not None:
+        frame, _ = frame_result
+        return frame
+    return None
 ```
+
+### Frame Data Format
+
+- **Shape**: `(height, width, 3)` for color frames or `(height, width)` for grayscale
+- **Data Type**: `np.uint8` typically (8-bit per channel)
+- **Color Space**: BGR by default (OpenCV convention)
+- **Timestamp**: Included in camera manager result but not returned by DeviceInput
 
 ## Integration Points
 
+### Camera Manager Integration
+
+- **CameraThreadManager**: Source for all frames in the system
+- **Thread Safety**: Camera manager handles thread-safe frame access
+- **Multiple Cameras**: Can create separate DeviceInput instances for different cameras
+
 ### Pipeline Integration
 
-- **Flow Manager**: Automatically detects device_input as pipeline start
-- **Camera Manager**: Injects frames into the pipeline at the device_input operation
-- **Visual Editor**: Displays as the first node in the pipeline flowchart
-
-### Operation Interface
-
-- **No Special Methods**: Does not implement `visualize()` or `update_config()`
-- **Simple Pass-Through**: Returns input unchanged when run directly
+- **Source Operation**: Serves as the entry point for frame processing
+- **Frame Provider**: Ensures frames available for all downstream operations
+- **Pipeline Manager**: Created and managed by pipeline generation system
 
 ## Development Notes
 
 ### Operation Requirements
 
-- **Required Name**: Must be named `"device_input"` for flow manager detection
-- **No Configuration**: Takes no parameters in constructor
-- **Minimal Implementation**: Simple pass-through logic
+- **Camera Availability**: Camera must be registered with CameraThreadManager before use
+- **Camera Thread Active**: Camera thread must be running to return frames
+- **Name Matching**: `camera_name` parameter must match registered camera name exactly
 
 ### Pipeline Design
 
-- **Always Present**: Every pipeline must have exactly one device_input operation
-- **Position**: Typically placed at the leftmost position in visual editor
-- **Connection**: Must connect to at least one downstream operation
+- **Single Source**: Each pipeline has one DeviceInput for its assigned camera
+- **Required Operation**: Every pipeline must have a DeviceInput operation
+- **First in Chain**: Always executes before other operations in pipeline
 
 ## Error Handling
 
-### Configuration Errors
+### Camera Issues
 
-- **Missing Operation**: Raises `ValueError` if no device_input operation found
-- **Multiple Operations**: Flow manager uses the first match (though pipelines should have only one)
+- **Camera Not Found**: Returns None if camera_name doesn't match any active camera
+- **No Frames Available**: Returns None if camera thread hasn't captured a frame yet
+- **Thread Not Running**: Returns None if camera thread is not active
 
-### Runtime Warnings
+### Robustness Features
 
-- **Direct Call**: Logs warning if `run()` method is called directly (indicates incorrect pipeline setup)
+- **Graceful None Handling**: Pipeline can handle None returns from DeviceInput
+- **Non-Blocking**: Doesn't block pipeline waiting for frames
+- **Safe Tuple Unpacking**: Properly handles frame_result tuple structure
 
 ## Best Practices
 
 ### Pipeline Design
 
-1. **Single Entry Point**: Each pipeline should have exactly one device_input operation
-2. **Visual Placement**: Position at the left edge of the canvas for clear flow visualization
-3. **Connection Pattern**: Connect output to the first processing operation
+1. **Camera Naming**: Use clear, consistent camera names across configuration
+2. **Single Source**: Assign only one camera per DeviceInput operation
+3. **Error Handling**: Implement None checks in downstream operations
 
 ### Configuration
 
-1. **No Parameters**: Do not add configuration parameters to device_input
-2. **Static Position**: Position should remain stable across pipeline edits
-3. **Clear Label**: Use "Device Input" or similar clear label in visual editor
+1. **Valid Camera Names**: Ensure camera_name matches CameraThreadManager registry
+2. **Camera Thread Setup**: Verify camera thread is running before pipeline execution
+3. **Frame Timing**: Consider camera frame rate when designing pipeline timing
 
 ## Future Enhancements
 
 ### Planned Features
 
-- **Multi-Input Support**: Potential support for multiple camera inputs per pipeline
-- **Frame Metadata**: Addition of frame metadata injection (timestamp, camera ID, etc.)
-- **Validation**: Frame format validation before injection
-- **Debug Mode**: Optional frame logging for debugging
+- **Frame Buffering**: Optional frame buffer for frame averaging/history
+- **Frame Validation**: Format and dimension validation before return
+- **Metadata Inclusion**: Timestamp and camera metadata in frame data
+- **Multi-Camera Frames**: Support for synchronized multi-camera frame sets
+- **Frame Skipping**: Optional frame rate limiting or skipping
 
 ---
 

@@ -95,7 +95,7 @@ Each dictionary must contain:
 
 ### `blur_kernel_size` (int)
 
-- **Default**: 0
+- **Default**: 5
 - **Range**: 0-31
 - **Restart Required**: No
 - **Description**: Gaussian blur kernel size for noise reduction. Must be odd number. Set to 0 to disable blurring.
@@ -109,10 +109,17 @@ Each dictionary must contain:
 
 ### `morphology_iterations` (int)
 
-- **Default**: 0
-- **Range**: 1-10
+- **Default**: 2
+- **Range**: 0-10 (0 to disable morphology, 1-10 for morphological operations)
 - **Restart Required**: No
-- **Description**: Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality.
+- **Description**: Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality. Set to 0 to disable morphology.
+
+### `camera_parameters_path` (str)
+
+- **Default**: `null`
+- **Restart Required**: No
+- **Required**: Yes
+- **Description**: Path to camera calibration parameters JSON file. Contains intrinsic and distortion matrices for the camera. Can be a direct file path or a camera bus ID (e.g., "0", "0-1") to auto-resolve from calibrations directory.
 
 ## Configuration Example
 
@@ -145,9 +152,10 @@ Each dictionary must contain:
         ],
         "min_area": 100,
         "max_area": 50000,
-        "blur_kernel_size": 0,
+        "blur_kernel_size": 5,
         "morphology_kernel_size": 5,
-        "morphology_iterations": 0
+        "morphology_iterations": 2,
+        "camera_parameters_path": "src/utils/camera_utils/camera_calibrations/0/intrinsics.json"
     }
 }
 ```
@@ -178,7 +186,10 @@ detector = ColorThresholdDetectionDefinition(
     target_size=320,
     color_ranges=color_ranges,
     min_area=100,
-    max_area=50000
+    max_area=50000,
+    blur_kernel_size=5,
+    morphology_iterations=2,
+    camera_parameters_path="src/utils/camera_utils/camera_calibrations/0/intrinsics.json"
 )
 
 frame = cv2.imread("input.jpg")
@@ -368,14 +379,29 @@ Track colored balls in sports or robotics:
 
 ## Visualization
 
-The operation includes a `visualize()` method that draws bounding boxes and labels on frames:
+The operation includes a `visualize()` method that displays detection results with a split-screen view:
 
 ### Features
 
+- **Split-screen display**: Left side shows original camera frame with bounding boxes and labels, right side shows the thresholded mask overlay
 - **Color-coded boxes**: Bounding boxes are drawn in the actual detected color (red, blue, green, etc.)
 - **Labels**: Shows color name and class ID for each detection
+- **Binary mask overlay**: Right side displays the binary mask showing all detected pixels after thresholding and morphological operations
 - **Thread-safe**: Uses locks to safely access detection data
 - **Automatic color mapping**: Maps common color names to BGR values
+
+### Display Layout
+
+**Left side (Original Frame):**
+- Original camera input
+- Bounding boxes with detected object outlines
+- Color-coded labels with class IDs
+
+**Right side (Threshold Mask):**
+- Binary mask showing all pixels that passed color thresholding
+- White pixels indicate detected colors, black indicates background
+- Shows the result of morphological operations for noise reduction
+- Useful for debugging HSV range tuning and morphology settings
 
 ### Usage
 
@@ -385,7 +411,7 @@ detector = ColorThresholdDetectionDefinition(...)
 # Run detection
 detections = detector.run(frame)
 
-# Visualize detections on frame
+# Visualize detections with split-screen (original + mask)
 visualized_frame = detector.visualize(frame.copy())
 ```
 

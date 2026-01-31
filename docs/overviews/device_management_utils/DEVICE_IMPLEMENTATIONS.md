@@ -44,9 +44,13 @@ input_tensor = torch.randn(1, 3, 640, 480)  # Example input
 output = cpu_device.run("model", input_tensor, (640, 480))
 ```
 
+### Multi-Stream Support
+
+The CPU device implements `connect_streams()` as a no-op since single-threaded CPU processing does not benefit from multi-stream coordination.
+
 ### Limitations
 
-- No `stop()` method implementation (not required for CPU inference as ONNX Runtime handles resource cleanup automatically)
+- `stop()` method is implemented as a no-op (no resources require cleanup for CPU inference as ONNX Runtime handles resource cleanup automatically)
 - Synchronous execution only
 - Performance limited by CPU capabilities
 
@@ -99,6 +103,10 @@ import numpy as np
 input_data = np.random.randn(1, 3, 640, 480).astype(np.float32)
 output = gpu_device.run("path/to/model.pth", input_data, (640, 480), 0)
 ```
+
+### Multi-Stream Support
+
+The GPU device implements `connect_streams()` to coordinate multiple processing streams when needed, though PyTorch's synchronous execution model limits stream-level parallelism compared to MX3.
 
 ### Error Handling
 
@@ -178,6 +186,10 @@ output = mx3_device.run("path/to/model.onnx", input_data, (640, 480), 0)
 - **Stream Count:** Multiple concurrent processing streams
 - **Polling Interval:** Configurable result checking frequency
 
+### Stream Connection
+
+The `connect_streams()` method manages the coordination between multiple concurrent processing streams, enabling efficient parallel processing of inputs across different stream indices.
+
 ### Error Handling
 
 - **Hardware Initialization:** RuntimeError for MX3 hardware issues
@@ -194,6 +206,7 @@ output = mx3_device.run("path/to/model.onnx", input_data, (640, 480), 0)
 | **Latency**      | Medium               | Low-Medium         | Ultra-Low             |
 | **Throughput**   | Low-Medium           | High               | High                  |
 | **Power Usage**  | Low                  | High               | Medium                |
+| **connect_streams()** | Yes (no-op)      | Yes                | Yes                   |
 | **Use Case**     | Fallback/Development | Training/Inference | Real-time Production  |
 
 ## Selection Guidelines

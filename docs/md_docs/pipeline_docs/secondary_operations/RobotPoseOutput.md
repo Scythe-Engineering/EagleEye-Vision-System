@@ -61,7 +61,7 @@ pose_output = RobotPoseOutput(
 2. **Change Detection**: Compare with previously sent pose (if any)
 3. **Transmission Decision**: Send to web interface only if pose has changed
 4. **State Update**: Store current pose as last sent pose
-5. **Data Return**: Return original pose matrix unchanged
+5. **Data Return**: Return the pose matrix if changed, None if pose unchanged
 
 ### Processing Logic
 
@@ -74,7 +74,7 @@ If different or first pose:
   Send to web interface
   Update last sent pose
        ↓
-Return original pose matrix
+Return pose or None if unchanged
 ```
 
 ## Usage Examples
@@ -136,14 +136,20 @@ src/secondary_operations/
 if self._last_sent_pose is not None and np.array_equal(
     self._last_sent_pose, pose
 ):
-    return None  # No change, skip transmission
+    return None  # No change detected, return None
 ```
 
 **State Management:**
 ```python
 self.web_interface.update_robot_position(pose)
 self._last_sent_pose = pose.copy()
+return pose  # Return the pose when it changes
 ```
+
+**Return Value Behavior:**
+- Returns `None` if the pose is identical to the previously sent pose
+- Returns the pose matrix (as a numpy array) if the pose has changed or is being sent for the first time
+- This optimization reduces unnecessary network traffic while maintaining real-time updates
 
 ### Data Format Requirements
 

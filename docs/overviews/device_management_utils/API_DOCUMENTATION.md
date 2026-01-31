@@ -14,26 +14,35 @@ ComputeDevice(device_id: str, device_type: str)
 
 ### Methods
 
-#### `load_model(model_path: str) -> None`
+#### `load_model(model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None`
 Abstract method for loading a model into the compute device.
 
 **Parameters:**
 - `model_path` (str): Path to the model file
+- `input_data_shape` (tuple[int, int]): Expected input shape (height, width)
+- `post_processing_model_path` (str | None): Optional path to post-processing model
+- `is_grayscale` (bool): Whether input is grayscale (default: False)
 
 **Raises:**
 - `NotImplementedError`: Must be implemented by subclasses
 
-#### `run(model_path: str, input_data: np.ndarray, input_data_shape: tuple[int, int], stream_idx: int) -> np.ndarray`
+#### `run(model_path: str, input_data: np.ndarray | torch.Tensor, input_data_shape: tuple[int, int], stream_idx: int = 0) -> np.ndarray`
 Abstract method for running inference on the loaded model.
 
 **Parameters:**
 - `model_path` (str): Path to the model (used as key for model lookup)
-- `input_data` (np.ndarray): Input data for inference
+- `input_data` (np.ndarray | torch.Tensor): Input data for inference (numpy array or torch tensor)
 - `input_data_shape` (tuple[int, int]): Shape of input data (height, width)
-- `stream_idx` (int): Stream index for multi-stream processing
+- `stream_idx` (int): Stream index for multi-stream processing (default: 0)
 
 **Returns:**
 - `np.ndarray`: Model output
+
+**Raises:**
+- `NotImplementedError`: Must be implemented by subclasses
+
+#### `connect_streams() -> None`
+Abstract method for managing multi-stream processing.
 
 **Raises:**
 - `NotImplementedError`: Must be implemented by subclasses
@@ -113,28 +122,38 @@ Creates a CPU compute device with ID "CPU_001" and type "CPU".
 
 ### Methods
 
-#### `load_model(model_path: str) -> None`
+#### `load_model(model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None`
 Load an ONNX model for CPU inference.
 
 **Parameters:**
 - `model_path` (str): Path to .onnx model file
+- `input_data_shape` (tuple[int, int]): Expected input shape (height, width)
+- `post_processing_model_path` (str | None): Optional path to post-processing model
+- `is_grayscale` (bool): Whether input is grayscale (default: False)
 
 **Raises:**
 - `RuntimeError`: If model loading fails
 
-#### `run(model_name: str, input_tensor: torch.Tensor, _: tuple[int, int]) -> np.ndarray`
+#### `run(model_path: str, input_data: np.ndarray | torch.Tensor, input_data_shape: tuple[int, int], stream_idx: int = 0) -> np.ndarray`
 Run inference on CPU using ONNX Runtime.
 
 **Parameters:**
-- `model_name` (str): Model key (derived from filename)
-- `input_tensor` (torch.Tensor): Input data tensor
-- `_` (tuple[int, int]): Unused parameter (for API compatibility)
+- `model_path` (str): Path to model (used as key)
+- `input_data` (np.ndarray | torch.Tensor): Input data array or tensor
+- `input_data_shape` (tuple[int, int]): Input shape (height, width)
+- `stream_idx` (int): Stream index for multi-stream processing (default: 0)
 
 **Returns:**
-- `np.ndarray`: Inference output, reshaped to (height, width)
+- `np.ndarray`: Inference output
 
 **Raises:**
 - `ValueError`: If model is not loaded
+
+#### `connect_streams() -> None`
+Manage multi-stream processing for CPU device.
+
+#### `stop() -> None`
+Implemented as a no-op. No resources require cleanup for CPU inference as ONNX Runtime handles resource cleanup automatically.
 
 ## GPU Implementation
 
@@ -154,29 +173,35 @@ Creates a GPU compute device with CUDA support.
 
 ### Methods
 
-#### `load_model(model_path: str) -> None`
+#### `load_model(model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None`
 Load a PyTorch model for GPU inference.
 
 **Parameters:**
 - `model_path` (str): Path to .pt/.pth PyTorch model file
+- `input_data_shape` (tuple[int, int]): Expected input shape (height, width)
+- `post_processing_model_path` (str | None): Optional path to post-processing model
+- `is_grayscale` (bool): Whether input is grayscale (default: False)
 
 **Raises:**
 - `RuntimeError`: If model loading fails
 
-#### `run(model_path: str, input_data: np.ndarray, input_data_shape: tuple[int, int], stream_idx: int) -> np.ndarray`
+#### `run(model_path: str, input_data: np.ndarray | torch.Tensor, input_data_shape: tuple[int, int], stream_idx: int = 0) -> np.ndarray`
 Run inference on GPU using PyTorch CUDA.
 
 **Parameters:**
 - `model_path` (str): Path to model (used as key)
-- `input_data` (np.ndarray): Input data array
-- `input_data_shape` (tuple[int, int]): Input shape (unused)
-- `stream_idx` (int): Stream index (unused)
+- `input_data` (np.ndarray | torch.Tensor): Input data array or tensor
+- `input_data_shape` (tuple[int, int]): Input shape (height, width)
+- `stream_idx` (int): Stream index for multi-stream processing (default: 0)
 
 **Returns:**
 - `np.ndarray`: Inference output on CPU
 
 **Raises:**
 - `ValueError`: If model is not loaded
+
+#### `connect_streams() -> None`
+Manage multi-stream processing for GPU device. Coordinate multiple processing streams when needed, though PyTorch's synchronous execution model limits stream-level parallelism.
 
 #### `stop() -> None`
 Clear loaded models from GPU memory.
@@ -201,37 +226,41 @@ MX3ModelIO(model_object: MultiStreamAsyncAccl, input_data_shape: tuple[int, int]
 #### Constructor
 
 ```python
-MX3Accelerator(device_id: str = "MX3_001", model_path: str = "", input_data_shape: tuple[int, int] = (640, 480), is_grayscale: bool = False)
+MX3Accelerator(device_id: str = "MX3_001", logger=None)
 ```
 
 **Parameters:**
 - `device_id` (str): Unique MX3 device identifier
-- `model_path` (str): Path to ONNX model file
-- `input_data_shape` (tuple[int, int]): Input shape for model
-- `is_grayscale` (bool): Whether model expects grayscale input
+- `logger`: Optional logger instance for debugging output
 
 **Raises:**
 - `RuntimeError`: If MX3 hardware initialization fails
 
 #### Methods
 
-#### `load_model(model_path: str) -> None`
+#### `load_model(model_path: str, input_data_shape: tuple[int, int], post_processing_model_path: str | None = None, is_grayscale: bool = False) -> None`
 Load and compile model for MX3 hardware.
 
 **Parameters:**
 - `model_path` (str): Path to .onnx model file
+- `input_data_shape` (tuple[int, int]): Expected input shape (height, width)
+- `post_processing_model_path` (str | None): Optional path to post-processing model
+- `is_grayscale` (bool): Whether model expects grayscale input
 
-#### `run(model_path: str, input_data: np.ndarray, input_data_shape: tuple[int, int], stream_idx: int) -> np.ndarray`
+#### `run(model_path: str, input_data: np.ndarray | torch.Tensor, input_data_shape: tuple[int, int], stream_idx: int = 0) -> np.ndarray`
 Run asynchronous inference on MX3 accelerator.
 
 **Parameters:**
-- `model_path` (str): Model path (unused, uses pre-loaded model)
-- `input_data` (np.ndarray): Input data array
-- `input_data_shape` (tuple[int, int]): Input shape
-- `stream_idx` (int): Stream index for multi-stream processing
+- `model_path` (str): Model path (used as key for model lookup)
+- `input_data` (np.ndarray | torch.Tensor): Input data array or tensor
+- `input_data_shape` (tuple[int, int]): Input shape (height, width)
+- `stream_idx` (int): Stream index for multi-stream processing (default: 0)
 
 **Returns:**
 - `np.ndarray`: Inference results
+
+#### `connect_streams() -> None`
+Manage multi-stream processing for MX3 device. Coordinates multiple concurrent processing streams, enabling efficient parallel processing.
 
 #### `stop() -> None`
 Stop MX3 processing and clean up resources.
