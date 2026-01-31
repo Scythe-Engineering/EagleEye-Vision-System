@@ -3,7 +3,7 @@ import os
 import subprocess
 from pathlib import Path
 from time import sleep
-from typing import Dict, Set
+from typing import Dict
 
 faulthandler.enable()
 
@@ -13,16 +13,13 @@ from src.rust_implementations.build import main as rust_build  # noqa: E402
 from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
     CameraThreadManager,  # noqa: E402
 )
-from src.utils.camera_utils.check_and_add_new_cameras import (  # noqa: E402
-    check_and_add_new_cameras,  # noqa: E402
-)
 from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
-from networktables import NetworkTables  # noqa: E402
+from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
 from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
 import json  # noqa: E402
 
@@ -56,38 +53,6 @@ if not os.path.exists("src/general_conf.json"):
 general_conf = json.load(open("src/general_conf.json"))
 
 
-def add_video_file_cameras(
-    web_interface: EagleEyeInterface,
-    camera_manager: CameraThreadManager,
-    known_cameras: Set[str],
-    logger: Logger,
-) -> None:
-    """
-    Add video file cameras to the system. (Mostly for testing and development purposes)
-    """
-    # Add a video file cameras
-    video_folder = os.path.join(current_dir, "utils", "sim_videos")
-    video_files = list(Path(video_folder).glob("*.mp4"))
-    for video_file in video_files:
-        camera_name = video_file.stem
-        web_interface.add_camera(camera_name, -1)
-        camera_manager.start_camera_thread(
-            camera_name,
-            os.path.join(
-                current_dir,
-                "utils",
-                "camera_utils",
-                "camera_calibrations",
-                "sim_camera",
-            ),
-            str(video_file),
-        )
-        known_cameras.add(camera_name)
-        logger.log(
-            f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"
-        )
-
-
 class MainBackend:
     def __init__(self, logger: Logger):
         try:
@@ -110,7 +75,7 @@ class MainBackend:
             self.camera_manager = CameraThreadManager(
                 self.web_interface, logger=self.logger
             )
-            self.known_cameras: Set[str] = set()
+            self.known_cameras = self.camera_manager.known_cameras
 
             self.compute_pool = ComputePool()
             self._initialize_compute_devices()
@@ -121,18 +86,6 @@ class MainBackend:
                 self.network_table,
                 self.camera_manager,
                 logger=self.logger,
-            )
-
-            # Initial camera detection
-            self.logger.log(
-                f"{Colors.CYAN}Performing initial camera detection...{Colors.RESET}"
-            )
-            self.known_cameras = check_and_add_new_cameras(
-                self.web_interface, self.camera_manager, self.known_cameras, self.logger
-            )
-
-            add_video_file_cameras(
-                self.web_interface, self.camera_manager, self.known_cameras, self.logger
             )
 
             available_cameras = self.camera_manager.get_all_camera_names()
@@ -298,7 +251,6 @@ class MainBackend:
 
 def main() -> None:
     """Main function to initialize and continuously monitor for cameras."""
-    global backend
     try:
         backend = MainBackend(logger=logger)
         # Keep the main thread alive to allow restart threads to complete
