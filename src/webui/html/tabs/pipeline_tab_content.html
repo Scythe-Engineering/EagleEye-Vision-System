@@ -24,26 +24,13 @@
                             </div>
                         </div>
                     </div>
-                    <div class="flex items-center gap-4">
-                        <div class="flex flex-col gap-2">
-                            <label
-                                for="cameraSelect"
-                                class="text-[#f9c845] text-sm font-medium text-center"
-                                >Camera:</label
-                            >
-                            <select
-                                id="cameraSelect"
-                                class="text-[#f9c845] cursor-pointer bg-[#1E1E1E] border text-sm p-1 rounded-md border-solid border-[#414141] hover:bg-[#2a2a2a] focus:outline-none focus:border-[#f9c845]"
-                            >
-                                <option disabled selected>Select Camera</option>
-                            </select>
-                        </div>
-                        <div class="flex flex-col gap-2">
-                            <label
-                                for="pipelineSelect"
-                                class="text-[#f9c845] text-sm font-medium text-center"
-                                >Pipeline:</label
-                            >
+                        <div class="flex items-center gap-4">
+                            <div class="flex flex-col gap-2">
+                                <label
+                                    for="pipelineSelect"
+                                    class="text-[#f9c845] text-sm font-medium text-center"
+                                    >Pipeline:</label
+                                >
                             <select
                                 id="pipelineSelect"
                                 class="text-[#f9c845] cursor-pointer bg-[#1E1E1E] border text-sm p-1 rounded-md border-solid border-[#414141] hover:bg-[#2a2a2a] focus:outline-none focus:border-[#f9c845]"
@@ -52,12 +39,18 @@
                                     Select Pipeline
                                 </option>
                             </select>
-                        </div>
-                        <button
-                            id="newPipelineButton"
-                            class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
-                            title="Create a new pipeline"
-                        >
+                                <p
+                                    id="pipelineCameraNote"
+                                    class="text-xs text-[#ac8a2f] text-center"
+                                >
+                                    No cameras configured
+                                </p>
+                            </div>
+                            <button
+                                id="newPipelineButton"
+                                class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                                title="Create a new pipeline"
+                            >
                             New Pipeline
                         </button>
                     </div>

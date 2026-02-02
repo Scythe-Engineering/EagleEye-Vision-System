@@ -15,7 +15,7 @@ import {
 import { debounce } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
-import { showDanger } from "../ui/notificationSystem.js";
+import { showDanger, showWarning } from "../ui/notificationSystem.js";
 
 function handleDragStartWithLogging(
     event,
@@ -113,8 +113,8 @@ let pipelineContainer;
 let pipelinePlaceholder;
 let operationsList;
 let runButton;
-let cameraSelect;
 let pipelineSelect;
+let pipelineCameraNote;
 let newPipelineButton;
 let deletePipelineButton;
 let restartIndicator;
@@ -130,15 +130,6 @@ function getPipeline() {
     return pipelineStore.getNodesForRenderer();
 }
 
-function getCameras() {
-    return pipelineStore.state.cameras;
-}
-
-function getSelectedCamera() {
-    const cameraName = pipelineStore.state.currentPipeline.cameraName;
-    return pipelineStore.state.cameras.find((c) => c.name === cameraName);
-}
-
 function getPipelines() {
     return pipelineStore.state.pipelines;
 }
@@ -146,6 +137,55 @@ function getPipelines() {
 function getSelectedPipeline() {
     const pipelineName = pipelineStore.state.currentPipeline.pipelineName;
     return pipelineStore.state.pipelines.find((p) => p.name === pipelineName);
+}
+
+function getDeviceInputNodes() {
+    return pipelineStore.getNodes().filter((node) => {
+        return pipelineStore.normalizeOperationId(node.operationId) ===
+            "device_input";
+    });
+}
+
+function getDeviceInputCameraNames() {
+    const names = new Set();
+    pipelineStore.getNodes().forEach((node) => {
+        const operationId = pipelineStore.normalizeOperationId(node.operationId);
+        if (operationId === "device_input") {
+            const cameraName = node.config?.camera_name;
+            if (cameraName) {
+                names.add(cameraName);
+            }
+        }
+    });
+    return Array.from(names);
+}
+
+function formatPipelineCameraNote(cameraNames) {
+    if (cameraNames.length === 0) {
+        return { text: "No cameras configured", title: "" };
+    }
+    const sortedNames = [...cameraNames].sort();
+    if (sortedNames.length <= 2) {
+        return {
+            text: `Cameras: ${sortedNames.join(", ")}`,
+            title: sortedNames.join(", "),
+        };
+    }
+    const visibleNames = sortedNames.slice(0, 2).join(", ");
+    return {
+        text: `Cameras: ${visibleNames} (+${sortedNames.length - 2} more)`,
+        title: sortedNames.join(", "),
+    };
+}
+
+function updatePipelineCameraNote() {
+    if (!pipelineCameraNote) {
+        return;
+    }
+    const cameraNames = getDeviceInputCameraNames();
+    const note = formatPipelineCameraNote(cameraNames);
+    pipelineCameraNote.textContent = note.text;
+    pipelineCameraNote.title = note.title;
 }
 
 async function fetchAvailableOperations() {
@@ -231,10 +271,10 @@ function populateCameraDropdown() {
     }
 }
 
-async function fetchPipelinesForCamera(cameraName) {
+async function fetchPipelines() {
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-names-for-camera/${encodeURIComponent(cameraName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-names`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -257,10 +297,10 @@ async function fetchPipelinesForCamera(cameraName) {
     }
 }
 
-async function fetchPipelineConfig(cameraName, pipelineName) {
+async function fetchPipelineConfig(pipelineName) {
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(cameraName)}/${encodeURIComponent(pipelineName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(pipelineName)}`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -327,34 +367,6 @@ function populatePipelineDropdown(selectedPipelineName = null) {
     }
 }
 
-async function handleCameraSelection() {
-    const selectedValue = cameraSelect.value;
-    const cameras = getCameras();
-    const selectedCamera = cameras.find(
-        (camera) => camera.urlSafeName === selectedValue,
-    );
-    if (selectedCamera) {
-        pipelineStore.setCurrentCamera(selectedCamera.name);
-    }
-    console.log("Selected camera:", selectedCamera);
-
-    if (selectedCamera) {
-        await fetchPipelinesForCamera(selectedCamera.name);
-        populatePipelineDropdown();
-
-        const pipelines = getPipelines();
-        if (pipelines.length === 0) {
-            pipelineStore.clearPipeline();
-            pipelineStore.setCurrentPipeline(null);
-            await renderCurrentPipeline();
-        } else {
-            await renderCurrentPipeline();
-        }
-        await checkAndTriggerAutoFill();
-        updateDeleteButtonVisibility();
-    }
-}
-
 async function handlePipelineSelection() {
     const selectedValue = pipelineSelect.value;
     const pipelines = getPipelines();
@@ -365,19 +377,13 @@ async function handlePipelineSelection() {
 
     if (selectedPipeline) {
         pipelineStore.setCurrentPipeline(selectedPipeline.name);
-        const selectedCamera = getSelectedCamera();
-        if (selectedCamera) {
-            await loadPipelineIntoBuilder(
-                selectedCamera.name,
-                selectedPipeline.name,
-            );
-        }
+        await loadPipelineIntoBuilder(selectedPipeline.name);
     }
 
     updateDeleteButtonVisibility();
 }
 
-async function loadPipelineIntoBuilder(cameraName, pipelineName) {
+async function loadPipelineIntoBuilder(pipelineName) {
     try {
         const operations = getOperations();
         if (operations.length === 0) {
@@ -385,10 +391,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             return;
         }
 
-        const pipelineConfig = await fetchPipelineConfig(
-            cameraName,
-            pipelineName,
-        );
+        const pipelineConfig = await fetchPipelineConfig(pipelineName);
 
         const allConnections = [];
         pipelineConfig.forEach((configItem) => {
@@ -405,6 +408,7 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
         await renderCurrentPipeline();
 
         updateRunButton();
+        updatePipelineCameraNote();
     } catch (error) {
         showDanger("Failed to load pipeline");
         console.error("Failed to load pipeline:", error);
@@ -428,24 +432,20 @@ async function renderCurrentPipeline() {
             handleDragEnd: handleDragEndWithLogging,
         });
     }
+    updatePipelineCameraNote();
 }
 
 async function fetchAndUpdateThreadInfo() {
-    const selectedCamera = getSelectedCamera();
     const selectedPipeline = getSelectedPipeline();
 
-    if (
-        !selectedCamera ||
-        !selectedPipeline ||
-        pipelineStore.isRestartRequired()
-    ) {
+    if (!selectedPipeline || pipelineStore.isRestartRequired()) {
         hideAllThreadBadges();
         return;
     }
 
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-thread-info/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-thread-info/${encodeURIComponent(selectedPipeline.name)}`,
         );
 
         if (!response.ok) {
@@ -485,24 +485,7 @@ function hideAllThreadBadges() {
 
 async function checkAndTriggerAutoFill() {
     try {
-        const cameras = getCameras();
         const pipelines = getPipelines();
-
-        if (cameraSelect?.value) {
-            const selectedCameraValue = cameraSelect.value;
-            const cameraObj = cameras.find(
-                (c) => c.urlSafeName === selectedCameraValue,
-            );
-            if (cameraObj) {
-                pipelineStore.setCurrentCamera(cameraObj.name);
-            }
-        }
-
-        const selectedCamera = getSelectedCamera();
-        if (!selectedCamera) {
-            console.log("No camera selected, skipping auto-fill");
-            return;
-        }
 
         if (!pipelineSelect?.value) {
             console.log("No pipeline selected, skipping auto-fill");
@@ -523,9 +506,9 @@ async function checkAndTriggerAutoFill() {
         pipelineStore.setCurrentPipeline(pipelineObj.name);
 
         console.log(
-            "Both camera and pipeline are pre-selected, triggering auto-fill",
+            "Pipeline pre-selected, triggering auto-fill",
         );
-        await loadPipelineIntoBuilder(selectedCamera.name, pipelineObj.name);
+        await loadPipelineIntoBuilder(pipelineObj.name);
     } catch (error) {
         console.error("Error during auto-fill check:", error);
     }
@@ -533,12 +516,7 @@ async function checkAndTriggerAutoFill() {
 
 async function removeFromPipeline(instanceId) {
     const removedNode = pipelineStore.getNode(instanceId);
-
-    // Prevent removal of device_input operation - it's required and auto-inserted
-    if (removedNode && removedNode.operationId === "device_input.py") {
-        showDanger("Cannot remove device input operation - it is required");
-        return;
-    }
+    const deviceInputCountBefore = getDeviceInputNodes().length;
 
     console.log("[PIPELINE] Removing operation from pipeline", {
         removedOperation: removedNode
@@ -570,6 +548,13 @@ async function removeFromPipeline(instanceId) {
 
     await renderCurrentPipeline();
     autoSavePipeline();
+
+    const deviceInputCountAfter = getDeviceInputNodes().length;
+    if (deviceInputCountBefore > 0 && deviceInputCountAfter === 0) {
+        showWarning(
+            "No device_input nodes configured; camera_name required for camera input.",
+        );
+    }
 
     console.log("Operation removed from pipeline - requiring backend restart");
     await updateRestartIndicator(true);
@@ -611,6 +596,7 @@ function openOperationSettings(opOrItem) {
             node.requiresRestart = requiresRestart || false;
             console.log("Updated node.config:", node.config);
             console.log("Updated node.requiresRestart:", node.requiresRestart);
+            updatePipelineCameraNote();
         } else {
             // Fallback to updating the copy if node not found (shouldn't happen)
             opOrItem.config = values;
@@ -620,6 +606,7 @@ function openOperationSettings(opOrItem) {
                 "Updated opOrItem.requiresRestart:",
                 opOrItem.requiresRestart,
             );
+            updatePipelineCameraNote();
         }
 
         console.log("Calling autoSavePipeline...");
@@ -730,11 +717,10 @@ function updateRunButton() {
 }
 
 async function autoSavePipelineImpl() {
-    const selectedCamera = getSelectedCamera();
     const selectedPipeline = getSelectedPipeline();
 
-    if (!selectedCamera || !selectedPipeline) {
-        console.log("No camera or pipeline selected, skipping auto-save");
+    if (!selectedPipeline) {
+        console.log("No pipeline selected, skipping auto-save");
         return;
     }
 
@@ -742,7 +728,7 @@ async function autoSavePipelineImpl() {
         const pipelineConfig = pipelineStore.exportToConfig();
 
         const response = await fetch(
-            `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedPipeline.name)}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -759,12 +745,6 @@ async function autoSavePipelineImpl() {
 }
 
 async function createNewPipeline() {
-    const selectedCamera = getSelectedCamera();
-    if (!selectedCamera) {
-        alert("Please select a camera first.");
-        return;
-    }
-
     const newPipelineName = prompt("Enter a name for the new pipeline:");
     if (!newPipelineName || newPipelineName.trim() === "") {
         return;
@@ -825,7 +805,7 @@ async function createNewPipeline() {
         }
 
         console.log(
-            "[PIPELINE] Re-rendering pipeline with camera_input for new pipeline creation",
+            "[PIPELINE] Re-rendering pipeline with device_input for new pipeline creation",
             {
                 pipelineName: newPipelineName,
                 timestamp: new Date().toISOString(),
@@ -861,12 +841,6 @@ async function deleteCurrentPipeline() {
         return;
     }
 
-    const selectedCamera = getSelectedCamera();
-    if (!selectedCamera) {
-        alert("No camera selected.");
-        return;
-    }
-
     const pipelineToDelete = selectedPipeline;
 
     const confirmed = confirm(
@@ -879,7 +853,7 @@ async function deleteCurrentPipeline() {
 
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(pipelineToDelete.name)}`,
+            `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(pipelineToDelete.name)}`,
             {
                 method: "DELETE",
                 headers: {
@@ -933,8 +907,7 @@ async function deleteCurrentPipeline() {
 function updateDeleteButtonVisibility() {
     if (deletePipelineButton) {
         const selectedPipeline = getSelectedPipeline();
-        const selectedCamera = getSelectedCamera();
-        if (selectedPipeline && selectedCamera) {
+        if (selectedPipeline) {
             deletePipelineButton.classList.remove("hidden");
         } else {
             deletePipelineButton.classList.add("hidden");
@@ -1150,20 +1123,13 @@ async function refreshPipelineCreator() {
         }
 
         await fetchAvailableCameras();
-        populateCameraDropdown();
 
-        const selectedCamera = getSelectedCamera();
-        if (selectedCamera) {
-            await fetchPipelinesForCamera(selectedCamera.name);
-            populatePipelineDropdown();
+        await fetchPipelines();
+        populatePipelineDropdown();
 
-            const selectedPipeline = getSelectedPipeline();
-            if (selectedPipeline) {
-                await loadPipelineIntoBuilder(
-                    selectedCamera.name,
-                    selectedPipeline.name,
-                );
-            }
+        const selectedPipeline = getSelectedPipeline();
+        if (selectedPipeline) {
+            await loadPipelineIntoBuilder(selectedPipeline.name);
         }
 
         updateDeleteButtonVisibility();
@@ -1176,14 +1142,8 @@ async function refreshPipelineCreator() {
 
 async function handleFlowchartPipelineChange(changeEvent) {
     const selectedPipeline = getSelectedPipeline();
-    const selectedCamera = getSelectedCamera();
 
     if (!selectedPipeline) {
-        if (!selectedCamera) {
-            alert("Please select a camera first, then create a new pipeline.");
-            return;
-        }
-
         const shouldCreate = confirm(
             "You need to create a pipeline before adding operations. Would you like to create a new pipeline now?",
         );
@@ -1213,6 +1173,7 @@ async function handleFlowchartPipelineChange(changeEvent) {
         updateRestartIndicator(true);
         pipelineStore.clearRestartRequired();
         hideAllThreadBadges();
+        updatePipelineCameraNote();
     }
 }
 
@@ -1246,8 +1207,8 @@ export async function initPipelineCreator() {
     pipelinePlaceholder = document.getElementById("pipelinePlaceholder");
     operationsList = document.getElementById("operationsList");
     runButton = document.getElementById("runButton");
-    cameraSelect = document.getElementById("cameraSelect");
     pipelineSelect = document.getElementById("pipelineSelect");
+    pipelineCameraNote = document.getElementById("pipelineCameraNote");
     newPipelineButton = document.getElementById("newPipelineButton");
     deletePipelineButton = document.getElementById("deletePipelineButton");
     restartIndicator = document.getElementById("restartIndicator");
@@ -1275,21 +1236,13 @@ export async function initPipelineCreator() {
     await fetchAvailableOperations();
 
     await fetchAvailableCameras();
-    populateCameraDropdown();
-
-    if (cameraSelect) {
-        cameraSelect.addEventListener("change", handleCameraSelection);
-    }
 
     if (pipelineSelect) {
         pipelineSelect.addEventListener("change", handlePipelineSelection);
     }
 
-    const selectedCamera = getSelectedCamera();
-    if (selectedCamera) {
-        await fetchPipelinesForCamera(selectedCamera.name);
-        populatePipelineDropdown();
-    }
+    await fetchPipelines();
+    populatePipelineDropdown();
 
     await checkAndTriggerAutoFill();
 
@@ -1414,6 +1367,8 @@ export async function initPipelineCreator() {
         refreshPipelineCreator: refreshPipelineCreator,
         flowchartRenderer: flowchartRenderer,
         selectedPipeline: null,
+        getAvailableCameras: () => pipelineStore.state.cameras,
+        refreshAvailableCameras: () => fetchAvailableCameras(),
     };
 
     Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {

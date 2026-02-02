@@ -72,10 +72,6 @@ export function renderOperations(
 ) {
     operationsList.innerHTML = "";
     operations.forEach((op, index) => {
-        // Skip device_input operation - it's auto-inserted and cannot be manually added
-        if (op.id === "device_input.py") {
-            return;
-        }
         const el = document.createElement("div");
         el.draggable = true;
         el.className =

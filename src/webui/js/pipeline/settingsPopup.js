@@ -6,9 +6,10 @@ import { BACKEND_BASE_URL } from "../config.js";
     // Visualization state
     let _visInterval = null;
     let _currentVisObjectUrl = null;
-    let _currentVisCamera = null;
     let _currentVisPipeline = null;
     let _currentVisAction = null;
+    let _availableCameras = null;
+    let _availableCamerasLoading = null;
 
     function createElement(tag, attrs = {}, children = []) {
         const el = document.createElement(tag);
@@ -27,6 +28,51 @@ import { BACKEND_BASE_URL } from "../config.js";
         });
         (children || []).forEach((c) => el.appendChild(c));
         return el;
+    }
+
+    async function loadAvailableCameras() {
+        if (Array.isArray(_availableCameras)) {
+            return _availableCameras;
+        }
+        if (_availableCamerasLoading) {
+            return _availableCamerasLoading;
+        }
+        _availableCamerasLoading = fetch(
+            `${BACKEND_BASE_URL}/get-available-cameras`,
+        )
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then((data) => {
+                const cameras = Object.entries(data).map(([name]) => name);
+                _availableCameras = cameras;
+                return cameras;
+            })
+            .catch((error) => {
+                console.warn("Failed to fetch available cameras:", error);
+                _availableCameras = [];
+                return [];
+            })
+            .finally(() => {
+                _availableCamerasLoading = null;
+            });
+        return _availableCamerasLoading;
+    }
+
+    function notifyCameraListUpdated(cameras) {
+        if (globalThis.pipelineCreator?.getAvailableCameras && cameras.length) {
+            return;
+        }
+        if (globalThis.pipelineCreator?.refreshAvailableCameras) {
+            globalThis.pipelineCreator
+                .refreshAvailableCameras()
+                .catch((error) =>
+                    console.warn("Failed to refresh pipeline cameras:", error),
+                );
+        }
     }
 
     function buildHsvPickerField(currentValue, fieldId, label, isEdited) {
@@ -470,7 +516,85 @@ import { BACKEND_BASE_URL } from "../config.js";
             );
         }
 
-        if (isPathParameter && operationName) {
+        const normalizedOperationName = String(operationName || "")
+            .replace(/\.py$/i, "")
+            .toLowerCase()
+            .replace(/\s+/g, "_");
+        const isDeviceInputCameraName =
+            normalizedOperationName === "device_input" &&
+            name === "camera_name" &&
+            def.type === "str";
+
+        if (isDeviceInputCameraName) {
+            input = createElement("select", {
+                id: fieldId,
+                className:
+                    "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            });
+
+            const fallbackOption = createElement("option", {
+                value: "",
+                text: "Loading cameras...",
+            });
+            input.appendChild(fallbackOption);
+
+            const updateOptions = (cameraNames) => {
+                const selectedValue =
+                    input.value ||
+                    (currentValue !== undefined && currentValue !== null
+                        ? String(currentValue)
+                        : "");
+                input.innerHTML = "";
+
+                if (!Array.isArray(cameraNames) || cameraNames.length === 0) {
+                    const customOption = createElement("option", {
+                        value: selectedValue,
+                        text: selectedValue
+                            ? `${selectedValue} (custom)`
+                            : "No cameras available",
+                    });
+                    customOption.selected = true;
+                    input.appendChild(customOption);
+                    return;
+                }
+
+                const normalizedNames = cameraNames.filter(Boolean);
+                normalizedNames.forEach((cameraName) => {
+                    const optEl = createElement("option", {
+                        value: cameraName,
+                        text: cameraName,
+                    });
+                    if (cameraName === selectedValue) {
+                        optEl.selected = true;
+                    }
+                    input.appendChild(optEl);
+                });
+
+                if (
+                    selectedValue &&
+                    !normalizedNames.some((name) => name === selectedValue)
+                ) {
+                    const customOption = createElement("option", {
+                        value: selectedValue,
+                        text: `${selectedValue} (custom)`,
+                        selected: true,
+                    });
+                    input.appendChild(customOption);
+                }
+            };
+
+            const pipelineCameras =
+                globalThis.pipelineCreator?.getAvailableCameras?.() || [];
+            const pipelineNames = pipelineCameras.map((camera) => camera.name);
+            if (pipelineNames.length > 0) {
+                updateOptions(pipelineNames);
+            } else {
+                void loadAvailableCameras().then((cameras) => {
+                    updateOptions(cameras);
+                    notifyCameraListUpdated(cameras);
+                });
+            }
+        } else if (isPathParameter && operationName) {
             input = createElement("select", {
                 id: fieldId,
                 className:
@@ -1116,22 +1240,15 @@ import { BACKEND_BASE_URL } from "../config.js";
         body.innerHTML =
             '<div class="text-center text-[#f9c845] py-8">Loading configuration...</div>';
 
-        // Determine camera and pipeline from pipeline builder dropdowns
-        let selectedCameraName = null;
+        // Determine pipeline from pipeline builder dropdown
         let selectedPipelineName = null;
         try {
-            const cameraSelectEl = document.getElementById("cameraSelect");
             const pipelineSelectEl = document.getElementById("pipelineSelect");
-            if (cameraSelectEl && cameraSelectEl.selectedIndex >= 0) {
-                selectedCameraName =
-                    cameraSelectEl.options[cameraSelectEl.selectedIndex]
-                        .textContent;
-            }
             if (pipelineSelectEl?.value) {
                 selectedPipelineName = pipelineSelectEl.value;
             }
         } catch (err) {
-            console.warn("Could not read camera/pipeline selection:", err);
+            console.warn("Could not read pipeline selection:", err);
         }
 
         // Compute action name for visualize API (normalize similar to backend expectations)
@@ -1145,13 +1262,12 @@ import { BACKEND_BASE_URL } from "../config.js";
         };
         const actionNameForApi = computeActionName(operationName || "");
 
-        // Start visualization on backend if camera and pipeline are available
+        // Start visualization on backend if pipeline is available
         const startVisIfReady = async () => {
-            if (!selectedCameraName || !selectedPipelineName) {
+            if (!selectedPipelineName) {
                 console.log(
-                    "[SETTINGS] Skipping visualization - missing camera or pipeline",
+                    "[SETTINGS] Skipping visualization - missing pipeline",
                     {
-                        selectedCameraName,
                         selectedPipelineName,
                     },
                 );
@@ -1159,13 +1275,12 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
             try {
                 console.log("[SETTINGS] Starting visualization", {
-                    camera: selectedCameraName,
                     pipeline: selectedPipelineName,
                     operationUuid,
                     timestamp: new Date().toISOString(),
                 });
                 const startResponse = await fetch(
-                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(operationUuid)}`,
+                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(operationUuid)}`,
                     {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -1183,7 +1298,6 @@ import { BACKEND_BASE_URL } from "../config.js";
                     return;
                 }
 
-                _currentVisCamera = selectedCameraName;
                 _currentVisPipeline = selectedPipelineName;
                 _currentVisAction = operationUuid;
 
@@ -1266,7 +1380,7 @@ import { BACKEND_BASE_URL } from "../config.js";
                         return;
                     }
                     try {
-                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`;
+                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisPipeline)}`;
                         const response = await fetch(url, {
                             cache: "no-store",
                         });
@@ -1371,25 +1485,23 @@ import { BACKEND_BASE_URL } from "../config.js";
     }
 
     function stopVisualizationIfActive() {
-        if (!_currentVisCamera || !_currentVisPipeline) {
+        if (!_currentVisPipeline) {
             console.log("[SETTINGS] No active visualization to stop");
             return;
         }
         console.log("[SETTINGS] Stopping active visualization", {
-            camera: _currentVisCamera,
             pipeline: _currentVisPipeline,
             action: _currentVisAction,
             timestamp: new Date().toISOString(),
         });
         try {
             fetch(
-                `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`,
+                `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisPipeline)}`,
                 { method: "POST" },
             ).catch((err) =>
                 console.warn("Failed to stop visualization:", err),
             );
         } finally {
-            _currentVisCamera = null;
             _currentVisPipeline = null;
             _currentVisAction = null;
             console.log("[SETTINGS] Visualization state cleared");

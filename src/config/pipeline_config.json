@@ -207,8 +207,16 @@
                     {
                         "name": "new_color",
                         "class_id": 0,
-                        "lower_hsv": [0, 0, 0],
-                        "upper_hsv": [179, 255, 255]
+                        "lower_hsv": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "upper_hsv": [
+                            179,
+                            255,
+                            255
+                        ]
                     }
                 ],
                 "min_area": 100,
