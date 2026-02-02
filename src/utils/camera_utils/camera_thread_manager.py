@@ -328,6 +328,48 @@ class CameraThreadManager:
         """
         return list(self.cameras.keys())
 
+    def wait_for_all_cameras_ready(
+        self, timeout_s: float = 30.0, poll_interval_s: float = 0.1
+    ) -> bool:
+        """
+        Wait until all cameras report ready or timeout expires.
+
+        Args:
+            timeout_s: Maximum time to wait in seconds.
+            poll_interval_s: Sleep interval between readiness checks.
+
+        Returns:
+            True if all cameras are ready, False if timeout occurs.
+        """
+        camera_names = self.get_all_camera_names()
+        if not camera_names:
+            self.logger.log(
+                f"{Colors.YELLOW}No cameras registered to wait for.{Colors.RESET}"
+            )
+            return True
+
+        deadline = time.monotonic() + timeout_s
+        pending = set(camera_names)
+        while pending and time.monotonic() < deadline:
+            pending = {
+                camera_name
+                for camera_name in pending
+                if not self.get_camera_ready(camera_name)
+            }
+            if pending:
+                time.sleep(poll_interval_s)
+
+        if pending:
+            self.logger.log(
+                f"{Colors.YELLOW}Camera readiness timeout. Not ready: {sorted(pending)}{Colors.RESET}"
+            )
+            return False
+
+        self.logger.log(
+            f"{Colors.GREEN}All cameras are ready.{Colors.RESET}"
+        )
+        return True
+
     def get_camera_ready(self, camera_name: str) -> bool:
         """
         Get the ready state of a specific camera.

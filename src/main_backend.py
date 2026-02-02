@@ -23,7 +23,7 @@ from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-im
 from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
 import json  # noqa: E402
 
-# Build the Rust implementations (removed during uv sync)
+# Bootstrap Rust modules (removed during uv sync)
 logger = Logger()
 logger.log(
     f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
@@ -37,14 +37,17 @@ if not build_success:
     raise RuntimeError(error_msg)
 logger.log(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
+# Discover hardware devices early for compute pool initialization
 available_devices = get_available_devices(logger=logger)
 logger.log(
     f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}"
 )
 
+# Static configuration and NetworkTables schema keying
 current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
 
+# Ensure general config file exists for NetworkTables initialization
 if not os.path.exists("src/general_conf.json"):
     # make empty json file with 0.0.0.0 as the address
     with open("src/general_conf.json", "w") as f:
@@ -62,11 +65,13 @@ class MainBackend:
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
 
+            # NetworkTables wiring and schema publication
             NetworkTables.initialize(server=general_conf["network_table_address"])
             self.network_table = NetworkTables.getTable("EagleEye")
             schema_manifest_payload = generate_schema_manifest_bytes()
             self.network_table.putRaw(SCHEMA_MANIFEST_KEY, schema_manifest_payload)
 
+            # Web interface, camera manager, and known camera cache
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
                 pipeline_objects_callback=self.get_pipelines,
@@ -77,9 +82,17 @@ class MainBackend:
             )
             self.known_cameras = self.camera_manager.known_cameras
 
+            all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
+            if not all_cameras_ready:
+                self.logger.log(
+                    f"{Colors.YELLOW}Proceeding with pipeline creation despite camera readiness timeout.{Colors.RESET}"
+                )
+
+            # Compute pool setup
             self.compute_pool = ComputePool()
             self._initialize_compute_devices()
 
+            # Pipeline creation and start-up
             self.pipelines: Dict[str, Pipeline] = generate_all_pipelines(
                 self.web_interface,
                 self.compute_pool,
@@ -106,6 +119,7 @@ class MainBackend:
                     f"{Colors.GREEN}Started pipeline: {pipeline_name}{Colors.RESET}"
                 )
 
+            # Initial camera inventory logging
             if not self.known_cameras:
                 self.logger.log(
                     f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}"
