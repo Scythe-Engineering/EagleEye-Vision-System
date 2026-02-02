@@ -41,6 +41,7 @@ class Pipeline:
         logger: Logger,
         camera_manager: CameraThreadManager | None = None,
         camera_bus_id: str | None = None,
+        pipeline_name: str | None = None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -60,6 +61,7 @@ class Pipeline:
         self.camera_manager = camera_manager
         self.logger = logger
         self.camera_bus_id = camera_bus_id
+        self.pipeline_name = pipeline_name or "unknown"
 
         self.thread_running = False
         self.thread = None
@@ -68,7 +70,15 @@ class Pipeline:
         if not self.operations:
             raise ValueError("No operations configured in pipeline")
 
-        self.flow_manager = FlowManager(self.operations, self.logger)
+        self.operation_errors: dict[str, dict[str, Any]] = {}
+        self.operation_errors_lock = threading.Lock()
+
+        self.flow_manager = FlowManager(
+            self.operations,
+            self.logger,
+            on_operation_error=self.record_operation_error,
+            on_operation_success=self.clear_operation_error,
+        )
 
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
@@ -548,3 +558,73 @@ class Pipeline:
             "total_threads": self.flow_manager.num_threads,
             "operations": thread_info,
         }
+
+    def record_operation_error(self, operation: Operation, message: str) -> None:
+        """Record an operation error entry.
+
+        Args:
+            operation: The operation that failed.
+            message: The error message or traceback string.
+        """
+        if operation is None:
+            return
+        trimmed_message = message.strip() if message else ""
+        if not trimmed_message:
+            return
+        with self.operation_errors_lock:
+            record = self.operation_errors.get(operation.uuid)
+            if record is None:
+                self.operation_errors[operation.uuid] = {
+                    "uuid": operation.uuid,
+                    "name": operation.name,
+                    "message": trimmed_message,
+                    "last_seen_ts": time.time(),
+                    "count": 1,
+                }
+            else:
+                record["message"] = trimmed_message
+                record["last_seen_ts"] = time.time()
+                record["count"] = int(record.get("count", 0)) + 1
+
+        self._publish_operation_error_update(operation)
+
+    def clear_operation_error(self, operation: Operation) -> None:
+        """Clear an operation error entry after success.
+
+        Args:
+            operation: The operation that succeeded.
+        """
+        if operation is None:
+            return
+        with self.operation_errors_lock:
+            self.operation_errors.pop(operation.uuid, None)
+
+        self._publish_operation_error_update(operation)
+
+    def get_operation_errors(self) -> list[dict[str, Any]]:
+        """Get the current list of operation error entries.
+
+        Returns:
+            List of error records.
+        """
+        with self.operation_errors_lock:
+            errors = [record.copy() for record in self.operation_errors.values()]
+        return sorted(errors, key=lambda record: record.get("last_seen_ts", 0), reverse=True)
+
+    def _publish_operation_error_update(self, operation: Operation) -> None:
+        """Publish SSE update for the current operation error state.
+
+        Args:
+            operation: The operation that triggered the update.
+        """
+        try:
+            if not self.web_interface:
+                return
+            error_payload = {
+                "pipeline_name": self.pipeline_name,
+                "operation_uuid": operation.uuid,
+                "errors": self.get_operation_errors(),
+            }
+            self.web_interface.publish_operation_errors(error_payload)
+        except Exception:
+            return

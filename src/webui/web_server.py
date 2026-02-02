@@ -1122,6 +1122,17 @@ class EagleEyeInterface:
             config = json.load(f)
         return list(config.keys())
 
+    def publish_operation_errors(self, payload: dict[str, Any]) -> None:
+        """Publish operation error updates via SSE.
+
+        Args:
+            payload: Error payload containing pipeline and operation data.
+        """
+        try:
+            self._publish_event("pipeline_operation_errors", payload)
+        except Exception as e:
+            self.log(f"Failed to publish pipeline_operation_errors: {e}")
+
     def save_pipeline_config_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """
         Save the pipeline config by pipeline name.

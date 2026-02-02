@@ -147,6 +147,7 @@ def generate_all_pipelines(
                 logger,
                 camera_manager,
                 camera_bus_id=camera_name,
+                pipeline_name=pipeline_name,
             )
         except Exception as _:
             logger.log(
