@@ -88,7 +88,7 @@ class Pipeline:
         self.set_visualize = False
         self.visualization_data = None
         self.visualization_data_lock = threading.Lock()
-        self.visualization_operation_name = None
+        self.visualization_operation_uuid = None
 
     def _snake_to_camel(self, snake_str: str) -> str:
         """Convert snake_case string to CamelCase.
@@ -359,20 +359,20 @@ class Pipeline:
     def run(
         self,
         visualize: bool = False,
-        visualization_operation_name: str | None = None,
+        visualization_operation_uuid: str | None = None,
     ) -> np.ndarray | None:
         """Run the pipeline using FlowManager.
 
         Args:
             visualize: Whether to visualize the pipeline.
-            visualization_operation_name: Name of operation to visualize up to.
+            visualization_operation_uuid: UUID of operation to visualize up to.
 
         Returns:
             If visualize is True, returns the visualized frame.
             Otherwise, returns None.
 
         Raises:
-            ValueError: If visualization_operation_name is required but not provided.
+            ValueError: If visualization_operation_uuid is required but not provided.
         """
         start_time = time.time()
 
@@ -383,23 +383,63 @@ class Pipeline:
             self.total_time_history.append(elapsed)
 
         if visualize:
-            if visualization_operation_name is None:
+            if visualization_operation_uuid is None:
                 raise ValueError(
-                    "Visualization operation name is required when visualize is True"
+                    "Visualization operation UUID is required when visualize is True"
                 )
             # Get the frame from device_input for visualization
-            start_frame = self._get_device_input_frame()
+            start_frame = self._get_device_input_frame(visualization_operation_uuid)
             if start_frame is not None:
-                return self._visualize(start_frame.copy(), visualization_operation_name)
+                return self._visualize(
+                    start_frame.copy(),
+                    visualization_operation_uuid,
+                )
 
         return None
 
-    def _get_device_input_frame(self) -> np.ndarray | None:
+    def _find_upstream_device_input(self, operation_uuid: str | None) -> Operation | None:
+        """Find the nearest upstream device_input operation for a target operation.
+
+        Args:
+            operation_uuid: Target operation UUID.
+
+        Returns:
+            Upstream device_input operation if found, otherwise None.
+        """
+        if operation_uuid is None:
+            return None
+        start_operation = self.operations.get(operation_uuid)
+        if start_operation is None:
+            return None
+        visited: set[str] = set()
+        queue: deque[Operation] = deque([start_operation])
+
+        while queue:
+            operation = queue.popleft()
+            if operation.uuid in visited:
+                continue
+            visited.add(operation.uuid)
+
+            if operation.name == "device_input":
+                return operation
+
+            for connection in operation.get_input_connections():
+                queue.append(connection.from_operation)
+
+        return None
+
+    def _get_device_input_frame(
+        self, target_operation_uuid: str | None
+    ) -> np.ndarray | None:
         """Get the current frame from device_input operation.
 
         Returns:
             The frame from device_input, or None if not found or no frame available.
         """
+        target_device_input = self._find_upstream_device_input(target_operation_uuid)
+        if target_device_input is not None:
+            return self.flow_manager.operation_outputs.get(target_device_input.uuid)
+
         for operation in self.operations.values():
             if operation.name == "device_input":
                 return self.flow_manager.operation_outputs.get(operation.uuid)
@@ -494,15 +534,15 @@ class Pipeline:
                 # Snapshot visualize state and target name atomically
                 with self.visualization_data_lock:
                     should_visualize = self.set_visualize
-                    operation_name_snapshot = self.visualization_operation_name
+                    operation_uuid_snapshot = self.visualization_operation_uuid
 
                 if should_visualize:
                     visualization_frame = self.run(
                         visualize=True,
-                        visualization_operation_name=operation_name_snapshot,
+                        visualization_operation_uuid=operation_uuid_snapshot,
                     )
                     # Get the original frame from device_input for display
-                    frame = self._get_device_input_frame()
+                    frame = self._get_device_input_frame(operation_uuid_snapshot)
                     if frame is not None and visualization_frame is not None:
                         # Only hold the lock for the assignment
                         with self.visualization_data_lock:
@@ -520,56 +560,34 @@ class Pipeline:
 
             time.sleep(0.001)
 
-    def _visualize(self, start_frame: np.ndarray, action_name: str) -> np.ndarray:
-        """Visualize the pipeline up to the given action name.
+    def _visualize(
+        self, start_frame: np.ndarray, action_uuid: str | None
+    ) -> np.ndarray | None:
+        """Visualize a single operation using the provided frame.
 
         Args:
-            action_name: The name of the action to visualize up to.
+            action_uuid: The UUID of the action to visualize.
 
         Returns:
-            The visualized frame.
+            The visualized frame, or None if no visualization is available.
         """
-        # Normalize the target operation name; if None/empty, visualize full pipeline
-        normalized_target = (
-            action_name.lower().replace("_", "") if action_name else None
-        )
-        for operation in self.operations.values():
-            if hasattr(operation.instance, "visualize"):
-                result = operation.instance.visualize(start_frame)
-                if result is not None:
-                    start_frame = result
+        if action_uuid is None:
+            return None
 
-            current_op_name = operation.instance.__class__.__name__.lower().replace(
-                "definition", ""
-            )
-            if normalized_target and current_op_name == normalized_target:
-                break
+        operation = self.operations.get(action_uuid)
+        if operation is None:
+            return None
 
-        # Add FPS display in top left corner
-        with self.total_time_history_lock:
-            if self.total_time_history:
-                avg_time = sum(self.total_time_history) / len(self.total_time_history)
-            else:
-                avg_time = 0.0
-        fps = 1.0 / avg_time if avg_time > 0 else 0.0
-        fps_text = f"FPS: {fps:.1f}"
-        cv2.putText(
-            start_frame,
-            fps_text,
-            (30, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            (0, 255, 255),  # Yellow color in BGR
-            2,
-        )
+        if not hasattr(operation.instance, "visualize"):
+            return None
 
-        return start_frame
+        return operation.instance.visualize(start_frame)
 
-    def start_visualize(self, visualization_operation_name: str) -> None:
+    def start_visualize(self, visualization_operation_uuid: str) -> None:
         """Start visualizing the pipeline."""
-        # Ensure operation name is set before enabling visualization
+        # Ensure operation UUID is set before enabling visualization
         with self.visualization_data_lock:
-            self.visualization_operation_name = visualization_operation_name
+            self.visualization_operation_uuid = visualization_operation_uuid
             self.set_visualize = True
 
     def stop_visualize(self) -> None:

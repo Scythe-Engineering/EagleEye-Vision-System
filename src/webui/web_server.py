@@ -1284,7 +1284,7 @@ class EagleEyeInterface:
             operation = pipeline.get_operation_by_uuid(operation_uuid)
             if operation is None:
                 return {"message": "Operation not found"}, 404
-            pipeline.start_visualize(operation.name)
+            pipeline.start_visualize(operation.uuid)
         except KeyError:
             return {"message": "Pipeline not found"}, 404
         return {"message": "Pipeline visualized successfully"}, 200
