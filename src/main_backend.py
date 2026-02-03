@@ -60,6 +60,7 @@ class MainBackend:
     def __init__(self, logger: Logger):
         try:
             self.logger = logger
+            self.pipelines: Dict[str, Pipeline] = {}
 
             self.logger.log(
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
@@ -93,7 +94,7 @@ class MainBackend:
             self._initialize_compute_devices()
 
             # Pipeline creation and start-up
-            self.pipelines: Dict[str, Pipeline] = generate_all_pipelines(
+            self.pipelines = generate_all_pipelines(
                 self.web_interface,
                 self.compute_pool,
                 self.network_table,
@@ -103,15 +104,20 @@ class MainBackend:
 
             available_cameras = set(self.camera_manager.get_all_camera_names())
             for pipeline_name, pipeline in self.pipelines.items():
-                camera_name = pipeline.camera_bus_id
-                if camera_name is None:
+                camera_names = getattr(pipeline, "camera_bus_ids", [])
+                if not camera_names:
                     self.logger.log(
-                        f"{Colors.YELLOW}Pipeline {pipeline_name} has no camera configured. Skipping start.{Colors.RESET}"
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} has no cameras configured. Skipping start.{Colors.RESET}"
                     )
                     continue
-                if camera_name not in available_cameras:
+                missing_cameras = [
+                    camera_name
+                    for camera_name in camera_names
+                    if camera_name not in available_cameras
+                ]
+                if missing_cameras:
                     self.logger.log(
-                        f"{Colors.YELLOW}Pipeline {pipeline_name} camera '{camera_name}' not found. Skipping start.{Colors.RESET}"
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras {missing_cameras}. Skipping start.{Colors.RESET}"
                     )
                     continue
                 pipeline.thread_run(self.camera_manager)

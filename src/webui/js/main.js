@@ -219,6 +219,18 @@ window.onload = async () => {
         }
     });
 
+    es.addEventListener("pipeline_operation_errors", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            globalThis.pipelineCreator?.handleOperationErrorUpdate?.(data);
+        } catch (err) {
+            console.warn(
+                "Failed to parse SSE pipeline_operation_errors event",
+                err,
+            );
+        }
+    });
+
     es.onerror = () => {
         console.warn("SSE connection error or lost");
         showConnectionLostOverlay();
