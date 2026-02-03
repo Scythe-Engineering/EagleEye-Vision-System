@@ -15,18 +15,18 @@ jobs:
       - name: Automerge (using PAT)
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.ACTIONS_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) throw new Error("No pull_request payload");
-
+      
             await github.rest.pulls.createReview({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pr.number,
               event: 'APPROVE'
             });
-
+      
             await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
