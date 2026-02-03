@@ -114,6 +114,11 @@ class ThreadObject:
                     "Thread already processing. Something is very verrryyy wrong."
                 )
 
+            if time_step < 0 or time_step >= len(self.obligations):
+                raise ValueError(
+                    "time_step must be within the obligations range for this thread."
+                )
+
             self.current_timestep = time_step
             self.input_data = input_data
             self.state = "processing"

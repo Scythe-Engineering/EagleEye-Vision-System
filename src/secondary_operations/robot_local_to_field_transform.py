@@ -4,16 +4,30 @@ from typing import Any, Dict, List
 
 import numpy as np
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.device_management_utils.compute_pool import ComputePool
+from src.webui.web_server import EagleEyeInterface
 
 
 class RobotLocalToFieldTransform(OperationInstance):
-    def __init__(self) -> None:
+    """Convert robot-local detections to field coordinates.
+
+    Inputs:
+        Detections in robot-local coordinates and optional robot pose transform.
+    Outputs:
+        Detections in field coordinates with updated position data.
+    """
+
+    def __init__(
+        self, web_interface: EagleEyeInterface, compute_pool: ComputePool
+    ) -> None:
         """Initialize robot-local to field transform operation.
 
-        This operation converts detection positions expressed in the robot's
-        local coordinate frame into field coordinates using the robot
-        pose transform.
+        Args:
+            web_interface: Web interface for runtime updates.
+            compute_pool: Compute pool available for device operations.
         """
+        self.web_interface = web_interface
+        self.compute_pool = compute_pool
         self._latest_robot_transform: np.ndarray | None = None
 
     @staticmethod
@@ -54,10 +68,10 @@ class RobotLocalToFieldTransform(OperationInstance):
         return rotation_matrix @ local_position + translation_vector
 
     def run(self, input_data: Any) -> List[Dict[str, Any]] | None:
-        """Convert robot-local detection positions to field coordinates.
+        """Transform detections from robot-local to field coordinates.
 
         Args:
-            input_data: Input data - dict with 'detections' and optionally 'robot_pose' keys.
+            input_data: Dict with `detections` list and optional `robot_pose` 4x4 matrix.
 
         Returns:
             Updated detections list with `position_3d` in field coordinates.

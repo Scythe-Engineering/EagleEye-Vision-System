@@ -294,4 +294,4 @@ src/webui/static/*
 /plans
 
 files/*
-files/!apriltag_map_path
+!files/apriltag_map_path

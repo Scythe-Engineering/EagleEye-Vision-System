@@ -1,6 +1,7 @@
 import traceback
 import os
 import json
+import time
 from pathlib import Path
 from typing import Dict, Any
 from src.config.utils.pipeline import Pipeline
@@ -147,7 +148,7 @@ def generate_all_pipelines(
                 camera_bus_ids=camera_names,
                 pipeline_name=pipeline_name,
             )
-        except Exception as error:
+        except Exception:
             logger.log(
                 f"{Colors.RED}Error creating pipeline {pipeline_name}: {traceback.format_exc()}{Colors.RESET}"
             )

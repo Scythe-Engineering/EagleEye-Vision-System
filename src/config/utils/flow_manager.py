@@ -116,6 +116,9 @@ def _calculate_completion_timestep(operation: Operation) -> int:
         return operation.execution_timestep
 
     downstream_timesteps = _get_downstream_timesteps(output_connections)
+    if not downstream_timesteps:
+        assert operation.execution_timestep is not None
+        return operation.execution_timestep
     return min(downstream_timesteps) - 1
 
 

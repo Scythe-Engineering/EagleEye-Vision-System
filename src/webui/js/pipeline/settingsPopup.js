@@ -63,7 +63,11 @@ import { BACKEND_BASE_URL } from "../config.js";
     }
 
     function notifyCameraListUpdated(cameras) {
-        if (globalThis.pipelineCreator?.getAvailableCameras && cameras.length) {
+        if (
+            globalThis.pipelineCreator?.getAvailableCameras &&
+            cameras.length &&
+            !globalThis.pipelineCreator?.refreshAvailableCameras
+        ) {
             return;
         }
         if (globalThis.pipelineCreator?.refreshAvailableCameras) {

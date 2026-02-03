@@ -55,7 +55,11 @@ export function findCycles(nodes, connections) {
                 }
             } else if (recStack.has(neighbor)) {
                 // Cycle detected - mark ALL connections in the cycle
-                const cycleNodes = [...path, neighbor];
+                const neighborIndex = path.indexOf(neighbor);
+                if (neighborIndex === -1) {
+                    return true;
+                }
+                const cycleNodes = path.slice(neighborIndex).concat(neighbor);
 
                 // Mark every edge in the cycle
                 for (let i = 0; i < cycleNodes.length - 1; i++) {

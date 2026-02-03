@@ -57,6 +57,13 @@ export class FlowchartNode {
                 });
                 this.outputNodes = configData.output_nodes || ["data"];
                 this.configDataLoaded = true;
+            } else {
+                console.warn(
+                    `Failed to load config data for ${this.operationData.id}: ${response.status}`,
+                );
+                this.inputNodes = ["data"];
+                this.outputNodes = ["data"];
+                this.configDataLoaded = true;
             }
         } catch (error) {
             console.warn(
@@ -65,6 +72,7 @@ export class FlowchartNode {
             );
             this.inputNodes = ["data"];
             this.outputNodes = ["data"];
+            this.configDataLoaded = true;
         }
     }
 
