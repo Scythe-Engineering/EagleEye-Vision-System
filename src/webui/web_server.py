@@ -128,6 +128,7 @@ class EagleEyeInterface:
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
+        self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
 
         self.cameras = {}
         self.log(f"Initialized with cameras: {self.cameras}")
@@ -581,6 +582,8 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
+        self._publish_cached_pipeline_errors()
+
         try:
             while True:
                 try:
@@ -635,12 +638,23 @@ class EagleEyeInterface:
                 # Other error, client likely disconnected
                 self.log(f"SSE publish error for {event_name}: {e}")
 
+    def _publish_cached_pipeline_errors(self) -> None:
+        """Publish cached pipeline operation errors to the active SSE client."""
+        if not self._pipeline_error_cache:
+            return
+        for payload in self._pipeline_error_cache.values():
+            try:
+                self._publish_event("pipeline_operation_errors", payload)
+            except Exception:
+                continue
+
     def _sse_heartbeat_loop(self) -> None:
         """
         Periodically publish a heartbeat event for connection tracking.
         """
         while True:
             try:
+                self._publish_cached_pipeline_errors()
                 self._publish_event("heartbeat", {"ts": time.time()})
                 # Optional: Uncomment for verbose heartbeat logging
                 # self.log(f"Heartbeat sent at {time.time()}")
@@ -1142,6 +1156,19 @@ class EagleEyeInterface:
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
         return list(config.keys())
+
+    def publish_operation_errors(self, payload: dict[str, Any]) -> None:
+        """Publish operation error updates via SSE.
+
+        Args:
+            payload: Error payload containing pipeline and operation data.
+        """
+        try:
+            pipeline_name = payload.get("pipeline_name") or "unknown"
+            self._pipeline_error_cache[pipeline_name] = payload
+            self._publish_event("pipeline_operation_errors", payload)
+        except Exception as e:
+            self.log(f"Failed to publish pipeline_operation_errors: {e}")
 
     def save_pipeline_config_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import traceback
 from time import sleep
-from typing import Any
+from typing import Any, Callable
 from line_profiler import profile
 
 from src.config.utils.operation import Operation
@@ -138,9 +138,17 @@ def backward_flow_register(
 
 
 class FlowManager:
-    def __init__(self, operations: dict[str, Operation], logger: Logger):
+    def __init__(
+        self,
+        operations: dict[str, Operation],
+        logger: Logger,
+        on_operation_error: Callable[[Operation, str], None] | None = None,
+        on_operation_success: Callable[[Operation], None] | None = None,
+    ) -> None:
         self.operations: dict[str, Operation] = operations
         self.logger = logger
+        self.on_operation_error = on_operation_error
+        self.on_operation_success = on_operation_success
 
         self.execution_time_groups: list[list[Operation]] = (
             self.forward_pass_operation_order()
@@ -219,15 +227,21 @@ class FlowManager:
 
                 try:
                     output = operation.instance.run(input_for_op)
+                    if self.on_operation_success is not None:
+                        self.on_operation_success(operation)
                     self.operation_outputs[operation.uuid] = output
                 except TypeError as e:
                     if "None" in str(e):
                         # Skip entire frame when operation can't handle None input
                         return
+                    if self.on_operation_error is not None:
+                        self.on_operation_error(operation, traceback.format_exc())
                     raise ValueError(
                         f"Operation {operation.name} had an error: {traceback.format_exc()}"
                     )
                 except Exception as e:
+                    if self.on_operation_error is not None:
+                        self.on_operation_error(operation, traceback.format_exc())
                     raise ValueError(
                         f"Operation {operation.name} had an error: {traceback.format_exc()}"
                     ) from e
@@ -285,12 +299,16 @@ class FlowManager:
                         and "TypeError" in error_msg
                     ):
                         return
+                    if self.on_operation_error is not None:
+                        self.on_operation_error(operation, error_msg or "")
                     raise ValueError(
                         f"Operation {operation.name} had an error: {error_msg}"
                     )
 
                 output_data = thread_obj.get_output_data()
                 self.operation_outputs[operation.uuid] = output_data
+                if self.on_operation_success is not None:
+                    self.on_operation_success(operation)
 
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.

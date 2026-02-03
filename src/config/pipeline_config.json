@@ -207,16 +207,8 @@
                     {
                         "name": "new_color",
                         "class_id": 0,
-                        "lower_hsv": [
-                            0,
-                            0,
-                            0
-                        ],
-                        "upper_hsv": [
-                            179,
-                            255,
-                            255
-                        ]
+                        "lower_hsv": [0, 0, 0],
+                        "upper_hsv": [179, 255, 255]
                     }
                 ],
                 "min_area": 100,
@@ -297,6 +289,89 @@
                     "custom_waypoints": null
                 }
             ]
+        },
+        {
+            "action_name": "device_input.py",
+            "action_params": {
+                "camera_name": "FaceTime HD Camera"
+            },
+            "position": {
+                "x": -400,
+                "y": -260
+            },
+            "uuid": "op-ml5ee66b-6r1u",
+            "connections": [
+                {
+                    "from_uuid": "op-ml5ee66b-6r1u",
+                    "from_port": "frame",
+                    "to_uuid": "op-ml5eefuk-24bg",
+                    "to_port": "frame",
+                    "data_type": "frame",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "detect_apriltags.py",
+            "action_params": {},
+            "position": {
+                "x": -100,
+                "y": -260
+            },
+            "uuid": "op-ml5eefuk-24bg",
+            "connections": [
+                {
+                    "from_uuid": "op-ml5eefuk-24bg",
+                    "from_port": "detections",
+                    "to_uuid": "op-ml5hhvgj-bvtu",
+                    "to_port": "frame",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "color_threshold_detection.py",
+            "action_params": {
+                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
+                "target_size": 320,
+                "color_ranges": [],
+                "min_area": 100,
+                "max_area": 50000,
+                "blur_kernel_size": 0,
+                "morphology_kernel_size": 5,
+                "morphology_iterations": 0
+            },
+            "position": {
+                "x": 240,
+                "y": -260
+            },
+            "uuid": "op-ml5hhvgj-bvtu",
+            "connections": [
+                {
+                    "from_uuid": "op-ml5hhvgj-bvtu",
+                    "from_port": "detections",
+                    "to_uuid": "op-ml5jth9h-2ns4",
+                    "to_port": "data",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "publish_to_networktables.py",
+            "action_params": {
+                "data_path": []
+            },
+            "position": {
+                "x": 720,
+                "y": -260
+            },
+            "uuid": "op-ml5jth9h-2ns4",
+            "connections": []
         }
     ]
 }

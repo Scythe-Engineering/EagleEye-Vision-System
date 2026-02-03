@@ -189,6 +189,19 @@ export class FlowchartNode {
                         flex: 1;
                         min-width: 0;
                     ">${escapeHtml(this.operationData.name)}</span>
+                    <div class="node-error-icon" style="
+                        display: none;
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 50%;
+                        background-color: #ff5c5c;
+                        color: #1a1a1a;
+                        font-size: 12px;
+                        font-weight: 700;
+                        align-items: center;
+                        justify-content: center;
+                        flex-shrink: 0;
+                    ">i</div>
                 </div>
                 <div style="display: flex; gap: 4px; flex-shrink: 0;">
                     <button class="node-settings-btn" title="Settings" style="
@@ -620,6 +633,35 @@ export class FlowchartNode {
         const badge = this.element?.querySelector(".thread-badge");
         if (badge) {
             badge.style.display = "none";
+        }
+    }
+
+    setErrorState(errorRecord, isDownstream) {
+        if (!this.element) {
+            return;
+        }
+
+        const hasError = Boolean(errorRecord);
+        const nodeIcon = this.element.querySelector(".node-error-icon");
+
+        this.element.classList.toggle("pipeline-error-node", hasError);
+        this.element.classList.toggle(
+            "pipeline-downstream-disabled",
+            Boolean(isDownstream),
+        );
+
+        if (hasError) {
+            this.element.style.borderColor = "#ff5c5c";
+            this.element.style.boxShadow =
+                "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 12px rgba(0, 0, 0, 0.5)";
+        } else if (!this.isDragging) {
+            this.element.style.borderColor = "#404040";
+            this.element.style.boxShadow =
+                "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        }
+
+        if (nodeIcon) {
+            nodeIcon.style.display = hasError ? "inline-flex" : "none";
         }
     }
 

@@ -50,10 +50,10 @@ def replace_values(config_data: dict) -> dict:
     return config_data
 
 
-def _resolve_device_input_camera_name(
+def _get_device_input_camera_names(
     pipeline_name: str, pipeline_config: list[dict[str, Any]], logger: Logger
-) -> str | None:
-    """Resolve the camera name from a pipeline's device_input operation.
+) -> list[str]:
+    """Collect camera names from a pipeline's device_input operations.
 
     Args:
         pipeline_name: Name of the pipeline.
@@ -61,7 +61,7 @@ def _resolve_device_input_camera_name(
         logger: Logger instance for logging.
 
     Returns:
-        Camera name if valid, otherwise None.
+        List of camera names referenced by device_input operations.
     """
     device_input_configs = [
         operation
@@ -71,29 +71,28 @@ def _resolve_device_input_camera_name(
 
     if len(device_input_configs) == 0:
         logger.log(
-            f"{Colors.RED}Error creating pipeline {pipeline_name}: missing device_input operation{Colors.RESET}"
+            f"{Colors.YELLOW}Pipeline {pipeline_name} has no device_input operations.{Colors.RESET}"
         )
-        return None
+        return []
 
-    if len(device_input_configs) > 1:
-        logger.log(
-            f"{Colors.RED}Error creating pipeline {pipeline_name}: multiple device_input operations found{Colors.RESET}"
-        )
-        return None
+    camera_names: list[str] = []
+    for device_config in device_input_configs:
+        action_params = device_config.get("action_params", {})
+        camera_name = action_params.get("camera_name")
+        if isinstance(camera_name, str) and camera_name:
+            camera_names.append(camera_name)
+        else:
+            logger.log(
+                f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid camera_name in device_input{Colors.RESET}"
+            )
 
-    action_params = device_input_configs[0].get("action_params", {})
-    camera_name = action_params.get("camera_name")
-
-    if not isinstance(camera_name, str) or not camera_name:
-        logger.log(
-            f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid camera_name in device_input{Colors.RESET}"
-        )
-        return None
+    if not camera_names:
+        return []
 
     logger.log(
-        f"{Colors.CYAN}Resolved camera '{camera_name}' for pipeline {pipeline_name}{Colors.RESET}"
+        f"{Colors.CYAN}Resolved device_input cameras for pipeline {pipeline_name}: {camera_names}{Colors.RESET}"
     )
-    return camera_name
+    return camera_names
 
 
 def generate_all_pipelines(
@@ -134,11 +133,9 @@ def generate_all_pipelines(
 
     for pipeline_name, config in config_data.items():
         try:
-            camera_name = _resolve_device_input_camera_name(
+            camera_names = _get_device_input_camera_names(
                 pipeline_name, config, logger
             )
-            if camera_name is None:
-                continue
             pipeline = Pipeline(
                 config,
                 web_interface,
@@ -146,12 +143,31 @@ def generate_all_pipelines(
                 network_table,
                 logger,
                 camera_manager,
-                camera_bus_id=camera_name,
+                camera_bus_id=camera_names[0] if len(camera_names) == 1 else None,
+                camera_bus_ids=camera_names,
+                pipeline_name=pipeline_name,
             )
-        except Exception as _:
+        except Exception as error:
             logger.log(
                 f"{Colors.RED}Error creating pipeline {pipeline_name}: {traceback.format_exc()}{Colors.RESET}"
             )
+            if web_interface:
+                try:
+                    error_payload = {
+                        "pipeline_name": pipeline_name,
+                        "errors": [
+                            {
+                                "uuid": f"pipeline_init::{pipeline_name}",
+                                "name": "Pipeline Initialization",
+                                "message": traceback.format_exc().strip(),
+                                "last_seen_ts": time.time(),
+                                "count": 1,
+                            }
+                        ],
+                    }
+                    web_interface.publish_operation_errors(error_payload)
+                except Exception:
+                    pass
             continue
         pipelines[pipeline_name] = pipeline
         pipeline_count += 1

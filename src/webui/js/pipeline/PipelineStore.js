@@ -45,6 +45,8 @@ class PipelineStore {
             ui: {
                 restartRequired: false,
                 restartRequiredNodes: new Set(),
+                operationErrors: new Map(),
+                downstreamDisabledNodes: new Set(),
             },
         };
 
@@ -450,8 +452,74 @@ class PipelineStore {
         this.uuidToInstanceId.clear();
         this.instanceIdToUuid.clear();
         this.clearRestartRequired();
+        this.clearOperationErrors();
 
         this.emit("pipeline:cleared");
+    }
+
+    setOperationErrors(errors) {
+        const errorMap = new Map();
+        (errors || []).forEach((errorRecord) => {
+            if (errorRecord?.uuid) {
+                errorMap.set(errorRecord.uuid, { ...errorRecord });
+            }
+        });
+
+        this.state.ui.operationErrors = errorMap;
+        this.updateDownstreamDisabledNodes();
+        this.emit("operation-errors:changed", {
+            errors: this.getOperationErrors(),
+        });
+    }
+
+    clearOperationErrors() {
+        this.state.ui.operationErrors = new Map();
+        this.state.ui.downstreamDisabledNodes.clear();
+        this.emit("operation-errors:changed", { errors: [] });
+    }
+
+    getOperationErrors() {
+        return Array.from(this.state.ui.operationErrors.values());
+    }
+
+    getDownstreamDisabledNodes() {
+        return new Set(this.state.ui.downstreamDisabledNodes);
+    }
+
+    updateDownstreamDisabledNodes() {
+        const disabledNodes = new Set();
+        const errorUuids = new Set(this.state.ui.operationErrors.keys());
+
+        if (errorUuids.size === 0) {
+            this.state.ui.downstreamDisabledNodes.clear();
+            return;
+        }
+
+        const outgoingConnections = new Map();
+        for (const connection of this.state.currentPipeline.connections.values()) {
+            if (!outgoingConnections.has(connection.fromUuid)) {
+                outgoingConnections.set(connection.fromUuid, []);
+            }
+            outgoingConnections.get(connection.fromUuid).push(connection.toUuid);
+        }
+
+        const queue = Array.from(errorUuids);
+        const visited = new Set(errorUuids);
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            const downstream = outgoingConnections.get(current) || [];
+            for (const next of downstream) {
+                if (visited.has(next)) {
+                    continue;
+                }
+                visited.add(next);
+                disabledNodes.add(next);
+                queue.push(next);
+            }
+        }
+
+        this.state.ui.downstreamDisabledNodes = disabledNodes;
     }
 
     loadPipelineData(configItems, connectionsData = []) {

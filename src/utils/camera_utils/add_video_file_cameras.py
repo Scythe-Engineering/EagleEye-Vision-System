@@ -21,13 +21,23 @@ def add_video_file_cameras(
     """
     Add video file cameras to the system. (Mostly for testing and development purposes)
     """
-    current_dir = Path(__file__).parent
-    video_folder = os.path.join(current_dir, "sim_videos")
-    video_files = list(Path(video_folder).glob("*.mp4"))
+    current_dir = Path(__file__).resolve().parent
+    sim_videos_dir = current_dir.parent / "sim_videos"
+    logger.log(f"{Colors.CYAN}Searching for sim videos in: {sim_videos_dir}{Colors.RESET}")
+    video_files = sorted(sim_videos_dir.glob("*.mp4"))
+    logger.log(
+        f"{Colors.CYAN}Found {len(video_files)} sim video files: {[vf.name for vf in video_files]}{Colors.RESET}"
+    )
+
+    if not video_files:
+        logger.log(
+            f"{Colors.YELLOW}No video file cameras found in: {sim_videos_dir}{Colors.RESET}"
+        )
+        return known_cameras
     for video_file in video_files:
         camera_name = video_file.stem
         web_interface.add_camera(camera_name, -1)
-        camera_manager.start_camera_thread(
+        started = camera_manager.start_camera_thread(
             camera_name,
             os.path.join(
                 current_dir,
@@ -36,8 +46,14 @@ def add_video_file_cameras(
             ),
             video_file_path=str(video_file),
         )
-        known_cameras.add(camera_name)
-        logger.log(
-            f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"
-        )
+        if started:
+            known_cameras.add(camera_name)
+            logger.log(
+                f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"
+            )
+        else:
+            web_interface.remove_camera(camera_name)
+            logger.log(
+                f"{Colors.RED}Failed to start video file camera: {camera_name}{Colors.RESET}"
+            )
     return known_cameras
