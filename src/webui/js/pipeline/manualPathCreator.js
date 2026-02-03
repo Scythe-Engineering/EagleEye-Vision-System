@@ -156,7 +156,7 @@ export class ManualPathCreator {
         if (!this.instructionTooltip) return;
 
         const direction = this.nextDirection === "horizontal" ? "horizontal" : "vertical";
-        const waypointCount = this.waypoints.length - 1;
+        const waypointCount = Math.max(0, this.waypoints.length - 1);
 
         this.instructionTooltip.innerHTML = `
             <div style="margin-bottom: 6px;">
@@ -164,7 +164,7 @@ export class ManualPathCreator {
             </div>
             <div style="color: #a0a0a0; font-size: 12px;">
                 Click to add <span style="color: ${this.connectionColor}; font-weight: 500;">${direction}</span> corner point
-                (${waypointCount} corner${waypointCount !== 1 ? 's' : ''} added)
+                (${waypointCount} corner${waypointCount === 1 ? '' : 's'} added)
                 <br>
                 <span style="color: #888;">Click near the <span style="color: #f87171;">red endpoint</span> to finish • Press <kbd style="background: #404040; padding: 2px 6px; border-radius: 3px; margin: 0 2px;">Esc</kbd> to cancel</span>
                 <br>
@@ -179,7 +179,7 @@ export class ManualPathCreator {
         this.overlay.addEventListener("contextmenu", this.boundHandleContextMenu);
         this.overlay.addEventListener("wheel", this.boundHandleWheel, { passive: false });
         this.overlay.addEventListener("mousedown", this.boundHandleMouseDown);
-        window.addEventListener("keydown", this.boundHandleKeyDown);
+        globalThis.addEventListener("keydown", this.boundHandleKeyDown);
     }
 
     detachEventListeners() {
@@ -190,9 +190,9 @@ export class ManualPathCreator {
             this.overlay.removeEventListener("wheel", this.boundHandleWheel);
             this.overlay.removeEventListener("mousedown", this.boundHandleMouseDown);
         }
-        window.removeEventListener("keydown", this.boundHandleKeyDown);
-        window.removeEventListener("mousemove", this.boundHandlePanMove);
-        window.removeEventListener("mouseup", this.boundHandleMouseUp);
+        globalThis.removeEventListener("keydown", this.boundHandleKeyDown);
+        globalThis.removeEventListener("mousemove", this.boundHandlePanMove);
+        globalThis.removeEventListener("mouseup", this.boundHandleMouseUp);
     }
 
     handleMouseMove(e) {
@@ -275,8 +275,8 @@ export class ManualPathCreator {
             this.panStartY = e.clientY;
             this.overlay.style.cursor = "grabbing";
 
-            window.addEventListener("mousemove", this.boundHandlePanMove);
-            window.addEventListener("mouseup", this.boundHandleMouseUp);
+            globalThis.addEventListener("mousemove", this.boundHandlePanMove);
+            globalThis.addEventListener("mouseup", this.boundHandleMouseUp);
         }
     }
 
@@ -304,13 +304,13 @@ export class ManualPathCreator {
             this.isPanning = false;
             this.overlay.style.cursor = "crosshair";
 
-            window.removeEventListener("mousemove", this.boundHandlePanMove);
-            window.removeEventListener("mouseup", this.boundHandleMouseUp);
+            globalThis.removeEventListener("mousemove", this.boundHandlePanMove);
+            globalThis.removeEventListener("mouseup", this.boundHandleMouseUp);
         }
     }
 
     addWaypoint(snappedPos) {
-        const lastPoint = this.waypoints[this.waypoints.length - 1];
+        const lastPoint = this.waypoints.at(-1);
         let constrainedPoint;
 
         if (this.nextDirection === "horizontal") {
@@ -351,7 +351,7 @@ export class ManualPathCreator {
     updatePreview(cursorPos) {
         if (!this.isActive) return;
 
-        const lastPoint = this.waypoints[this.waypoints.length - 1];
+        const lastPoint = this.waypoints.at(-1);
         let constrainedPos;
 
         if (this.nextDirection === "horizontal") {
@@ -406,14 +406,18 @@ export class ManualPathCreator {
                         const dirX = Math.sign(curr.x - prev.x);
                         const dirY = Math.sign(next.y - curr.y);
 
-                        segments.push(`L ${curr.x - radius * dirX} ${curr.y}`);
-                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`);
+                        segments.push(
+                            `L ${curr.x - radius * dirX} ${curr.y}`,
+                            `Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`
+                        );
                     } else {
                         const dirY = Math.sign(curr.y - prev.y);
                         const dirX = Math.sign(next.x - curr.x);
 
-                        segments.push(`L ${curr.x} ${curr.y - radius * dirY}`);
-                        segments.push(`Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`);
+                        segments.push(
+                            `L ${curr.x} ${curr.y - radius * dirY}`,
+                            `Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`
+                        );
                     }
                 } else {
                     segments.push(`L ${curr.x} ${curr.y}`);
@@ -439,7 +443,7 @@ export class ManualPathCreator {
     buildFinalWaypoints() {
         const points = [...this.waypoints];
 
-        const lastWaypoint = points[points.length - 1];
+        const lastWaypoint = points.at(-1);
 
         const needsHorizontal = lastWaypoint.y !== this.endPoint.y;
         const needsVertical = lastWaypoint.x !== this.endPoint.x;

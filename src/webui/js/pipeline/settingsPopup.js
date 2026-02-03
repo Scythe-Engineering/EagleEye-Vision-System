@@ -153,9 +153,18 @@ import { BACKEND_BASE_URL } from "../config.js";
         });
 
         const updateColor = () => {
-            const h = Math.max(0, Math.min(179, parseInt(hInput.value) || 0));
-            const s = Math.max(0, Math.min(255, parseInt(sInput.value) || 0));
-            const v = Math.max(0, Math.min(255, parseInt(vInput.value) || 0));
+            const h = Math.max(
+                0,
+                Math.min(179, Number.parseInt(hInput.value, 10) || 0),
+            );
+            const s = Math.max(
+                0,
+                Math.min(255, Number.parseInt(sInput.value, 10) || 0),
+            );
+            const v = Math.max(
+                0,
+                Math.min(255, Number.parseInt(vInput.value, 10) || 0),
+            );
             colorPreview.style.backgroundColor = `hsl(${h * 2}, ${s / 2.55}%, ${v / 2.55}%)`;
         };
 
@@ -196,9 +205,9 @@ import { BACKEND_BASE_URL } from "../config.js";
         return {
             wrapper: container,
             getValue: () => [
-                parseInt(hInput.value) || 0,
-                parseInt(sInput.value) || 0,
-                parseInt(vInput.value) || 0,
+                Number.parseInt(hInput.value, 10) || 0,
+                Number.parseInt(sInput.value, 10) || 0,
+                Number.parseInt(vInput.value, 10) || 0,
             ],
         };
     }
@@ -297,21 +306,16 @@ import { BACKEND_BASE_URL } from "../config.js";
             const currentCount = itemWrappers.length;
             const minItems = def.min_items !== undefined ? def.min_items : 0;
             const maxItems = def.max_items;
+            const canRemoveItems = currentCount > minItems;
 
-            removeButtons.forEach(btn => {
-                if (currentCount <= minItems) {
-                    btn.style.display = 'none';
-                } else {
-                    btn.style.display = '';
-                }
+            removeButtons.forEach((btn) => {
+                btn.style.display = canRemoveItems ? "" : "none";
             });
 
             if (addBtn) {
-                if (maxItems !== undefined && currentCount >= maxItems) {
-                    addBtn.style.display = 'none';
-                } else {
-                    addBtn.style.display = '';
-                }
+                const canAddItems =
+                    maxItems === undefined || currentCount < maxItems;
+                addBtn.style.display = canAddItems ? "" : "none";
             }
         };
 
@@ -379,9 +383,9 @@ import { BACKEND_BASE_URL } from "../config.js";
                 itemFields.push({
                     getValue: () => {
                         const result = {};
-                        subFields.forEach((f) => {
-                            result[f.name] = f.getValue();
-                        });
+                        for (const field of subFields) {
+                            result[field.name] = field.getValue();
+                        }
                         return result;
                     },
                 });
@@ -408,9 +412,9 @@ import { BACKEND_BASE_URL } from "../config.js";
                 itemFields.push({
                     getValue: () => {
                         if (def.item_type === "int") {
-                            return parseInt(itemInput.value, 10) || 0;
+                            return Number.parseInt(itemInput.value, 10) || 0;
                         } else if (def.item_type === "float") {
-                            return parseFloat(itemInput.value) || 0;
+                            return Number.parseFloat(itemInput.value) || 0;
                         }
                         return itemInput.value;
                     },
@@ -523,7 +527,7 @@ import { BACKEND_BASE_URL } from "../config.js";
         const normalizedOperationName = String(operationName || "")
             .replace(/\.py$/i, "")
             .toLowerCase()
-            .replace(/\s+/g, "_");
+            .replaceAll(/\s+/g, "_");
         const isDeviceInputCameraName =
             normalizedOperationName === "device_input" &&
             name === "camera_name" &&
@@ -550,41 +554,43 @@ import { BACKEND_BASE_URL } from "../config.js";
                         : "");
                 input.innerHTML = "";
 
-                if (!Array.isArray(cameraNames) || cameraNames.length === 0) {
-                    const customOption = createElement("option", {
-                        value: selectedValue,
-                        text: selectedValue
-                            ? `${selectedValue} (custom)`
-                            : "No cameras available",
+                const hasCameraNames =
+                    Array.isArray(cameraNames) && cameraNames.length > 0;
+                if (hasCameraNames) {
+                    const normalizedNames = cameraNames.filter(Boolean);
+                    normalizedNames.forEach((cameraName) => {
+                        const optEl = createElement("option", {
+                            value: cameraName,
+                            text: cameraName,
+                        });
+                        if (cameraName === selectedValue) {
+                            optEl.selected = true;
+                        }
+                        input.appendChild(optEl);
                     });
-                    customOption.selected = true;
-                    input.appendChild(customOption);
+
+                    if (
+                        selectedValue &&
+                        !normalizedNames.includes(selectedValue)
+                    ) {
+                        const customOption = createElement("option", {
+                            value: selectedValue,
+                            text: `${selectedValue} (custom)`,
+                            selected: true,
+                        });
+                        input.appendChild(customOption);
+                    }
                     return;
                 }
 
-                const normalizedNames = cameraNames.filter(Boolean);
-                normalizedNames.forEach((cameraName) => {
-                    const optEl = createElement("option", {
-                        value: cameraName,
-                        text: cameraName,
-                    });
-                    if (cameraName === selectedValue) {
-                        optEl.selected = true;
-                    }
-                    input.appendChild(optEl);
+                const customOption = createElement("option", {
+                    value: selectedValue,
+                    text: selectedValue
+                        ? `${selectedValue} (custom)`
+                        : "No cameras available",
                 });
-
-                if (
-                    selectedValue &&
-                    !normalizedNames.some((name) => name === selectedValue)
-                ) {
-                    const customOption = createElement("option", {
-                        value: selectedValue,
-                        text: `${selectedValue} (custom)`,
-                        selected: true,
-                    });
-                    input.appendChild(customOption);
-                }
+                customOption.selected = true;
+                input.appendChild(customOption);
             };
 
             const pipelineCameras =
@@ -1078,25 +1084,28 @@ import { BACKEND_BASE_URL } from "../config.js";
         });
 
         // Set up MutationObserver to handle dynamically added inputs
+        const handleAddedNode = (node) => {
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+                return;
+            }
+
+            const inputs = node.querySelectorAll
+                ? node.querySelectorAll("input, select")
+                : [];
+            for (const input of inputs) {
+                setupInputListener(input);
+            }
+            if (node.tagName === "INPUT" || node.tagName === "SELECT") {
+                setupInputListener(node);
+            }
+        };
+
         const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                mutation.addedNodes.forEach((node) => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const inputs = node.querySelectorAll
-                            ? node.querySelectorAll("input, select")
-                            : [];
-                        inputs.forEach((input) => {
-                            setupInputListener(input);
-                        });
-                        if (
-                            node.tagName === "INPUT" ||
-                            node.tagName === "SELECT"
-                        ) {
-                            setupInputListener(node);
-                        }
-                    }
-                });
-            });
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    handleAddedNode(node);
+                }
+            }
         });
 
         observer.observe(modalBody, {
@@ -1254,17 +1263,6 @@ import { BACKEND_BASE_URL } from "../config.js";
         } catch (err) {
             console.warn("Could not read pipeline selection:", err);
         }
-
-        // Compute action name for visualize API (normalize similar to backend expectations)
-        const computeActionName = (name) => {
-            let result = String(name || "");
-            // Remove .py extension (case-insensitive)
-            if (result.toLowerCase().endsWith(".py")) {
-                result = result.slice(0, -3);
-            }
-            return result.toLowerCase().replace(/\s+/g, "_");
-        };
-        const actionNameForApi = computeActionName(operationName || "");
 
         // Start visualization on backend if pipeline is available
         const startVisIfReady = async () => {

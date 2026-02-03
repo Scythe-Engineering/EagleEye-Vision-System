@@ -42,6 +42,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://localhost:5001",
 ]
+PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
+TEXT_PLAIN_MIMETYPE = "text/plain"
 
 
 class EagleEyeInterface:
@@ -1236,7 +1238,7 @@ class EagleEyeInterface:
             if pipeline_name in current_config:
                 del current_config[pipeline_name]
             else:
-                return {"message": "Pipeline not found"}, 404
+                return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
         return {"message": "Pipeline deleted successfully"}, 200
@@ -1286,7 +1288,7 @@ class EagleEyeInterface:
                 return {"message": "Operation not found"}, 404
             pipeline.start_visualize(operation.uuid)
         except KeyError:
-            return {"message": "Pipeline not found"}, 404
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         return {"message": "Pipeline visualized successfully"}, 200
 
     def stop_visualize(self, pipeline_name: str) -> tuple[dict, int]:
@@ -1299,7 +1301,7 @@ class EagleEyeInterface:
         try:
             self.pipeline_objects_callback()[pipeline_name].stop_visualize()
         except KeyError:
-            return {"message": "Pipeline not found"}, 404
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         return {"message": "Pipeline visualized stopped"}, 200
 
     def visualize(self, pipeline_name: str) -> Response:
@@ -1314,7 +1316,9 @@ class EagleEyeInterface:
         try:
             pipeline = self.pipeline_objects_callback()[pipeline_name]
         except KeyError:
-            return Response("Pipeline not found", status=404, mimetype="text/plain")
+            return Response(
+                PIPELINE_NOT_FOUND_MESSAGE, status=404, mimetype=TEXT_PLAIN_MIMETYPE
+            )
 
         # Get visualization data from pipeline
         with pipeline.visualization_data_lock:
@@ -1322,7 +1326,9 @@ class EagleEyeInterface:
 
         if visualization_data is None:
             return Response(
-                "No visualization data available", status=500, mimetype="text/plain"
+                "No visualization data available",
+                status=500,
+                mimetype=TEXT_PLAIN_MIMETYPE,
             )
 
         # Get the visualized frame from the visualization data
@@ -1330,13 +1336,17 @@ class EagleEyeInterface:
 
         if image_array is None:
             return Response(
-                "Function has no visualization", status=500, mimetype="text/plain"
+                "Function has no visualization",
+                status=500,
+                mimetype=TEXT_PLAIN_MIMETYPE,
             )
 
         # Encode the numpy array to JPEG format
         success, encoded_image = cv2.imencode(".jpg", image_array)
         if not success:
-            return Response("Failed to encode image", status=500, mimetype="text/plain")
+            return Response(
+                "Failed to encode image", status=500, mimetype=TEXT_PLAIN_MIMETYPE
+            )
 
         # Return the encoded image as binary data with proper content type
         return Response(encoded_image.tobytes(), mimetype="image/jpeg")
@@ -1556,7 +1566,7 @@ class EagleEyeInterface:
             pipeline = self.pipeline_objects_callback()[pipeline_name]
             return pipeline.get_pipeline_thread_info(), 200
         except KeyError:
-            return {"error": "Pipeline not found"}, 404
+            return {"error": PIPELINE_NOT_FOUND_MESSAGE}, 404
 
 
 if __name__ == "__main__":

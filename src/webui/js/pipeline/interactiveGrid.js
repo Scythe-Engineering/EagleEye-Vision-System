@@ -366,7 +366,7 @@ export class InteractiveGrid {
      * Spacing doubles at thresholds: 1x, 0.5x, 0.25x, etc.
      */
     getCrossSpacing() {
-        if (this.scale >= 1.0) {
+        if (this.scale >= 1) {
             return this.baseCrossSpacing;
         } else if (this.scale >= 0.5) {
             return this.baseCrossSpacing * 2;

@@ -97,8 +97,8 @@ export function renderOperations(
             const offsetX = e.clientX - rect.left;
             const offsetY = e.clientY - rect.top;
 
-            if (window.flowchartRenderer) {
-                window.flowchartRenderer.setDragOffset(offsetX, offsetY);
+            if (globalThis.flowchartRenderer) {
+                globalThis.flowchartRenderer.setDragOffset(offsetX, offsetY);
             }
 
             handleDragStart(e, op, null, operations);
@@ -109,8 +109,8 @@ export function renderOperations(
                 e.currentTarget.style.opacity = "";
             }
 
-            if (window.flowchartRenderer) {
-                window.flowchartRenderer.setDragOffset(0, 0);
+            if (globalThis.flowchartRenderer) {
+                globalThis.flowchartRenderer.setDragOffset(0, 0);
             }
         });
 
@@ -301,9 +301,10 @@ export class FlowchartRenderer {
         let dropData = null;
 
         try {
+            const dataTransfer = e.dataTransfer;
             const jsonData =
-                e.dataTransfer.getData("application/pipeline") ||
-                e.dataTransfer.getData("text/plain");
+                dataTransfer?.getData("application/pipeline") ||
+                dataTransfer?.getData("text/plain");
             if (jsonData) {
                 dropData = JSON.parse(jsonData);
             }
@@ -312,7 +313,7 @@ export class FlowchartRenderer {
             return;
         }
 
-        if (!dropData || !dropData.id) {
+        if (!dropData?.id) {
             console.warn("[FLOWCHART] Invalid drop data", dropData);
             return;
         }
@@ -349,7 +350,7 @@ export class FlowchartRenderer {
 
         if (placeholder) {
             const selectedPipeline =
-                pipelineStore.state.currentPipeline.pipelineName;
+                pipelineStore.state.currentPipeline?.pipelineName;
             const shouldShow = !selectedPipeline;
             placeholder.classList.toggle("hidden", !shouldShow);
 
@@ -365,7 +366,8 @@ export class FlowchartRenderer {
                 }
 
                 // Set focus area on grid to a 50x50 square at center of placeholder
-                if (this.canvas && this.canvas.getInteractiveGrid) {
+                const interactiveGrid = this.canvas?.getInteractiveGrid?.();
+                if (interactiveGrid) {
                     const placeholderRect = placeholder.getBoundingClientRect();
                     const containerRect =
                         this.canvasContainer.getBoundingClientRect();
@@ -395,7 +397,7 @@ export class FlowchartRenderer {
                         width: 50 / this.canvas.scale,
                         height: 50 / this.canvas.scale,
                     };
-                    this.canvas.getInteractiveGrid().setFocusArea(relativeRect);
+                    interactiveGrid.setFocusArea(relativeRect);
                 }
 
                 // Disable zoom and pan when placeholder is shown
@@ -408,8 +410,9 @@ export class FlowchartRenderer {
                 }
             } else {
                 // Clear focus area when placeholder is hidden
-                if (this.canvas && this.canvas.getInteractiveGrid) {
-                    this.canvas.getInteractiveGrid().clearFocusArea();
+                const interactiveGrid = this.canvas?.getInteractiveGrid?.();
+                if (interactiveGrid) {
+                    interactiveGrid.clearFocusArea();
                 }
 
                 // Enable zoom and pan when placeholder is hidden
@@ -636,8 +639,8 @@ export class FlowchartRenderer {
 
                 const onMouseUp = (e) => {
                     const elapsed = Date.now() - mouseDownTime;
-                    window.removeEventListener("mousemove", onMouseMove);
-                    window.removeEventListener("mouseup", onMouseUp);
+                    globalThis.removeEventListener("mousemove", onMouseMove);
+                    globalThis.removeEventListener("mouseup", onMouseUp);
 
                     if (elapsed < 125 && !hasMoved) {
                         // Quick click without movement - delete all connections from this output
@@ -658,8 +661,8 @@ export class FlowchartRenderer {
                     // If connectingStarted is true and not a quick click, startConnecting handles its own cleanup
                 };
 
-                window.addEventListener("mousemove", onMouseMove);
-                window.addEventListener("mouseup", onMouseUp);
+                globalThis.addEventListener("mousemove", onMouseMove);
+                globalThis.addEventListener("mouseup", onMouseUp);
             } else {
                 // No existing connections - just start connecting immediately
                 this.startConnecting(node, portName, event);
@@ -728,8 +731,8 @@ export class FlowchartRenderer {
 
                 const onMouseUp = (e) => {
                     const elapsed = Date.now() - mouseDownTime;
-                    window.removeEventListener("mousemove", onMouseMove);
-                    window.removeEventListener("mouseup", onMouseUp);
+                    globalThis.removeEventListener("mousemove", onMouseMove);
+                    globalThis.removeEventListener("mouseup", onMouseUp);
 
                     if (elapsed < 125 && !hasMoved) {
                         // Quick click without movement - delete the connection
@@ -772,8 +775,8 @@ export class FlowchartRenderer {
                     // If reconnectingStarted is true and not a quick click, startConnecting handles its own cleanup
                 };
 
-                window.addEventListener("mousemove", onMouseMove);
-                window.addEventListener("mouseup", onMouseUp);
+                globalThis.addEventListener("mousemove", onMouseMove);
+                globalThis.addEventListener("mouseup", onMouseUp);
             }
         }
     }
@@ -860,22 +863,22 @@ export class FlowchartRenderer {
                 p.style.transform = "scale(1)";
             });
 
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
+            globalThis.removeEventListener("mousemove", onMouseMove);
+            globalThis.removeEventListener("mouseup", onMouseUp);
             if (this.connectingState) {
                 this.connectingState.cleanup = () => {};
             }
         };
 
         const cleanup = () => {
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
+            globalThis.removeEventListener("mousemove", onMouseMove);
+            globalThis.removeEventListener("mouseup", onMouseUp);
         };
 
         this.connectingState.cleanup = cleanup;
 
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
+        globalThis.addEventListener("mousemove", onMouseMove);
+        globalThis.addEventListener("mouseup", onMouseUp);
 
         event.stopPropagation();
     }
@@ -883,7 +886,7 @@ export class FlowchartRenderer {
     completeConnection(toNode, toPort) {
         if (!this.connectingState) return;
 
-        const { fromNode, fromPort, temp } = this.connectingState;
+        const { fromNode, fromPort } = this.connectingState;
 
         // Don't connect to self
         if (fromNode.instanceId === toNode.instanceId) {
@@ -946,7 +949,7 @@ export class FlowchartRenderer {
         const cycleConnectionIds = findCycles(this.nodes, connectionsData);
 
         // Reset all highlights first
-        for (const [connectionId, conn] of this.connections.connections) {
+        for (const connectionId of this.connections.connections.keys()) {
             this.connections.setCycleHighlight(connectionId, false);
         }
 
@@ -1148,11 +1151,6 @@ export class FlowchartRenderer {
                 const toUuid = pipelineStore.instanceIdToUuid.get(
                     conn.toNodeId,
                 );
-                const storeConnectionKey =
-                    fromUuid && toUuid
-                        ? `${fromUuid}-${conn.fromPortName}-${toUuid}-${conn.toPortName}`
-                        : null;
-
                 this.connections.createConnection(
                     connectionId,
                     fromNode,
@@ -1178,7 +1176,7 @@ export function renderPipeline(
 ) {
     pipelineContainer.innerHTML = "";
 
-    const selectedPipeline = window.pipelineCreator?.selectedPipeline;
+    const selectedPipeline = globalThis.pipelineCreator?.selectedPipeline;
     const shouldShowPlaceholder = !selectedPipeline;
 
     if (shouldShowPlaceholder) {

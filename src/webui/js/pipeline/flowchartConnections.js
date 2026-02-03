@@ -66,16 +66,30 @@ export class FlowchartConnections {
         }
     }
 
-    createConnection(
-        connectionId,
-        fromNode,
-        fromPortName,
-        toNode,
-        toPortName,
-        dataType,
-        isDefault = false,
-        customWaypoints = null,
-    ) {
+    createConnection(...args) {
+        const options =
+            args.length === 1 && typeof args[0] === "object" && args[0] !== null
+                ? args[0]
+                : {
+                      connectionId: args[0],
+                      fromNode: args[1],
+                      fromPortName: args[2],
+                      toNode: args[3],
+                      toPortName: args[4],
+                      dataType: args[5],
+                      isDefault: args[6] ?? false,
+                      customWaypoints: args[7] ?? null,
+                  };
+        const {
+            connectionId,
+            fromNode,
+            fromPortName,
+            toNode,
+            toPortName,
+            dataType,
+            isDefault = false,
+            customWaypoints = null,
+        } = options;
         if (this.connections.has(connectionId)) {
             this.updateConnection(
                 connectionId,
@@ -104,7 +118,7 @@ export class FlowchartConnections {
             "http://www.w3.org/2000/svg",
             "g",
         );
-        group.setAttribute("data-connection-id", connectionId);
+        group.dataset.connectionId = connectionId;
         group.setAttribute("pointer-events", "visibleStroke");
 
         const path = document.createElementNS(
@@ -217,14 +231,14 @@ export class FlowchartConnections {
             "stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
 
         group.addEventListener("mouseenter", () => {
-            const connectionId = group.getAttribute("data-connection-id");
+            const connectionId = group.dataset.connectionId;
             if (connectionId) {
                 this.setHoverState(connectionId, true);
             }
         });
 
         group.addEventListener("mouseleave", () => {
-            const connectionId = group.getAttribute("data-connection-id");
+            const connectionId = group.dataset.connectionId;
             if (connectionId) {
                 this.setHoverState(connectionId, false);
             }
@@ -232,7 +246,7 @@ export class FlowchartConnections {
 
         group.addEventListener("click", (e) => {
             e.stopPropagation();
-            const connectionId = group.getAttribute("data-connection-id");
+            const connectionId = group.dataset.connectionId;
             if (connectionId) {
                 // Fade out before removal
                 path.style.opacity = "0";
@@ -246,7 +260,7 @@ export class FlowchartConnections {
         group.addEventListener("contextmenu", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const connectionId = group.getAttribute("data-connection-id");
+            const connectionId = group.dataset.connectionId;
             if (connectionId) {
                 this.showContextMenu(e.clientX, e.clientY, connectionId);
             }
@@ -440,14 +454,8 @@ export class FlowchartConnections {
             connection.path.setAttribute("stroke", "#ff4444");
             connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
         } else {
-            // Restore original color (respecting default state)
-            if (connection.isDefault) {
-                connection.path.setAttribute("stroke", this.connectionColor);
-                connection.path.style.filter = "none";
-            } else {
-                connection.path.setAttribute("stroke", this.connectionColor);
-                connection.path.style.filter = "none";
-            }
+            connection.path.setAttribute("stroke", this.connectionColor);
+            connection.path.style.filter = "none";
         }
     }
 
@@ -726,22 +734,20 @@ export class FlowchartConnections {
                 (this.connectionWidth + 2).toString(),
             );
             connection.path.style.filter = `drop-shadow(0 0 4px ${hoverColor})`;
+        } else if (connection.isCycle) {
+            connection.path.setAttribute("stroke", "#ff4444");
+            connection.path.setAttribute(
+                "stroke-width",
+                this.connectionWidth.toString(),
+            );
+            connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
         } else {
-            if (connection.isCycle) {
-                connection.path.setAttribute("stroke", "#ff4444");
-                connection.path.setAttribute(
-                    "stroke-width",
-                    this.connectionWidth.toString(),
-                );
-                connection.path.style.filter = "drop-shadow(0 0 6px #ff4444)";
-            } else {
-                connection.path.setAttribute("stroke", this.connectionColor);
-                connection.path.setAttribute(
-                    "stroke-width",
-                    this.connectionWidth.toString(),
-                );
-                connection.path.style.filter = "none";
-            }
+            connection.path.setAttribute("stroke", this.connectionColor);
+            connection.path.setAttribute(
+                "stroke-width",
+                this.connectionWidth.toString(),
+            );
+            connection.path.style.filter = "none";
         }
     }
 
@@ -753,17 +759,15 @@ export class FlowchartConnections {
         const result = [];
 
         for (const [connectionId, connection] of this.connections) {
-            if (
+            const isOutputMatch =
                 portType === "output" &&
                 connection.fromNodeId === nodeInstanceId &&
-                connection.fromPortName === portName
-            ) {
-                result.push(connectionId);
-            } else if (
+                connection.fromPortName === portName;
+            const isInputMatch =
                 portType === "input" &&
                 connection.toNodeId === nodeInstanceId &&
-                connection.toPortName === portName
-            ) {
+                connection.toPortName === portName;
+            if (isOutputMatch || isInputMatch) {
                 result.push(connectionId);
             }
         }
@@ -965,9 +969,10 @@ export class FlowchartConnections {
 
     updateConnectionWithWaypoints(connectionId) {
         const connection = this.connections.get(connectionId);
-        if (!connection || !connection.customWaypoints) return;
+        const customWaypoints = connection?.customWaypoints;
+        if (!customWaypoints) return;
 
-        const pathD = this.buildPathFromWaypoints(connection.customWaypoints);
+        const pathD = this.buildPathFromWaypoints(customWaypoints);
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
 
@@ -1009,16 +1014,16 @@ export class FlowchartConnections {
                         const dirX = Math.sign(curr.x - prev.x);
                         const dirY = Math.sign(next.y - curr.y);
 
-                        segments.push(`L ${curr.x - radius * dirX} ${curr.y}`);
                         segments.push(
+                            `L ${curr.x - radius * dirX} ${curr.y}`,
                             `Q ${curr.x} ${curr.y}, ${curr.x} ${curr.y + radius * dirY}`,
                         );
                     } else {
                         const dirY = Math.sign(curr.y - prev.y);
                         const dirX = Math.sign(next.x - curr.x);
 
-                        segments.push(`L ${curr.x} ${curr.y - radius * dirY}`);
                         segments.push(
+                            `L ${curr.x} ${curr.y - radius * dirY}`,
                             `Q ${curr.x} ${curr.y}, ${curr.x + radius * dirX} ${curr.y}`,
                         );
                     }

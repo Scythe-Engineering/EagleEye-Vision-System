@@ -168,7 +168,9 @@ function formatPipelineCameraNote(cameraNames) {
     if (cameraNames.length === 0) {
         return { text: "No cameras configured", title: "" };
     }
-    const sortedNames = [...cameraNames].sort();
+    const sortedNames = [...cameraNames].sort((first, second) =>
+        first.localeCompare(second, undefined, { sensitivity: "accent" }),
+    );
     if (sortedNames.length <= 2) {
         return {
             text: `Cameras: ${sortedNames.join(", ")}`,
@@ -464,8 +466,8 @@ function extractMissingArgumentNames(message) {
     }
 
     const normalized = rawList
-        .replace(/\band\b/gi, ",")
-        .replace(/\s+/g, " ")
+        .replaceAll(/\band\b/gi, ",")
+        .replaceAll(/\s+/g, " ")
         .trim();
     const parts = normalized
         .split(",")
@@ -1578,7 +1580,7 @@ function initFlowchartRenderer() {
         autoSavePipeline,
     });
 
-    window.flowchartRenderer = flowchartRenderer;
+    globalThis.flowchartRenderer = flowchartRenderer;
 }
 export async function initPipelineCreator() {
     if (isInitialized) return;

@@ -495,11 +495,7 @@ export class FlowchartMinimap {
     }
 
     destroy() {
-        if (this.element && this.element.parentElement) {
-            this.element.parentElement.removeChild(this.element);
-        }
-        if (this.showButton && this.showButton.parentElement) {
-            this.showButton.parentElement.removeChild(this.showButton);
-        }
+        this.element?.remove();
+        this.showButton?.remove();
     }
 }

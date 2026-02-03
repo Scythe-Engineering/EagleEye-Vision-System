@@ -144,6 +144,7 @@ export class FlowchartNode {
 
         const threadColor = this.getThreadColor(this.threadInfo?.thread);
         const timestep = this.threadInfo?.timestep ?? null;
+        const hasTimestep = timestep !== null;
 
         this.element.innerHTML = `
             <div class="node-header" style="
@@ -165,7 +166,7 @@ export class FlowchartNode {
                     background-color: ${threadColor};
                     border: 2px solid #404040;
                     border-radius: 6px;
-                    display: ${timestep !== null ? "flex" : "none"};
+                    display: ${hasTimestep ? "flex" : "none"};
                     align-items: center;
                     justify-content: center;
                     font-size: 12px;
@@ -173,7 +174,7 @@ export class FlowchartNode {
                     color: white;
                     z-index: 10;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                ">${timestep !== null ? timestep : ""}</div>
+                ">${hasTimestep ? timestep : ""}</div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
                     <span style="
                         background-color: ${categoryColor};
@@ -621,19 +622,15 @@ export class FlowchartNode {
         const badge = this.element?.querySelector(".thread-badge");
         if (!badge) return;
 
-        if (
-            !threadInfo ||
-            threadInfo.timestep === null ||
-            threadInfo.timestep === undefined
-        ) {
+        const timestep = threadInfo?.timestep ?? null;
+        if (timestep === null) {
             badge.style.display = "none";
-        } else {
-            badge.style.display = "flex";
-            badge.style.backgroundColor = this.getThreadColor(
-                threadInfo.thread,
-            );
-            badge.textContent = threadInfo.timestep;
+            return;
         }
+
+        badge.style.display = "flex";
+        badge.style.backgroundColor = this.getThreadColor(threadInfo?.thread);
+        badge.textContent = timestep;
     }
 
     hideThreadBadge() {

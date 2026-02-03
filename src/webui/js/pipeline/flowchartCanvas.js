@@ -129,7 +129,7 @@ export class FlowchartCanvas {
             }
         });
 
-        window.addEventListener("mousemove", (e) => {
+        globalThis.addEventListener("mousemove", (e) => {
             if (!isPanning) return;
 
             this.translateX = e.clientX - startX;
@@ -137,7 +137,7 @@ export class FlowchartCanvas {
             this.updateTransform();
         });
 
-        window.addEventListener("mouseup", () => {
+        globalThis.addEventListener("mouseup", () => {
             if (isPanning) {
                 isPanning = false;
                 this.container.style.cursor = "grab";
@@ -273,14 +273,14 @@ export class FlowchartCanvas {
     }
 
     fitToContent() {
-        // Simple fit to content implementation
-        this.translateX = 0;
-        this.translateY = 0;
-        this.scale = 1;
-        this.updateTransform();
+        this.resetViewport();
     }
 
     resetView() {
+        this.resetViewport();
+    }
+
+    resetViewport() {
         this.translateX = 0;
         this.translateY = 0;
         this.scale = 1;

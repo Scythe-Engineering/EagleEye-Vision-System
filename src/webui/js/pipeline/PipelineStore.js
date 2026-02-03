@@ -17,7 +17,7 @@ class PipelineNode {
 
         this.instanceId = `${this.operationId}_${Date.now()}_${Math.random()
             .toString(36)
-            .substr(2, 9)}`;
+            .slice(2, 11)}`;
     }
 
     toJSON() {
@@ -546,7 +546,7 @@ class PipelineStore {
         });
 
         connectionsData.forEach((conn) => {
-            const connectionKey = this.addConnection(
+            this.addConnection(
                 conn.from_uuid,
                 conn.from_port,
                 conn.to_uuid,
@@ -570,7 +570,7 @@ class PipelineStore {
         nodes.forEach((node) => {
             const nodeConnections = [];
 
-            for (const [_key, conn] of this.state.currentPipeline.connections) {
+            for (const conn of this.state.currentPipeline.connections.values()) {
                 if (conn.fromUuid === node.uuid) {
                     const connData = {
                         from_uuid: conn.fromUuid,
