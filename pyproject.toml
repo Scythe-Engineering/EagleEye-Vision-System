@@ -32,6 +32,7 @@ dependencies = [
   "maturin",
   "pydantic",
   "mypy",
+  "psutil",
   "memryx; sys_platform == 'linux'",
 ]
 

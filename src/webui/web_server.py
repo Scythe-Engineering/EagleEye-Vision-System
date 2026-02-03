@@ -37,7 +37,11 @@ no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREA
 success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
 no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5001"]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5001",
+]
 
 
 class EagleEyeInterface:
@@ -99,6 +103,8 @@ class EagleEyeInterface:
 
         self.restart_required_for_config = False
         self.last_log_message_count = 0
+        self._system_status_interval = 1.5
+        self._system_status_error_logged = False
 
         self.app = Flask(
             __name__,
@@ -160,6 +166,9 @@ class EagleEyeInterface:
         # Start log monitoring thread for real-time log updates
         Thread(target=self._log_monitor_loop, daemon=True).start()
 
+        # Start system status monitoring thread for resource updates
+        Thread(target=self._system_status_loop, daemon=True).start()
+
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
             self.log(f"Error: {traceback.format_exc()}")
@@ -170,8 +179,8 @@ class EagleEyeInterface:
         Register all Flask endpoints.
         """
         self.app.add_url_rule("/", "index", lambda: serve_index())
-        self.app.add_url_rule("/script.js", "script", lambda: serve_js())
-        self.app.add_url_rule("/main.css", "style", lambda: serve_css())
+        self.app.add_url_rule("/js/main.js", "script", lambda: serve_js())
+        self.app.add_url_rule("/style.css", "style", lambda: serve_css())
 
         self.app.add_url_rule(
             "/background.png",
@@ -355,6 +364,18 @@ class EagleEyeInterface:
             "/get-pipeline-thread-info/<string:pipeline_name>",
             "get_pipeline_thread_info",
             self.get_pipeline_thread_info,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-pipeline-active/<string:pipeline_name>",
+            "get_pipeline_active",
+            self.get_pipeline_active,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-system-status",
+            "get_system_status",
+            self.get_system_status,
             methods=["GET"],
         )
 
@@ -1386,6 +1407,106 @@ class EagleEyeInterface:
             except Exception as e:
                 self.logger.log(f"Error in log monitor loop: {e}")
                 time.sleep(1.0)
+
+    def get_pipeline_active(self, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Return placeholder activity status for a pipeline.
+
+        Args:
+            pipeline_name: Name of the pipeline.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing active flag.
+        """
+        return {"pipeline": pipeline_name, "active": True}, 200
+
+    def get_system_status(self) -> tuple[dict, int]:
+        """
+        Get current system status metrics.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing system metrics.
+        """
+        payload = self._build_system_status_payload()
+        return payload, 200
+
+    def _system_status_loop(self) -> None:
+        """
+        Publish system status metrics via SSE on a fixed interval.
+        """
+        while True:
+            try:
+                payload = self._build_system_status_payload()
+                self._publish_event("system_status", payload)
+            except Exception as e:
+                self.log(f"Error publishing system status: {e}")
+            time.sleep(self._system_status_interval)
+
+    def _build_system_status_payload(self) -> dict[str, Any]:
+        """
+        Build the system status payload with platform-aware fallbacks.
+
+        Returns:
+            dict[str, Any]: Structured system status payload.
+        """
+        cpu_payload: dict[str, Any] = {"status": "unavailable"}
+        memory_payload: dict[str, Any] = {"status": "unavailable"}
+        storage_payload: dict[str, Any] = {"status": "unavailable"}
+        pipeline_payload = self._build_pipeline_status_list()
+
+        try:
+            import psutil
+
+            cpu_payload = {
+                "percent": float(psutil.cpu_percent(interval=None)),
+                "cores": int(psutil.cpu_count(logical=True) or 0),
+                "status": "ok",
+            }
+            memory = psutil.virtual_memory()
+            memory_payload = {
+                "percent": float(memory.percent),
+                "used_mb": float(memory.used / (1024 * 1024)),
+                "total_mb": float(memory.total / (1024 * 1024)),
+                "status": "ok",
+            }
+            disk = psutil.disk_usage("/")
+            storage_payload = {
+                "percent": float(disk.percent),
+                "used_gb": float(disk.used / (1024 * 1024 * 1024)),
+                "total_gb": float(disk.total / (1024 * 1024 * 1024)),
+                "status": "ok",
+            }
+            self._system_status_error_logged = False
+        except Exception as e:
+            message = str(e)
+            cpu_payload = {"status": "unavailable", "error": message}
+            memory_payload = {"status": "unavailable", "error": message}
+            storage_payload = {"status": "unavailable", "error": message}
+            if not self._system_status_error_logged:
+                self.log(f"System status metrics unavailable: {message}")
+                self._system_status_error_logged = True
+
+        return {
+            "cpu": cpu_payload,
+            "memory": memory_payload,
+            "storage": storage_payload,
+            "pipelines": pipeline_payload,
+        }
+
+    def _build_pipeline_status_list(self) -> list[dict[str, Any]]:
+        """
+        Build a list of pipelines with placeholder active status.
+
+        Returns:
+            list[dict[str, Any]]: Pipeline status list.
+        """
+        try:
+            pipeline_names = self.get_pipeline_names()
+        except Exception as e:
+            self.log(f"Error loading pipeline names for status: {e}")
+            pipeline_names = []
+
+        return [{"name": name, "active": True} for name in pipeline_names]
 
     def download_log_file(self) -> tuple[str, int] | tuple[dict, int]:
         """

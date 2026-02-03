@@ -6,6 +6,7 @@ import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from 
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
+import { initSystemStatusModule } from "./system/systemStatus.js";
 import "../style.css";
 import { Matrix4 } from "three";
 
@@ -90,6 +91,8 @@ window.onload = async () => {
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
     saveSettings();
+
+    const systemStatusModule = initSystemStatusModule();
 
     const clearAllButton = document.getElementById("clearAllNotificationsBtn");
     if (clearAllButton) {
@@ -228,6 +231,15 @@ window.onload = async () => {
                 "Failed to parse SSE pipeline_operation_errors event",
                 err,
             );
+        }
+    });
+
+    es.addEventListener("system_status", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            systemStatusModule.render(data);
+        } catch (err) {
+            console.warn("Failed to parse SSE system_status event", err);
         }
     });
 
