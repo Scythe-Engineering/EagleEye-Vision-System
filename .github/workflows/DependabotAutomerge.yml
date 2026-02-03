@@ -12,18 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Check token availability
-        run: |
-          if [ -z "${{ secrets.ACTIONS_PAT }}" ]; then
-            echo "ACTIONS_PAT is empty or not set"
-            exit 1
-          else
-            echo "ACTIONS_PAT is set"
-          fi
-      - name: Automerge (using PAT)
+      - name: Automerge Dependabot PRs
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.ACTIONS_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) throw new Error("No pull_request payload");
