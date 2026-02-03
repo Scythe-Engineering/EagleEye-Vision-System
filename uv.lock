@@ -753,7 +753,7 @@ wheels = [
 
 [[package]]
 name = "keras"
-version = "3.6.0"
+version = "3.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
@@ -765,9 +765,9 @@ dependencies = [
     { name = "packaging" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/47/22/448401abc7deaee90592c48c5dcc27ad93518b605655bef7ec5eb9544fe5/keras-3.6.0.tar.gz", hash = "sha256:405727525a3522ed8f9ec0b46e0667e4c65fcf714a067322c16a00d902ded41d", size = 890295, upload-time = "2024-10-03T19:44:56.185Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/79/721253a7b1618487a901f08c913af7cf4f60caab764ef06bfc9702280b50/keras-3.13.1.tar.gz", hash = "sha256:670c726dfc9c357fe7ae5ef1c15d8f61ee7fbb40ae9a091a458ec6444a772480", size = 1154466, upload-time = "2026-01-14T18:58:26.809Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/88/eef50051a772dcb4433d1f3e4c1d6576ba450fe83e89d028d7e8b85a2122/keras-3.6.0-py3-none-any.whl", hash = "sha256:49585e4577f6e86bd890d96dfbcb1890f5bab5967ef831c07fd63f9d86e4bfe9", size = 1191019, upload-time = "2024-10-03T19:44:54.205Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/e5/8b40bada1f33f25deca7bad0e8c7ca6752f2b09e8018e2fc4693858dd662/keras-3.13.1-py3-none-any.whl", hash = "sha256:6593be2e9d057921cd0413b4552c05fe1df73ea4bb03a4f3ec94532077b3e508", size = 1512409, upload-time = "2026-01-14T18:58:24.769Z" },
 ]
 
 [[package]]
@@ -1087,12 +1087,10 @@ wheels = [
 
 [[package]]
 name = "memryx"
-version = "2.0.5"
+version = "2.0.0"
 source = { registry = "https://developer.memryx.com/pip" }
 dependencies = [
     { name = "cython", marker = "sys_platform == 'linux'" },
-    { name = "flatbuffers", marker = "sys_platform == 'linux'" },
-    { name = "keras", marker = "sys_platform == 'linux'" },
     { name = "matplotlib", marker = "sys_platform == 'linux'" },
     { name = "networkx", marker = "sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'linux'" },
@@ -1114,10 +1112,10 @@ dependencies = [
     { name = "tqdm", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
-    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.5-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl" },
-    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.5-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" },
-    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.5-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl" },
-    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.5-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" },
+    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl" },
+    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" },
+    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl" },
+    { url = "https://developer.memryx.com/pip/memryx/memryx-2.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" },
 ]
 
 [[package]]
