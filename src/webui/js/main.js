@@ -6,7 +6,7 @@ import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from 
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
-import { initSystemStatusModule } from "./system/systemStatus.js";
+import { createSystemStatusModule } from "./system/systemStatus.js";
 import "../style.css";
 import { Matrix4 } from "three";
 
@@ -92,7 +92,7 @@ window.onload = async () => {
     initializeTerminalHandlers();
     saveSettings();
 
-    const systemStatusModule = initSystemStatusModule();
+    const systemStatusModule = createSystemStatusModule();
 
     const clearAllButton = document.getElementById("clearAllNotificationsBtn");
     if (clearAllButton) {

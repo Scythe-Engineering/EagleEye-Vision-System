@@ -98,7 +98,7 @@ export class FlowchartCanvas {
             width: rect.width,
             height: rect.height,
             left: rect.left,
-            top: rect.top
+            top: rect.top,
         };
     }
 

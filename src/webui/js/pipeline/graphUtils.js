@@ -3,10 +3,10 @@
  */
 
 /**
- * Detects cycles in the pipeline graph using DFS
- * @param {Map} nodes - Map of instanceId to node objects
- * @param {Array} connections - Array of connection objects
- * @returns {Array} - Array of connection IDs that are part of cycles
+ * Detects cycles in the pipeline graph using DFS.
+ * @param {Map<string, object>} nodes - Map of node instance IDs to node objects.
+ * @param {Array<object>} connections - Array of connection objects.
+ * @returns {Array<string>} Array of connection IDs that are part of cycles.
  */
 export function findCycles(nodes, connections) {
     // Build adjacency list and connection mapping, excluding default connections

@@ -260,8 +260,8 @@ export function handleDropOnPipeline(
         callbacks.renderPipeline();
 
         setTimeout(() => {
-            if (window.pipelineCreator?.autoSavePipeline) {
-                window.pipelineCreator.autoSavePipeline();
+            if (callbacks.autoSavePipeline) {
+                callbacks.autoSavePipeline();
             }
         }, 100);
     }

@@ -112,7 +112,7 @@ function renderPipelines(container, pipelines) {
     container.appendChild(fragment);
 }
 
-export function initSystemStatusModule() {
+export function createSystemStatusModule() {
     const cpuPercent = document.getElementById("systemCpuPercent");
     const cpuDetail = document.getElementById("systemCpuDetail");
     const memoryPercent = document.getElementById("systemMemoryPercent");

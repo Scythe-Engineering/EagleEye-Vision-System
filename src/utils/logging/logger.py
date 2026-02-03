@@ -73,6 +73,14 @@ class MessageHistory:
     def __init__(
         self, max_size: int = 10000, max_sequence_search_length: int = 10
     ):
+        """Initialize a MessageHistory instance.
+
+        Args:
+            max_size: Maximum number of messages to keep in memory. Oldest
+                messages are discarded to prevent unbounded memory growth.
+            max_sequence_search_length: Max length of sequences to examine
+                for pattern collapsing.
+        """
         self.max_size = max_size
         self.max_sequence_search_length = max_sequence_search_length
         self.messages: List[MessageEntry | MessageSequence] = []

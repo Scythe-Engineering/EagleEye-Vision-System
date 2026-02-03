@@ -77,9 +77,6 @@ class ColorThresholdDetectionDefinition(OperationInstance):
             raise ValueError("Camera matrix is required")
         if self.distortion_coefficients is None:
             raise ValueError("Distortion coefficients are required")
-        if not isinstance(self.camera_parameters_path, str):
-            raise ValueError("Intrinsics path must be a string")
-
         self.delegate = ColorThresholdDetectionImplementation(
             target_size=target_size,
             color_ranges=color_ranges,
