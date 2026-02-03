@@ -13,6 +13,7 @@ const VIEWS = {
     CAMERA: "view-views",
     SETTINGS: "view-settings",
     PIPELINE: "view-pipeline",
+    SYSTEM: "view-system",
 };
 
 const FIELD_ASSETS = {
@@ -87,6 +88,9 @@ class ViewManager {
                 } else {
                     initPipelineCreator();
                 }
+                break;
+            case VIEWS.SYSTEM:
+                pauseCameraFeeds();
                 break;
             default:
                 pauseCameraFeeds();
