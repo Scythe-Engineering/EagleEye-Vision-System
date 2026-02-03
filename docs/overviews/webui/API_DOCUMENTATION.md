@@ -321,14 +321,13 @@ Or if not found:
 
 ### Pipeline Visualization
 
-#### POST `/start-visualize/<camera_name>/<pipeline_name>/<operation_name>`
+#### POST `/start-visualize/<pipeline_name>/<operation_uuid>`
 
-**Description:** Starts visualization mode for a specific pipeline operation
+**Description:** Enables visualization mode for a specific operation. The backend now sources its frame directly from the camera feeding that operation, and the operation is responsible for painting the visualization it wants to show.
 **Parameters:**
 
-- `camera_name` (path): Name of the camera
 - `pipeline_name` (path): Name of the pipeline
-- `operation_name` (path): Name of the operation to visualize
+- `operation_uuid` (path): UUID of the operation to visualize
   **Response:**
 
 ```json
@@ -341,12 +340,11 @@ Or if not found:
 
 - `200`: Success
 
-#### POST `/stop-visualize/<camera_name>/<pipeline_name>`
+#### POST `/stop-visualize/<pipeline_name>`
 
-**Description:** Stops visualization mode for a pipeline
+**Description:** Stops visualization mode for a pipeline.
 **Parameters:**
 
-- `camera_name` (path): Name of the camera
 - `pipeline_name` (path): Name of the pipeline
   **Response:**
 
@@ -360,14 +358,12 @@ Or if not found:
 
 - `200`: Success
 
-#### GET `/visualize/<camera_name>/<pipeline_name>/<action_name>`
+#### GET `/visualize/<pipeline_name>`
 
-**Description:** Returns visualization image for a specific pipeline action
+**Description:** Returns the JPEG image produced by the currently visualizing operation using the camera frame routed specifically for it. The backend no longer traverses or overlays additional operations; the selected `visualize()` implementation controls the exact frame returned.
 **Parameters:**
 
-- `camera_name` (path): Name of the camera
 - `pipeline_name` (path): Name of the pipeline
-- `action_name` (path): Name of the action/operation to visualize
   **Response:** JPEG image of the visualization
   **Content-Type:** `image/jpeg`
   **Status Codes:**
