@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ github.workspace }}
@@ -28,6 +28,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
+      - name: Ensure pytest is installed
+        run: uv pip install pytest
 
       - name: Run pytest
         run: uv run pytest
