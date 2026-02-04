@@ -33,7 +33,14 @@
         },
         {
             "action_name": "detect_apriltags.py",
-            "action_params": {},
+            "action_params": {
+                "families": "tag36h11",
+                "nthreads": 1,
+                "quad_decimate": 2,
+                "quad_sigma": 0,
+                "refine_edges": "1",
+                "decode_sharpening": 0.25
+            },
             "position": {
                 "x": 360,
                 "y": 100

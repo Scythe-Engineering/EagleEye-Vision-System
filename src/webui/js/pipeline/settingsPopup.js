@@ -30,6 +30,11 @@ import { BACKEND_BASE_URL } from "../config.js";
         return el;
     }
 
+    function operationHasSettings(config) {
+        const params = config?.parameters;
+        return params && typeof params === "object" && Object.keys(params).length > 0;
+    }
+
     async function loadAvailableCameras() {
         if (Array.isArray(_availableCameras)) {
             return _availableCameras;
@@ -1121,7 +1126,45 @@ import { BACKEND_BASE_URL } from "../config.js";
         const overlay = document.getElementById(OVERLAY_ID);
         const modal = document.getElementById(MODAL_ID);
         const liveViewPanel = document.getElementById("operationLiveViewPanel");
-        return { overlay, modal, liveViewPanel };
+        const liveViewCloseBtn = document.getElementById(
+            "operationLiveCloseButton",
+        );
+        const settingsContent = document.getElementById("operationSettingsContent");
+        return {
+            overlay,
+            modal,
+            liveViewPanel,
+            liveViewCloseBtn,
+            settingsContent,
+        };
+    }
+
+    function setSettingsPanelVisibility(showSettings) {
+        const {
+            modal,
+            liveViewPanel,
+            liveViewCloseBtn,
+            settingsContent,
+        } = findOverlayElements();
+
+        if (modal) {
+            modal.style.display = showSettings ? "" : "none";
+        }
+        if (settingsContent) {
+            settingsContent.classList.toggle(
+                "single-panel-layout",
+                !showSettings,
+            );
+        }
+        if (liveViewPanel) {
+            liveViewPanel.classList.toggle(
+                "live-view-fullscreen",
+                !showSettings,
+            );
+        }
+        if (liveViewCloseBtn) {
+            liveViewCloseBtn.classList.toggle("hidden", showSettings);
+        }
     }
 
     function applyTitle(modal, title) {
@@ -1171,9 +1214,25 @@ import { BACKEND_BASE_URL } from "../config.js";
         return match ? Boolean(match.hasVisualization) : true;
     }
 
+    function removeCurrentLiveImage() {
+        const { liveViewPanel } = findOverlayElements();
+        if (!liveViewPanel) return;
+
+        const liveViewContainer = liveViewPanel.querySelector(
+            "[data-role='live-view-container']",
+        );
+        if (!liveViewContainer) return;
+
+        const imgEl = liveViewContainer.querySelector("#operationLiveImage");
+        if (imgEl) {
+            imgEl.remove();
+        }
+    }
+
     function showVisualizationErrorMessage(
         message = "Error getting visualization",
     ) {
+        removeCurrentLiveImage();
         const { liveViewPanel } = findOverlayElements();
         if (!liveViewPanel) return;
 
@@ -1246,6 +1305,7 @@ import { BACKEND_BASE_URL } from "../config.js";
         applyTitle(modal, title);
         updateLiveView(operationName, isSecondary);
         const body = modal.querySelector("[data-role='modal-body']");
+        setSettingsPanelVisibility(true);
 
         // Show loading state
         body.innerHTML =
@@ -1264,6 +1324,7 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         // Start visualization on backend if pipeline is available
         const startVisIfReady = async () => {
+            removeCurrentLiveImage();
             if (!selectedPipelineName) {
                 console.log(
                     "[SETTINGS] Skipping visualization - missing pipeline",
@@ -1363,42 +1424,50 @@ import { BACKEND_BASE_URL } from "../config.js";
                     return;
                 }
 
-                // Use the loaded values as baseline for comparison, not defaults
-                const originalValues = { ...initialValues };
+                const hasSettings = operationHasSettings(config);
+                setSettingsPanelVisibility(hasSettings);
 
-                const getValues = renderForm(
-                    body,
-                    config,
-                    initialValues,
-                    originalValues,
-                    onSave,
-                    operationName,
-                );
+                if (!hasSettings) {
+                    body.innerHTML =
+                        '<div class="text-center text-[#f9c845] py-8">This operation has no configurable settings.</div>';
+                } else {
+                    // Use the loaded values as baseline for comparison, not defaults
+                    const originalValues = { ...initialValues };
 
-                const saveBtn = modal.querySelector("[data-action='save']");
-                const cancelBtn = modal.querySelector("[data-action='cancel']");
+                    const getValues = renderForm(
+                        body,
+                        config,
+                        initialValues,
+                        originalValues,
+                        onSave,
+                        operationName,
+                    );
 
-                if (saveBtn) {
-                    saveBtn.onclick = () => {
-                        const values = getValues();
-                        console.log("[SETTINGS] Saving operation settings", {
-                            operationName,
-                            isSecondary,
-                            savedValues: values,
-                            timestamp: new Date().toISOString(),
-                        });
-                        if (typeof onSave === "function") onSave(values);
-                        console.log(
-                            "[SETTINGS] Settings saved, closing popup",
-                            {
+                    const saveBtn = modal.querySelector("[data-action='save']");
+                    const cancelBtn = modal.querySelector("[data-action='cancel']");
+
+                    if (saveBtn) {
+                        saveBtn.onclick = () => {
+                            const values = getValues();
+                            console.log("[SETTINGS] Saving operation settings", {
                                 operationName,
+                                isSecondary,
+                                savedValues: values,
                                 timestamp: new Date().toISOString(),
-                            },
-                        );
-                        close();
-                    };
+                            });
+                            if (typeof onSave === "function") onSave(values);
+                            console.log(
+                                "[SETTINGS] Settings saved, closing popup",
+                                {
+                                    operationName,
+                                    timestamp: new Date().toISOString(),
+                                },
+                            );
+                            close();
+                        };
+                    }
+                    if (cancelBtn) cancelBtn.onclick = () => close();
                 }
-                if (cancelBtn) cancelBtn.onclick = () => close();
 
                 // Start visualization now that modal content is ready - wait for it to complete
                 await startVisIfReady();
@@ -1473,6 +1542,7 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
         }
         stopVisualizationIfActive();
+        removeCurrentLiveImage();
 
         // Show placeholder content again and hide image
         if (liveViewPanelEl) {
@@ -1507,6 +1577,7 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
         }
 
+        setSettingsPanelVisibility(true);
         overlay.classList.add("hidden");
     }
 
