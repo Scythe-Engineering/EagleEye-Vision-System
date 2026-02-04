@@ -10,6 +10,7 @@ class PipelineNode {
         this.path = operationData.path;
         this.configDataPath = operationData.configDataPath;
         this.isSecondary = operationData.isSecondary;
+        this.hasVisualization = Boolean(operationData.hasVisualization);
         this.config = operationData.config || {};
         this.originalConfig = operationData.originalConfig || {};
         this.position = existingPosition || { x: 100, y: 100 };

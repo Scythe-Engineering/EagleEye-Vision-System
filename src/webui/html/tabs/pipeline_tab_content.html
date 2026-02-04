@@ -254,71 +254,7 @@
                     class="flex-1 flex items-center justify-center p-8 min-h-[400px]"
                     data-role="live-view-container"
                 >
-                    <div
-                        class="text-center"
-                        style="position: relative; width: 100%"
-                    >
-                        <div
-                            class="w-32 h-32 mx-auto mb-6 bg-[#232323] rounded-2xl flex items-center justify-center"
-                            data-role="live-view-placeholder"
-                        >
-                            <svg
-                                class="w-16 h-16 text-[#f9c845]"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                            >
-                                <rect
-                                    x="2"
-                                    y="3"
-                                    width="20"
-                                    height="14"
-                                    rx="2"
-                                    ry="2"
-                                ></rect>
-                                <line x1="8" y1="21" x2="16" y2="21"></line>
-                                <line x1="12" y1="17" x2="12" y2="21"></line>
-                            </svg>
-                        </div>
-                        <p class="text-[#ac8a2f] text-lg font-medium">
-                            Live Preview
-                        </p>
-                        <p class="text-[#666] text-sm mt-2">
-                            Visualizer will appear here when operation is active
-                        </p>
-
-                        <!-- No visualization message (hidden by default) -->
-                        <div
-                            id="noVisualizationMessage"
-                            class="hidden mt-4 p-3 bg-[#2a2a2a] rounded-lg border border-[#f9c845]/20"
-                        >
-                            <div
-                                class="flex items-center gap-2 text-[#f9c845] text-sm"
-                            >
-                                <svg
-                                    class="w-4 h-4"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                                    <line
-                                        x1="12"
-                                        y1="16"
-                                        x2="12.01"
-                                        y2="16"
-                                    ></line>
-                                </svg>
-                                <span
-                                    >This operation does not provide a live
-                                    visualization</span
-                                >
-                            </div>
-                        </div>
-
+                    <div class="text-center" style="position: relative; width: 100%">
                         <!-- Image element updated dynamically by settings popup (hidden until used) -->
                         <img
                             id="operationLiveImage"

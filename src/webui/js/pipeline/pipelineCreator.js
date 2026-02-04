@@ -130,6 +130,7 @@ function getOperations() {
     return pipelineStore.state.operations;
 }
 
+
 function getPipeline() {
     return pipelineStore.getNodesForRenderer();
 }
@@ -215,6 +216,7 @@ async function fetchAvailableOperations() {
             path: op.path,
             configDataPath: op.config_data_path,
             isSecondary: op.is_secondary,
+            hasVisualization: Boolean(op.has_visualization),
         }));
 
         pipelineStore.setOperations(operations);
@@ -952,6 +954,7 @@ function runPipeline() {
 function openOperationSettings(opOrItem) {
     const title = `${opOrItem.name || opOrItem.id || "Operation"} Settings`;
     const operationName = opOrItem.name || opOrItem.id;
+    const operationId = opOrItem.operationId || opOrItem.id || opOrItem.name;
     const operationUuid = opOrItem.uuid || opOrItem.instanceId;
     const isSecondary = opOrItem.isSecondary || false;
     const initialValues = opOrItem.config || {};
@@ -1016,6 +1019,7 @@ function openOperationSettings(opOrItem) {
             globalThis.SettingsPopup.open({
                 title,
                 operationName,
+                operationId,
                 operationUuid,
                 isSecondary,
                 initialValues,
@@ -1757,6 +1761,7 @@ export async function initPipelineCreator() {
         getAvailableCameras: () => pipelineStore.state.cameras,
         refreshAvailableCameras: () => fetchAvailableCameras(),
         handleOperationErrorUpdate: handleOperationErrorUpdate,
+        getOperations: () => pipelineStore.state.operations,
     };
 
     Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {

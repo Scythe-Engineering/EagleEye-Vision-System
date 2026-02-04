@@ -175,8 +175,8 @@ class FlowManager:
         self.num_threads = self._calculate_required_threads()
 
         self.logger.log(
-            f"Number of threads required: {self.num_threads} for flow: "
-            f"{Colors.GREEN}{self.pipeline_name}{Colors.RESET}"
+            f"{Colors.GREEN}Number of threads required: {self.num_threads} for flow: "
+            f"{self.pipeline_name}{Colors.RESET}"
         )
 
         # Pre-compute operations by finish timestep for faster lookup

@@ -1143,17 +1143,32 @@ import { BACKEND_BASE_URL } from "../config.js";
         if (titleEl) {
             titleEl.textContent = `${operationName} - Live View`;
         }
+    }
 
-        // For now, keep the placeholder content
-        // Future enhancement: Add actual live visualization logic here
-        const placeholderContent =
-            liveViewContainer.querySelector(".text-center");
-        if (placeholderContent) {
-            const operationText = placeholderContent.querySelector("p.text-lg");
-            if (operationText) {
-                operationText.textContent = `${operationName} Live Preview`;
+    function isVisualizationAvailable(operationName, operationId) {
+        const operations = globalThis.pipelineCreator?.getOperations?.() || [];
+        if (operations.length === 0) {
+            return true;
+        }
+        if (operationId) {
+            const directMatch = operations.find((op) => op.id === operationId);
+            if (directMatch) {
+                return Boolean(directMatch.hasVisualization);
             }
         }
+        if (!operationName) {
+            return true;
+        }
+        const normalizedName = String(operationName || "")
+            .replace(/\.py$/i, "")
+            .toLowerCase();
+        const match = operations.find((op) =>
+            String(op.id || "")
+                .replace(/\.py$/i, "")
+                .toLowerCase()
+                .includes(normalizedName),
+        );
+        return match ? Boolean(match.hasVisualization) : true;
     }
 
     function showVisualizationErrorMessage(
@@ -1171,29 +1186,7 @@ import { BACKEND_BASE_URL } from "../config.js";
         liveViewContainer.style.justifyContent = "stretch";
         liveViewContainer.style.alignItems = "center";
 
-        // Find the main content wrapper (the .text-center div)
         const contentWrapper = liveViewContainer.querySelector(".text-center");
-
-        // Store references to elements we need to restore later
-        if (!liveViewContainer._storedElements && contentWrapper) {
-            liveViewContainer._storedElements = {
-                contentWrapper: contentWrapper,
-                placeholder: contentWrapper.querySelector(
-                    "[data-role='live-view-placeholder']",
-                ),
-                textElements: Array.from(contentWrapper.querySelectorAll("p")),
-                noVisMessage: contentWrapper.querySelector(
-                    "#noVisualizationMessage",
-                ),
-                imgEl: contentWrapper.querySelector("#operationLiveImage"),
-                parentContainer: liveViewContainer,
-            };
-        }
-
-        // Remove content wrapper from DOM to ensure error message takes full width
-        if (contentWrapper) {
-            contentWrapper.remove();
-        }
 
         // Create or update error message element as a styled box
         let errorMsgEl = liveViewContainer.querySelector(
@@ -1205,7 +1198,11 @@ import { BACKEND_BASE_URL } from "../config.js";
                 className:
                     "block w-full bg-red-900/20 border-2 border-red-500/50 rounded-xl shadow-lg p-6 text-center text-red-400 text-lg font-medium my-8",
             });
-            liveViewContainer.appendChild(errorMsgEl);
+            if (contentWrapper) {
+                contentWrapper.appendChild(errorMsgEl);
+            } else {
+                liveViewContainer.appendChild(errorMsgEl);
+            }
         }
         errorMsgEl.textContent = message;
         errorMsgEl.style.display = "block";
@@ -1229,6 +1226,7 @@ import { BACKEND_BASE_URL } from "../config.js";
     function open({
         title,
         operationName,
+        operationId,
         operationUuid,
         isSecondary,
         initialValues,
@@ -1275,6 +1273,10 @@ import { BACKEND_BASE_URL } from "../config.js";
                 );
                 return;
             }
+            if (!isVisualizationAvailable(operationName, operationId)) {
+                showVisualizationErrorMessage("Operation has no visualization");
+                return;
+            }
             try {
                 console.log("[SETTINGS] Starting visualization", {
                     pipeline: selectedPipelineName,
@@ -1311,17 +1313,8 @@ import { BACKEND_BASE_URL } from "../config.js";
                     "[data-role='live-view-container']",
                 );
 
-                // Find or restore content wrapper
-                let contentWrapper =
+                const contentWrapper =
                     liveViewContainer.querySelector(".text-center");
-                if (
-                    !contentWrapper &&
-                    liveViewContainer._storedElements?.contentWrapper
-                ) {
-                    contentWrapper =
-                        liveViewContainer._storedElements.contentWrapper;
-                    liveViewContainer.appendChild(contentWrapper);
-                }
 
                 let imgEl = liveViewContainer.querySelector(
                     "#operationLiveImage",
@@ -1339,85 +1332,20 @@ import { BACKEND_BASE_URL } from "../config.js";
                     }
                 }
 
-                // Remove placeholder content completely when showing live image
-                const placeholderEl = liveViewContainer.querySelector(
-                    "[data-role='live-view-placeholder']",
-                );
-                const textElements = Array.from(
-                    liveViewContainer.querySelectorAll("p"),
-                );
-                const noVisMessage = liveViewContainer.querySelector(
-                    "#noVisualizationMessage",
-                );
                 const errorMsg = liveViewContainer.querySelector(
                     "#visualizationErrorMessage",
                 );
-
-                // Store elements for potential restoration if visualization fails
-                if (!liveViewContainer._storedElements && contentWrapper) {
-                    liveViewContainer._storedElements = {
-                        contentWrapper: contentWrapper,
-                        placeholder: placeholderEl,
-                        textElements: textElements,
-                        noVisMessage: noVisMessage,
-                        imgEl: imgEl,
-                        parentContainer: liveViewContainer,
-                    };
-                }
-
-                // Remove elements from DOM
-                if (placeholderEl) placeholderEl.remove();
-                textElements.forEach((p) => p.remove());
-                if (noVisMessage) noVisMessage.remove();
                 if (errorMsg) errorMsg.remove();
 
                 imgEl.classList.remove("hidden");
                 imgEl.style.display = "block";
 
-                // Start polling at 10Hz (every 100ms)
-                if (_visInterval) clearInterval(_visInterval);
-                let hasError = false;
-                _visInterval = setInterval(async () => {
-                    if (hasError) {
-                        return;
-                    }
-                    try {
-                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisPipeline)}`;
-                        const response = await fetch(url, {
-                            cache: "no-store",
-                        });
-
-                        if (!response.ok) {
-                            hasError = true;
-                            if (_visInterval) {
-                                clearInterval(_visInterval);
-                                _visInterval = null;
-                            }
-                            showVisualizationErrorMessage(
-                                "Error getting visualization",
-                            );
-                            return;
-                        }
-
-                        const blob = await response.blob();
-                        const objectUrl = URL.createObjectURL(blob);
-                        // Update image src and revoke previous object URL
-                        if (_currentVisObjectUrl)
-                            URL.revokeObjectURL(_currentVisObjectUrl);
-                        _currentVisObjectUrl = objectUrl;
-                        imgEl.src = objectUrl;
-                    } catch (err) {
-                        hasError = true;
-                        if (_visInterval) {
-                            clearInterval(_visInterval);
-                            _visInterval = null;
-                        }
-                        console.warn(
-                            "[SETTINGS] Error processing visualization frame:",
-                            err,
-                        );
-                    }
-                }, 100);
+                if (_visInterval) {
+                    clearInterval(_visInterval);
+                    _visInterval = null;
+                }
+                const streamUrl = `${BACKEND_BASE_URL}/visualize/stream/${encodeURIComponent(_currentVisPipeline)}`;
+                imgEl.src = streamUrl;
             } catch (err) {
                 console.warn("Failed to start visualization:", err);
                 showVisualizationErrorMessage("Error getting visualization");
@@ -1535,12 +1463,18 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
             _currentVisObjectUrl = null;
         }
-        stopVisualizationIfActive();
-
-        // Show placeholder content again and hide image
         const liveViewPanelEl = document.getElementById(
             "operationLiveViewPanel",
         );
+        if (liveViewPanelEl) {
+            const imgEl = liveViewPanelEl.querySelector("#operationLiveImage");
+            if (imgEl) {
+                imgEl.removeAttribute("src");
+            }
+        }
+        stopVisualizationIfActive();
+
+        // Show placeholder content again and hide image
         if (liveViewPanelEl) {
             const liveViewContainer = liveViewPanelEl.querySelector(
                 "[data-role='live-view-container']",
@@ -1556,42 +1490,6 @@ import { BACKEND_BASE_URL } from "../config.js";
 
                 if (imgEl) imgEl.classList.add("hidden");
 
-                // Restore previously removed elements back to DOM
-                const storedElements = liveViewContainer._storedElements;
-                if (storedElements) {
-                    const contentWrapper = storedElements.contentWrapper;
-                    if (contentWrapper) {
-                        liveViewContainer.appendChild(contentWrapper);
-
-                        // Restore placeholder elements into the content wrapper
-                        if (storedElements.placeholder) {
-                            contentWrapper.appendChild(
-                                storedElements.placeholder,
-                            );
-                        }
-                        if (storedElements.textElements) {
-                            storedElements.textElements.forEach((p) => {
-                                contentWrapper.appendChild(p);
-                            });
-                        }
-                        if (storedElements.noVisMessage) {
-                            contentWrapper.appendChild(
-                                storedElements.noVisMessage,
-                            );
-                            storedElements.noVisMessage.style.display = "none";
-                            storedElements.noVisMessage.classList.add("hidden");
-                        }
-                        if (storedElements.imgEl) {
-                            contentWrapper.appendChild(storedElements.imgEl);
-                            storedElements.imgEl.classList.add("hidden");
-                            storedElements.imgEl.style.display = "none";
-                        }
-                    }
-
-                    // Clear stored references
-                    delete liveViewContainer._storedElements;
-                }
-
                 // Hide error message
                 const errorMsg = liveViewContainer.querySelector(
                     "#visualizationErrorMessage",
@@ -1599,20 +1497,6 @@ import { BACKEND_BASE_URL } from "../config.js";
                 if (errorMsg) {
                     errorMsg.style.display = "none";
                     errorMsg.classList.add("hidden");
-                }
-
-                // Reset the text back to default
-                const operationText =
-                    liveViewContainer.querySelector("p.text-lg");
-                const descriptionText =
-                    liveViewContainer.querySelector("p.text-sm");
-
-                if (operationText) {
-                    operationText.textContent = "Live Preview";
-                }
-                if (descriptionText) {
-                    descriptionText.textContent =
-                        "Visualizer will appear here when operation is active";
                 }
 
                 // Reset the title

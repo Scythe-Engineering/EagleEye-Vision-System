@@ -26,6 +26,7 @@ from src.webui.web_server_utils.serve_static_files import (
     serve_index,
     serve_js,
 )
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 current_path = os.path.dirname(__file__)
 src_path = os.path.abspath(os.path.join(current_path, os.pardir))
@@ -44,6 +45,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
 TEXT_PLAIN_MIMETYPE = "text/plain"
+VISUALIZATION_STREAM_FPS = 12
 
 
 class EagleEyeInterface:
@@ -318,6 +320,12 @@ class EagleEyeInterface:
             "/visualize/<string:pipeline_name>",
             "visualize",
             self.visualize,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/visualize/stream/<string:pipeline_name>",
+            "visualize_stream",
+            self.visualize_stream,
             methods=["GET"],
         )
         self.app.add_url_rule(
@@ -836,6 +844,10 @@ class EagleEyeInterface:
                         "description": description,
                         "category": category,
                         "is_secondary": False,
+                        "has_visualization": self._operation_has_visualization(
+                            file,
+                            is_secondary=False,
+                        ),
                     }
                 )
 
@@ -868,12 +880,41 @@ class EagleEyeInterface:
                         "description": description,
                         "category": category,
                         "is_secondary": True,
+                        "has_visualization": self._operation_has_visualization(
+                            file,
+                            is_secondary=True,
+                        ),
                     }
                 )
 
         return {
             "operations": main_operations + secondary_operations,
         }
+
+    def _operation_has_visualization(
+        self, filename: str, is_secondary: bool
+    ) -> bool:
+        """Check if an operation overrides the base visualize method."""
+        module_path = (
+            f"src.secondary_operations.{filename[:-3]}"
+            if is_secondary
+            else f"src.main_operations.definitions.{filename[:-3]}"
+        )
+        try:
+            module = __import__(module_path, fromlist=["*"])
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, OperationInstance)
+                    and attr is not OperationInstance
+                ):
+                    return attr.visualize is not OperationInstance.visualize
+        except Exception as e:
+            self.log(
+                f"Warning: Could not detect visualization for {filename}: {e}"
+            )
+        return False
 
     def get_operation_config_data(
         self, operation_name: str, is_secondary: bool = False
@@ -1286,6 +1327,12 @@ class EagleEyeInterface:
             operation = pipeline.get_operation_by_uuid(operation_uuid)
             if operation is None:
                 return {"message": "Operation not found"}, 404
+            if not self._instance_has_visualization(operation.instance):
+                with pipeline.visualization_data_lock:
+                    pipeline.set_visualize = False
+                    pipeline.visualization_operation_uuid = None
+                    pipeline.visualization_data = None
+                return {"message": "Operation has no visualization"}, 400
             pipeline.start_visualize(operation.uuid)
         except KeyError:
             return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
@@ -1350,6 +1397,59 @@ class EagleEyeInterface:
 
         # Return the encoded image as binary data with proper content type
         return Response(encoded_image.tobytes(), mimetype="image/jpeg")
+
+    def visualize_stream(self, pipeline_name: str) -> Response:
+        """Stream visualization frames as MJPEG."""
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+        except KeyError:
+            return Response(
+                PIPELINE_NOT_FOUND_MESSAGE, status=404, mimetype=TEXT_PLAIN_MIMETYPE
+            )
+
+        return Response(
+            self._visualization_frame_generator(pipeline),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    def _visualization_frame_generator(
+        self, pipeline: "Pipeline"
+    ) -> Generator[bytes, Any, Any]:
+        frame_interval = 1.0 / VISUALIZATION_STREAM_FPS
+        last_frame_time = 0.0
+        while True:
+            now = time.time()
+            elapsed = now - last_frame_time
+            if elapsed < frame_interval:
+                time.sleep(frame_interval - elapsed)
+            last_frame_time = time.time()
+
+            with pipeline.visualization_data_lock:
+                visualization_data = pipeline.visualization_data
+
+            image_array = None
+            if visualization_data is not None:
+                image_array = visualization_data.get("visualization_data")
+
+            if image_array is None:
+                frame_bytes = no_image_jpeg_bytes
+            else:
+                success, encoded_image = cv2.imencode(".jpg", image_array)
+                frame_bytes = (
+                    encoded_image.tobytes() if success else no_image_jpeg_bytes
+                )
+
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                + frame_bytes
+                + b"\r\n"
+            )
+
+    def _instance_has_visualization(self, operation_instance: OperationInstance) -> bool:
+        return (
+            operation_instance.__class__.visualize
+            is not OperationInstance.visualize
+        )
 
     def restart_backend(self) -> tuple[dict, int]:
         """
