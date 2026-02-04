@@ -6,6 +6,7 @@ from line_profiler import profile
 
 from src.config.utils.operation import Operation
 from src.config.utils.thread_object import ThreadObject
+from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
 
 
@@ -147,11 +148,22 @@ class FlowManager:
         logger: Logger,
         on_operation_error: Callable[[Operation, str], None] | None = None,
         on_operation_success: Callable[[Operation], None] | None = None,
+        pipeline_name: str | None = None,
     ) -> None:
+        """Initialize the flow manager that schedules operations at runtime.
+
+        Args:
+            operations: All operations configured in the flow.
+            logger: Shared logger instance for the system.
+            on_operation_error: Optional callback when an operation errors.
+            on_operation_success: Optional callback when an operation succeeds.
+            pipeline_name: Optional name of the pipeline or flow for logging.
+        """
         self.operations: dict[str, Operation] = operations
         self.logger = logger
         self.on_operation_error = on_operation_error
         self.on_operation_success = on_operation_success
+        self.pipeline_name = pipeline_name or "unknown"
 
         self.execution_time_groups: list[list[Operation]] = (
             self.forward_pass_operation_order()
@@ -162,7 +174,10 @@ class FlowManager:
 
         self.num_threads = self._calculate_required_threads()
 
-        self.logger.log(f"Number of threads: {self.num_threads}")
+        self.logger.log(
+            f"Number of threads required: {self.num_threads} for flow: "
+            f"{Colors.GREEN}{self.pipeline_name}{Colors.RESET}"
+        )
 
         # Pre-compute operations by finish timestep for faster lookup
         self.operations_by_finish_timestep: dict[int, list[Operation]] = {}
@@ -499,7 +514,9 @@ class FlowManager:
 
             result[uuid] = {
                 "thread": thread_number,
-                "timestep": operation.execution_timestep if operation.execution_timestep is not None else -1,
+                "timestep": operation.execution_timestep
+                if operation.execution_timestep is not None
+                else -1,
             }
 
         return result

@@ -80,6 +80,7 @@ class Pipeline:
             self.logger,
             on_operation_error=self.record_operation_error,
             on_operation_success=self.clear_operation_error,
+            pipeline_name=self.pipeline_name,
         )
 
         self.total_time_history: deque[float] = deque(maxlen=50)
