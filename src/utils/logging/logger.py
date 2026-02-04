@@ -263,7 +263,7 @@ class Logger:
             max_history_size: Maximum number of messages to keep in memory
         """
         self.log_directory = current_dir / log_directory
-        self.log_directory.mkdir(exist_ok=True)
+        self.log_directory.mkdir(parents=True, exist_ok=True)
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
         self.message_queue: queue.Queue = queue.Queue()
