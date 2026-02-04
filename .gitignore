@@ -295,3 +295,5 @@ src/webui/static/*
 
 files/*
 !files/apriltag_map_path
+
+uv.lock
