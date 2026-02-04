@@ -126,7 +126,15 @@ def _apply_overrides(
     overrides: Dict[str, Any] = {
         "camera_parameters_path": os.environ.get(
             "EAGLEEYE_TEST_CAMERA_PARAMETERS_PATH",
-            str(root / "files" / "camera_parameters_path" / "intrinsics.json"),
+            str(
+                root
+                / "src"
+                / "utils"
+                / "camera_utils"
+                / "camera_calibrations"
+                / "sim_camera"
+                / "intrinsics.json"
+            ),
         ),
         "apriltag_map_path": os.environ.get(
             "EAGLEEYE_TEST_APRILTAG_MAP_PATH",
