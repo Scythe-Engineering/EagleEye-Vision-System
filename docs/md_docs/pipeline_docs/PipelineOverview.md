@@ -119,7 +119,7 @@ The `position` field stores the x,y coordinates of each operation node in the vi
 
 Notes:
 
-- The framework will inject `web_interface` and `compute_pool` into operation constructors if their signatures include `web_interface` and/or `compute_pool`.
+- The framework will inject `web_interface` and `compute_pool` into operation constructors that define a parameter by that name. These constructor arguments are optional—operations only receive the shared dependency when they explicitly declare it, so operations that do not need a `web_interface` or `compute_pool` do not have to include those parameters.
 - The modules are loaded in this order: first try `src.main_operations.definitions.{action_name}`; if not found, fall back to `src.secondary_operations.{action_name}`.
 
 ## End-to-end example

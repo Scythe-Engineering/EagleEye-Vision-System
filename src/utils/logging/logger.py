@@ -269,7 +269,7 @@ class Logger:
         self.message_queue: queue.Queue = queue.Queue()
         self.current_log_file = self._create_log_file()
         self.message_history: MessageHistory = MessageHistory(max_size=max_history_size)
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.last_written_index = 0
 
         self.processing_thread = threading.Thread(

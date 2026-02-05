@@ -18,6 +18,14 @@ class DetectedObjectsOutput(OperationInstance):
         self._last_signature: tuple | None = None
 
     def _is_valid_position(self, position: Any) -> bool:
+        """Check if a position is a valid 3D coordinate.
+
+        Args:
+            position: Candidate position value to validate.
+
+        Returns:
+            True if the position is a finite 3D coordinate, False otherwise.
+        """
         return (
             isinstance(position, Iterable)
             and len(position) == 3
@@ -30,6 +38,14 @@ class DetectedObjectsOutput(OperationInstance):
     def _build_detection_payload(
         self, detection: Dict[str, Any]
     ) -> Dict[str, Any] | None:
+        """Build a sanitized payload for a single detection.
+
+        Args:
+            detection: Raw detection dictionary to normalize.
+
+        Returns:
+            Normalized payload dictionary, or None when invalid.
+        """
         position = detection.get("position_3d")
         if not self._is_valid_position(position):
             return None
@@ -49,6 +65,14 @@ class DetectedObjectsOutput(OperationInstance):
         return payload
 
     def _compute_signature(self, detections: Sequence[Dict[str, Any]]) -> tuple:
+        """Compute a stable signature for a set of detections.
+
+        Args:
+            detections: Normalized detection payloads.
+
+        Returns:
+            Hashable signature tuple representing the detections.
+        """
         signature_items = []
         for detection in detections:
             position = detection.get("position_3d")

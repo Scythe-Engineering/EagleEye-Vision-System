@@ -14,6 +14,7 @@ This file contains the exact, essential rules and minimal examples needed to add
 - If the constructor parameter name includes `web_interface`, the pipeline will inject `EagleEyeInterface` automatically.
 - If it includes `compute_pool`, the pipeline will inject `ComputePool` automatically.
 - Parameter names (not annotations) are used for injection; other args must come from `action_params`.
+- These injection points are optional: omit `web_interface` or `compute_pool` from your constructor when the operation does not need those shared resources, and the pipeline will simply not inject them.
 
 ### run contract
 

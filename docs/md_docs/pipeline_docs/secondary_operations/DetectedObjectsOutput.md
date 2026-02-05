@@ -41,9 +41,9 @@ The operation uses content-based signatures to avoid sending duplicate detection
 
 ## Configuration
 
-### Required Parameters
+### Parameters and Dependencies
 
-- **web_interface**: EagleEyeInterface instance for data transmission
+- **web_interface**: EagleEyeInterface dependency injected automatically when `web_interface` is defined in the constructor. This dependency does not need to be provided via `action_params` because the pipeline inserts it before creation.
 
 ### Configuration Example
 

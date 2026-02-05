@@ -41,10 +41,10 @@ The operation integrates with the EagleEye web interface for potential future vi
 
 ## Configuration
 
-### Required Parameters
+### Parameters and Dependencies
 
 - **fps**: Target frames per second (float)
-- **web_interface**: EagleEyeInterface instance for integration
+- **web_interface**: EagleEyeInterface dependency injected automatically when the constructor defines `web_interface`. This dependency does not need to be supplied via `action_params` because the pipeline adds it before instantiation.
 
 ### Configuration Example
 

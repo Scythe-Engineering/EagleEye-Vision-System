@@ -41,9 +41,9 @@ The operation uses numpy array comparison to prevent redundant pose transmission
 
 ## Configuration
 
-### Required Parameters
+### Parameters and Dependencies
 
-- **web_interface**: EagleEyeInterface instance for pose transmission
+- **web_interface**: EagleEyeInterface dependency injected automatically when the constructor defines `web_interface`. The pipeline adds this dependency; it does not need to be specified via `action_params`.
 
 ### Configuration Example
 

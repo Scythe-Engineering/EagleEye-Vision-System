@@ -12,6 +12,10 @@ export class InteractiveGridHandler {
         this.scrollX = 0;
         this.scrollY = 0;
         this.animationFrameId = null;
+        this.handleResize = () => this.resizeCanvas();
+        this.handleMouseMoveBound = (event) => this.handleMouseMove(event);
+        this.handleMouseLeaveBound = () => this.handleMouseLeave();
+        this.handleScrollBound = () => this.handleScroll();
 
         this.setupCanvas();
         this.setupEventListeners();
@@ -20,7 +24,7 @@ export class InteractiveGridHandler {
 
     setupCanvas() {
         this.resizeCanvas();
-        window.addEventListener("resize", () => this.resizeCanvas());
+        window.addEventListener("resize", this.handleResize);
     }
 
     resizeCanvas() {
@@ -30,13 +34,9 @@ export class InteractiveGridHandler {
     }
 
     setupEventListeners() {
-        this.container.addEventListener("mousemove", (e) =>
-            this.handleMouseMove(e),
-        );
-        this.container.addEventListener("mouseleave", () =>
-            this.handleMouseLeave(),
-        );
-        this.container.addEventListener("scroll", () => this.handleScroll());
+        this.container.addEventListener("mousemove", this.handleMouseMoveBound);
+        this.container.addEventListener("mouseleave", this.handleMouseLeaveBound);
+        this.container.addEventListener("scroll", this.handleScrollBound);
     }
 
     handleMouseMove(event) {
@@ -113,13 +113,9 @@ export class InteractiveGridHandler {
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
         }
-        this.container.removeEventListener("mousemove", (e) =>
-            this.handleMouseMove(e),
-        );
-        this.container.removeEventListener("mouseleave", () =>
-            this.handleMouseLeave(),
-        );
-        this.container.removeEventListener("scroll", () => this.handleScroll());
-        window.removeEventListener("resize", () => this.resizeCanvas());
+        this.container.removeEventListener("mousemove", this.handleMouseMoveBound);
+        this.container.removeEventListener("mouseleave", this.handleMouseLeaveBound);
+        this.container.removeEventListener("scroll", this.handleScrollBound);
+        window.removeEventListener("resize", this.handleResize);
     }
 }
