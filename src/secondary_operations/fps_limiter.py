@@ -53,10 +53,19 @@ class FpsLimiter(OperationInstance):
         Args:
             json_config: Mapping of parameter names to new values.
         """
+        target_fps_updated = False
+
         for key, value in json_config.items():
+            if key == "fps":
+                self.target_fps = value
+                target_fps_updated = True
+                continue
             if hasattr(self, key):
                 setattr(self, key, value)
+                if key == "target_fps":
+                    target_fps_updated = True
 
-        # Recalculate interval if fps or target_fps was updated
-        if hasattr(self, "target_fps"):
+        if target_fps_updated:
+            if not isinstance(self.target_fps, (int, float)) or self.target_fps <= 0:
+                raise ValueError("target_fps must be a positive number")
             self.target_interval_seconds = 1.0 / self.target_fps

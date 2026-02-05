@@ -140,8 +140,14 @@ function getPipelines() {
 }
 
 function getSelectedPipeline() {
-    const pipelineName = pipelineStore.state.currentPipeline.pipelineName;
-    return pipelineStore.state.pipelines.find((p) => p.name === pipelineName);
+    const pipelineName = pipelineStore.state.currentPipeline?.pipelineName;
+    if (!pipelineName) {
+        return null;
+    }
+    const selectedPipeline = pipelineStore.state.pipelines.find(
+        (p) => p.name === pipelineName,
+    );
+    return selectedPipeline ?? null;
 }
 
 function getDeviceInputNodes() {

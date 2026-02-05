@@ -45,19 +45,21 @@ export function findCycles(nodes, connections) {
         path.push(nodeId);
 
         const neighbors = adj[nodeId] || [];
+        let cycleFound = false;
 
         for (const neighbor of neighbors) {
             if (!visited.has(neighbor)) {
                 // Continue DFS
-                const cycleFound = dfs(neighbor, visited, recStack, path);
-                if (cycleFound) {
-                    return true;
+                const neighborCycleFound = dfs(neighbor, visited, recStack, path);
+                if (neighborCycleFound) {
+                    cycleFound = true;
                 }
             } else if (recStack.has(neighbor)) {
                 // Cycle detected - mark ALL connections in the cycle
                 const neighborIndex = path.indexOf(neighbor);
                 if (neighborIndex === -1) {
-                    return true;
+                    cycleFound = true;
+                    continue;
                 }
                 const cycleNodes = path.slice(neighborIndex).concat(neighbor);
 
@@ -81,14 +83,13 @@ export function findCycles(nodes, connections) {
                         cycleConnectionIds.add(id);
                     });
                 }
-
-                return true;
+                cycleFound = true;
             }
         }
 
         recStack.delete(nodeId);
         path.pop();
-        return false;
+        return cycleFound;
     }
 
     // Run DFS from all nodes to find all cycles

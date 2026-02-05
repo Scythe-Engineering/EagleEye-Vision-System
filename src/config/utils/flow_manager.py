@@ -209,14 +209,29 @@ class FlowManager:
                 )
 
                 # remove threads that are occupied
-                available_threads = [
-                    thread
-                    for thread in sorted_threads
-                    if not thread.is_occupied(operation.execution_timestep)
-                ]
+                available_threads = []
+                for thread in sorted_threads:
+                    is_available = True
+                    for timestep in range(
+                        operation.execution_timestep,
+                        operation.finish_timestep + 1,
+                    ):
+                        if thread.is_occupied(timestep):
+                            is_available = False
+                            break
+                    if is_available:
+                        available_threads.append(thread)
 
-                available_threads[0].occupy(operation)
-                operation.set_thread_object(available_threads[0])
+                if not available_threads:
+                    raise ValueError(
+                        "No available threads for operation "
+                        f"{operation.name} at timestep "
+                        f"{operation.execution_timestep}"
+                    )
+
+                available_thread = available_threads[0]
+                available_thread.occupy(operation)
+                operation.set_thread_object(available_thread)
 
         self.operation_outputs: dict[str, Any] = {}
         self.previous_operation_outputs: dict[str, Any] = {}

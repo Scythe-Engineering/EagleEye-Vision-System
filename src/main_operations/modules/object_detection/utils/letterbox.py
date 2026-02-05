@@ -52,13 +52,23 @@ def letterbox_image(
             new_width = max(1, input_width >> shift)
             new_height = max(1, input_height >> shift)
     else:
-        new_width = int(input_width * ratio_to_fit)
-        new_height = int(input_height * ratio_to_fit)
+        new_width = max(1, int(input_width * ratio_to_fit))
+        new_height = max(1, int(input_height * ratio_to_fit))
 
-    # Resize the image to the calculated dimensions
-    resized_img = cv2.resize(
-        img, (new_width, new_height), interpolation=cv2.INTER_NEAREST
-    )
+    if input_height <= 0 or input_width <= 0:
+        raise ValueError("Input image must have positive dimensions")
+
+    try:
+        resized_img = cv2.resize(
+            img, (new_width, new_height), interpolation=cv2.INTER_NEAREST
+        )
+    except cv2.error:
+        resized_img = None
+
+    if resized_img is None:
+        row_indices = np.linspace(0, input_height - 1, new_height).astype(int)
+        col_indices = np.linspace(0, input_width - 1, new_width).astype(int)
+        resized_img = img[row_indices][:, col_indices]
 
     # Convert to greyscale if requested (after resizing for performance)
     if greyscale and resized_img.ndim == 3 and resized_img.shape[2] == 3:

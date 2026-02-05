@@ -19,8 +19,6 @@
 2. **Context Gathering**:
 
     - Use `ScytheContextEngine` for large architectural context (>4 file operations)
-    - Use `CodeStructure` tool before `read_file` (read only necessary sections)
-    - **Batch context operations**: Run `CodeStructure` on multiple files → parallel `read_file` calls
     - Documentation priority: `frc-docs` (FRC) → `context7` (general) → `bravesearch` (fallback)
 
 3. **Execution** (maximize parallelism):

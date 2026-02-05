@@ -229,8 +229,14 @@ class ColorThresholdDetectionImplementation:
                 hsv_frame, color_range["lower_hsv"], color_range["upper_hsv"]
             )
 
+            if mask is None:
+                continue
+
             if self.morphology_iterations > 0 and self.morphology_kernel_size > 0:
                 mask = self.process_mask(mask)
+
+            if mask is None:
+                continue
 
             combined_mask = cv2.bitwise_or(combined_mask, mask)
 
