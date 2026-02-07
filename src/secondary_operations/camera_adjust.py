@@ -3,9 +3,10 @@ import numpy as np
 import cv2
 import subprocess
 from src.utils.colors import Colors
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class CameraAdjust:
+class CameraAdjust(OperationInstance):
     def __init__(
         self,
         brightness: float = 0.0,
@@ -42,35 +43,40 @@ class CameraAdjust:
         self._apriltag_detections: Optional[Any] = None
         self._apply_device_controls()
 
-    def run(self, frame: np.ndarray) -> np.ndarray:
+    def run(self, input_data: Any) -> np.ndarray:
         """Return the frame, hardware adjustments already applied.
 
         Args:
-            frame: Input BGR frame as numpy array (uint8).
+            input_data: Input data - dict with 'frame' and optionally 'detections' keys.
 
         Returns:
             Frame, already adjusted by hardware.
         """
+        if isinstance(input_data, dict):
+            frame = input_data.get("frame")
+            detections = input_data.get("detections")
+        else:
+            frame = input_data
+            detections = None
+
+        if frame is None:
+            raise ValueError("Frame input is required")
+
+        if detections is not None:
+            self._apriltag_detections = detections
+
         return frame
 
-    def update_config(self, params: Dict[str, Any]) -> None:
+    def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update configuration and apply to hardware device controls.
 
         Args:
-            params: Mapping of parameter names to new values.
+            json_config: Mapping of parameter names to new values.
         """
-        for key, value in params.items():
+        for key, value in json_config.items():
             if hasattr(self, key):
                 setattr(self, key, value)
         self._apply_device_controls()
-
-    def back_propagate_input(self, input_data: Any) -> None:
-        """Receive back-propagated AprilTag detections for visualization.
-
-        Args:
-            input_data: AprilTag detections from detector (list of Detection or CustomDetection objects).
-        """
-        self._apriltag_detections = input_data
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Return a visualization frame with AprilTag detections drawn.

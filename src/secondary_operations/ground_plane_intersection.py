@@ -1,9 +1,10 @@
 import numpy as np
 from typing import List, Dict, Any, Optional
 from threading import Lock
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class GroundPlaneIntersection:
+class GroundPlaneIntersection(OperationInstance):
     """Ground plane intersection for 3D position estimation.
 
     This operation calculates the 3D intersection points of detection bounding boxes
@@ -113,14 +114,3 @@ class GroundPlaneIntersection:
             self.fov_horizontal = float(json_config["fov_horizontal"])
         if "fov_vertical" in json_config:
             self.fov_vertical = float(json_config["fov_vertical"])
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Visualize ground plane intersection results.
-
-        Args:
-            frame: Input frame
-
-        Returns:
-            Frame with visualization
-        """
-        return frame

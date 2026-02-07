@@ -1,6 +1,5 @@
 import { uid, parseDropPayload } from "./utils.js";
 
-// Drop indicator creation/removal
 export function createDropIndicator() {
     const div = document.createElement("div");
     div.className = "h-1 bg-orange-500 rounded-full my-2 animate-pulse";
@@ -15,7 +14,6 @@ export function removeDropIndicator() {
     }
 }
 
-// Global drag state
 let draggedItem = null;
 let draggedFromIndex = null;
 let dropIndicatorIndex = null;
@@ -25,14 +23,11 @@ let pipelineDragDepth = 0;
 let isDragOverScheduled = false;
 let lastDragOverEvent = null;
 
-// Drag/drop handlers
 export function handleDragStart(e, item, operations, fromIndex = null) {
     draggedItem = item;
     draggedFromIndex = fromIndex;
     e.dataTransfer.effectAllowed = fromIndex !== null ? "move" : "copy";
 
-    // Store a small payload so if external listeners inspect dataTransfer
-    // they get something useful.
     try {
         const payload = JSON.stringify({
             id: item.id,
@@ -42,11 +37,9 @@ export function handleDragStart(e, item, operations, fromIndex = null) {
         e.dataTransfer.setData("application/pipeline", payload);
         e.dataTransfer.setData("text/plain", payload);
     } catch (err) {
-        // some browsers restrict certain mime types during drag
         console.warn("Failed to set drag data:", err);
     }
 
-    // Visual cue
     if (e.currentTarget instanceof HTMLElement) {
         e.currentTarget.classList.add("dragging");
     }
@@ -70,7 +63,6 @@ export function handleDragEnd(
 export function handleDragEnterPipeline(e) {
     e.stopPropagation();
     pipelineDragDepth += 1;
-    // Hide placeholder on first enter to ensure correct indicator positioning
     const pipelinePlaceholder = document.getElementById("pipelinePlaceholder");
     if (pipelineDragDepth === 1 && pipelinePlaceholder) {
         pipelinePlaceholder.classList.add("hidden");
@@ -93,12 +85,10 @@ export function handleDragOverPipeline(e, pipeline, pipelineContainer) {
         evt.dataTransfer.dropEffect =
             draggedFromIndex !== null ? "move" : "copy";
 
-        // Build array of items excluding the dragged one (so positions are stable)
         const nonDragged = pipeline.filter(
             (it) => !(draggedItem && draggedItem.instanceId === it.instanceId),
         );
 
-        // compute insertion index among non-dragged items
         const mouseY = evt.clientY;
         let k = nonDragged.length;
         for (let i = 0; i < nonDragged.length; i++) {
@@ -197,7 +187,6 @@ export function handleDropOnPipeline(
         }
     }
 
-    // compute insertion index among non-dragged items
     let k = 0;
     if (
         dropIndicatorElem &&
@@ -214,7 +203,6 @@ export function handleDropOnPipeline(
             }
         }
     } else {
-        // fallback: compute among non-dragged items by mouse position
         const nonDragged = pipeline.filter(
             (it) =>
                 !(
@@ -238,24 +226,14 @@ export function handleDropOnPipeline(
         }
     }
 
-    // derive final insertion index into original pipeline array
     let finalIndex = k;
 
     if (localFromIndex !== null) {
-        // Reordering existing item
-        // Adjust finalIndex if we're inserting after the original position
         if (localFromIndex < finalIndex) {
             finalIndex -= 1;
         }
 
         if (localFromIndex !== finalIndex) {
-            console.log("[DRAGDROP] Reordering item", {
-                localFromIndex,
-                finalIndex,
-                k,
-                instanceId: localDraggedItem.instanceId,
-                timestamp: new Date().toISOString(),
-            });
 
             const removedItem = pipeline.splice(localFromIndex, 1)[0];
             const newPipeline = pipeline.slice();
@@ -264,15 +242,13 @@ export function handleDropOnPipeline(
             pipeline.push(...newPipeline);
             callbacks.renderPipeline();
 
-            // Auto-save when reordering items
             setTimeout(() => {
-                if (window.pipelineCreator?.autoSavePipeline) {
-                    window.pipelineCreator.autoSavePipeline();
+                if (callbacks.autoSavePipeline) {
+                    callbacks.autoSavePipeline();
                 }
             }, 100);
         }
     } else {
-        // Adding new item from operations panel
         const newItem = {
             ...localDraggedItem,
             instanceId: uid(localDraggedItem.id + "-"),
@@ -283,10 +259,9 @@ export function handleDropOnPipeline(
         pipeline.push(...newPipeline);
         callbacks.renderPipeline();
 
-        // Auto-save when adding new items
         setTimeout(() => {
-            if (window.pipelineCreator?.autoSavePipeline) {
-                window.pipelineCreator.autoSavePipeline();
+            if (callbacks.autoSavePipeline) {
+                callbacks.autoSavePipeline();
             }
         }, 100);
     }
@@ -296,10 +271,112 @@ export function handleDropOnPipeline(
     draggedFromIndex = null;
     dropIndicatorIndex = null;
 
-    // If still empty (should not be after add), show placeholder
     if (pipeline.length === 0) {
         pipelinePlaceholder.classList.remove("hidden");
     }
 
     isProcessingDrop = false;
+}
+
+export class FlowchartDragDropHandler {
+    constructor(canvas, options = {}) {
+        this.canvas = canvas;
+        this.gridSpacing = options.gridSpacing || 20;
+        this.onDrop = options.onDrop || (() => {});
+        this.onReorder = options.onReorder || (() => {});
+        
+        this.isDragging = false;
+        this.draggedOperation = null;
+        this.dragPreview = null;
+        
+        this.init();
+    }
+
+    init() {
+        this.setupOperationsPanelDrag();
+    }
+
+    setupOperationsPanelDrag() {
+        const operationsList = document.getElementById("operationsList");
+        if (!operationsList) return;
+
+        operationsList.addEventListener("dragstart", (e) => {
+            const operationEl = e.target.closest("[draggable]");
+            if (!operationEl) return;
+
+            this.isDragging = true;
+            this.createDragPreview(e);
+        });
+
+        operationsList.addEventListener("dragend", () => {
+            this.isDragging = false;
+            this.removeDragPreview();
+        });
+    }
+
+    createDragPreview(e) {
+        this.dragPreview = document.createElement("div");
+        this.dragPreview.className = "fixed pointer-events-none z-50 opacity-80";
+        this.dragPreview.style.cssText = `
+            background-color: #232323;
+            border: 2px dashed #f9c845;
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: white;
+            font-size: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        `;
+        this.dragPreview.textContent = "Drop to add operation";
+        
+        document.body.appendChild(this.dragPreview);
+        
+        const updatePosition = (event) => {
+            if (this.dragPreview) {
+                this.dragPreview.style.left = `${event.clientX + 15}px`;
+                this.dragPreview.style.top = `${event.clientY + 15}px`;
+            }
+        };
+        
+        document.addEventListener("drag", updatePosition);
+        document.addEventListener("dragend", () => {
+            document.removeEventListener("drag", updatePosition);
+        }, { once: true });
+    }
+
+    removeDragPreview() {
+        if (this.dragPreview) {
+            this.dragPreview.remove();
+            this.dragPreview = null;
+        }
+    }
+
+    snapToGrid(value) {
+        return Math.round(value / this.gridSpacing) * this.gridSpacing;
+    }
+
+    getDropPosition(e) {
+        const worldPos = this.canvas.screenToWorld(e.clientX, e.clientY);
+        return {
+            x: this.snapToGrid(worldPos.x),
+            y: this.snapToGrid(worldPos.y)
+        };
+    }
+
+    calculateInsertIndex(pipeline, dropY) {
+        if (pipeline.length === 0) return 0;
+
+        for (let i = 0; i < pipeline.length; i++) {
+            const item = pipeline[i];
+            const itemY = item.position?.y || 0;
+            if (dropY < itemY) {
+                return i;
+            }
+        }
+
+        return pipeline.length;
+    }
+
+    destroy() {
+        this.removeDragPreview();
+    }
 }

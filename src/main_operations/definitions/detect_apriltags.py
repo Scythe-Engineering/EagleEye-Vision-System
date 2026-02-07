@@ -6,9 +6,10 @@ from ..modules.apriltags.apriltag_detector import AprilTagDetector
 from pupil_apriltags import Detection
 from ..modules.apriltags.apriltag_detector import CustomDetection
 from typing import List, Optional
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class DetectApriltagsDefinition:
+class DetectApriltagsDefinition(OperationInstance):
     """Definition for AprilTag detection operations."""
 
     def __init__(
@@ -48,7 +49,11 @@ class DetectApriltagsDefinition:
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
         self.last_detections_lock: Lock = Lock()
 
-    def run(self, input_data) -> List[Detection] | List[CustomDetection] | None:
+    def run(
+        self,
+        input_data: np.ndarray
+        | tuple[list[tuple[np.ndarray, tuple[int, int]]], np.ndarray],
+    ) -> List[Detection] | List[CustomDetection] | None:
         """Detect AprilTags in the given image or image segments.
 
         Args:

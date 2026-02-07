@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <title>Eagle Eye</title>
-        <link rel="stylesheet" href="http://localhost:5173/style.css" />
+        <link rel="stylesheet" href="/style.css" />
     </head>
     <body
         class="background [background:url('./static/background.png')_50%_center_/_cover_no-repeat_fixed] w-full h-full [font-family:Arial,sans-serif]"
@@ -57,7 +57,8 @@
                 <!-- LEFT CONTENT -->
                 <div class="Left-Content flex-col flex-1 flex relative">
                     {{> camera_views_tab_content}} {{> 3d_tab_content}} {{>
-                    pipeline_tab_content}} {{> settings_tab_content}}
+                    pipeline_tab_content}} {{> settings_tab_content}} {{>
+                    system_status_tab_content}}
                 </div>
 
                 <!-- SIDEBAR -->
@@ -66,12 +67,13 @@
                         <li class="active" data-view="view-views">Views</li>
                         <li data-view="view-3d">3D View</li>
                         <li data-view="view-pipeline">Pipeline</li>
+                        <li data-view="view-system">System</li>
                         <li data-view="view-settings">Settings</li>
                     </ul>
                 </nav>
             </div>
         </div>
 
-        <script type="module" src="http://localhost:5173/js/main.js"></script>
+        <script type="module" src="/js/main.js"></script>
     </body>
 </html>

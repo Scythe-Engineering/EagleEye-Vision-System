@@ -2,6 +2,13 @@
     "class_name": "DetectApriltagsDefinition",
     "description": "Detects AprilTag markers in camera images and extracts their IDs and corner positions for robot localization",
     "category": "det",
+    "input_nodes": [
+        {
+            "name": "frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": ["detections"],
     "parameters": {
         "families": {
             "type": "str",

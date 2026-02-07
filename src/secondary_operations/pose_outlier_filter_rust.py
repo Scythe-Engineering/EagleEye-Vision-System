@@ -3,12 +3,14 @@ from typing import Optional
 
 # Import the Rust module (built automatically)
 try:
-    from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter # type: ignore
+    from pose_outlier_filter import PoseOutlierFilter as RustPoseOutlierFilter  # type: ignore
 except ImportError:
     RustPoseOutlierFilter = None
 
+from src.main_operations.definitions.base.base_class import OperationInstance
 
-class PoseOutlierFilterRust:
+
+class PoseOutlierFilterRust(OperationInstance):
     """Rust-based pose outlier filter for high-performance pose filtering.
 
     This is a Python wrapper around a Rust implementation of the pose outlier filter.
@@ -121,17 +123,3 @@ class PoseOutlierFilterRust:
             self.velocity_smoothing_alpha = json_config["velocity_smoothing_alpha"]
         if "full_reset_threshold" in json_config:
             self.full_reset_threshold = json_config["full_reset_threshold"]
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the pose outlier filter outputs.
-
-        This operation returns pose estimation data (transform) only,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for transform-only operations.
-        """
-        return None

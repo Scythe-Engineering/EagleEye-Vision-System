@@ -1,60 +1,341 @@
 {
-    "basic_test": {
-        "apriltag_pipeline": [
-            {
-                "action_name": "temporal_acceleration_preprocessor_rust",
-                "action_params": {
-                    "camera_parameters_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/camera_parameters_path/intrinsics.json",
-                    "apriltag_map_path": "{project_root}/files/temporal_acceleration_preprocessor_rust/apriltag_map_path/frc2025r2.json",
-                    "max_regions": 6,
-                    "min_region_size_px": 20,
-                    "padding_factor": 0.25
+    "test": [
+        {
+            "action_name": "device_input.py",
+            "action_params": {
+                "camera_name": "basic_test"
+            },
+            "position": {
+                "x": -380,
+                "y": 100
+            },
+            "uuid": "op-mk60jqlu-vb7",
+            "connections": [
+                {
+                    "from_uuid": "op-mk60jqlu-vb7",
+                    "from_port": "frame",
+                    "to_uuid": "op-mkcoqjzs-g79z",
+                    "to_port": "frame",
+                    "data_type": "frame",
+                    "is_default": false,
+                    "custom_waypoints": null
+                },
+                {
+                    "from_uuid": "op-mk60jqlu-vb7",
+                    "from_port": "frame",
+                    "to_uuid": "op-mkh3fc5l-gtks",
+                    "to_port": "frame",
+                    "data_type": "frame",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
+            ]
+        },
+        {
+            "action_name": "detect_apriltags.py",
+            "action_params": {
+                "families": "tag36h11",
+                "nthreads": 1,
+                "quad_decimate": 2,
+                "quad_sigma": 0,
+                "refine_edges": "1",
+                "decode_sharpening": 0.25
             },
-            {
-                "action_name": "detect_apriltags",
-                "action_params": {
-                    "decode_sharpening": 0.25,
-                    "families": "tag36h11",
-                    "nthreads": 4,
-                    "quad_decimate": 2,
-                    "quad_sigma": 0,
-                    "refine_edges": "1"
+            "position": {
+                "x": 360,
+                "y": 100
+            },
+            "uuid": "op-mk60jrt5-9es1",
+            "connections": [
+                {
+                    "from_uuid": "op-mk60jrt5-9es1",
+                    "from_port": "detections",
+                    "to_uuid": "op-mk60k0f0-5bb0",
+                    "to_port": "detections",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
+            ]
+        },
+        {
+            "action_name": "pnp_camera_localization.py",
+            "action_params": {
+                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
+                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
+                "jump_threshold": 2
             },
-            {
-                "action_name": "pnp_camera_localization",
-                "action_params": {
-                    "camera_parameters_path": "{project_root}/files/pnp_camera_localization/camera_parameters_path/intrinsics.json",
-                    "apriltag_map_path": "{project_root}/files/pnp_camera_localization/apriltag_map_path/frc2025r2.json",
-                    "jump_threshold": 2
+            "position": {
+                "x": 720,
+                "y": 100
+            },
+            "uuid": "op-mk60k0f0-5bb0",
+            "connections": [
+                {
+                    "from_uuid": "op-mk60k0f0-5bb0",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mk60kmaw-kwwt",
+                    "to_port": "pose_3d",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
+                },
+                {
+                    "from_uuid": "op-mk60k0f0-5bb0",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mkcoqjzs-g79z",
+                    "to_port": "camera_pose",
+                    "data_type": "camera_pose",
+                    "is_default": true,
+                    "custom_waypoints": [
+                        {
+                            "x": 961,
+                            "y": 161.00002931553445
+                        },
+                        {
+                            "x": 980,
+                            "y": 161.00002931553445
+                        },
+                        {
+                            "x": 980,
+                            "y": 220
+                        },
+                        {
+                            "x": -100,
+                            "y": 220
+                        },
+                        {
+                            "x": -100,
+                            "y": 185.00004793691684
+                        },
+                        {
+                            "x": -70,
+                            "y": 185.00004793691684
+                        }
+                    ]
+                },
+                {
+                    "from_uuid": "op-mk60k0f0-5bb0",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mkh3fvk1-fevc",
+                    "to_port": "robot_pose",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": [
+                        {
+                            "x": 961,
+                            "y": 160.99993217222533
+                        },
+                        {
+                            "x": 980,
+                            "y": 160.99993217222533
+                        },
+                        {
+                            "x": 980,
+                            "y": 80
+                        },
+                        {
+                            "x": 680,
+                            "y": 80
+                        },
+                        {
+                            "x": 680,
+                            "y": 44.99992111259118
+                        },
+                        {
+                            "x": 710,
+                            "y": 44.99992111259118
+                        }
+                    ]
                 }
+            ]
+        },
+        {
+            "action_name": "flatten_pose.py",
+            "action_params": {},
+            "position": {
+                "x": 1100,
+                "y": 100
             },
-            {
-                "action_name": "back_propagate",
-                "action_params": {
-                    "action_name": "temporal_acceleration_preprocessor_rust"
+            "uuid": "op-mk60kmaw-kwwt",
+            "connections": [
+                {
+                    "from_uuid": "op-mk60kmaw-kwwt",
+                    "from_port": "pose_2d",
+                    "to_uuid": "op-mk60ks00-1rdu",
+                    "to_port": "pose",
+                    "data_type": "pose_2d",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
+            ]
+        },
+        {
+            "action_name": "robot_pose_output.py",
+            "action_params": {},
+            "position": {
+                "x": 1400,
+                "y": 100
             },
-            {
-                "action_name": "flatten_pose",
-                "action_params": {}
+            "uuid": "op-mk60ks00-1rdu",
+            "connections": []
+        },
+        {
+            "action_name": "temporal_acceleration_preprocessor_rust.py",
+            "action_params": {
+                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
+                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
+                "padding_factor": 0.35,
+                "max_regions": 20,
+                "min_region_size_px": 16
             },
-            {
-                "action_name": "robot_pose_output",
-                "action_params": {}
+            "position": {
+                "x": -60,
+                "y": 100
             },
-            {
-                "action_name": "extract_pose",
-                "action_params": {}
-            },
-            {
-                "action_name": "publish_to_networktables",
-                "action_params": {
-                    "target_key": "robot_pose",
-                    "data_path": []
+            "uuid": "op-mkcoqjzs-g79z",
+            "connections": [
+                {
+                    "from_uuid": "op-mkcoqjzs-g79z",
+                    "from_port": "processed_frame",
+                    "to_uuid": "op-mk60jrt5-9es1",
+                    "to_port": "frame",
+                    "data_type": "processed_frame",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
-            }
-        ]
-    }
+            ]
+        },
+        {
+            "action_name": "color_threshold_detection.py",
+            "action_params": {
+                "target_size": 320,
+                "color_ranges": [
+                    {
+                        "name": "new_color",
+                        "class_id": 0,
+                        "lower_hsv": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "upper_hsv": [
+                            179,
+                            255,
+                            255
+                        ]
+                    }
+                ],
+                "min_area": 100,
+                "max_area": 50000,
+                "blur_kernel_size": 0,
+                "morphology_kernel_size": 5,
+                "morphology_iterations": 0,
+                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json"
+            },
+            "position": {
+                "x": -60,
+                "y": -40
+            },
+            "uuid": "op-mkh3fc5l-gtks",
+            "connections": [
+                {
+                    "from_uuid": "op-mkh3fc5l-gtks",
+                    "from_port": "detections",
+                    "to_uuid": "op-mkh3fhl7-2j0j",
+                    "to_port": "detections",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "ground_plane_intersection.py",
+            "action_params": {
+                "camera_height": 1,
+                "camera_pitch": 0,
+                "fov_horizontal": 60,
+                "fov_vertical": 45
+            },
+            "position": {
+                "x": 360,
+                "y": -40
+            },
+            "uuid": "op-mkh3fhl7-2j0j",
+            "connections": [
+                {
+                    "from_uuid": "op-mkh3fhl7-2j0j",
+                    "from_port": "positions_3d",
+                    "to_uuid": "op-mkh3fvk1-fevc",
+                    "to_port": "detections",
+                    "data_type": "positions_3d",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "detected_objects_output.py",
+            "action_params": {},
+            "position": {
+                "x": 1120,
+                "y": -40
+            },
+            "uuid": "op-mkh3fqm1-5adr",
+            "connections": []
+        },
+        {
+            "action_name": "robot_local_to_field_transform.py",
+            "action_params": {},
+            "position": {
+                "x": 760,
+                "y": -40
+            },
+            "uuid": "op-mkh3fvk1-fevc",
+            "connections": [
+                {
+                    "from_uuid": "op-mkh3fvk1-fevc",
+                    "from_port": "field_detections",
+                    "to_uuid": "op-mkh3fqm1-5adr",
+                    "to_port": "detections",
+                    "data_type": "field_detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "device_input.py",
+            "action_params": {
+                "camera_name": "FaceTime HD Camera"
+            },
+            "position": {
+                "x": -400,
+                "y": -260
+            },
+            "uuid": "op-ml5ee66b-6r1u",
+            "connections": [
+                {
+                    "from_uuid": "op-ml5ee66b-6r1u",
+                    "from_port": "frame",
+                    "to_uuid": "op-ml5eefuk-24bg",
+                    "to_port": "frame",
+                    "data_type": "frame",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "detect_apriltags.py",
+            "action_params": {},
+            "position": {
+                "x": -100,
+                "y": -260
+            },
+            "uuid": "op-ml5eefuk-24bg",
+            "connections": []
+        }
+    ]
 }

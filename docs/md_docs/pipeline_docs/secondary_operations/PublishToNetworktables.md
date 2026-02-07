@@ -53,11 +53,11 @@ The operation can extract specific values from complex pipeline data structures:
 
 ## Configuration
 
-### Required Parameters
+### Parameters and Dependencies
 
 - **`target_key`**: NetworkTables entry key where data will be published
 - **`data_path`**: Optional path to extract specific data from pipeline output
-
+  (the operation only requires these parameters; any shared dependencies such as NetworkTables instances are injected automatically when the pipeline declares constructor parameters with those names) 
 ### Configuration Examples
 
 #### Publishing Angles from Detection Results

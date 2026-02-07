@@ -1,0 +1,19 @@
+{
+    "class_name": "DeviceInput",
+    "description": "Provides the initial device input for the pipeline",
+    "category": "prep",
+    "is_data_source": true,
+    "input_nodes": [],
+    "output_nodes": [
+        "frame"
+    ],
+    "parameters": {
+        "camera_name": {
+            "type": "str",
+            "description": "Name of the camera to read frames from",
+            "default": "",
+            "required": true,
+            "restart_for_change": true
+        }
+    }
+}

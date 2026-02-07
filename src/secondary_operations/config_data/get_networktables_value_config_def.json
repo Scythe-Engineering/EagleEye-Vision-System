@@ -1,0 +1,17 @@
+{
+    "class_name": "GetNetworktablesValue",
+    "description": "Read data from NetworkTable and output it to downstream operations",
+    "category": "net",
+    "is_data_source": true,
+    "input_nodes": [],
+    "output_nodes": ["data"],
+    "parameters": {
+        "network_table_key": {
+            "type": "str",
+            "description": "Key to read from the network table",
+            "default": "",
+            "required": true,
+            "restart_for_change": false
+        }
+    }
+}

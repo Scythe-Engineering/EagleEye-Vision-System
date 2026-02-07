@@ -1,10 +1,12 @@
 import time
+from typing import Any
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class FpsLimiter:
+class FpsLimiter(OperationInstance):
     """Limits the frame rate by sleeping to maintain a target FPS.
 
     This operation records the time between runs and sleeps for the remaining
@@ -45,16 +47,25 @@ class FpsLimiter:
         self.last_run_time = time.time()
         return frame
 
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Visualize the pose outlier filter outputs.
-
-        This operation returns pose estimation data (transform) only,
-        so no frame visualization is available.
+    def update_config(self, json_config: dict[str, Any]) -> None:
+        """Update configuration at runtime.
 
         Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for transform-only operations.
+            json_config: Mapping of parameter names to new values.
         """
-        return frame
+        target_fps_updated = False
+
+        for key, value in json_config.items():
+            if key == "fps":
+                self.target_fps = value
+                target_fps_updated = True
+                continue
+            if hasattr(self, key):
+                setattr(self, key, value)
+                if key == "target_fps":
+                    target_fps_updated = True
+
+        if target_fps_updated:
+            if not isinstance(self.target_fps, (int, float)) or self.target_fps <= 0:
+                raise ValueError("target_fps must be a positive number")
+            self.target_interval_seconds = 1.0 / self.target_fps

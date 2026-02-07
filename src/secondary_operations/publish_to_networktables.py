@@ -3,9 +3,10 @@ from typing import Any
 
 from networktables import NetworkTable
 from src.utils.flatpack_schema.registry import registry
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class PublishToNetworktables:
+class PublishToNetworktables(OperationInstance):
     def __init__(
         self,
         network_table: NetworkTable,
@@ -37,27 +38,16 @@ class PublishToNetworktables:
             self._publish_value(value_to_publish)
         return data
 
-    def update_config(self, config_updates: dict) -> None:
+    def update_config(self, json_config: dict) -> None:
         """Apply live configuration updates.
 
         Args:
-            config_updates: Dictionary containing configuration fields to update.
+            json_config: Dictionary containing configuration fields to update.
         """
-        if "target_key" in config_updates:
-            self.target_key = config_updates["target_key"]
-        if "data_path" in config_updates:
-            self.data_path_tokens = self._normalize_path(config_updates["data_path"])
-
-    def visualize(self, frame: Any) -> Any:
-        """Return the frame unchanged for visualization pipelines.
-
-        Args:
-            frame: Frame to forward to downstream visualization steps.
-
-        Returns:
-            Frame forwarded without modification.
-        """
-        return frame
+        if "target_key" in json_config:
+            self.target_key = json_config["target_key"]
+        if "data_path" in json_config:
+            self.data_path_tokens = self._normalize_path(json_config["data_path"])
 
     def _normalize_path(self, data_path: str | Sequence[str] | None) -> list[str | int]:
         """Normalize the provided path configuration into a token list.

@@ -6,9 +6,10 @@ import { BACKEND_BASE_URL } from "../config.js";
     // Visualization state
     let _visInterval = null;
     let _currentVisObjectUrl = null;
-    let _currentVisCamera = null;
     let _currentVisPipeline = null;
     let _currentVisAction = null;
+    let _availableCameras = null;
+    let _availableCamerasLoading = null;
 
     function createElement(tag, attrs = {}, children = []) {
         const el = document.createElement(tag);
@@ -29,14 +30,451 @@ import { BACKEND_BASE_URL } from "../config.js";
         return el;
     }
 
+    function operationHasSettings(config) {
+        const params = config?.parameters;
+        return params && typeof params === "object" && Object.keys(params).length > 0;
+    }
+
+    async function loadAvailableCameras() {
+        if (Array.isArray(_availableCameras)) {
+            return _availableCameras;
+        }
+        if (_availableCamerasLoading) {
+            return _availableCamerasLoading;
+        }
+        _availableCamerasLoading = fetch(
+            `${BACKEND_BASE_URL}/get-available-cameras`,
+        )
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then((data) => {
+                const cameras = Object.entries(data).map(([name]) => name);
+                _availableCameras = cameras;
+                return cameras;
+            })
+            .catch((error) => {
+                console.warn("Failed to fetch available cameras:", error);
+                _availableCameras = [];
+                return [];
+            })
+            .finally(() => {
+                _availableCamerasLoading = null;
+            });
+        return _availableCamerasLoading;
+    }
+
+    function notifyCameraListUpdated(cameras) {
+        if (
+            globalThis.pipelineCreator?.getAvailableCameras &&
+            cameras.length &&
+            !globalThis.pipelineCreator?.refreshAvailableCameras
+        ) {
+            return;
+        }
+        if (globalThis.pipelineCreator?.refreshAvailableCameras) {
+            globalThis.pipelineCreator
+                .refreshAvailableCameras()
+                .catch((error) =>
+                    console.warn("Failed to refresh pipeline cameras:", error),
+                );
+        }
+    }
+
+    function buildHsvPickerField(currentValue, fieldId, label, isEdited) {
+        const hsvValue = currentValue || [0, 0, 0];
+
+        const container = createElement("div", { className: "mb-4" });
+
+        const labelRow = createElement(
+            "div",
+            { className: "flex items-center mb-2" },
+            [label],
+        );
+        container.appendChild(labelRow);
+
+        const inputContainer = createElement("div", {
+            className: "relative flex gap-2 items-center",
+        });
+
+        const colorPreview = createElement("div", {
+            className: "w-10 h-10 rounded border-2 border-[#414141]",
+            style: `background-color: hsl(${hsvValue[0] * 2}, ${hsvValue[1] / 2.55}%, ${hsvValue[2] / 2.55}%)`,
+        });
+
+        const hsvInputs = createElement("div", {
+            className: "flex gap-2 flex-1",
+        });
+
+        const hInput = createElement("input", {
+            id: `${fieldId}-h`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "179",
+            step: "1",
+            value: hsvValue[0],
+        });
+        const hLabel = createElement("label", {
+            for: `${fieldId}-h`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "H",
+        });
+
+        const sInput = createElement("input", {
+            id: `${fieldId}-s`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "255",
+            step: "1",
+            value: hsvValue[1],
+        });
+        const sLabel = createElement("label", {
+            for: `${fieldId}-s`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "S",
+        });
+
+        const vInput = createElement("input", {
+            id: `${fieldId}-v`,
+            type: "number",
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            min: "0",
+            max: "255",
+            step: "1",
+            value: hsvValue[2],
+        });
+        const vLabel = createElement("label", {
+            for: `${fieldId}-v`,
+            className: "text-xs text-[#ac8a2f]",
+            text: "V",
+        });
+
+        const updateColor = () => {
+            const h = Math.max(
+                0,
+                Math.min(179, Number.parseInt(hInput.value, 10) || 0),
+            );
+            const s = Math.max(
+                0,
+                Math.min(255, Number.parseInt(sInput.value, 10) || 0),
+            );
+            const v = Math.max(
+                0,
+                Math.min(255, Number.parseInt(vInput.value, 10) || 0),
+            );
+            colorPreview.style.backgroundColor = `hsl(${h * 2}, ${s / 2.55}%, ${v / 2.55}%)`;
+        };
+
+        hInput.addEventListener("input", updateColor);
+        sInput.addEventListener("input", updateColor);
+        vInput.addEventListener("input", updateColor);
+
+        const hWrapper = createElement("div", { className: "flex-1" }, [
+            hLabel,
+            hInput,
+        ]);
+        const sWrapper = createElement("div", { className: "flex-1" }, [
+            sLabel,
+            sInput,
+        ]);
+        const vWrapper = createElement("div", { className: "flex-1" }, [
+            vLabel,
+            vInput,
+        ]);
+
+        hsvInputs.appendChild(hWrapper);
+        hsvInputs.appendChild(sWrapper);
+        hsvInputs.appendChild(vWrapper);
+
+        inputContainer.appendChild(colorPreview);
+        inputContainer.appendChild(hsvInputs);
+
+        const editedIndicator = createElement("div", {
+            className:
+                "absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-yellow-400 rounded-full",
+            title: "This field has been modified from its default value",
+            style: isEdited ? "" : "display: none;",
+        });
+        inputContainer.appendChild(editedIndicator);
+
+        container.appendChild(inputContainer);
+
+        return {
+            wrapper: container,
+            getValue: () => [
+                Number.parseInt(hInput.value, 10) || 0,
+                Number.parseInt(sInput.value, 10) || 0,
+                Number.parseInt(vInput.value, 10) || 0,
+            ],
+        };
+    }
+
+    function buildObjectField(
+        name,
+        def,
+        currentValue,
+        originalValue,
+        label,
+        operationName,
+        path,
+    ) {
+        const container = createElement("div", {
+            className:
+                "mb-4 bg-[#1a1a1a] border border-[#414141] rounded-lg p-4",
+        });
+
+        const header = createElement("div", {
+            className: "flex items-center justify-between mb-3",
+        });
+        const title = createElement("h4", {
+            className: "text-sm font-medium text-[#f9c845]",
+            text: def.description || name,
+        });
+        header.appendChild(title);
+        container.appendChild(header);
+
+        const body = createElement("div", {
+            className: "space-y-3",
+        });
+
+        const subFields = [];
+        const schema = def.schema || {};
+
+        // Object.keys() preserves insertion order in ES2015+
+        // This maintains the field order as defined in the config JSON file
+        Object.keys(schema).forEach((subName) => {
+            const subDef = schema[subName];
+            const subField = buildField(
+                subName,
+                subDef,
+                currentValue || {},
+                originalValue || {},
+                operationName,
+                path,
+            );
+            subFields.push({ name: subName, ...subField });
+            body.appendChild(subField.wrapper);
+        });
+
+        container.appendChild(body);
+
+        return {
+            wrapper: container,
+            getValue: () => {
+                const result = {};
+                subFields.forEach((f) => {
+                    result[f.name] = f.getValue();
+                });
+                return result;
+            },
+        };
+    }
+
+    function buildListField(
+        name,
+        def,
+        currentValue,
+        originalValue,
+        label,
+        operationName,
+        path,
+    ) {
+        const container = createElement("div", { className: "mb-4" });
+
+        const header = createElement("div", {
+            className: "flex items-center justify-between mb-2",
+        });
+        const title = createElement("h4", {
+            className: "text-sm font-medium text-[#f9c845]",
+            text: def.description || name,
+        });
+        header.appendChild(title);
+        container.appendChild(header);
+
+        const itemsContainer = createElement("div", {
+            className: "space-y-2",
+        });
+
+        const itemWrappers = [];
+        const itemFields = [];
+        const removeButtons = [];
+
+        const updateButtonStates = () => {
+            const currentCount = itemWrappers.length;
+            const minItems = def.min_items !== undefined ? def.min_items : 0;
+            const maxItems = def.max_items;
+            const canRemoveItems = currentCount > minItems;
+
+            removeButtons.forEach((btn) => {
+                btn.style.display = canRemoveItems ? "" : "none";
+            });
+
+            if (addBtn) {
+                const canAddItems =
+                    maxItems === undefined || currentCount < maxItems;
+                addBtn.style.display = canAddItems ? "" : "none";
+            }
+        };
+
+        const renderItem = (index, itemValue, itemOriginalValue) => {
+            const itemContainer = createElement("div", {
+                className:
+                    "bg-[#1a1a1a] border border-[#414141] rounded-lg p-3",
+            });
+
+            const itemHeader = createElement("div", {
+                className: "flex items-center justify-between mb-2",
+            });
+
+            let itemLabel = `Item ${index + 1}`;
+            if (def.item_labels && Array.isArray(def.item_labels) && def.item_labels[index]) {
+                itemLabel = def.item_labels[index];
+            }
+
+            const itemTitle = createElement("span", {
+                className: "text-xs text-[#ac8a2f]",
+                text: itemLabel,
+            });
+            itemHeader.appendChild(itemTitle);
+
+            const removeBtn = createElement("button", {
+                type: "button",
+                className:
+                    "px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-xs",
+                text: "Remove",
+                onclick: () => {
+                    const idx = itemWrappers.indexOf(itemContainer);
+                    if (idx > -1) {
+                        itemWrappers.splice(idx, 1);
+                        itemFields.splice(idx, 1);
+                        removeButtons.splice(idx, 1);
+                        itemContainer.remove();
+                        updateButtonStates();
+                    }
+                },
+            });
+            removeButtons.push(removeBtn);
+            itemHeader.appendChild(removeBtn);
+            itemContainer.appendChild(itemHeader);
+
+            const itemBody = createElement("div", {
+                className: "space-y-2",
+            });
+
+            if (def.item_type === "object" && def.schema) {
+                const subFields = [];
+                Object.keys(def.schema).forEach((subName) => {
+                    const subDef = def.schema[subName];
+                    const subField = buildField(
+                        subName,
+                        subDef,
+                        itemValue || {},
+                        itemOriginalValue || {},
+                        operationName,
+                        `${path}-${index}`,
+                    );
+                    subFields.push({ name: subName, ...subField });
+                    itemBody.appendChild(subField.wrapper);
+                });
+
+                itemFields.push({
+                    getValue: () => {
+                        const result = {};
+                        for (const field of subFields) {
+                            result[field.name] = field.getValue();
+                        }
+                        return result;
+                    },
+                });
+            } else {
+                const itemInput = createElement("input", {
+                    id: `${path}-${index}`,
+                    type:
+                        def.item_type === "int" || def.item_type === "float"
+                            ? "number"
+                            : "text",
+                    className:
+                        "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+                    value: itemValue !== undefined ? String(itemValue) : "",
+                });
+
+                if (def.item_type === "int") {
+                    itemInput.step = "1";
+                } else if (def.item_type === "float") {
+                    itemInput.step = "any";
+                }
+
+                itemBody.appendChild(itemInput);
+
+                itemFields.push({
+                    getValue: () => {
+                        if (def.item_type === "int") {
+                            return Number.parseInt(itemInput.value, 10) || 0;
+                        } else if (def.item_type === "float") {
+                            return Number.parseFloat(itemInput.value) || 0;
+                        }
+                        return itemInput.value;
+                    },
+                });
+            }
+
+            itemContainer.appendChild(itemBody);
+            itemsContainer.appendChild(itemContainer);
+            itemWrappers.push(itemContainer);
+        };
+
+        const listValue = Array.isArray(currentValue) ? currentValue : [];
+        const listOriginal = Array.isArray(originalValue) ? originalValue : [];
+
+        listValue.forEach((item, index) => {
+            renderItem(index, item, listOriginal[index]);
+        });
+
+        container.appendChild(itemsContainer);
+
+        let addBtn = null;
+        addBtn = createElement("button", {
+            type: "button",
+            className:
+                "w-full mt-2 px-3 py-2 bg-[#f9c845] text-[#232323] rounded-md hover:bg-[#d4a83a] transition-colors text-sm font-medium",
+            text: "Add Item",
+            onclick: () => {
+                const newIndex = itemWrappers.length;
+                const defaultValue =
+                    def.default || (def.item_type === "object" ? {} : "");
+                renderItem(newIndex, defaultValue, defaultValue);
+                updateButtonStates();
+            },
+        });
+        container.appendChild(addBtn);
+
+        updateButtonStates();
+
+        return {
+            wrapper: container,
+            getValue: () => {
+                return itemFields.map((f) => f.getValue());
+            },
+        };
+    }
+
     function buildField(
         name,
         def,
         currentValues,
         originalValues,
         operationName = null,
+        parentPath = "",
     ) {
-        const fieldId = `setting-${name}`;
+        const fieldId = `setting-${parentPath}${parentPath ? "-" : ""}${name}`;
         const label = createElement("label", {
             for: fieldId,
             className: "block text-sm font-medium text-[#f9c845] mb-1",
@@ -60,7 +498,118 @@ import { BACKEND_BASE_URL } from "../config.js";
 
         const isPathParameter = name.endsWith("_path") && def.type === "str";
 
-        if (isPathParameter && operationName) {
+        // Handle UI hints for specialized editors
+        if (def.ui_hint === "hsv_picker") {
+            return buildHsvPickerField(currentValue, fieldId, label, isEdited);
+        }
+
+        // Handle object type - recursive rendering
+        if (def.type === "object" && def.schema) {
+            return buildObjectField(
+                name,
+                def,
+                currentValue,
+                originalValue,
+                label,
+                operationName,
+                `${parentPath}${parentPath ? "-" : ""}${name}`,
+            );
+        }
+
+        // Handle list type
+        if (def.type === "list") {
+            return buildListField(
+                name,
+                def,
+                currentValue,
+                originalValue,
+                label,
+                operationName,
+                `${parentPath}${parentPath ? "-" : ""}${name}`,
+            );
+        }
+
+        const normalizedOperationName = String(operationName || "")
+            .replace(/\.py$/i, "")
+            .toLowerCase()
+            .replaceAll(/\s+/g, "_");
+        const isDeviceInputCameraName =
+            normalizedOperationName === "device_input" &&
+            name === "camera_name" &&
+            def.type === "str";
+
+        if (isDeviceInputCameraName) {
+            input = createElement("select", {
+                id: fieldId,
+                className:
+                    "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            });
+
+            const fallbackOption = createElement("option", {
+                value: "",
+                text: "Loading cameras...",
+            });
+            input.appendChild(fallbackOption);
+
+            const updateOptions = (cameraNames) => {
+                const selectedValue =
+                    input.value ||
+                    (currentValue !== undefined && currentValue !== null
+                        ? String(currentValue)
+                        : "");
+                input.innerHTML = "";
+
+                const hasCameraNames =
+                    Array.isArray(cameraNames) && cameraNames.length > 0;
+                if (hasCameraNames) {
+                    const normalizedNames = cameraNames.filter(Boolean);
+                    normalizedNames.forEach((cameraName) => {
+                        const optEl = createElement("option", {
+                            value: cameraName,
+                            text: cameraName,
+                        });
+                        if (cameraName === selectedValue) {
+                            optEl.selected = true;
+                        }
+                        input.appendChild(optEl);
+                    });
+
+                    if (
+                        selectedValue &&
+                        !normalizedNames.includes(selectedValue)
+                    ) {
+                        const customOption = createElement("option", {
+                            value: selectedValue,
+                            text: `${selectedValue} (custom)`,
+                            selected: true,
+                        });
+                        input.appendChild(customOption);
+                    }
+                    return;
+                }
+
+                const customOption = createElement("option", {
+                    value: selectedValue,
+                    text: selectedValue
+                        ? `${selectedValue} (custom)`
+                        : "No cameras available",
+                });
+                customOption.selected = true;
+                input.appendChild(customOption);
+            };
+
+            const pipelineCameras =
+                globalThis.pipelineCreator?.getAvailableCameras?.() || [];
+            const pipelineNames = pipelineCameras.map((camera) => camera.name);
+            if (pipelineNames.length > 0) {
+                updateOptions(pipelineNames);
+            } else {
+                void loadAvailableCameras().then((cameras) => {
+                    updateOptions(cameras);
+                    notifyCameraListUpdated(cameras);
+                });
+            }
+        } else if (isPathParameter && operationName) {
             input = createElement("select", {
                 id: fieldId,
                 className:
@@ -373,6 +922,8 @@ import { BACKEND_BASE_URL } from "../config.js";
         const fields = [];
 
         const params = config?.parameters || {};
+        // Object.keys() preserves insertion order in ES2015+
+        // This maintains the parameter order as defined in the config JSON file
         Object.keys(params).forEach((key) => {
             const field = buildField(
                 key,
@@ -499,9 +1050,15 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
         };
 
-        // Set up event listeners for all inputs
-        const allInputs = modalBody.querySelectorAll("input, select");
-        allInputs.forEach((input) => {
+        const processedInputs = new WeakSet();
+
+        // Set up event listeners for a single input
+        const setupInputListener = (input) => {
+            if (processedInputs.has(input)) {
+                return;
+            }
+            processedInputs.add(input);
+
             if (
                 input.tagName.toLowerCase() !== "select" &&
                 input.type !== "checkbox"
@@ -523,14 +1080,91 @@ import { BACKEND_BASE_URL } from "../config.js";
                     triggerAutoSave();
                 });
             }
+        };
+
+        // Set up event listeners for all existing inputs
+        const allInputs = modalBody.querySelectorAll("input, select");
+        allInputs.forEach((input) => {
+            setupInputListener(input);
         });
+
+        // Set up MutationObserver to handle dynamically added inputs
+        const handleAddedNode = (node) => {
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+                return;
+            }
+
+            const inputs = node.querySelectorAll
+                ? node.querySelectorAll("input, select")
+                : [];
+            for (const input of inputs) {
+                setupInputListener(input);
+            }
+            if (node.tagName === "INPUT" || node.tagName === "SELECT") {
+                setupInputListener(node);
+            }
+        };
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    handleAddedNode(node);
+                }
+            }
+        });
+
+        observer.observe(modalBody, {
+            childList: true,
+            subtree: true,
+        });
+
+        // Store observer for cleanup
+        modalBody._autoSaveObserver = observer;
     }
 
     function findOverlayElements() {
         const overlay = document.getElementById(OVERLAY_ID);
         const modal = document.getElementById(MODAL_ID);
         const liveViewPanel = document.getElementById("operationLiveViewPanel");
-        return { overlay, modal, liveViewPanel };
+        const liveViewCloseBtn = document.getElementById(
+            "operationLiveCloseButton",
+        );
+        const settingsContent = document.getElementById("operationSettingsContent");
+        return {
+            overlay,
+            modal,
+            liveViewPanel,
+            liveViewCloseBtn,
+            settingsContent,
+        };
+    }
+
+    function setSettingsPanelVisibility(showSettings) {
+        const {
+            modal,
+            liveViewPanel,
+            liveViewCloseBtn,
+            settingsContent,
+        } = findOverlayElements();
+
+        if (modal) {
+            modal.style.display = showSettings ? "" : "none";
+        }
+        if (settingsContent) {
+            settingsContent.classList.toggle(
+                "single-panel-layout",
+                !showSettings,
+            );
+        }
+        if (liveViewPanel) {
+            liveViewPanel.classList.toggle(
+                "live-view-fullscreen",
+                !showSettings,
+            );
+        }
+        if (liveViewCloseBtn) {
+            liveViewCloseBtn.classList.toggle("hidden", showSettings);
+        }
     }
 
     function applyTitle(modal, title) {
@@ -552,20 +1186,35 @@ import { BACKEND_BASE_URL } from "../config.js";
         if (titleEl) {
             titleEl.textContent = `${operationName} - Live View`;
         }
-
-        // For now, keep the placeholder content
-        // Future enhancement: Add actual live visualization logic here
-        const placeholderContent =
-            liveViewContainer.querySelector(".text-center");
-        if (placeholderContent) {
-            const operationText = placeholderContent.querySelector("p.text-lg");
-            if (operationText) {
-                operationText.textContent = `${operationName} Live Preview`;
-            }
-        }
     }
 
-    function showNoVisualizationMessage(operationName) {
+    function isVisualizationAvailable(operationName, operationId) {
+        const operations = globalThis.pipelineCreator?.getOperations?.() || [];
+        if (operations.length === 0) {
+            return true;
+        }
+        if (operationId) {
+            const directMatch = operations.find((op) => op.id === operationId);
+            if (directMatch) {
+                return Boolean(directMatch.hasVisualization);
+            }
+        }
+        if (!operationName) {
+            return true;
+        }
+        const normalizedName = String(operationName || "")
+            .replace(/\.py$/i, "")
+            .toLowerCase();
+        const match = operations.find((op) =>
+            String(op.id || "")
+                .replace(/\.py$/i, "")
+                .toLowerCase()
+                .includes(normalizedName),
+        );
+        return match ? Boolean(match.hasVisualization) : true;
+    }
+
+    function removeCurrentLiveImage() {
         const { liveViewPanel } = findOverlayElements();
         if (!liveViewPanel) return;
 
@@ -574,28 +1223,51 @@ import { BACKEND_BASE_URL } from "../config.js";
         );
         if (!liveViewContainer) return;
 
-        // Hide the image if it's visible
         const imgEl = liveViewContainer.querySelector("#operationLiveImage");
         if (imgEl) {
-            imgEl.classList.add("hidden");
+            imgEl.remove();
         }
+    }
 
-        // Hide default placeholder and text
-        const placeholderEl = liveViewContainer.querySelector(
-            "[data-role='live-view-placeholder']",
+    function showVisualizationErrorMessage(
+        message = "Error getting visualization",
+    ) {
+        removeCurrentLiveImage();
+        const { liveViewPanel } = findOverlayElements();
+        if (!liveViewPanel) return;
+
+        const liveViewContainer = liveViewPanel.querySelector(
+            "[data-role='live-view-container']",
         );
-        const textElements = liveViewContainer.querySelectorAll("p");
+        if (!liveViewContainer) return;
 
-        if (placeholderEl) placeholderEl.style.display = "none";
-        textElements.forEach((p) => (p.style.display = "none"));
+        // Override parent container's flex centering to allow full width while maintaining vertical centering
+        liveViewContainer.style.justifyContent = "stretch";
+        liveViewContainer.style.alignItems = "center";
 
-        // Show the no visualization message
-        const noVisMessage = liveViewContainer.querySelector(
-            "#noVisualizationMessage",
+        const contentWrapper = liveViewContainer.querySelector(".text-center");
+
+        // Create or update error message element as a styled box
+        let errorMsgEl = liveViewContainer.querySelector(
+            "#visualizationErrorMessage",
         );
-        if (noVisMessage) {
-            noVisMessage.classList.remove("hidden");
+        if (!errorMsgEl) {
+            errorMsgEl = createElement("div", {
+                id: "visualizationErrorMessage",
+                className:
+                    "block w-full bg-red-900/20 border-2 border-red-500/50 rounded-xl shadow-lg p-6 text-center text-red-400 text-lg font-medium my-8",
+            });
+            if (contentWrapper) {
+                contentWrapper.appendChild(errorMsgEl);
+            } else {
+                liveViewContainer.appendChild(errorMsgEl);
+            }
         }
+        errorMsgEl.textContent = message;
+        errorMsgEl.style.display = "block";
+        errorMsgEl.style.width = "100%";
+        errorMsgEl.style.position = "relative";
+        errorMsgEl.classList.remove("hidden");
     }
 
     function init() {
@@ -613,6 +1285,8 @@ import { BACKEND_BASE_URL } from "../config.js";
     function open({
         title,
         operationName,
+        operationId,
+        operationUuid,
         isSecondary,
         initialValues,
         onSave,
@@ -631,70 +1305,66 @@ import { BACKEND_BASE_URL } from "../config.js";
         applyTitle(modal, title);
         updateLiveView(operationName, isSecondary);
         const body = modal.querySelector("[data-role='modal-body']");
+        setSettingsPanelVisibility(true);
 
         // Show loading state
         body.innerHTML =
             '<div class="text-center text-[#f9c845] py-8">Loading configuration...</div>';
 
-        // Determine camera and pipeline from pipeline builder dropdowns
-        let selectedCameraName = null;
+        // Determine pipeline from pipeline builder dropdown
         let selectedPipelineName = null;
         try {
-            const cameraSelectEl = document.getElementById("cameraSelect");
             const pipelineSelectEl = document.getElementById("pipelineSelect");
-            if (cameraSelectEl && cameraSelectEl.selectedIndex >= 0) {
-                selectedCameraName =
-                    cameraSelectEl.options[cameraSelectEl.selectedIndex]
-                        .textContent;
-            }
             if (pipelineSelectEl?.value) {
                 selectedPipelineName = pipelineSelectEl.value;
             }
         } catch (err) {
-            console.warn("Could not read camera/pipeline selection:", err);
+            console.warn("Could not read pipeline selection:", err);
         }
 
-        // Compute action name for visualize API (normalize similar to backend expectations)
-        const computeActionName = (name) => {
-            let result = String(name || "");
-            // Remove .py extension (case-insensitive)
-            if (result.toLowerCase().endsWith(".py")) {
-                result = result.slice(0, -3);
-            }
-            return result.toLowerCase().replace(/\s+/g, "_");
-        };
-        const actionNameForApi = computeActionName(operationName || "");
-
-        // Start visualization on backend if camera and pipeline are available
+        // Start visualization on backend if pipeline is available
         const startVisIfReady = async () => {
-            if (!selectedCameraName || !selectedPipelineName) {
+            removeCurrentLiveImage();
+            if (!selectedPipelineName) {
                 console.log(
-                    "[SETTINGS] Skipping visualization - missing camera or pipeline",
+                    "[SETTINGS] Skipping visualization - missing pipeline",
                     {
-                        selectedCameraName,
                         selectedPipelineName,
                     },
                 );
                 return;
             }
+            if (!isVisualizationAvailable(operationName, operationId)) {
+                showVisualizationErrorMessage("Operation has no visualization");
+                return;
+            }
             try {
                 console.log("[SETTINGS] Starting visualization", {
-                    camera: selectedCameraName,
                     pipeline: selectedPipelineName,
-                    action: actionNameForApi,
+                    operationUuid,
                     timestamp: new Date().toISOString(),
                 });
-                await fetch(
-                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedCameraName)}/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(actionNameForApi)}`,
+                const startResponse = await fetch(
+                    `${BACKEND_BASE_URL}/start-visualize/${encodeURIComponent(selectedPipelineName)}/${encodeURIComponent(operationUuid)}`,
                     {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                     },
                 );
 
-                _currentVisCamera = selectedCameraName;
+                if (startResponse.status !== 200) {
+                    console.warn(
+                        "[SETTINGS] start_visualize returned non-200 status:",
+                        startResponse.status,
+                    );
+                    showVisualizationErrorMessage(
+                        "Error getting visualization",
+                    );
+                    return;
+                }
+
                 _currentVisPipeline = selectedPipelineName;
-                _currentVisAction = actionNameForApi;
+                _currentVisAction = operationUuid;
 
                 // Ensure an img element exists and hide placeholder
                 const liveViewPanelEl = document.getElementById(
@@ -703,6 +1373,10 @@ import { BACKEND_BASE_URL } from "../config.js";
                 const liveViewContainer = liveViewPanelEl.querySelector(
                     "[data-role='live-view-container']",
                 );
+
+                const contentWrapper =
+                    liveViewContainer.querySelector(".text-center");
+
                 let imgEl = liveViewContainer.querySelector(
                     "#operationLiveImage",
                 );
@@ -712,158 +1386,121 @@ import { BACKEND_BASE_URL } from "../config.js";
                     imgEl.alt = "Live visualization";
                     imgEl.className =
                         "mx-auto mt-4 rounded-lg max-w-full max-h-[60vh]";
-                    liveViewContainer.appendChild(imgEl);
+                    if (contentWrapper) {
+                        contentWrapper.appendChild(imgEl);
+                    } else {
+                        liveViewContainer.appendChild(imgEl);
+                    }
                 }
 
-                // Hide placeholder content when showing live image
-                const placeholderEl = liveViewContainer.querySelector(
-                    "[data-role='live-view-placeholder']",
+                const errorMsg = liveViewContainer.querySelector(
+                    "#visualizationErrorMessage",
                 );
-                const textElements = liveViewContainer.querySelectorAll("p");
-                const noVisMessage = liveViewContainer.querySelector(
-                    "#noVisualizationMessage",
-                );
-
-                if (placeholderEl) placeholderEl.style.display = "none";
-                textElements.forEach((p) => (p.style.display = "none"));
-                if (noVisMessage) noVisMessage.classList.add("hidden");
+                if (errorMsg) errorMsg.remove();
 
                 imgEl.classList.remove("hidden");
+                imgEl.style.display = "block";
 
-                // Start polling at 10Hz (every 100ms)
-                if (_visInterval) clearInterval(_visInterval);
-                let hasNoVisualization = false;
-                _visInterval = setInterval(async () => {
-                    if (hasNoVisualization) {
-                        return;
-                    }
-                    try {
-                        const url = `${BACKEND_BASE_URL}/visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`;
-                        const response = await fetch(url, {
-                            cache: "no-store",
-                        });
-
-                        if (!response.ok) {
-                            // Check if it's a "no visualization" response
-                            if (response.status === 500) {
-                                const errorText = await response.text();
-                                if (
-                                    errorText.includes(
-                                        "Function has no visualization",
-                                    )
-                                ) {
-                                    hasNoVisualization = true;
-                                    if (_visInterval) {
-                                        clearInterval(_visInterval);
-                                        _visInterval = null;
-                                    }
-                                    showNoVisualizationMessage(operationName);
-                                    return;
-                                }
-                            }
-                            // Silently ignore other errors to prevent console spam
-                            return;
-                        }
-
-                        const blob = await response.blob();
-                        const objectUrl = URL.createObjectURL(blob);
-                        // Update image src and revoke previous object URL
-                        if (_currentVisObjectUrl)
-                            URL.revokeObjectURL(_currentVisObjectUrl);
-                        _currentVisObjectUrl = objectUrl;
-                        imgEl.src = objectUrl;
-                    } catch (err) {
-                        // Silently ignore errors to prevent console spam
-                        // Errors are expected when operations don't support visualization
-                    }
-                }, 100);
+                if (_visInterval) {
+                    clearInterval(_visInterval);
+                    _visInterval = null;
+                }
+                const streamUrl = `${BACKEND_BASE_URL}/visualize/stream/${encodeURIComponent(_currentVisPipeline)}`;
+                imgEl.src = streamUrl;
             } catch (err) {
                 console.warn("Failed to start visualization:", err);
+                showVisualizationErrorMessage("Error getting visualization");
             }
         };
 
         // Fetch config data from server
         fetchConfigData(operationName, isSecondary)
-            .then((config) => {
+            .then(async (config) => {
                 if (!config) {
                     body.innerHTML =
                         '<div class="text-center text-red-400 py-8">Failed to load configuration</div>';
-                    // Try to start visualization anyway (best-effort)
-                    startVisIfReady();
+                    // Wait for visualization to be set up before returning
+                    await startVisIfReady();
                     return;
                 }
 
-                // Use the loaded values as baseline for comparison, not defaults
-                const originalValues = { ...initialValues };
+                const hasSettings = operationHasSettings(config);
+                setSettingsPanelVisibility(hasSettings);
 
-                const getValues = renderForm(
-                    body,
-                    config,
-                    initialValues,
-                    originalValues,
-                    onSave,
-                    operationName,
-                );
+                if (!hasSettings) {
+                    body.innerHTML =
+                        '<div class="text-center text-[#f9c845] py-8">This operation has no configurable settings.</div>';
+                } else {
+                    // Use the loaded values as baseline for comparison, not defaults
+                    const originalValues = { ...initialValues };
 
-                const saveBtn = modal.querySelector("[data-action='save']");
-                const cancelBtn = modal.querySelector("[data-action='cancel']");
+                    const getValues = renderForm(
+                        body,
+                        config,
+                        initialValues,
+                        originalValues,
+                        onSave,
+                        operationName,
+                    );
 
-                if (saveBtn) {
-                    saveBtn.onclick = () => {
-                        const values = getValues();
-                        console.log("[SETTINGS] Saving operation settings", {
-                            operationName,
-                            isSecondary,
-                            savedValues: values,
-                            timestamp: new Date().toISOString(),
-                        });
-                        if (typeof onSave === "function") onSave(values);
-                        console.log(
-                            "[SETTINGS] Settings saved, closing popup",
-                            {
+                    const saveBtn = modal.querySelector("[data-action='save']");
+                    const cancelBtn = modal.querySelector("[data-action='cancel']");
+
+                    if (saveBtn) {
+                        saveBtn.onclick = () => {
+                            const values = getValues();
+                            console.log("[SETTINGS] Saving operation settings", {
                                 operationName,
+                                isSecondary,
+                                savedValues: values,
                                 timestamp: new Date().toISOString(),
-                            },
-                        );
-                        close();
-                    };
+                            });
+                            if (typeof onSave === "function") onSave(values);
+                            console.log(
+                                "[SETTINGS] Settings saved, closing popup",
+                                {
+                                    operationName,
+                                    timestamp: new Date().toISOString(),
+                                },
+                            );
+                            close();
+                        };
+                    }
+                    if (cancelBtn) cancelBtn.onclick = () => close();
                 }
-                if (cancelBtn) cancelBtn.onclick = () => close();
 
-                // Start visualization now that modal content is ready
-                startVisIfReady();
+                // Start visualization now that modal content is ready - wait for it to complete
+                await startVisIfReady();
             })
-            .catch((error) => {
+            .catch(async (error) => {
                 console.error("Error loading config:", error);
                 body.innerHTML =
                     '<div class="text-center text-red-400 py-8">Error loading configuration</div>';
-                // Best-effort start
-                startVisIfReady();
+                // Wait for visualization to be set up
+                await startVisIfReady();
             });
 
         overlay.classList.remove("hidden");
     }
 
     function stopVisualizationIfActive() {
-        if (!_currentVisCamera || !_currentVisPipeline) {
+        if (!_currentVisPipeline) {
             console.log("[SETTINGS] No active visualization to stop");
             return;
         }
         console.log("[SETTINGS] Stopping active visualization", {
-            camera: _currentVisCamera,
             pipeline: _currentVisPipeline,
             action: _currentVisAction,
             timestamp: new Date().toISOString(),
         });
         try {
             fetch(
-                `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisCamera)}/${encodeURIComponent(_currentVisPipeline)}`,
+                `${BACKEND_BASE_URL}/stop-visualize/${encodeURIComponent(_currentVisPipeline)}`,
                 { method: "POST" },
             ).catch((err) =>
                 console.warn("Failed to stop visualization:", err),
             );
         } finally {
-            _currentVisCamera = null;
             _currentVisPipeline = null;
             _currentVisAction = null;
             console.log("[SETTINGS] Visualization state cleared");
@@ -895,49 +1532,41 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
             _currentVisObjectUrl = null;
         }
-        stopVisualizationIfActive();
-
-        // Show placeholder content again and hide image
         const liveViewPanelEl = document.getElementById(
             "operationLiveViewPanel",
         );
+        if (liveViewPanelEl) {
+            const imgEl = liveViewPanelEl.querySelector("#operationLiveImage");
+            if (imgEl) {
+                imgEl.removeAttribute("src");
+            }
+        }
+        stopVisualizationIfActive();
+        removeCurrentLiveImage();
+
+        // Show placeholder content again and hide image
         if (liveViewPanelEl) {
             const liveViewContainer = liveViewPanelEl.querySelector(
                 "[data-role='live-view-container']",
             );
             if (liveViewContainer) {
+                // Reset container flex styles to original state
+                liveViewContainer.style.justifyContent = "";
+                liveViewContainer.style.alignItems = "";
+
                 const imgEl = liveViewContainer.querySelector(
                     "#operationLiveImage",
                 );
-                const placeholderEl = liveViewContainer.querySelector(
-                    "[data-role='live-view-placeholder']",
-                );
-                const textElements = liveViewContainer.querySelectorAll("p");
 
                 if (imgEl) imgEl.classList.add("hidden");
-                if (placeholderEl) placeholderEl.style.display = "";
-                textElements.forEach((p) => (p.style.display = ""));
 
-                // Hide no visualization message
-                const noVisMessage = liveViewContainer.querySelector(
-                    "#noVisualizationMessage",
+                // Hide error message
+                const errorMsg = liveViewContainer.querySelector(
+                    "#visualizationErrorMessage",
                 );
-                if (noVisMessage) {
-                    noVisMessage.classList.add("hidden");
-                }
-
-                // Reset the text back to default
-                const operationText =
-                    liveViewContainer.querySelector("p.text-lg");
-                const descriptionText =
-                    liveViewContainer.querySelector("p.text-sm");
-
-                if (operationText) {
-                    operationText.textContent = "Live Preview";
-                }
-                if (descriptionText) {
-                    descriptionText.textContent =
-                        "Visualizer will appear here when operation is active";
+                if (errorMsg) {
+                    errorMsg.style.display = "none";
+                    errorMsg.classList.add("hidden");
                 }
 
                 // Reset the title
@@ -948,6 +1577,7 @@ import { BACKEND_BASE_URL } from "../config.js";
             }
         }
 
+        setSettingsPanelVisibility(true);
         overlay.classList.add("hidden");
     }
 

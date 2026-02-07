@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 import traceback
 from pathlib import Path
 from threading import Thread
-from typing import Any, Callable, Generator, List
+from typing import TYPE_CHECKING, Any, Callable, Generator, List
 
 import cv2
 import numpy as np
@@ -17,11 +18,15 @@ from flask_socketio import SocketIO
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+
+if TYPE_CHECKING:
+    from src.config.utils.pipeline import Pipeline
 from src.webui.web_server_utils.serve_static_files import (
     serve_css,
     serve_index,
     serve_js,
 )
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 current_path = os.path.dirname(__file__)
 src_path = os.path.abspath(os.path.join(current_path, os.pardir))
@@ -33,14 +38,21 @@ no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREA
 success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
 no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
 
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:5001"]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5001",
+]
+PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
+TEXT_PLAIN_MIMETYPE = "text/plain"
+VISUALIZATION_STREAM_FPS = 12
 
 
 class EagleEyeInterface:
     def __init__(
         self,
-        restart_callback: Callable,
-        pipeline_objects_callback: Callable,
+        restart_callback: Callable[[], None],
+        pipeline_objects_callback: Callable[[], dict[str, Pipeline]],
         dev_mode: bool = False,
         logger: Logger | None = None,
     ):
@@ -95,12 +107,15 @@ class EagleEyeInterface:
 
         self.restart_required_for_config = False
         self.last_log_message_count = 0
+        self._system_status_interval = 1.5
+        self._system_status_error_logged = False
 
         self.app = Flask(
             __name__,
             static_folder=current_path,
             static_url_path="",
         )
+        self.app.json.sort_keys = False
         CORS(
             self.app,
             resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}},
@@ -117,6 +132,7 @@ class EagleEyeInterface:
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
+        self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
 
         self.cameras = {}
         self.log(f"Initialized with cameras: {self.cameras}")
@@ -154,6 +170,9 @@ class EagleEyeInterface:
         # Start log monitoring thread for real-time log updates
         Thread(target=self._log_monitor_loop, daemon=True).start()
 
+        # Start system status monitoring thread for resource updates
+        Thread(target=self._system_status_loop, daemon=True).start()
+
         @self.app.errorhandler(Exception)
         def _log_and_raise(_):
             self.log(f"Error: {traceback.format_exc()}")
@@ -164,8 +183,8 @@ class EagleEyeInterface:
         Register all Flask endpoints.
         """
         self.app.add_url_rule("/", "index", lambda: serve_index())
-        self.app.add_url_rule("/script.js", "script", lambda: serve_js())
-        self.app.add_url_rule("/main.css", "style", lambda: serve_css())
+        self.app.add_url_rule("/js/main.js", "script", lambda: serve_js())
+        self.app.add_url_rule("/style.css", "style", lambda: serve_css())
 
         self.app.add_url_rule(
             "/background.png",
@@ -256,27 +275,27 @@ class EagleEyeInterface:
             methods=["DELETE"],
         )
         self.app.add_url_rule(
-            "/get-pipeline-config/<string:camera_name>/<string:pipeline_name>",
-            "get_pipeline_config",
-            self.get_pipeline_config,
+            "/get-pipeline-config/<string:pipeline_name>",
+            "get_pipeline_config_by_name",
+            self.get_pipeline_config_by_name,
             methods=["GET"],
         )
         self.app.add_url_rule(
-            "/get-pipeline-names-for-camera/<string:camera_name>",
-            "get_pipeline_names_for_camera",
-            self.get_pipeline_names_for_camera,
+            "/get-pipeline-names",
+            "get_pipeline_names",
+            self.get_pipeline_names,
             methods=["GET"],
         )
         self.app.add_url_rule(
-            "/save-pipeline-config/<string:camera_name>/<string:pipeline_name>",
-            "save_pipeline_config",
-            self.save_pipeline_config,
+            "/save-pipeline-config/<string:pipeline_name>",
+            "save_pipeline_config_by_name",
+            self.save_pipeline_config_by_name,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/delete-pipeline/<string:camera_name>/<string:pipeline_name>",
-            "delete_pipeline",
-            self.delete_pipeline,
+            "/delete-pipeline/<string:pipeline_name>",
+            "delete_pipeline_by_name",
+            self.delete_pipeline_by_name,
             methods=["DELETE"],
         )
         self.app.add_url_rule(
@@ -286,21 +305,27 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/start-visualize/<string:camera_name>/<string:pipeline_name>/<string:operation_name>",
+            "/start-visualize/<string:pipeline_name>/<string:operation_uuid>",
             "start_visualize",
             self.start_visualize,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/stop-visualize/<string:camera_name>/<string:pipeline_name>",
+            "/stop-visualize/<string:pipeline_name>",
             "stop_visualize",
             self.stop_visualize,
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/visualize/<string:camera_name>/<string:pipeline_name>",
+            "/visualize/<string:pipeline_name>",
             "visualize",
             self.visualize,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/visualize/stream/<string:pipeline_name>",
+            "visualize_stream",
+            self.visualize_stream,
             methods=["GET"],
         )
         self.app.add_url_rule(
@@ -344,6 +369,24 @@ class EagleEyeInterface:
             "save_general_conf",
             self.save_general_conf,
             methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/get-pipeline-thread-info/<string:pipeline_name>",
+            "get_pipeline_thread_info",
+            self.get_pipeline_thread_info,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-pipeline-active/<string:pipeline_name>",
+            "get_pipeline_active",
+            self.get_pipeline_active,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/get-system-status",
+            "get_system_status",
+            self.get_system_status,
+            methods=["GET"],
         )
 
         # SSE stream for frontend (named events)
@@ -549,6 +592,8 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
+        self._publish_cached_pipeline_errors()
+
         try:
             while True:
                 try:
@@ -603,12 +648,23 @@ class EagleEyeInterface:
                 # Other error, client likely disconnected
                 self.log(f"SSE publish error for {event_name}: {e}")
 
+    def _publish_cached_pipeline_errors(self) -> None:
+        """Publish cached pipeline operation errors to the active SSE client."""
+        if not self._pipeline_error_cache:
+            return
+        for payload in self._pipeline_error_cache.values():
+            try:
+                self._publish_event("pipeline_operation_errors", payload)
+            except Exception:
+                continue
+
     def _sse_heartbeat_loop(self) -> None:
         """
         Periodically publish a heartbeat event for connection tracking.
         """
         while True:
             try:
+                self._publish_cached_pipeline_errors()
                 self._publish_event("heartbeat", {"ts": time.time()})
                 # Optional: Uncomment for verbose heartbeat logging
                 # self.log(f"Heartbeat sent at {time.time()}")
@@ -788,6 +844,10 @@ class EagleEyeInterface:
                         "description": description,
                         "category": category,
                         "is_secondary": False,
+                        "has_visualization": self._operation_has_visualization(
+                            file,
+                            is_secondary=False,
+                        ),
                     }
                 )
 
@@ -820,12 +880,41 @@ class EagleEyeInterface:
                         "description": description,
                         "category": category,
                         "is_secondary": True,
+                        "has_visualization": self._operation_has_visualization(
+                            file,
+                            is_secondary=True,
+                        ),
                     }
                 )
 
         return {
             "operations": main_operations + secondary_operations,
         }
+
+    def _operation_has_visualization(
+        self, filename: str, is_secondary: bool
+    ) -> bool:
+        """Check if an operation overrides the base visualize method."""
+        module_path = (
+            f"src.secondary_operations.{filename[:-3]}"
+            if is_secondary
+            else f"src.main_operations.definitions.{filename[:-3]}"
+        )
+        try:
+            module = __import__(module_path, fromlist=["*"])
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, OperationInstance)
+                    and attr is not OperationInstance
+                ):
+                    return attr.visualize is not OperationInstance.visualize
+        except Exception as e:
+            self.log(
+                f"Warning: Could not detect visualization for {filename}: {e}"
+            )
+        return False
 
     def get_operation_config_data(
         self, operation_name: str, is_secondary: bool = False
@@ -863,7 +952,7 @@ class EagleEyeInterface:
 
         try:
             with open(config_path, "r") as f:
-                return json.load(f)
+                return json.load(f, object_pairs_hook=dict)
         except FileNotFoundError:
             # Don't log errors for missing configs when trying both locations
             return {}
@@ -928,24 +1017,18 @@ class EagleEyeInterface:
         }
         return extension_map.get(parameter_name, [])
 
-    def _ensure_operation_directory(
-        self, operation_name: str, parameter_name: str
-    ) -> Path:
+    def _ensure_parameter_directory(self, parameter_name: str) -> Path:
         """
-        Ensure the operation's parameter-specific file directory exists.
+        Ensure the parameter-specific file directory exists.
 
         Args:
-            operation_name: Name of the operation.
             parameter_name: Name of the parameter.
 
         Returns:
             Path to the parameter-specific directory.
         """
         files_base_dir = Path(src_path).parent / "files"
-        operation_dir = files_base_dir / operation_name.lower().replace(
-            " ", "_"
-        ).replace(".py", "")
-        parameter_dir = operation_dir / parameter_name
+        parameter_dir = files_base_dir / parameter_name
         parameter_dir.mkdir(parents=True, exist_ok=True)
         return parameter_dir
 
@@ -956,16 +1039,14 @@ class EagleEyeInterface:
         Get list of available files for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
 
         Returns:
             Tuple of (response dict, status code).
         """
         try:
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             allowed_extensions = self._get_parameter_file_extensions(parameter_name)
 
             if not allowed_extensions:
@@ -1009,7 +1090,7 @@ class EagleEyeInterface:
         Upload a file for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
 
         Returns:
@@ -1035,9 +1116,7 @@ class EagleEyeInterface:
                     "error": f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}"
                 }, 400
 
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             file_path = parameter_dir / file.filename
 
             file.save(str(file_path))
@@ -1063,7 +1142,7 @@ class EagleEyeInterface:
         Delete a file for an operation parameter.
 
         Args:
-            operation_name: Name of the operation.
+            operation_name: Name of the operation (for UI context only).
             parameter_name: Name of the parameter.
             filename: Name of the file to delete.
 
@@ -1071,9 +1150,7 @@ class EagleEyeInterface:
             Tuple of (response dict, status code).
         """
         try:
-            parameter_dir = self._ensure_operation_directory(
-                operation_name, parameter_name
-            )
+            parameter_dir = self._ensure_parameter_directory(parameter_name)
             file_path = parameter_dir / filename
 
             if not file_path.exists():
@@ -1094,63 +1171,53 @@ class EagleEyeInterface:
             self.log(f"Error deleting operation file: {e}")
             return {"error": str(e)}, 500
 
-    def get_pipeline_config(self, camera_name: str, pipeline_name: str) -> list:
+    def get_pipeline_config_by_name(self, pipeline_name: str) -> list:
         """
-        Get the config data for a pipeline.
+        Get the config data for a pipeline by name.
 
         Args:
-            camera_name (str): The name of the camera.
             pipeline_name (str): The name of the pipeline.
 
         Returns:
-            dict: The config data for the pipeline.
+            list: The config data for the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
-            if camera_name not in config:
+            if pipeline_name not in config:
                 return []
-            if pipeline_name not in config[camera_name]:
-                return []
-            pipeline_config = config[camera_name][pipeline_name]
+            pipeline_config = config[pipeline_name]
 
-            # Reorder parameters according to config definitions
-            reordered_pipeline = []
-            for operation in pipeline_config:
-                operation_name = operation["action_name"]
-                action_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
-                )
+        return self._reorder_pipeline_config(pipeline_config)
 
-                reordered_pipeline.append(
-                    {"action_name": operation_name, "action_params": action_params}
-                )
-
-            return reordered_pipeline
-
-    def get_pipeline_names_for_camera(self, camera_name: str) -> list[str]:
+    def get_pipeline_names(self) -> list[str]:
         """
-        Get the names of the pipelines for a camera.
-
-        Args:
-            camera_name (str): The name of the camera.
+        Get the names of all pipelines.
 
         Returns:
-            list[str]: The names of the pipelines for the camera.
+            list[str]: The names of all pipelines.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             config = json.load(f)
-            if camera_name not in config:
-                return []
-            return list(config[camera_name].keys())
+        return list(config.keys())
 
-    def save_pipeline_config(
-        self, camera_name: str, pipeline_name: str
-    ) -> tuple[dict, int]:
-        """
-        Save the pipeline config.
+    def publish_operation_errors(self, payload: dict[str, Any]) -> None:
+        """Publish operation error updates via SSE.
 
         Args:
-            camera_name (str): The name of the camera.
+            payload: Error payload containing pipeline and operation data.
+        """
+        try:
+            pipeline_name = payload.get("pipeline_name") or "unknown"
+            self._pipeline_error_cache[pipeline_name] = payload
+            self._publish_event("pipeline_operation_errors", payload)
+        except Exception as e:
+            self.log(f"Failed to publish pipeline_operation_errors: {e}")
+
+    def save_pipeline_config_by_name(self, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Save the pipeline config by pipeline name.
+
+        Args:
             pipeline_name (str): The name of the pipeline.
 
         Returns:
@@ -1160,100 +1227,145 @@ class EagleEyeInterface:
             current_config = json.load(f)
             new_data = request.get_json()
 
-            if camera_name not in current_config:
-                current_config[camera_name] = {}
+        if pipeline_name not in current_config:
+            current_config[pipeline_name] = []
 
-            if pipeline_name not in current_config[camera_name]:
-                current_config[camera_name][pipeline_name] = []
+        # Merge operations while preserving existing data and enabling reordering
+        existing_ops = {op["uuid"]: op for op in current_config[pipeline_name]}
+        updated_operations = []
+        for operation in new_data:
+            operation_uuid = operation["uuid"]
+            operation_name = operation["action_name"]
+            operation_params = self._reorder_operation_params(
+                operation_name, operation["action_params"]
+            )
 
-            for operation in new_data:
-                operation_name = operation["action_name"]
-                operation_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
-                )
+            if operation_uuid in existing_ops:
+                # Merge incoming data into existing operation
+                merged_op = existing_ops[operation_uuid].copy()
+                for key, value in operation.items():
+                    if key == "action_params":
+                        merged_op["action_params"].update(operation_params)
+                    else:
+                        merged_op[key] = value
+            else:
+                # New operation
+                merged_op = operation.copy()
+                merged_op["action_params"] = operation_params
 
-                operation_names = [
-                    operation["action_name"]
-                    for operation in current_config[camera_name][pipeline_name]
-                ]
+            updated_operations.append(merged_op)
 
-                if operation_name in operation_names:
-                    for key, value in operation_params.items():
-                        current_config[camera_name][pipeline_name][
-                            operation_names.index(operation_name)
-                        ]["action_params"][key] = value
-                else:
-                    current_config[camera_name][pipeline_name].append(
-                        {
-                            "action_name": operation_name,
-                            "action_params": operation_params,
-                        }
-                    )
+        current_config[pipeline_name] = updated_operations
 
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
 
+        # use callback to prevent circular imports
         pipeline_objects = self.pipeline_objects_callback()
-        if (
-            camera_name in pipeline_objects
-            and pipeline_name in pipeline_objects[camera_name]
-        ):
-            pipeline_objects[camera_name][pipeline_name].update_operations_config(
-                request.get_json()
-            )
+        if pipeline_name in pipeline_objects:
+            pipeline_objects[pipeline_name].update_operations_config(request.get_json())
 
         return {"message": "Pipeline config saved successfully"}, 200
 
-    def delete_pipeline(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+    def delete_pipeline_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """
-        Delete a pipeline.
+        Delete a pipeline by name.
+
+        Args:
+            pipeline_name (str): The name of the pipeline.
         """
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "r") as f:
             current_config = json.load(f)
-            if (
-                camera_name in current_config
-                and pipeline_name in current_config[camera_name]
-            ):
-                del current_config[camera_name][pipeline_name]
+            if pipeline_name in current_config:
+                del current_config[pipeline_name]
             else:
-                return {"message": "Pipeline not found"}, 404
+                return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         with open(os.path.join(src_path, "config", "pipeline_config.json"), "w") as f:
             json.dump(current_config, f, indent=4)
         return {"message": "Pipeline deleted successfully"}, 200
 
+    def _reorder_pipeline_config(
+        self, pipeline_config: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Reorder operation parameters for a pipeline config list.
+
+        Args:
+            pipeline_config: Configuration list for the pipeline.
+
+        Returns:
+            Reordered pipeline config list.
+        """
+        reordered_pipeline = []
+        for operation in pipeline_config:
+            operation_name = operation["action_name"]
+            action_params = self._reorder_operation_params(
+                operation_name, operation["action_params"]
+            )
+
+            operation["action_params"] = action_params
+
+            reordered_pipeline.append(operation)
+
+        return reordered_pipeline
+
     def start_visualize(
-        self, camera_name: str, pipeline_name: str, operation_name: str
+        self, pipeline_name: str, operation_uuid: str
     ) -> tuple[dict, int]:
         """
         Start visualizing the pipeline.
 
         Args:
-            camera_name: Name of the camera whose pipeline should be visualized.
             pipeline_name: Name of the pipeline to visualize.
-            operation_name: Name of the operation to visualize.
+            operation_uuid: UUID of the operation instance to visualize.
 
         Returns:
             A response message and HTTP status code.
         """
-        self.pipeline_objects_callback()[camera_name][pipeline_name].start_visualize(
-            operation_name
-        )
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+            operation = pipeline.get_operation_by_uuid(operation_uuid)
+            if operation is None:
+                return {"message": "Operation not found"}, 404
+            if not self._instance_has_visualization(operation.instance):
+                with pipeline.visualization_data_lock:
+                    pipeline.set_visualize = False
+                    pipeline.visualization_operation_uuid = None
+                    pipeline.visualization_data = None
+                return {"message": "Operation has no visualization"}, 400
+            pipeline.start_visualize(operation.uuid)
+        except KeyError:
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         return {"message": "Pipeline visualized successfully"}, 200
 
-    def stop_visualize(self, camera_name: str, pipeline_name: str) -> tuple[dict, int]:
+    def stop_visualize(self, pipeline_name: str) -> tuple[dict, int]:
         """
         Stop visualizing the pipeline.
+
+        Args:
+            pipeline_name: Name of the pipeline.
         """
-        self.pipeline_objects_callback()[camera_name][pipeline_name].stop_visualize()
+        try:
+            self.pipeline_objects_callback()[pipeline_name].stop_visualize()
+        except KeyError:
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         return {"message": "Pipeline visualized stopped"}, 200
 
-    def visualize(self, camera_name: str, pipeline_name: str) -> Response:
+    def visualize(self, pipeline_name: str) -> Response:
         """
         Visualize the pipeline.
 
+        Args:
+            pipeline_name: Name of the pipeline.
+
         Returns the image as JPEG binary data.
         """
-        pipeline = self.pipeline_objects_callback()[camera_name][pipeline_name]
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+        except KeyError:
+            return Response(
+                PIPELINE_NOT_FOUND_MESSAGE, status=404, mimetype=TEXT_PLAIN_MIMETYPE
+            )
 
         # Get visualization data from pipeline
         with pipeline.visualization_data_lock:
@@ -1261,7 +1373,9 @@ class EagleEyeInterface:
 
         if visualization_data is None:
             return Response(
-                "No visualization data available", status=500, mimetype="text/plain"
+                "No visualization data available",
+                status=500,
+                mimetype=TEXT_PLAIN_MIMETYPE,
             )
 
         # Get the visualized frame from the visualization data
@@ -1269,16 +1383,73 @@ class EagleEyeInterface:
 
         if image_array is None:
             return Response(
-                "Function has no visualization", status=500, mimetype="text/plain"
+                "Function has no visualization",
+                status=500,
+                mimetype=TEXT_PLAIN_MIMETYPE,
             )
 
         # Encode the numpy array to JPEG format
         success, encoded_image = cv2.imencode(".jpg", image_array)
         if not success:
-            return Response("Failed to encode image", status=500, mimetype="text/plain")
+            return Response(
+                "Failed to encode image", status=500, mimetype=TEXT_PLAIN_MIMETYPE
+            )
 
         # Return the encoded image as binary data with proper content type
         return Response(encoded_image.tobytes(), mimetype="image/jpeg")
+
+    def visualize_stream(self, pipeline_name: str) -> Response:
+        """Stream visualization frames as MJPEG."""
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+        except KeyError:
+            return Response(
+                PIPELINE_NOT_FOUND_MESSAGE, status=404, mimetype=TEXT_PLAIN_MIMETYPE
+            )
+
+        return Response(
+            self._visualization_frame_generator(pipeline),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    def _visualization_frame_generator(
+        self, pipeline: "Pipeline"
+    ) -> Generator[bytes, Any, Any]:
+        frame_interval = 1.0 / VISUALIZATION_STREAM_FPS
+        last_frame_time = 0.0
+        while True:
+            now = time.time()
+            elapsed = now - last_frame_time
+            if elapsed < frame_interval:
+                time.sleep(frame_interval - elapsed)
+            last_frame_time = time.time()
+
+            with pipeline.visualization_data_lock:
+                visualization_data = pipeline.visualization_data
+
+            image_array = None
+            if visualization_data is not None:
+                image_array = visualization_data.get("visualization_data")
+
+            if image_array is None:
+                frame_bytes = no_image_jpeg_bytes
+            else:
+                success, encoded_image = cv2.imencode(".jpg", image_array)
+                frame_bytes = (
+                    encoded_image.tobytes() if success else no_image_jpeg_bytes
+                )
+
+            yield (
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                + frame_bytes
+                + b"\r\n"
+            )
+
+    def _instance_has_visualization(self, operation_instance: OperationInstance) -> bool:
+        return (
+            operation_instance.__class__.visualize
+            is not OperationInstance.visualize
+        )
 
     def restart_backend(self) -> tuple[dict, int]:
         """
@@ -1347,6 +1518,106 @@ class EagleEyeInterface:
                 self.logger.log(f"Error in log monitor loop: {e}")
                 time.sleep(1.0)
 
+    def get_pipeline_active(self, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Return placeholder activity status for a pipeline.
+
+        Args:
+            pipeline_name: Name of the pipeline.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing active flag.
+        """
+        return {"pipeline": pipeline_name, "active": True}, 200
+
+    def get_system_status(self) -> tuple[dict, int]:
+        """
+        Get current system status metrics.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing system metrics.
+        """
+        payload = self._build_system_status_payload()
+        return payload, 200
+
+    def _system_status_loop(self) -> None:
+        """
+        Publish system status metrics via SSE on a fixed interval.
+        """
+        while True:
+            try:
+                payload = self._build_system_status_payload()
+                self._publish_event("system_status", payload)
+            except Exception as e:
+                self.log(f"Error publishing system status: {e}")
+            time.sleep(self._system_status_interval)
+
+    def _build_system_status_payload(self) -> dict[str, Any]:
+        """
+        Build the system status payload with platform-aware fallbacks.
+
+        Returns:
+            dict[str, Any]: Structured system status payload.
+        """
+        cpu_payload: dict[str, Any] = {"status": "unavailable"}
+        memory_payload: dict[str, Any] = {"status": "unavailable"}
+        storage_payload: dict[str, Any] = {"status": "unavailable"}
+        pipeline_payload = self._build_pipeline_status_list()
+
+        try:
+            import psutil
+
+            cpu_payload = {
+                "percent": float(psutil.cpu_percent(interval=None)),
+                "cores": int(psutil.cpu_count(logical=True) or 0),
+                "status": "ok",
+            }
+            memory = psutil.virtual_memory()
+            memory_payload = {
+                "percent": float(memory.percent),
+                "used_mb": float(memory.used / (1024 * 1024)),
+                "total_mb": float(memory.total / (1024 * 1024)),
+                "status": "ok",
+            }
+            disk = psutil.disk_usage("/")
+            storage_payload = {
+                "percent": float(disk.percent),
+                "used_gb": float(disk.used / (1024 * 1024 * 1024)),
+                "total_gb": float(disk.total / (1024 * 1024 * 1024)),
+                "status": "ok",
+            }
+            self._system_status_error_logged = False
+        except Exception as e:
+            message = str(e)
+            cpu_payload = {"status": "unavailable", "error": message}
+            memory_payload = {"status": "unavailable", "error": message}
+            storage_payload = {"status": "unavailable", "error": message}
+            if not self._system_status_error_logged:
+                self.log(f"System status metrics unavailable: {message}")
+                self._system_status_error_logged = True
+
+        return {
+            "cpu": cpu_payload,
+            "memory": memory_payload,
+            "storage": storage_payload,
+            "pipelines": pipeline_payload,
+        }
+
+    def _build_pipeline_status_list(self) -> list[dict[str, Any]]:
+        """
+        Build a list of pipelines with placeholder active status.
+
+        Returns:
+            list[dict[str, Any]]: Pipeline status list.
+        """
+        try:
+            pipeline_names = self.get_pipeline_names()
+        except Exception as e:
+            self.log(f"Error loading pipeline names for status: {e}")
+            pipeline_names = []
+
+        return [{"name": name, "active": True} for name in pipeline_names]
+
     def download_log_file(self) -> tuple[str, int] | tuple[dict, int]:
         """
         Download the log file.
@@ -1379,6 +1650,23 @@ class EagleEyeInterface:
         except Exception as e:
             self.logger.log(f"Error saving general configuration: {e}")
             return {"error": str(e)}, 500
+
+    def get_pipeline_thread_info(self, pipeline_name: str) -> tuple[dict, int]:
+        """
+        Get thread and timestep information for a pipeline.
+
+        Args:
+            pipeline_name: Name of pipeline.
+
+        Returns:
+            tuple[dict, int]: Dictionary containing total_threads and operations dict
+                with thread and timestep for each operation, plus HTTP status code.
+        """
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+            return pipeline.get_pipeline_thread_info(), 200
+        except KeyError:
+            return {"error": PIPELINE_NOT_FOUND_MESSAGE}, 404
 
 
 if __name__ == "__main__":

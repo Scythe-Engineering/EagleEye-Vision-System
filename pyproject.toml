@@ -30,6 +30,9 @@ dependencies = [
   "onnxruntime",
   "linuxpy",
   "maturin",
+  "pydantic",
+  "mypy",
+  "psutil",
   "memryx; sys_platform == 'linux'",
 ]
 
@@ -62,4 +65,16 @@ explicit = true
 [tool.uv]
 required-environments = [
     "sys_platform == 'linux'"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    "error",
+]
+markers = [
+    "hardware_skip: operation requires hardware or device access",
+    "rust_optional: optional Rust extensions missing",
+    "yolo_excluded: YOLO operations excluded from tests",
 ]

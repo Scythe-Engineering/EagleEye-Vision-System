@@ -3,9 +3,13 @@
 3. All python functions should have google style docstrings.
 4. All python functions should have type hints for args and for return value.
 5. All python variables should be named descriptively. Do not have undescriptive variables.
-6. Avoid using comments in all code, prefer to use more descriptive variable names or seperate into more functions.
+6. Comments policy:
+    - AVOID line-by-line comments ("this line does X")
+    - ENCOURAGE architectural comments for complex blocks ("this block performs X algorithm because...")
+    - ENCOURAGE explanatory comments for non-obvious design decisions ("done this way to avoid Y issue")
+    - Prefer descriptive variable names and function extraction when appropriate
 7. Commit Message Format:
-<main change>
+ <main change>
 
 <related changes>
     format of change; change; change; ...

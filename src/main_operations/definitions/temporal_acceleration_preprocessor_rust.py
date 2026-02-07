@@ -6,15 +6,16 @@ import numpy as np
 
 # Import the Rust module (built automatically)
 try:
-    from temporal_acceleration import TemporalAcceleration # type: ignore
+    from temporal_acceleration import TemporalAcceleration  # type: ignore
 except ImportError:
     TemporalAcceleration = None
 
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class TemporalAccelerationPreprocessorRustDefinition:
+class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
     """Definition for temporal acceleration-based ROI generation using Rust implementation.
 
     This operation consumes back-propagated poses and predicts ROIs for
@@ -91,34 +92,39 @@ class TemporalAccelerationPreprocessorRustDefinition:
         self._last_regions: List[Tuple[int, int, int, int]] = []
         self._last_regions_lock: Lock = Lock()
 
-    def back_propagate_input(self, input_data: Any) -> None:
-        """Receive back-propagated input (camera pose) from the pipeline.
-
-        Args:
-            input_data: Expected to be a 4x4 camera-to-world transform (np.ndarray).
-        """
-        if isinstance(input_data, np.ndarray) and input_data.shape == (4, 4):
-            transform_flat: List[float] = (
-                input_data.astype(np.float32).flatten().tolist()
-            )
-            self._rust_impl.back_propagate_input(transform_flat)
-        else:
-            raise ValueError(
-                f"Expected 4x4 numpy array for input_data, got {type(input_data)} "
-                f"with shape {getattr(input_data, 'shape', 'N/A')}"
-            )
-
     def run(
-        self, frame: np.ndarray
+        self, input_data: Any
     ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
         """Generate predicted ROIs for the current frame using Rust implementation.
 
         Args:
-            frame: Input frame (BGR) for which to generate ROIs.
+            input_data: Input data - dict with 'frame' and optionally 'camera_pose' keys.
 
         Returns:
             Tuple of (list of (cropped_image, (offset_x, offset_y)) tuples, original frame).
         """
+        if isinstance(input_data, dict):
+            frame = input_data.get("frame")
+            camera_pose = input_data.get("camera_pose")
+        else:
+            frame = input_data
+            camera_pose = None
+
+        if frame is None:
+            raise ValueError("Frame input is required")
+
+        if camera_pose is not None:
+            if isinstance(camera_pose, np.ndarray) and camera_pose.shape == (4, 4):
+                transform_flat: List[float] = (
+                    camera_pose.astype(np.float32).flatten().tolist()
+                )
+                self._rust_impl.back_propagate_input(transform_flat)
+            else:
+                raise ValueError(
+                    f"Expected 4x4 numpy array for camera_pose, got {type(camera_pose)} "
+                    f"with shape {getattr(camera_pose, 'shape', 'N/A')}"
+                )
+
         height, width = frame.shape[:2]
         _crops_data, crop_regions = self._rust_impl.process_frame(width, height)
 

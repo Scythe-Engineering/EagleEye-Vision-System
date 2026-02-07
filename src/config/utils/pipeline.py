@@ -1,19 +1,30 @@
+from __future__ import annotations
+
 import importlib
+import json
+import os
 import threading
 import time
 import traceback
 from collections import deque
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict
+from line_profiler import profile
 
 import cv2
 import numpy as np
 from networktables import NetworkTable
 
-from src.config.utils.print_timing_summary import print_timing_summary
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
-from src.webui.web_server import EagleEyeInterface
+from src.utils.logging.logger import Logger
+from src.config.utils.operation import Operation, Connection
+from src.main_operations.definitions.base.base_class import OperationInstance
+from src.config.utils.flow_manager import FlowManager
+
+if TYPE_CHECKING:
+    from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
+    from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
 
@@ -23,47 +34,62 @@ class Pipeline:
 
     def __init__(
         self,
-        pipeline_config: dict,
+        pipeline_config: list[dict[str, Any]],
         web_interface: EagleEyeInterface,
-        camera_bus_id: str,
         compute_pool: ComputePool,
         network_table: NetworkTable,
+        logger: Logger,
         camera_manager: CameraThreadManager | None = None,
-        logger=None,
+        camera_bus_id: str | None = None,
+        camera_bus_ids: list[str] | None = None,
+        pipeline_name: str | None = None,
     ) -> None:
         """Initialize the pipeline with configuration.
 
         Args:
-            pipeline_config: Dictionary containing pipeline configuration.
+            pipeline_config: List containing pipeline configuration.
             web_interface: The web interface to use for the pipelines.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
             compute_pool: The compute pool to use for the pipelines.
             network_table: The network table to use for the pipelines.
-            camera_manager: The camera manager to use for the pipelines.
             logger: Logger instance for logging.
+            camera_manager: The camera manager to use for the pipelines.
+            camera_bus_id: Camera name to associate with this pipeline.
+            camera_bus_ids: List of camera names referenced by device_input operations.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
-        self.camera_bus_id = camera_bus_id
         self.compute_pool = compute_pool
         self.network_table = network_table
         self.camera_manager = camera_manager
         self.logger = logger
+        self.camera_bus_id = camera_bus_id
+        self.camera_bus_ids = camera_bus_ids or ([] if camera_bus_id is None else [camera_bus_id])
+        self.pipeline_name = pipeline_name or "unknown"
 
         self.thread_running = False
         self.thread = None
-        self.operations = self._initialize_operations()
-        self.operation_time_history: List[deque[float]] = [
-            deque(maxlen=50) for _ in range(len(self.operations))
-        ]
+        self.operation_errors: dict[str, dict[str, Any]] = {}
+        self.operation_errors_lock = threading.Lock()
+        self.operations: dict[str, Operation] = self._initialize_operations()
+
+        if not self.operations:
+            raise ValueError("No operations configured in pipeline")
+
+        self.flow_manager = FlowManager(
+            self.operations,
+            self.logger,
+            on_operation_error=self.record_operation_error,
+            on_operation_success=self.clear_operation_error,
+            pipeline_name=self.pipeline_name,
+        )
+
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
-        self.all_total_times: List[float] = []
 
         self.set_visualize = False
         self.visualization_data = None
         self.visualization_data_lock = threading.Lock()
-        self.visualization_operation_name = None
+        self.visualization_operation_uuid = None
 
     def _snake_to_camel(self, snake_str: str) -> str:
         """Convert snake_case string to CamelCase.
@@ -77,28 +103,174 @@ class Pipeline:
         components = snake_str.split("_")
         return "".join(word.capitalize() for word in components)
 
-    def _initialize_operations(self) -> List[Any]:
+    def _load_config_def(self, action_name: str) -> dict[str, Any] | None:
+        """Load the config_def.json file for an operation.
+
+        Args:
+            action_name: Name of the action (without .py extension).
+
+        Returns:
+            Config definition dictionary, or None if not found.
+        """
+        # Try secondary operations first
+        config_path = os.path.join(
+            "src",
+            "secondary_operations",
+            "config_data",
+            f"{action_name}_config_def.json",
+        )
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                return json.load(f)
+
+        # Try main operations
+        config_path = os.path.join(
+            "src",
+            "main_operations",
+            "definitions",
+            "config_data",
+            f"{action_name}_config_def.json",
+        )
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                return json.load(f)
+
+        return None
+
+    def _initialize_operations(self) -> dict[str, Operation]:
         """Initialize operation instances based on configuration.
 
         Returns:
-            List of initialized operation instances.
+            Dict of initialized operation instances with uuids as keys.
         """
-        operations = []
+        operations: dict[str, Operation] = {}
+        all_connections_unprocessed: list[dict[str, str]] = []
 
+        # Gather all connections and operations from config
         for operation_config in self.pipeline_config:
-            action_name = operation_config["action_name"]
+            action_name = operation_config["action_name"].removesuffix(".py")
             action_params = operation_config.get("action_params", {})
+            action_uuid = operation_config.get("uuid", None)
 
-            operation_instance = self._create_operation_instance(
-                action_name, action_params
+            for connection in operation_config.get("connections", []):
+                all_connections_unprocessed.append(connection)
+
+            if not action_uuid:
+                raise ValueError(
+                    Colors.YELLOW
+                    + f"Error: Operation {action_name} is missing UUID in configuration. Cannot create pipeline"
+                    + Colors.RESET
+                )
+
+            try:
+                operation_instance = self._create_operation_instance(
+                    action_name, action_params
+                )
+            except Exception:
+                self.record_operation_init_error(
+                    action_uuid,
+                    action_name,
+                    traceback.format_exc(),
+                )
+                raise
+
+            # Load config_def to check if operation is a data source
+            config_def = self._load_config_def(action_name)
+            is_data_source = (
+                config_def.get("is_data_source", False) if config_def else False
             )
-            operations.append(operation_instance)
+
+            operations[action_uuid]: Operation = Operation(
+                instance=operation_instance,
+                uuid=action_uuid,
+                name=action_name,
+                is_data_source=is_data_source,
+            )
+
+        # link all connections once all operations are created
+        for connection in all_connections_unprocessed:
+            try:
+                from_operation = operations[connection["from_uuid"]]
+            except KeyError:
+                raise ValueError(
+                    f"Connection issue: operation {connection['from_uuid']} not found"
+                )
+            try:
+                to_operation = operations[connection["to_uuid"]]
+            except KeyError:
+                raise ValueError(
+                    f"Connection issue: operation {connection['to_uuid']} not found"
+                )
+
+            try:
+                # connection will register itself with operations when it is created
+                Connection(
+                    from_operation=from_operation,
+                    from_port=connection["from_port"],
+                    to_operation=to_operation,
+                    to_port=connection["to_port"],
+                    data_type=connection["data_type"],
+                    is_default=bool(connection.get("is_default", False)),
+                )
+            except KeyError as e:
+                raise ValueError(
+                    f"Malformed connection data: missing key {e} in connection {connection}"
+                )
+
+        detect_connection_cycles(operations)
+
+        orphan_operations = [
+            operation
+            for operation in operations.values()
+            if not operation.has_input_connections
+            and not operation.is_data_source  # Data sources don't need input connections
+        ]
+        if len(orphan_operations) > 0:
+            self.logger.log(
+                Colors.YELLOW
+                + f"WARNING: Orphan Operation!! Operations {[op.name for op in orphan_operations]} have no input connections"
+                + Colors.RESET
+            )
+            for operation in orphan_operations:
+                operations.pop(
+                    operation.uuid
+                )  # remove orphan operation, more important to make the rest work than crash
 
         return operations
 
+    def record_operation_init_error(
+        self, operation_uuid: str, operation_name: str, message: str
+    ) -> None:
+        """Record an operation error entry during initialization.
+
+        Args:
+            operation_uuid: UUID of the operation that failed.
+            operation_name: Name of the operation that failed.
+            message: The error message or traceback string.
+        """
+        trimmed_message = message.strip() if message else ""
+        if not operation_uuid or not trimmed_message:
+            return
+        with self.operation_errors_lock:
+            record = self.operation_errors.get(operation_uuid)
+            if record is None:
+                self.operation_errors[operation_uuid] = {
+                    "uuid": operation_uuid,
+                    "name": operation_name,
+                    "message": trimmed_message,
+                    "last_seen_ts": time.time(),
+                    "count": 1,
+                }
+            else:
+                record["message"] = trimmed_message
+                record["last_seen_ts"] = time.time()
+                record["count"] = int(record.get("count", 0)) + 1
+
+        self._publish_operation_error_snapshot()
+
     def _create_operation_instance(
         self, action_name: str, action_params: Dict[str, Any]
-    ) -> Any:
+    ) -> OperationInstance:
         """Create an operation instance based on action name and parameters.
 
         Args:
@@ -112,6 +284,7 @@ class Pipeline:
             ValueError: If action_name is not recognized or module cannot be imported.
         """
         try:
+            action_name = action_name.removesuffix(".py")
             class_name = self._snake_to_camel(action_name)
 
             # Try to import from main_operations/definitions first
@@ -130,7 +303,7 @@ class Pipeline:
                     operation_class = getattr(module, class_name)
                 except (ImportError, AttributeError):
                     raise ValueError(
-                        f"Could not find class for action: {class_name} at {action_name}"
+                        f"Could not find class for action: {class_name} at {action_name} with path {module_path}"
                     )
 
             # Create a shallow copy to avoid mutating the original action_params
@@ -172,280 +345,250 @@ class Pipeline:
             ):
                 init_params["logger"] = self.logger
 
+            # check if operation class is a subclass of OperationInstance
+            if not issubclass(operation_class, OperationInstance):
+                raise ValueError(
+                    f"Operation {action_name} is not a subclass of OperationInstance"
+                )
+
             return operation_class(**init_params)
 
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
 
+    @profile
     def run(
         self,
-        input_data: np.ndarray,
         visualize: bool = False,
-        visualization_operation_name: str | None = None,
-    ) -> Any | None:
-        """Run the pipeline with the given input data.
+        visualization_operation_uuid: str | None = None,
+    ) -> np.ndarray | None:
+        """Run the pipeline using FlowManager.
 
         Args:
-            input_data: Input data to process through the pipeline.
             visualize: Whether to visualize the pipeline.
+            visualization_operation_uuid: UUID of operation to visualize up to.
 
         Returns:
-            If visualize is True, returns a dictionary with the frame and visualization data.
-            Otherwise, returns nothing
+            If visualize is True, returns the visualized frame.
+            Otherwise, returns None.
 
         Raises:
-            ValueError: If pipeline operations are empty or input validation fails.
+            ValueError: If visualization_operation_uuid is required but not provided.
         """
-        if not self.operations:
-            raise ValueError("No operations configured in pipeline")
+        start_time = time.time()
 
-        current_data = input_data
+        self.flow_manager.run_flow()
 
-        time_elapsed = 0.0
-
-        for i, operation in enumerate(self.operations):
-            try:
-                start_time = time.time()
-                current_data = operation.run(current_data)
-                if current_data is None and i != len(self.operations) - 1:
-                    if debug_mode and self.logger:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Operation {i} ({type(operation).__name__}) returned None, skipping the rest of the pipeline{Colors.RESET}"
-                        )
-                    break
-                end_time = time.time()
-                elapsed = end_time - start_time
-                self.operation_time_history[i].append(elapsed)
-                time_elapsed += elapsed
-            except Exception as _:
-                raise RuntimeError(
-                    f"Error in operation {i} ({type(operation).__name__})"
-                ) from _
+        elapsed = time.time() - start_time
         with self.total_time_history_lock:
-            self.total_time_history.append(time_elapsed)
-        self.all_total_times.append(time_elapsed)
-
-        if debug_mode and self.logger:
-            print_timing_summary(
-                self.operations, self.operation_time_history, self.total_time_history, logger=self.logger
-            )
+            self.total_time_history.append(elapsed)
 
         if visualize:
-            if visualization_operation_name is None:
-                raise ValueError("Visualization operation name is required when visualize is True")
-            return self._visualize(input_data.copy(), visualization_operation_name)
+            if visualization_operation_uuid is None:
+                raise ValueError(
+                    "Visualization operation UUID is required when visualize is True"
+                )
+            # Get the frame from device_input for visualization
+            start_frame = self._get_device_input_frame(visualization_operation_uuid)
+            if start_frame is not None:
+                return self._visualize(
+                    start_frame.copy(),
+                    visualization_operation_uuid,
+                )
 
-    def get_operation_by_class_name(self, class_name: str) -> Any:
-        """Get an operation by its class name.
+        return None
 
-        Args:
-            class_name: The name of the operation class.
-        """
-        return next(
-            (
-                op
-                for op in self.operations
-                if op.__class__.__name__.strip("Definition")
-                == class_name.strip("Definition")
-            ),
-            None,
-        )
-
-    def get_pipeline_by_name(
-        self,
-        pipeline_name: str,
-        camera_name: str | None = None,
-    ) -> None:
-        """Retrieve a pipeline by name for the specified camera.
+    def _find_upstream_device_input(self, operation_uuid: str | None) -> Operation | None:
+        """Find the nearest upstream device_input operation for a target operation.
 
         Args:
-            pipeline_name: Name of the pipeline to retrieve.
-            camera_name: Optional camera identifier; defaults to the current pipeline camera.
+            operation_uuid: Target operation UUID.
 
         Returns:
-            Pipeline | None: The matching pipeline instance if found, otherwise None.
+            Upstream device_input operation if found, otherwise None.
         """
-        pipeline_objects_callback = getattr(
-            self.web_interface, "pipeline_objects_callback", None
-        )
-        if pipeline_objects_callback is None:
+        if operation_uuid is None:
             return None
-        pipeline_objects = pipeline_objects_callback()
-        target_camera_name = (
-            camera_name if camera_name is not None else self.camera_bus_id
-        )
-        if target_camera_name not in pipeline_objects:
+        start_operation = self.operations.get(operation_uuid)
+        if start_operation is None:
             return None
-        return pipeline_objects[target_camera_name].get(pipeline_name)
+        visited: set[str] = set()
+        queue: deque[Operation] = deque([start_operation])
 
-    def update_operations_config(self, operations_config: List[Dict[str, Any]]) -> None:
+        while queue:
+            operation = queue.popleft()
+            if operation.uuid in visited:
+                continue
+            visited.add(operation.uuid)
+
+            if operation.name == "device_input":
+                return operation
+
+            for connection in operation.get_input_connections():
+                queue.append(connection.from_operation)
+
+        return None
+
+    def _get_device_input_frame(
+        self, target_operation_uuid: str | None
+    ) -> np.ndarray | None:
+        """Get the current frame from device_input operation.
+
+        Returns:
+            The frame from device_input, or None if not found or no frame available.
+        """
+        target_device_input = self._find_upstream_device_input(target_operation_uuid)
+        if target_device_input is not None:
+            return self.flow_manager.operation_outputs.get(target_device_input.uuid)
+
+        for operation in self.operations.values():
+            if operation.name == "device_input":
+                return self.flow_manager.operation_outputs.get(operation.uuid)
+        return None
+
+    def get_operation_by_uuid(self, operation_uuid: str) -> Operation | None:
+        """Get an operation by its UUID.
+
+        Args:
+            operation_uuid: The UUID of the operation.
+
+        Returns:
+            The operation with the given UUID, or None if not found.
+        """
+        return self.operations.get(operation_uuid)
+
+    def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> None:
         """Update the configuration of multiple operations in the pipeline.
 
         This method allows live updating of operation parameters that are marked as
         restart_for_change: false in their configuration definition files.
 
         Args:
-            operations_config: List of operation configurations, where each config
-                is a dictionary with 'action_name' and 'action_params' keys.
+            operations_config: list of operation configurations, where each config
+                is a dictionary with 'uuid', 'action_name', and 'action_params' keys.
                 Format should match the pipeline configuration JSON format.
         """
         for operation_config in operations_config:
+            action_uuid = operation_config.get("uuid")
             action_name = operation_config.get("action_name")
             action_params = operation_config.get("action_params", {})
 
-            if not action_name:
+            if not action_uuid:
                 continue
 
-            # Convert action_name to class name format for lookup
-            class_name = self._snake_to_camel(action_name)
+            # Find the operation instance by UUID
+            operation_wrapper = self.get_operation_by_uuid(action_uuid)
 
-            # Find the operation instance
-            operation = self.get_operation_by_class_name(class_name)
-
-            if operation is not None and hasattr(operation, "update_config"):
-                try:
-                    operation.update_config(action_params)
-                    if debug_mode and self.logger:
-                        self.logger.log(
-                            f"{Colors.GREEN}Updated config for {action_name}: {action_params}{Colors.RESET}"
-                        )
-                except Exception as e:
-                    if self.logger:
-                        self.logger.log(
-                            f"{Colors.RED}Error updating config for {action_name}: {e}{Colors.RESET}"
-                        )
-            elif operation is not None:
-                if debug_mode and self.logger:
+            if operation_wrapper is not None:
+                operation = operation_wrapper.instance
+                if hasattr(operation, "update_config"):
+                    try:
+                        operation.update_config(action_params)
+                        if debug_mode and self.logger:
+                            self.logger.log(
+                                f"{Colors.GREEN}Updated config for {action_name} ({action_uuid}): {action_params}{Colors.RESET}"
+                            )
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.log(
+                                f"{Colors.RED}Error updating config for {action_name} ({action_uuid}): {e}{Colors.RESET}"
+                            )
+                elif debug_mode and self.logger:
                     self.logger.log(
-                        f"{Colors.YELLOW}Operation {action_name} does not support config updates{Colors.RESET}"
+                        f"{Colors.YELLOW}Operation {action_name} ({action_uuid}) does not support config updates{Colors.RESET}"
                     )
-            else:
-                if debug_mode and self.logger:
-                    self.logger.log(
-                        f"{Colors.RED}Operation {action_name} not found in pipeline{Colors.RESET}"
-                    )
+            elif debug_mode and self.logger:
+                self.logger.log(
+                    f"{Colors.RED}Operation {action_name} ({action_uuid}) not found in pipeline{Colors.RESET}"
+                )
 
     def thread_run(
-        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+        self, camera_thread_manager: CameraThreadManager
     ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
         self.thread_running = True
         self.thread = threading.Thread(
-            target=self._thread_run, args=(camera_thread_manager, camera_bus_id)
+            target=self._thread_run, args=(camera_thread_manager,)
         )
         self.thread.start()
 
     def _thread_run(
-        self, camera_thread_manager: CameraThreadManager, camera_bus_id: str
+        self, camera_thread_manager: CameraThreadManager
     ) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
-            camera_bus_id: The bus ID of the camera to run the pipeline on.
         """
-        if not camera_thread_manager.get_camera_ready(camera_bus_id):
-            if self.logger:
-                self.logger.log(
-                    f"{Colors.YELLOW}Camera bus id: {camera_bus_id} is not ready, waiting for camera to be ready{Colors.RESET}"
-                )
-            while not camera_thread_manager.get_camera_ready(camera_bus_id):
-                time.sleep(0.01)
-            if self.logger:
-                self.logger.log(
-                    f"{Colors.GREEN}Camera bus id: {camera_bus_id} is ready{Colors.RESET}"
-                )
-
         if self.logger:
             self.logger.log(
-                f"{Colors.CYAN}Starting pipeline for camera bus id: {camera_bus_id}{Colors.RESET}"
+                f"{Colors.CYAN}Starting pipeline thread{Colors.RESET}"
             )
         time.sleep(0.1)
 
         while self.thread_running:
-            camera_frame_result = camera_thread_manager.get_current_frame(camera_bus_id)
-            if camera_frame_result is not None:
-                frame, _ = camera_frame_result
-                try:
-                    # Snapshot visualize state and target name atomically
-                    with self.visualization_data_lock:
-                        should_visualize = self.set_visualize
-                        operation_name_snapshot = self.visualization_operation_name
+            try:
+                # Snapshot visualize state and target name atomically
+                with self.visualization_data_lock:
+                    should_visualize = self.set_visualize
+                    operation_uuid_snapshot = self.visualization_operation_uuid
 
-                    if should_visualize:
-                        frame_copy = frame.copy()
-                        visualization_frame = self.run(
-                            frame,
-                            visualize=True,
-                            visualization_operation_name=operation_name_snapshot,
-                        )
+                if should_visualize:
+                    visualization_frame = self.run(
+                        visualize=True,
+                        visualization_operation_uuid=operation_uuid_snapshot,
+                    )
+                    # Get the original frame from device_input for display
+                    frame = self._get_device_input_frame(operation_uuid_snapshot)
+                    if frame is not None and visualization_frame is not None:
                         # Only hold the lock for the assignment
                         with self.visualization_data_lock:
                             self.visualization_data = {
-                                "frame": frame_copy,
+                                "frame": frame.copy(),
                                 "visualization_data": visualization_frame,
                             }
-                    else:
-                        self.run(frame)
-                except Exception as _:
-                    if self.logger:
-                        self.logger.log(
-                            f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
-                        )
-            else:
-                time.sleep(0.01)
+                else:
+                    self.run()
+            except Exception as _:
+                if self.logger:
+                    self.logger.log(
+                        f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
+                    )
 
-    def _visualize(self, start_frame: np.ndarray, action_name: str) -> np.ndarray:
-        """Visualize the pipeline up to the given action name.
+            time.sleep(0.001)
+
+    def _visualize(
+        self, start_frame: np.ndarray, action_uuid: str | None
+    ) -> np.ndarray | None:
+        """Visualize a single operation using the provided frame.
 
         Args:
-            action_name: The name of the action to visualize up to.
+            action_uuid: The UUID of the action to visualize.
 
         Returns:
-            The visualized frame.
+            The visualized frame, or None if no visualization is available.
         """
-        # Normalize the target operation name; if None/empty, visualize full pipeline
-        normalized_target = (
-            action_name.lower().replace("_", "") if action_name else None
-        )
-        for operation in self.operations:
-            start_frame = operation.visualize(start_frame)
-            current_op_name = operation.__class__.__name__.lower().replace(
-                "definition", ""
-            )
-            if normalized_target and current_op_name == normalized_target:
-                break
+        if action_uuid is None:
+            return None
 
-        # Add FPS display in top left corner
-        with self.total_time_history_lock:
-            if self.total_time_history:
-                avg_time = sum(self.total_time_history) / len(self.total_time_history)
-            else:
-                avg_time = 0.0
-        fps = 1.0 / avg_time if avg_time > 0 else 0.0
-        fps_text = f"FPS: {fps:.1f}"
-        cv2.putText(
-            start_frame,
-            fps_text,
-            (30, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            (0, 255, 255),  # Yellow color in BGR
-            2,
-        )
+        operation = self.operations.get(action_uuid)
+        if operation is None:
+            return None
 
-        return start_frame
+        if not hasattr(operation.instance, "visualize"):
+            return None
 
-    def start_visualize(self, visualization_operation_name: str) -> None:
+        return operation.instance.visualize(start_frame)
+
+    def start_visualize(self, visualization_operation_uuid: str) -> None:
         """Start visualizing the pipeline."""
-        # Ensure operation name is set before enabling visualization
+        # Ensure operation UUID is set before enabling visualization
         with self.visualization_data_lock:
-            self.visualization_operation_name = visualization_operation_name
+            self.visualization_operation_uuid = visualization_operation_uuid
             self.set_visualize = True
 
     def stop_visualize(self) -> None:
@@ -459,3 +602,101 @@ class Pipeline:
         if self.thread is not None:
             self.thread.join()
             self.thread = None
+
+    def get_pipeline_thread_info(self) -> dict[str, Any]:
+        """Get total number of threads, thread assignment, and execution timestep for each operation.
+
+        Returns:
+            dict[str, Any]: Dictionary containing:
+                - 'total_threads': Total number of threads in the pipeline
+                - 'operations': Dictionary mapping operation UUID to dict with 'thread' and 'timestep'
+        """
+        thread_info = self.flow_manager.get_thread_and_timestep_info()
+
+        return {
+            "total_threads": self.flow_manager.num_threads,
+            "operations": thread_info,
+        }
+
+    def record_operation_error(self, operation: Operation, message: str) -> None:
+        """Record an operation error entry.
+
+        Args:
+            operation: The operation that failed.
+            message: The error message or traceback string.
+        """
+        if operation is None:
+            return
+        trimmed_message = message.strip() if message else ""
+        if not trimmed_message:
+            return
+        with self.operation_errors_lock:
+            record = self.operation_errors.get(operation.uuid)
+            if record is None:
+                self.operation_errors[operation.uuid] = {
+                    "uuid": operation.uuid,
+                    "name": operation.name,
+                    "message": trimmed_message,
+                    "last_seen_ts": time.time(),
+                    "count": 1,
+                }
+            else:
+                record["message"] = trimmed_message
+                record["last_seen_ts"] = time.time()
+                record["count"] = int(record.get("count", 0)) + 1
+
+        self._publish_operation_error_update(operation)
+
+    def clear_operation_error(self, operation: Operation) -> None:
+        """Clear an operation error entry after success.
+
+        Args:
+            operation: The operation that succeeded.
+        """
+        if operation is None:
+            return
+        with self.operation_errors_lock:
+            self.operation_errors.pop(operation.uuid, None)
+
+        self._publish_operation_error_update(operation)
+
+    def get_operation_errors(self) -> list[dict[str, Any]]:
+        """Get the current list of operation error entries.
+
+        Returns:
+            List of error records.
+        """
+        with self.operation_errors_lock:
+            errors = [record.copy() for record in self.operation_errors.values()]
+        return sorted(errors, key=lambda record: record.get("last_seen_ts", 0), reverse=True)
+
+    def _publish_operation_error_update(self, operation: Operation) -> None:
+        """Publish SSE update for the current operation error state.
+
+        Args:
+            operation: The operation that triggered the update.
+        """
+        try:
+            if not self.web_interface:
+                return
+            error_payload = {
+                "pipeline_name": self.pipeline_name,
+                "operation_uuid": operation.uuid,
+                "errors": self.get_operation_errors(),
+            }
+            self.web_interface.publish_operation_errors(error_payload)
+        except Exception:
+            return
+
+    def _publish_operation_error_snapshot(self) -> None:
+        """Publish SSE update for the current operation error state."""
+        try:
+            if not self.web_interface:
+                return
+            error_payload = {
+                "pipeline_name": self.pipeline_name,
+                "errors": self.get_operation_errors(),
+            }
+            self.web_interface.publish_operation_errors(error_payload)
+        except Exception:
+            return

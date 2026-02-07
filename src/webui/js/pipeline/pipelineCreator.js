@@ -2,6 +2,7 @@ import {
     createDescriptionPopup,
     renderOperations,
     renderPipeline,
+    FlowchartRenderer,
 } from "./rendering.js";
 import {
     handleDragStart,
@@ -11,9 +12,11 @@ import {
     handleDragLeavePipeline,
     handleDropOnPipeline,
 } from "./dragDrop.js";
+import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
+import { pipelineStore } from "./PipelineStore.js";
+import { showDanger, showWarning } from "../ui/notificationSystem.js";
 
-// Enhanced drag handlers with console logging
 function handleDragStartWithLogging(
     event,
     item,
@@ -26,7 +29,6 @@ function handleDragStartWithLogging(
         fromIndex: fromIndex,
         timestamp: new Date().toISOString(),
     });
-    // Map to expected signature: (e, item, operations, fromIndex)
     return handleDragStart(event, item, collection, fromIndex);
 }
 
@@ -56,14 +58,15 @@ function handleDropOnPipelineWithLogging(
     pipelinePlaceholder,
     callbacks,
 ) {
-    const pipelineOrderBefore = pipeline.map((item) => ({
-        id: item.id,
-        name: item.name,
-        instanceId: item.instanceId,
+    const pipelineNodes = pipelineStore.getNodes();
+    const pipelineOrderBefore = pipelineNodes.map((node) => ({
+        id: node.operationId,
+        name: node.name,
+        instanceId: node.instanceId,
     }));
 
     console.log("[PIPELINE] Drop operation started", {
-        pipelineLengthBefore: pipeline.length,
+        pipelineLengthBefore: pipelineNodes.length,
         pipelineOrderBefore,
         dropTarget: event.target,
         timestamp: new Date().toISOString(),
@@ -78,14 +81,15 @@ function handleDropOnPipelineWithLogging(
         callbacks,
     );
 
-    const pipelineOrderAfter = pipeline.map((item) => ({
-        id: item.id,
-        name: item.name,
-        instanceId: item.instanceId,
+    const pipelineNodesAfter = pipelineStore.getNodes();
+    const pipelineOrderAfter = pipelineNodesAfter.map((node) => ({
+        id: node.operationId,
+        name: node.name,
+        instanceId: node.instanceId,
     }));
 
     console.log("[PIPELINE] Drop operation completed", {
-        pipelineLengthAfter: pipeline.length,
+        pipelineLengthAfter: pipelineNodesAfter.length,
         pipelineOrderAfter,
         orderChanged:
             JSON.stringify(pipelineOrderBefore.map((p) => p.instanceId)) !==
@@ -97,39 +101,105 @@ function handleDropOnPipelineWithLogging(
     return result;
 }
 
-// --- Operation definitions (populated from server)
-let operations = [];
-
-// Pipeline state
-let pipeline = [];
 let isInitialized = false;
 
-// Restart tracking state
-let restartRequiredOperations = new Map(); // Map<instanceId, Set<paramNames>>
+let flowchartRenderer = null;
+let useFlowchartMode = true;
 
-// Camera state
-let cameras = [];
-let selectedCamera = null;
+const restartRequiredOperations = new Map();
 
-// Pipeline state
-let pipelines = [];
-let selectedPipeline = null;
-
-// Auto-save state
-let isAutoSaving = false;
-let pendingAutoSave = false;
-
-// DOM refs (assigned at init time)
 let pipelineArea;
 let pipelineContainer;
 let pipelinePlaceholder;
 let operationsList;
 let runButton;
-let cameraSelect;
 let pipelineSelect;
+let pipelineCameraNote;
 let newPipelineButton;
 let deletePipelineButton;
 let restartIndicator;
+let flowchartCanvas;
+
+let pipelineErrorPopup;
+const operationErrorsByUuid = new Map();
+const downstreamErrorUuids = new Set();
+
+const autoSavePipeline = debounce(autoSavePipelineImpl, 500);
+
+function getOperations() {
+    return pipelineStore.state.operations;
+}
+
+
+function getPipeline() {
+    return pipelineStore.getNodesForRenderer();
+}
+
+function getPipelines() {
+    return pipelineStore.state.pipelines;
+}
+
+function getSelectedPipeline() {
+    const pipelineName = pipelineStore.state.currentPipeline?.pipelineName;
+    if (!pipelineName) {
+        return null;
+    }
+    const selectedPipeline = pipelineStore.state.pipelines.find(
+        (p) => p.name === pipelineName,
+    );
+    return selectedPipeline ?? null;
+}
+
+function getDeviceInputNodes() {
+    return pipelineStore.getNodes().filter((node) => {
+        return pipelineStore.normalizeOperationId(node.operationId) ===
+            "device_input";
+    });
+}
+
+function getDeviceInputCameraNames() {
+    const names = new Set();
+    pipelineStore.getNodes().forEach((node) => {
+        const operationId = pipelineStore.normalizeOperationId(node.operationId);
+        if (operationId === "device_input") {
+            const cameraName = node.config?.camera_name;
+            if (cameraName) {
+                names.add(cameraName);
+            }
+        }
+    });
+    return Array.from(names);
+}
+
+function formatPipelineCameraNote(cameraNames) {
+    if (cameraNames.length === 0) {
+        return { text: "No cameras configured", title: "" };
+    }
+    const sortedNames = [...cameraNames].sort((first, second) =>
+        first.localeCompare(second, undefined, { sensitivity: "accent" }),
+    );
+    if (sortedNames.length <= 2) {
+        return {
+            text: `Cameras: ${sortedNames.join(", ")}`,
+            title: sortedNames.join(", "),
+        };
+    }
+    const visibleNames = sortedNames.slice(0, 2).join(", ");
+    return {
+        text: `Cameras: ${visibleNames} (+${sortedNames.length - 2} more)`,
+        title: sortedNames.join(", "),
+    };
+}
+
+function updatePipelineCameraNote() {
+    if (!pipelineCameraNote) {
+        return;
+    }
+    const cameraNames = getDeviceInputCameraNames();
+    const note = formatPipelineCameraNote(cameraNames);
+    pipelineCameraNote.textContent = note.text;
+    pipelineCameraNote.title = note.title;
+}
 
 async function fetchAvailableOperations() {
     try {
@@ -141,25 +211,26 @@ async function fetchAvailableOperations() {
         }
         const data = await response.json();
 
-        // Transform server data to match UI expectations
-        operations = data.operations.map((op) => ({
-            id: op.name, // Use filename as unique ID
+        const operations = data.operations.map((op) => ({
+            id: op.name,
             name: op.name
                 .replaceAll(".py", "")
                 .replaceAll("_", " ")
-                .replaceAll(/\b\w/g, (l) => l.toUpperCase()), // Convert filename to readable name
-            type: op.category.toUpperCase(), // Use category as type, convert to uppercase for consistency
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
+            type: op.category.toUpperCase(),
             description: op.description,
             path: op.path,
             configDataPath: op.config_data_path,
-            isSecondary: op.is_secondary, // Store the secondary operation flag
+            isSecondary: op.is_secondary,
+            hasVisualization: Boolean(op.has_visualization),
         }));
 
+        pipelineStore.setOperations(operations);
         console.log("Loaded operations from server:", operations);
     } catch (error) {
+        showDanger("Failed to fetch operations");
         console.error("Failed to fetch operations:", error);
-        // Fallback to empty array or could show error message
-        operations = [];
+        pipelineStore.setOperations([]);
     }
 }
 
@@ -173,30 +244,31 @@ async function fetchAvailableCameras() {
         }
         const data = await response.json();
 
-        // Transform server data to match UI expectations
-        cameras = Object.entries(data).map(([name, urlSafeName]) => ({
+        const cameras = Object.entries(data).map(([name, urlSafeName]) => ({
             name: name,
             urlSafeName: urlSafeName,
         }));
 
+        pipelineStore.setCameras(cameras);
         console.log("Loaded cameras from server:", cameras);
     } catch (error) {
+        showDanger("Failed to fetch cameras");
         console.error("Failed to fetch cameras:", error);
-        // Fallback to empty array
-        cameras = [];
+        pipelineStore.setCameras([]);
     }
 }
 
 function populateCameraDropdown() {
     cameraSelect.innerHTML = "";
 
+    const cameras = pipelineStore.state.cameras;
     if (!Array.isArray(cameras) || cameras.length === 0) {
         const option = document.createElement("option");
         option.disabled = true;
         option.selected = true;
         option.textContent = "No cameras available";
         cameraSelect.appendChild(option);
-        selectedCamera = null;
+        pipelineStore.setCurrentCamera(null);
         return;
     }
 
@@ -207,42 +279,42 @@ function populateCameraDropdown() {
         option.textContent = camera.name;
         if (index === 0) {
             option.selected = true;
-            selectedCamera = camera; // Set the first camera as selected
+            pipelineStore.setCurrentCamera(camera.name);
         }
         cameraSelect.appendChild(option);
     }
 }
 
-async function fetchPipelinesForCamera(cameraName) {
+async function fetchPipelines() {
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-names-for-camera/${encodeURIComponent(cameraName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-names`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const pipelineNames = await response.json();
 
-        // Transform server data to match UI expectations
-        pipelines = pipelineNames.map((name) => ({
+        const pipelines = pipelineNames.map((name) => ({
             name: name,
             displayName: name
                 .replaceAll("_", " ")
-                .replaceAll(/\b\w/g, (l) => l.toUpperCase()), // Convert to readable name
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
         }));
 
+        pipelineStore.setPipelines(pipelines);
         console.log("Loaded pipelines from server:", pipelines);
     } catch (error) {
+        showDanger("Failed to fetch pipelines");
         console.error("Failed to fetch pipelines:", error);
-        // Fallback to empty array
-        pipelines = [];
+        pipelineStore.setPipelines([]);
     }
 }
 
-async function fetchPipelineConfig(cameraName, pipelineName) {
+async function fetchPipelineConfig(pipelineName) {
     try {
         const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(cameraName)}/${encodeURIComponent(pipelineName)}`,
+            `${BACKEND_BASE_URL}/get-pipeline-config/${encodeURIComponent(pipelineName)}`,
         );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -252,6 +324,7 @@ async function fetchPipelineConfig(cameraName, pipelineName) {
         console.log("Loaded pipeline config from server:", pipelineConfig);
         return pipelineConfig;
     } catch (error) {
+        showDanger("Failed to fetch pipeline config");
         console.error("Failed to fetch pipeline config:", error);
         return [];
     }
@@ -260,35 +333,32 @@ async function fetchPipelineConfig(cameraName, pipelineName) {
 function populatePipelineDropdown(selectedPipelineName = null) {
     pipelineSelect.innerHTML = "";
 
-    // Add default option
     const defaultOption = document.createElement("option");
     defaultOption.disabled = true;
     defaultOption.textContent = "Select Pipeline";
     pipelineSelect.appendChild(defaultOption);
 
     let foundSelectedPipeline = false;
+    const pipelines = getPipelines();
 
-    // Add pipeline options
     for (let index = 0; index < pipelines.length; index++) {
-        const pipeline = pipelines[index];
+        const pipelineItem = pipelines[index];
         const option = document.createElement("option");
-        option.value = pipeline.name;
-        option.textContent = pipeline.displayName;
+        option.value = pipelineItem.name;
+        option.textContent = pipelineItem.displayName;
 
-        // Select the specified pipeline or the first one if none specified
         if (
-            selectedPipelineName === pipeline.name ||
+            selectedPipelineName === pipelineItem.name ||
             (selectedPipelineName === null && index === 0)
         ) {
             option.selected = true;
-            selectedPipeline = pipeline;
+            pipelineStore.setCurrentPipeline(pipelineItem.name);
             foundSelectedPipeline = true;
         }
 
         pipelineSelect.appendChild(option);
     }
 
-    // If we were looking for a specific pipeline but didn't find it, select the first one
     if (
         selectedPipelineName &&
         !foundSelectedPipeline &&
@@ -302,129 +372,73 @@ function populatePipelineDropdown(selectedPipelineName = null) {
         );
         if (firstOption) {
             firstOption.selected = true;
-            selectedPipeline = pipelines[0];
+            pipelineStore.setCurrentPipeline(pipelines[0].name);
         }
     }
 
-    // If no pipelines exist, ensure selectedPipeline is null
     if (pipelines.length === 0) {
-        selectedPipeline = null;
-    }
-}
-
-async function handleCameraSelection() {
-    const selectedValue = cameraSelect.value;
-    selectedCamera = cameras.find(
-        (camera) => camera.urlSafeName === selectedValue,
-    );
-    console.log("Selected camera:", selectedCamera);
-
-    // Fetch pipelines for the selected camera
-    if (selectedCamera) {
-        await fetchPipelinesForCamera(selectedCamera.name);
-        populatePipelineDropdown(); // No specific selection, will default to first pipeline
-
-        // After populating pipelines, check if we should auto-fill
-        await checkAndTriggerAutoFill();
-
-        // Update delete button visibility
-        updateDeleteButtonVisibility();
+        pipelineStore.setCurrentPipeline(null);
     }
 }
 
 async function handlePipelineSelection() {
     const selectedValue = pipelineSelect.value;
-    selectedPipeline = pipelines.find(
-        (pipeline) => pipeline.name === selectedValue,
+    const pipelines = getPipelines();
+    const selectedPipeline = pipelines.find(
+        (pipelineItem) => pipelineItem.name === selectedValue,
     );
     console.log("Selected pipeline:", selectedPipeline);
 
-    // Auto-fill pipeline if a pipeline is selected and we have a selected camera
-    if (selectedPipeline && selectedCamera) {
-        await loadPipelineIntoBuilder(
-            selectedCamera.name,
-            selectedPipeline.name,
-        );
+    if (selectedPipeline) {
+        pipelineStore.setCurrentPipeline(selectedPipeline.name);
+        await loadPipelineIntoBuilder(selectedPipeline.name);
     }
 
-    // Update delete button visibility
     updateDeleteButtonVisibility();
-
-    // Don't check restart requirements when selecting existing pipeline
-    // Restart requirements should only be checked when user makes changes
 }
 
-async function loadPipelineIntoBuilder(cameraName, pipelineName) {
+async function loadPipelineIntoBuilder(pipelineName) {
     try {
-        // Check if operations are loaded
+        const operations = getOperations();
         if (operations.length === 0) {
             console.warn("Operations not loaded yet, cannot load pipeline");
             return;
         }
 
-        // Clear current pipeline
-        pipeline = [];
+        const pipelineConfig = await fetchPipelineConfig(pipelineName);
 
-        // Fetch pipeline configuration
-        const pipelineConfig = await fetchPipelineConfig(
-            cameraName,
-            pipelineName,
-        );
-
-        // Transform config into pipeline operations
-        for (let index = 0; index < pipelineConfig.length; index++) {
-            const configItem = pipelineConfig[index];
-            // Find the corresponding operation from available operations
-            // Try different matching strategies
-            let operation = operations.find(
-                (op) => op.id === configItem.action_name + ".py",
-            );
-
-            // If not found, try without .py extension
-            if (!operation) {
-                operation = operations.find(
-                    (op) => op.id === configItem.action_name,
-                );
+        const allConnections = [];
+        pipelineConfig.forEach((configItem) => {
+            if (
+                configItem.connections &&
+                Array.isArray(configItem.connections)
+            ) {
+                allConnections.push(...configItem.connections);
             }
-
-            // If still not found, try matching by name
-            if (!operation) {
-                operation = operations.find(
-                    (op) =>
-                        op.name.toLowerCase().replaceAll(/\s+/g, "_") ===
-                        configItem.action_name,
-                );
-            }
-
-            if (operation) {
-                // Create pipeline item with operation data and config
-                const pipelineItem = {
-                    ...operation,
-                    instanceId: `${operation.id}_${Date.now()}_${index}`,
-                    config: configItem.action_params || {},
-                    originalConfig: configItem.action_params || {}, // Store original config for restart comparison
-                    name: operation.name,
-                    requiresRestart: false, // Initialize restart flag (will be updated if needed)
-                };
-                pipeline.push(pipelineItem);
-            } else {
-                console.warn(
-                    `Operation ${configItem.action_name} not found in available operations. Available operations:`,
-                    operations.map((op) => op.id),
-                );
-            }
-        }
-
-        // Re-render the pipeline
-        console.log("[PIPELINE] Re-rendering pipeline after loading", {
-            operationCount: pipeline.length,
-            operations: pipeline.map((op) => ({
-                id: op.id,
-                name: op.name,
-                instanceId: op.instanceId,
-            })),
-            timestamp: new Date().toISOString(),
         });
+
+        pipelineStore.loadPipelineData(pipelineConfig, allConnections);
+
+        await renderCurrentPipeline();
+
+        updateRunButton();
+        updatePipelineCameraNote();
+    } catch (error) {
+        showDanger("Failed to load pipeline");
+        console.error("Failed to load pipeline:", error);
+    }
+}
+
+async function renderCurrentPipeline() {
+    const pipeline = getPipeline();
+    const connections = pipelineStore.getConnectionsForRenderer();
+
+    if (useFlowchartMode && flowchartRenderer) {
+        const options = { connections };
+        await flowchartRenderer.renderPipeline(pipeline, options);
+        applyPipelineErrorHighlights();
+        await fetchAndUpdateThreadInfo();
+    } else {
         renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
             updateRunButton,
@@ -432,47 +446,445 @@ async function loadPipelineIntoBuilder(cameraName, pipelineName) {
             handleDragStart: handleDragStartWithLogging,
             handleDragEnd: handleDragEndWithLogging,
         });
+        applyPipelineErrorHighlights();
+    }
+    updatePipelineCameraNote();
+}
 
-        // Update the run button state
-        updateRunButton();
+function extractMissingArgumentNames(message) {
+    if (!message) {
+        return null;
+    }
 
-        // Don't check restart requirements when loading existing pipeline
-        // Restart requirements should only be checked when user makes changes
-        console.log("Pipeline loaded:", pipeline);
+    const match = message.match(
+        /missing\s+\d+\s+required positional arguments?:\s*(.+)$/i,
+    );
+
+    if (!match) {
+        return null;
+    }
+
+    const rawList = match[1].trim();
+    const quotedMatches = Array.from(rawList.matchAll(/'([^']+)'/g)).map(
+        (item) => item[1],
+    );
+
+    if (quotedMatches.length > 0) {
+        return quotedMatches;
+    }
+
+    const normalized = rawList
+        .replaceAll(/\band\b/gi, ",")
+        .replaceAll(/\s+/g, " ")
+        .trim();
+    const parts = normalized
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+
+    return parts.length > 0 ? parts : null;
+}
+
+function buildPipelineErrorPopupContent(errorRecord) {
+    const message = errorRecord?.message || "Unknown error";
+    const missingArgs = extractMissingArgumentNames(message);
+    const displayMessage = missingArgs
+        ? `Please fill out the following settings fields in this operation: ${missingArgs.join(", ")}`
+        : message;
+    const count = errorRecord?.count || 1;
+    const name = errorRecord?.name || "Operation Error";
+
+    return `
+        <div class="text-red-200 font-semibold text-sm mb-2 border-b border-[#3a1d1d] pb-2">${escapeHtml(
+            name,
+        )}</div>
+        <div class="text-red-100 text-xs whitespace-pre-wrap" style="word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(
+            displayMessage,
+        )}</div>
+        <div class="text-red-300 text-xs mt-2">Seen ${count} time${
+            count === 1 ? "" : "s"
+        }</div>
+    `;
+}
+
+function ensurePipelineErrorPopup() {
+    if (pipelineErrorPopup) {
+        return pipelineErrorPopup;
+    }
+
+    pipelineErrorPopup = document.createElement("div");
+    pipelineErrorPopup.id = "pipeline-error-popup";
+    pipelineErrorPopup.className =
+        "fixed z-50 bg-[#2b1f1f] border-2 border-[#ff5c5c] rounded-lg p-3 shadow-lg max-w-sm pointer-events-none opacity-0 transition-opacity duration-200";
+    pipelineErrorPopup.style.fontSize = "0.875rem";
+    pipelineErrorPopup.style.lineHeight = "1.25rem";
+    pipelineErrorPopup.style.width = "max-content";
+    pipelineErrorPopup.style.maxWidth = "320px";
+    pipelineErrorPopup.style.height = "auto";
+    pipelineErrorPopup.style.boxShadow =
+        "4px 4px 12px rgba(0,0,0,0.45), 8px 8px 20px rgba(0,0,0,0.25), 2px 2px 6px rgba(255,92,92,0.15)";
+    document.body.appendChild(pipelineErrorPopup);
+
+    return pipelineErrorPopup;
+}
+
+function positionPipelineErrorPopup(popup, anchorX, anchorY) {
+    const margin = 12;
+    const offset = 12;
+
+    popup.style.left = `${anchorX + offset}px`;
+    popup.style.top = `${anchorY + offset}px`;
+
+    const rect = popup.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - margin;
+    const maxTop = window.innerHeight - rect.height - margin;
+
+    const clampedLeft = Math.min(
+        Math.max(anchorX + offset, margin),
+        Math.max(maxLeft, margin),
+    );
+    const clampedTop = Math.min(
+        Math.max(anchorY + offset, margin),
+        Math.max(maxTop, margin),
+    );
+
+    popup.style.left = `${clampedLeft}px`;
+    popup.style.top = `${clampedTop}px`;
+}
+
+function showPipelineErrorPopup(errorRecord, event) {
+    const popup = ensurePipelineErrorPopup();
+    popup.innerHTML = buildPipelineErrorPopupContent(errorRecord);
+
+    positionPipelineErrorPopup(popup, event.clientX, event.clientY);
+    popup.classList.remove("opacity-0");
+    popup.classList.add("opacity-100");
+}
+
+function hidePipelineErrorPopup() {
+    if (!pipelineErrorPopup) {
+        return;
+    }
+    pipelineErrorPopup.classList.remove("opacity-100");
+    pipelineErrorPopup.classList.add("opacity-0");
+}
+
+function computeDownstreamErrorUuids() {
+    downstreamErrorUuids.clear();
+
+    const errorUuids = new Set(operationErrorsByUuid.keys());
+    if (errorUuids.size === 0) {
+        return;
+    }
+
+    const connections = pipelineStore.getConnections();
+    const outgoing = new Map();
+    for (const connection of connections) {
+        if (!outgoing.has(connection.fromUuid)) {
+            outgoing.set(connection.fromUuid, []);
+        }
+        outgoing.get(connection.fromUuid).push(connection.toUuid);
+    }
+
+    const queue = Array.from(errorUuids);
+    const visited = new Set(errorUuids);
+    while (queue.length > 0) {
+        const current = queue.shift();
+        const nextNodes = outgoing.get(current) || [];
+        for (const next of nextNodes) {
+            if (visited.has(next)) {
+                continue;
+            }
+            visited.add(next);
+            downstreamErrorUuids.add(next);
+            queue.push(next);
+        }
+    }
+}
+
+function applyPipelineErrorHighlights() {
+    computeDownstreamErrorUuids();
+    if (useFlowchartMode && flowchartRenderer) {
+        for (const node of flowchartRenderer.nodes.values()) {
+            const uuid = pipelineStore.instanceIdToUuid.get(node.instanceId);
+            const errorRecord = uuid ? operationErrorsByUuid.get(uuid) : null;
+            const isDownstream = uuid ? downstreamErrorUuids.has(uuid) : false;
+            if (node.setErrorState) {
+                node.setErrorState(errorRecord, isDownstream);
+                applyFlowchartNodeErrorIcon(node, errorRecord);
+            } else {
+                applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream);
+            }
+        }
+        return;
+    }
+
+    if (!pipelineContainer) {
+        return;
+    }
+
+    const items = pipelineContainer.querySelectorAll(".pipeline-item");
+    items.forEach((item) => {
+        const instanceId = item.dataset.instanceId;
+        const uuid = pipelineStore.instanceIdToUuid.get(instanceId);
+        const errorRecord = uuid ? operationErrorsByUuid.get(uuid) : null;
+        const isDownstream = uuid ? downstreamErrorUuids.has(uuid) : false;
+
+        applyPipelineItemErrorState(item, errorRecord, isDownstream);
+    });
+}
+
+function applyFlowchartNodeErrorIcon(node, errorRecord) {
+    const element = node.element;
+    if (!element) {
+        return;
+    }
+
+    const icon = element.querySelector(".node-error-icon");
+    if (!icon) {
+        return;
+    }
+
+    if (errorRecord) {
+        icon.style.display = "inline-flex";
+        if (!icon.dataset.pipelineErrorBound) {
+            icon.dataset.pipelineErrorBound = "true";
+            icon.addEventListener("mouseenter", (event) => {
+                const uuid = pipelineStore.instanceIdToUuid.get(node.instanceId);
+                const currentError = uuid
+                    ? operationErrorsByUuid.get(uuid)
+                    : null;
+                if (currentError) {
+                    showPipelineErrorPopup(currentError, event);
+                }
+            });
+            icon.addEventListener("mousemove", (event) => {
+                if (pipelineErrorPopup?.classList.contains("opacity-100")) {
+                    positionPipelineErrorPopup(
+                        pipelineErrorPopup,
+                        event.clientX,
+                        event.clientY,
+                    );
+                }
+            });
+            icon.addEventListener("mouseleave", () => {
+                hidePipelineErrorPopup();
+            });
+        }
+    } else {
+        icon.style.display = "none";
+    }
+}
+
+function applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream) {
+    const element = node.element;
+    if (!element) {
+        return;
+    }
+
+    if (errorRecord) {
+        element.style.borderColor = "#ff5c5c";
+        element.style.boxShadow =
+            "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 12px rgba(0, 0, 0, 0.5)";
+    } else if (!node.isDragging) {
+        element.style.borderColor = "#404040";
+        element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+    }
+
+    element.classList.toggle("pipeline-error-node", Boolean(errorRecord));
+    element.classList.toggle("pipeline-downstream-disabled", Boolean(isDownstream));
+
+    let infoIcon = element.querySelector(".error-info-icon");
+    if (errorRecord && !infoIcon) {
+        const header = element.querySelector(".node-header");
+        if (!header) {
+            return;
+        }
+        infoIcon = document.createElement("div");
+        infoIcon.className = "error-info-icon";
+        infoIcon.textContent = "i";
+        infoIcon.style.width = "18px";
+        infoIcon.style.height = "18px";
+        infoIcon.style.borderRadius = "50%";
+        infoIcon.style.backgroundColor = "#ff5c5c";
+        infoIcon.style.color = "#1a1a1a";
+        infoIcon.style.fontSize = "12px";
+        infoIcon.style.fontWeight = "700";
+        infoIcon.style.display = "inline-flex";
+        infoIcon.style.alignItems = "center";
+        infoIcon.style.justifyContent = "center";
+        infoIcon.style.marginLeft = "8px";
+        infoIcon.style.cursor = "default";
+
+        infoIcon.addEventListener("mouseenter", (event) => {
+            showPipelineErrorPopup(errorRecord, event);
+        });
+        infoIcon.addEventListener("mousemove", (event) => {
+            if (pipelineErrorPopup?.classList.contains("opacity-100")) {
+                positionPipelineErrorPopup(
+                    pipelineErrorPopup,
+                    event.clientX,
+                    event.clientY,
+                );
+            }
+        });
+        infoIcon.addEventListener("mouseleave", () => {
+            hidePipelineErrorPopup();
+        });
+
+        header.appendChild(infoIcon);
+    } else if (!errorRecord && infoIcon) {
+        infoIcon.remove();
+    }
+}
+
+function applyPipelineItemErrorState(item, errorRecord, isDownstream) {
+    item.classList.toggle("pipeline-error-node", Boolean(errorRecord));
+    item.classList.toggle("pipeline-downstream-disabled", Boolean(isDownstream));
+
+    if (errorRecord) {
+        item.style.borderColor = "#ff5c5c";
+        item.style.boxShadow =
+            "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 8px rgba(0,0,0,0.4)";
+    } else {
+        item.style.borderColor = "#404040";
+        item.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
+    }
+
+    let infoIcon = item.querySelector(".pipeline-error-icon");
+    if (errorRecord && !infoIcon) {
+        const header = item.querySelector(".flex.items-center");
+        if (!header) {
+            return;
+        }
+        infoIcon = document.createElement("div");
+        infoIcon.className = "pipeline-error-icon";
+        infoIcon.textContent = "i";
+        infoIcon.style.width = "18px";
+        infoIcon.style.height = "18px";
+        infoIcon.style.borderRadius = "50%";
+        infoIcon.style.backgroundColor = "#ff5c5c";
+        infoIcon.style.color = "#1a1a1a";
+        infoIcon.style.fontSize = "12px";
+        infoIcon.style.fontWeight = "700";
+        infoIcon.style.display = "inline-flex";
+        infoIcon.style.alignItems = "center";
+        infoIcon.style.justifyContent = "center";
+        infoIcon.style.marginLeft = "8px";
+        infoIcon.style.cursor = "default";
+
+        infoIcon.addEventListener("mouseenter", (event) => {
+            showPipelineErrorPopup(errorRecord, event);
+        });
+        infoIcon.addEventListener("mousemove", (event) => {
+            if (pipelineErrorPopup?.classList.contains("opacity-100")) {
+                positionPipelineErrorPopup(
+                    pipelineErrorPopup,
+                    event.clientX,
+                    event.clientY,
+                );
+            }
+        });
+        infoIcon.addEventListener("mouseleave", () => {
+            hidePipelineErrorPopup();
+        });
+
+        const settingsGroup = item.querySelector(
+            ".flex.items-center.gap-2",
+        );
+        if (settingsGroup) {
+            settingsGroup.prepend(infoIcon);
+        } else {
+            header.appendChild(infoIcon);
+        }
+    } else if (!errorRecord && infoIcon) {
+        infoIcon.remove();
+    }
+}
+
+function handleOperationErrorUpdate(payload) {
+    if (!payload) {
+        return;
+    }
+
+    const selectedPipeline = getSelectedPipeline();
+    if (payload.pipeline_name && selectedPipeline) {
+        if (payload.pipeline_name !== selectedPipeline.name) {
+            return;
+        }
+    }
+
+    operationErrorsByUuid.clear();
+    const errors = Array.isArray(payload.errors) ? payload.errors : [];
+    errors.forEach((errorRecord) => {
+        if (errorRecord?.uuid) {
+            operationErrorsByUuid.set(errorRecord.uuid, errorRecord);
+        }
+    });
+
+    pipelineStore.setOperationErrors(errors);
+    applyPipelineErrorHighlights();
+}
+
+async function fetchAndUpdateThreadInfo() {
+    const selectedPipeline = getSelectedPipeline();
+
+    if (!selectedPipeline || pipelineStore.isRestartRequired()) {
+        hideAllThreadBadges();
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `${BACKEND_BASE_URL}/get-pipeline-thread-info/${encodeURIComponent(selectedPipeline.name)}`,
+        );
+
+        if (!response.ok) {
+            console.warn("Failed to fetch thread info:", response.status);
+            hideAllThreadBadges();
+            return;
+        }
+
+        const data = await response.json();
+
+        if (flowchartRenderer) {
+            const nodes = flowchartRenderer.nodes;
+
+            for (const [instanceId, node] of nodes) {
+                const uuid = pipelineStore.instanceIdToUuid.get(instanceId);
+                if (uuid && data.operations) {
+                    const threadInfo = data.operations[uuid];
+                    node.updateThreadInfo(threadInfo);
+                } else {
+                    node.hideThreadBadge();
+                }
+            }
+        }
     } catch (error) {
-        console.error("Failed to load pipeline:", error);
+        console.error("Error fetching thread info:", error);
+        hideAllThreadBadges();
+    }
+}
+
+function hideAllThreadBadges() {
+    if (flowchartRenderer) {
+        for (const node of flowchartRenderer.nodes.values()) {
+            node.hideThreadBadge();
+        }
     }
 }
 
 async function checkAndTriggerAutoFill() {
     try {
-        // Check if camera dropdown has a selected value and update selectedCamera if needed
-        if (cameraSelect?.value) {
-            const selectedCameraValue = cameraSelect.value;
-            const cameraObj = cameras.find(
-                (c) => c.urlSafeName === selectedCameraValue,
-            );
-            if (cameraObj) {
-                selectedCamera = cameraObj;
-            }
-        }
+        const pipelines = getPipelines();
 
-        // Check if we have a selected camera
-        if (!selectedCamera) {
-            console.log("No camera selected, skipping auto-fill");
-            return;
-        }
-
-        // Check if pipeline dropdown has a selected value
         if (!pipelineSelect?.value) {
             console.log("No pipeline selected, skipping auto-fill");
             return;
         }
 
-        // Get the selected pipeline name from the dropdown
         const selectedPipelineName = pipelineSelect.value;
 
-        // Find the pipeline object
         const pipelineObj = pipelines.find(
             (p) => p.name === selectedPipelineName,
         );
@@ -482,63 +894,62 @@ async function checkAndTriggerAutoFill() {
             return;
         }
 
-        // Update the selectedPipeline variable to match the dropdown
-        selectedPipeline = pipelineObj;
+        pipelineStore.setCurrentPipeline(pipelineObj.name);
 
         console.log(
-            "Both camera and pipeline are pre-selected, triggering auto-fill",
+            "Pipeline pre-selected, triggering auto-fill",
         );
-        await loadPipelineIntoBuilder(selectedCamera.name, pipelineObj.name);
+        await loadPipelineIntoBuilder(pipelineObj.name);
     } catch (error) {
         console.error("Error during auto-fill check:", error);
     }
 }
 
-// --- Pipeline actions
-
 async function removeFromPipeline(instanceId) {
-    const removedOperation = pipeline.find(
-        (item) => item.instanceId === instanceId,
-    );
+    const removedNode = pipelineStore.getNode(instanceId);
+    const deviceInputCountBefore = getDeviceInputNodes().length;
+
     console.log("[PIPELINE] Removing operation from pipeline", {
-        removedOperation: removedOperation
+        removedOperation: removedNode
             ? {
-                  id: removedOperation.id,
-                  name: removedOperation.name,
-                  instanceId: removedOperation.instanceId,
+                  id: removedNode.operationId,
+                  name: removedNode.name,
+                  instanceId: removedNode.instanceId,
               }
             : null,
-        pipelineLengthBefore: pipeline.length,
+        pipelineLengthBefore: pipelineStore.getNodes().length,
         timestamp: new Date().toISOString(),
     });
 
-    pipeline = pipeline.filter((item) => item.instanceId !== instanceId);
+    pipelineStore.removeNode(instanceId);
+
+    if (useFlowchartMode && flowchartRenderer) {
+        flowchartRenderer.removeNode(instanceId);
+    }
+
     console.log("[PIPELINE] Pipeline after removal", {
-        pipelineLengthAfter: pipeline.length,
-        remainingOperations: pipeline.map((op) => ({
-            id: op.id,
-            name: op.name,
-            instanceId: op.instanceId,
+        pipelineLengthAfter: pipelineStore.getNodes().length,
+        remainingOperations: pipelineStore.getNodes().map((node) => ({
+            id: node.operationId,
+            name: node.name,
+            instanceId: node.instanceId,
         })),
         timestamp: new Date().toISOString(),
     });
 
-    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-        openOperationSettings,
-        updateRunButton,
-        removeFromPipeline,
-        handleDragStart: handleDragStartWithLogging,
-        handleDragEnd: handleDragEndWithLogging,
-    });
-
-    // Auto-save when removing items
+    await renderCurrentPipeline();
     autoSavePipeline();
 
-    // Pipeline structure changed (operation removed) - always require restart
+    const deviceInputCountAfter = getDeviceInputNodes().length;
+    if (deviceInputCountBefore > 0 && deviceInputCountAfter === 0) {
+        showWarning(
+            "No device_input nodes configured; camera_name required for camera input.",
+        );
+    }
+
     console.log("Operation removed from pipeline - requiring backend restart");
     await updateRestartIndicator(true);
-    // Clear any existing parameter-level restart tracking since structure change overrides it
-    restartRequiredOperations.clear();
+    pipelineStore.clearRestartRequired();
 }
 
 function runPipeline() {
@@ -549,41 +960,50 @@ function runPipeline() {
 function openOperationSettings(opOrItem) {
     const title = `${opOrItem.name || opOrItem.id || "Operation"} Settings`;
     const operationName = opOrItem.name || opOrItem.id;
-    const isSecondary = opOrItem.isSecondary || false; // Get the secondary flag
-    const initialValues = opOrItem.config || {}; // Use actual config values from pipeline
+    const operationId = opOrItem.operationId || opOrItem.id || opOrItem.name;
+    const operationUuid = opOrItem.uuid || opOrItem.instanceId;
+    const isSecondary = opOrItem.isSecondary || false;
+    const initialValues = opOrItem.config || {};
 
-    // Store original config for comparison
     if (!opOrItem.originalConfig) {
         opOrItem.originalConfig = { ...initialValues };
     }
 
     const onSave = (values) => {
         console.log("Saved settings for", opOrItem, values);
-        // Update the config in the pipeline item
-        const isAutoSave = values._isAutoSave;
+        const isAutoSaveFlag = values._isAutoSave;
         const requiresRestart = values._requiresRestart;
-        console.log("isAutoSave flag:", isAutoSave);
+        console.log("isAutoSave flag:", isAutoSaveFlag);
         console.log("requiresRestart flag:", requiresRestart);
 
-        delete values._isAutoSave; // Remove the flag before storing
-        delete values._requiresRestart; // Remove the flag before storing
+        delete values._isAutoSave;
+        delete values._requiresRestart;
 
-        // Store the previous config for comparison
         const previousConfig = { ...opOrItem.config };
 
-        opOrItem.config = values;
-        opOrItem.requiresRestart = requiresRestart || false;
-        console.log("Updated opOrItem.config:", opOrItem.config);
-        console.log(
-            "Updated opOrItem.requiresRestart:",
-            opOrItem.requiresRestart,
-        );
+        // Update the actual node in PipelineStore, not just the copy
+        const node = pipelineStore.getNode(opOrItem.instanceId);
+        if (node) {
+            pipelineStore.updateNodeConfig(opOrItem.instanceId, values);
+            node.requiresRestart = requiresRestart || false;
+            console.log("Updated node.config:", node.config);
+            console.log("Updated node.requiresRestart:", node.requiresRestart);
+            updatePipelineCameraNote();
+        } else {
+            // Fallback to updating the copy if node not found (shouldn't happen)
+            opOrItem.config = values;
+            opOrItem.requiresRestart = requiresRestart || false;
+            console.log("Updated opOrItem.config:", opOrItem.config);
+            console.log(
+                "Updated opOrItem.requiresRestart:",
+                opOrItem.requiresRestart,
+            );
+            updatePipelineCameraNote();
+        }
 
-        // Auto-save when settings are modified (always save, regardless of trigger)
         console.log("Calling autoSavePipeline...");
         autoSavePipeline();
 
-        // Check for restart requirements only for changed parameters
         const changedParams = [];
         for (const [key, value] of Object.entries(values)) {
             if (JSON.stringify(previousConfig[key]) !== JSON.stringify(value)) {
@@ -591,13 +1011,11 @@ function openOperationSettings(opOrItem) {
             }
         }
 
-        // Check restart requirements for each changed parameter
         if (changedParams.length > 0) {
             for (const { paramName, value } of changedParams) {
                 checkPipelineRestartRequirements(opOrItem, paramName, value);
             }
         } else {
-            // If no parameters changed but function was called, still update indicator
             checkPipelineRestartRequirements();
         }
     };
@@ -607,6 +1025,8 @@ function openOperationSettings(opOrItem) {
             globalThis.SettingsPopup.open({
                 title,
                 operationName,
+                operationId,
+                operationUuid,
                 isSecondary,
                 initialValues,
                 onSave,
@@ -685,40 +1105,23 @@ function openOperationSettings(opOrItem) {
 
 function updateRunButton() {
     if (runButton) {
-        runButton.disabled = pipeline.length === 0;
+        runButton.disabled = pipelineStore.getNodes().length === 0;
     }
 }
 
-async function autoSavePipeline() {
-    if (!selectedCamera || !selectedPipeline) {
-        console.log("No camera or pipeline selected, skipping auto-save");
+async function autoSavePipelineImpl() {
+    const selectedPipeline = getSelectedPipeline();
+
+    if (!selectedPipeline) {
+        console.log("No pipeline selected, skipping auto-save");
         return;
     }
 
-    if (isAutoSaving) {
-        pendingAutoSave = true;
-        return;
-    }
-    isAutoSaving = true;
     try {
-        const pipelineConfig = pipeline.map((item) => {
-            const configParams = {};
-            if (item.config) {
-                for (const key of Object.keys(item.config)) {
-                    const value = item.config[key];
-                    if (value !== undefined && value !== null) {
-                        configParams[key] = value;
-                    }
-                }
-            }
-            return {
-                action_name: item.id.replaceAll(".py", ""),
-                action_params: configParams,
-            };
-        });
+        const pipelineConfig = pipelineStore.exportToConfig();
 
         const response = await fetch(
-            `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(selectedPipeline.name)}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -728,33 +1131,21 @@ async function autoSavePipeline() {
         if (!response.ok)
             throw new Error(`HTTP error! status: ${response.status}`);
         await response.json();
+        console.log("Pipeline auto-saved successfully");
     } catch (error) {
         console.error("Failed to auto-save pipeline:", error);
-    } finally {
-        isAutoSaving = false;
-        if (pendingAutoSave) {
-            pendingAutoSave = false;
-            // Trigger another save with the latest state
-            autoSavePipeline();
-        }
     }
 }
 
 async function createNewPipeline() {
-    if (!selectedCamera) {
-        alert("Please select a camera first.");
-        return;
-    }
-
-    // Prompt for new pipeline name
     const newPipelineName = prompt("Enter a name for the new pipeline:");
     if (!newPipelineName || newPipelineName.trim() === "") {
-        return; // User cancelled or entered empty name
+        return;
     }
 
     const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
 
-    // Check if pipeline already exists
+    const pipelines = getPipelines();
     const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
     if (existingPipeline) {
         if (
@@ -767,70 +1158,67 @@ async function createNewPipeline() {
     }
 
     try {
-        // Clear current pipeline completely
-        pipeline.length = 0; // More efficient way to clear array
-        pipeline = []; // Ensure it's a fresh empty array
+        pipelineStore.clearPipeline();
 
-        // Create new pipeline object
         const newPipelineObj = {
             name: pipelineFileName,
             displayName: newPipelineName.trim(),
         };
 
-        // Update selected pipeline
-        selectedPipeline = newPipelineObj;
-
-        // Add to pipelines list if not already there
-        const existingIndex = pipelines.findIndex(
+        const currentPipelines = pipelineStore.state.pipelines;
+        const existingIndex = currentPipelines.findIndex(
             (p) => p.name === pipelineFileName,
         );
         if (existingIndex >= 0) {
-            pipelines[existingIndex] = newPipelineObj;
+            currentPipelines[existingIndex] = newPipelineObj;
         } else {
-            pipelines.push(newPipelineObj);
+            currentPipelines.push(newPipelineObj);
         }
 
-        // Update pipeline dropdown and select the new pipeline
+        pipelineStore.setCurrentPipeline(pipelineFileName);
         populatePipelineDropdown(pipelineFileName);
 
-        // Ensure the dropdown shows the correct selection
         setTimeout(() => {
-            if (pipelineSelect && selectedPipeline) {
-                pipelineSelect.value = selectedPipeline.name;
-                console.log("Dropdown value set to:", selectedPipeline.name);
+            if (pipelineSelect) {
+                pipelineSelect.value = pipelineFileName;
+                console.log("Dropdown value set to:", pipelineFileName);
             }
         }, 10);
 
-        // Re-render the empty pipeline
+        // Automatically add device_input operation
+        const operations = getOperations();
+        const deviceInputOp = operations.find(
+            (op) => op.id === "device_input.py",
+        );
+        if (deviceInputOp) {
+            pipelineStore.addNode(
+                { id: deviceInputOp.id, config: {} },
+                { x: 100, y: 100 },
+            );
+        }
+
         console.log(
-            "[PIPELINE] Re-rendering empty pipeline for new pipeline creation",
+            "[PIPELINE] Re-rendering pipeline with device_input for new pipeline creation",
             {
                 pipelineName: newPipelineName,
                 timestamp: new Date().toISOString(),
             },
         );
-        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-            openOperationSettings,
-            updateRunButton,
-            removeFromPipeline,
-            handleDragStart: handleDragStartWithLogging,
-            handleDragEnd: handleDragEndWithLogging,
-        });
 
-        // Update the run button state
+        await renderCurrentPipeline();
         updateRunButton();
-
-        // Update delete button visibility
         updateDeleteButtonVisibility();
 
-        // Clear restart requirements for new pipeline
-        restartRequiredOperations.clear();
+        // Save the empty pipeline to backend so it persists
+        await autoSavePipelineImpl();
+
+        pipelineStore.clearRestartRequired();
         await updateRestartIndicator(false);
 
         console.log("New pipeline created:", newPipelineName);
-        console.log("Pipeline state:", pipeline);
-        console.log("Selected pipeline:", selectedPipeline);
-        console.log("Pipelines list:", pipelines);
+        console.log("Pipeline state:", pipelineStore.getNodes());
+        console.log("Selected pipeline:", getSelectedPipeline());
+        console.log("Pipelines list:", getPipelines());
     } catch (error) {
         console.error("Failed to create new pipeline:", error);
         alert(
@@ -840,19 +1228,16 @@ async function createNewPipeline() {
 }
 
 async function deleteCurrentPipeline() {
+    const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
         alert("No pipeline selected to delete.");
         return;
     }
 
-    if (!selectedCamera) {
-        alert("No camera selected.");
-        return;
-    }
+    const pipelineToDelete = selectedPipeline;
 
-    // Show confirmation dialog
     const confirmed = confirm(
-        `Are you sure you want to delete the pipeline "${selectedPipeline.displayName}"?\n\nThis action cannot be undone.`,
+        `Are you sure you want to delete the pipeline "${pipelineToDelete.displayName}"?\n\nThis action cannot be undone.`,
     );
 
     if (!confirmed) {
@@ -860,9 +1245,8 @@ async function deleteCurrentPipeline() {
     }
 
     try {
-        // Call the backend delete endpoint
         const response = await fetch(
-            `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(selectedCamera.name)}/${encodeURIComponent(selectedPipeline.name)}`,
+            `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(pipelineToDelete.name)}`,
             {
                 method: "DELETE",
                 headers: {
@@ -878,9 +1262,9 @@ async function deleteCurrentPipeline() {
         const result = await response.json();
         console.log("Pipeline deleted from backend:", result);
 
-        // Remove the pipeline from the pipelines array
-        const pipelineIndex = pipelines.findIndex(
-            (p) => p.name === selectedPipeline.name,
+        const currentPipelines = pipelineStore.state.pipelines;
+        const pipelineIndex = currentPipelines.findIndex(
+            (p) => p.name === pipelineToDelete.name,
         );
 
         if (pipelineIndex === -1) {
@@ -889,49 +1273,22 @@ async function deleteCurrentPipeline() {
             return;
         }
 
-        // Remove from array
-        pipelines.splice(pipelineIndex, 1);
+        currentPipelines.splice(pipelineIndex, 1);
 
-        console.log("Deleted pipeline:", selectedPipeline.name);
-        console.log("Remaining pipelines:", pipelines);
+        console.log("Deleted pipeline:", pipelineToDelete.name);
+        console.log("Remaining pipelines:", currentPipelines);
 
-        // Clear current pipeline
-        pipeline.length = 0;
-        pipeline = [];
+        pipelineStore.clearPipeline();
+        pipelineStore.setCurrentPipeline(null);
 
-        // Update selected pipeline
-        selectedPipeline = null;
-
-        // Update pipeline dropdown
         populatePipelineDropdown();
 
-        // Re-render the empty pipeline
-        console.log("[PIPELINE] Re-rendering empty pipeline after deletion", {
-            deletedPipelineName: selectedPipeline.displayName,
-            timestamp: new Date().toISOString(),
-        });
-        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-            openOperationSettings,
-            updateRunButton,
-            removeFromPipeline,
-            handleDragStart: handleDragStartWithLogging,
-            handleDragEnd: handleDragEndWithLogging,
-        });
-
-        // Update the run button state
+        await renderCurrentPipeline();
         updateRunButton();
-
-        // Update delete button visibility
         updateDeleteButtonVisibility();
 
-        // Clear restart requirements for deleted pipeline
         restartRequiredOperations.clear();
         await updateRestartIndicator(false);
-
-        console.log("[PIPELINE] Pipeline deleted successfully", {
-            deletedPipeline: selectedPipeline.displayName,
-            timestamp: new Date().toISOString(),
-        });
     } catch (error) {
         console.error("Failed to delete pipeline:", error);
         alert(
@@ -942,15 +1299,14 @@ async function deleteCurrentPipeline() {
 
 function updateDeleteButtonVisibility() {
     if (deletePipelineButton) {
-        if (selectedPipeline && selectedCamera) {
+        const selectedPipeline = getSelectedPipeline();
+        if (selectedPipeline) {
             deletePipelineButton.classList.remove("hidden");
         } else {
             deletePipelineButton.classList.add("hidden");
         }
     }
 }
-
-// --- Restart Indicator Functions
 
 async function updateRestartIndicator(show = false) {
     try {
@@ -963,6 +1319,7 @@ async function updateRestartIndicator(show = false) {
             `Backend notified: restart ${show ? "required" : "not required"}`,
         );
     } catch (error) {
+        showDanger("Failed to notify backend about restart requirement");
         console.error(
             "Failed to notify backend about restart requirement:",
             error,
@@ -982,19 +1339,20 @@ async function updateRestartIndicator(show = false) {
         restartIndicator.classList.add("backend-state-warning");
     } else {
         restartIndicator.classList.add("hidden");
-        // Clear warning styling so future checks can show it correctly
         restartIndicator.classList.remove("backend-state-warning");
+    }
+
+    if (show) {
+        hideAllThreadBadges();
     }
 }
 
 async function handleRestartBackend() {
     try {
-        // Get the restart button from inside the restartIndicator
         const restartButton = restartIndicator?.querySelector(
             "#restartBackendButton",
         );
 
-        // Disable button during restart
         if (restartButton) {
             restartButton.disabled = true;
             restartButton.textContent = "Restarting...";
@@ -1010,10 +1368,8 @@ async function handleRestartBackend() {
 
         console.log("Backend restarted successfully");
 
-        // Clear restart tracking state before reload
         restartRequiredOperations.clear();
 
-        // Reload page to refresh all state
         globalThis.location.reload();
     } catch (error) {
         console.error("Failed to restart backend:", error);
@@ -1054,17 +1410,15 @@ async function checkPipelineRestartRequirements(
     changedParamName = null,
     changedValue = null,
 ) {
-    // Don't update restart indicator if backend restart is already shown
-    const restartIndicator = document.getElementById("restartIndicator");
+    const restartIndicatorEl = document.getElementById("restartIndicator");
     if (
-        restartIndicator &&
-        !restartIndicator.classList.contains("hidden") &&
-        restartIndicator.classList.contains("backend-state-warning")
+        restartIndicatorEl &&
+        !restartIndicatorEl.classList.contains("hidden") &&
+        restartIndicatorEl.classList.contains("backend-state-warning")
     ) {
-        return; // Backend restart indicator is already shown, don't override
+        return;
     }
 
-    // If checking a specific parameter change
     if (operationItem && changedParamName !== null && changedValue !== null) {
         await checkSpecificParameterRestart(
             operationItem,
@@ -1072,11 +1426,9 @@ async function checkPipelineRestartRequirements(
             changedValue,
         );
     } else if (operationItem) {
-        // If just checking an operation (e.g., when operation is added/removed)
         await checkOperationRestartRequirements(operationItem);
     }
 
-    // Update restart indicator based on stored restart requirements
     const hasRestartRequirements = restartRequiredOperations.size > 0;
     await updateRestartIndicator(hasRestartRequirements);
 }
@@ -1087,7 +1439,6 @@ async function checkSpecificParameterRestart(
     currentValue,
 ) {
     try {
-        // Fetch the operation's config definition
         const isSecondary = operationItem.isSecondary || false;
         const response = await fetch(
             `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(operationItem.id)}/${isSecondary ? 1 : 0}`,
@@ -1099,10 +1450,8 @@ async function checkSpecificParameterRestart(
             const paramDef = params[paramName];
 
             if (paramDef?.restart_for_change) {
-                // Get the original value from when the pipeline was loaded
                 const originalValue = operationItem.originalConfig[paramName];
 
-                // Check if current value differs from original value (not default)
                 const requiresRestart =
                     currentValue !== undefined &&
                     currentValue !== null &&
@@ -1111,7 +1460,6 @@ async function checkSpecificParameterRestart(
                     JSON.stringify(currentValue) !==
                         JSON.stringify(originalValue);
 
-                // Update restart tracking
                 const instanceId = operationItem.instanceId;
                 if (!restartRequiredOperations.has(instanceId)) {
                     restartRequiredOperations.set(instanceId, new Set());
@@ -1125,13 +1473,11 @@ async function checkSpecificParameterRestart(
                     );
                 } else {
                     paramSet.delete(paramName);
-                    // If no parameters require restart for this operation, remove it from the map
                     if (paramSet.size === 0) {
                         restartRequiredOperations.delete(instanceId);
                     }
                 }
 
-                // Update the operation's restart flag for backward compatibility
                 operationItem.requiresRestart = paramSet.size > 0;
             }
         }
@@ -1144,7 +1490,6 @@ async function checkSpecificParameterRestart(
 }
 
 async function checkOperationRestartRequirements(operationItem) {
-    // Check all parameters of the operation for restart requirements
     for (const [paramName, value] of Object.entries(
         operationItem.config || {},
     )) {
@@ -1152,17 +1497,15 @@ async function checkOperationRestartRequirements(operationItem) {
     }
 }
 
-// Function to refresh pipeline creator data and UI after reconnection
 async function refreshPipelineCreator() {
     try {
         console.log(
             "[PIPELINE] Refreshing pipeline creator after reconnection",
         );
 
-        // Re-fetch operations
         await fetchAvailableOperations();
 
-        // Re-render operations list if it's already initialized
+        const operations = getOperations();
         if (operationsList && operations.length > 0) {
             renderOperations(
                 operations,
@@ -1172,36 +1515,83 @@ async function refreshPipelineCreator() {
             );
         }
 
-        // Re-fetch cameras
         await fetchAvailableCameras();
-        populateCameraDropdown();
 
-        // If we have a selected camera, re-fetch its pipelines
-        if (selectedCamera) {
-            await fetchPipelinesForCamera(selectedCamera.name);
-            populatePipelineDropdown();
+        await fetchPipelines();
+        populatePipelineDropdown();
 
-            // If we have a selected pipeline, reload it
-            if (selectedPipeline) {
-                await loadPipelineIntoBuilder(
-                    selectedCamera.name,
-                    selectedPipeline.name,
-                );
-            }
+        const selectedPipeline = getSelectedPipeline();
+        if (selectedPipeline) {
+            await loadPipelineIntoBuilder(selectedPipeline.name);
         }
 
-        // Update delete button visibility
         updateDeleteButtonVisibility();
 
-        // Check backend restart status
         await checkBackendRestartStatus();
-
-        console.log("[PIPELINE] Pipeline creator refreshed successfully");
     } catch (error) {
         console.error("[PIPELINE] Error refreshing pipeline creator:", error);
     }
 }
 
+async function handleFlowchartPipelineChange(changeEvent) {
+    const selectedPipeline = getSelectedPipeline();
+
+    if (!selectedPipeline) {
+        const shouldCreate = confirm(
+            "You need to create a pipeline before adding operations. Would you like to create a new pipeline now?",
+        );
+        if (!shouldCreate) {
+            return;
+        }
+
+        await createNewPipeline();
+
+        if (!getSelectedPipeline()) {
+            return;
+        }
+    }
+
+    if (changeEvent.type === "add") {
+        const node = pipelineStore.addNode(
+            { id: changeEvent.operationId },
+            changeEvent.position,
+        );
+        if (!node) {
+            console.warn(`Operation ${changeEvent.operationId} not found`);
+            return;
+        }
+
+        await renderCurrentPipeline();
+        autoSavePipeline();
+        updateRestartIndicator(true);
+        pipelineStore.clearRestartRequired();
+        hideAllThreadBadges();
+        updatePipelineCameraNote();
+    }
+}
+
+function initFlowchartRenderer() {
+    flowchartCanvas = document.getElementById("flowchartCanvas");
+
+    if (!flowchartCanvas) {
+        console.warn("Flowchart canvas not found, falling back to list mode");
+        useFlowchartMode = false;
+        return;
+    }
+
+    flowchartRenderer = new FlowchartRenderer(flowchartCanvas, {
+        gridSpacing: 20,
+        nodeSpacingX: 300,
+        nodeSpacingY: 150,
+        openOperationSettings,
+        updateRunButton,
+        removeFromPipeline,
+        onPipelineChange: handleFlowchartPipelineChange,
+        autoSavePipeline,
+    });
+
+    globalThis.flowchartRenderer = flowchartRenderer;
+}
 export async function initPipelineCreator() {
     if (isInitialized) return;
 
@@ -1210,17 +1600,14 @@ export async function initPipelineCreator() {
     pipelinePlaceholder = document.getElementById("pipelinePlaceholder");
     operationsList = document.getElementById("operationsList");
     runButton = document.getElementById("runButton");
-    cameraSelect = document.getElementById("cameraSelect");
     pipelineSelect = document.getElementById("pipelineSelect");
+    pipelineCameraNote = document.getElementById("pipelineCameraNote");
     newPipelineButton = document.getElementById("newPipelineButton");
     deletePipelineButton = document.getElementById("deletePipelineButton");
     restartIndicator = document.getElementById("restartIndicator");
 
-    // Initialize description popup
     createDescriptionPopup();
 
-    // Inject component-specific styles once: hide action buttons outside the
-    // pipeline builder and apply grayscale by default, removing it on hover.
     const styleElementId = "pipeline-creator-styles";
     if (!document.getElementById(styleElementId)) {
         const styleEl = document.createElement("style");
@@ -1230,161 +1617,114 @@ export async function initPipelineCreator() {
 #pipelineArea .op-settings-btn, #pipelineArea .remove-btn { display: inline-flex !important; }
 .icon-grayscale { filter: grayscale(100%); transition: filter .15s ease-in-out; }
 #pipelineArea .group:hover .icon-grayscale, #pipelineArea .group:focus-within .icon-grayscale { filter: none; }
+#flowchartCanvas { background-color: #1a1a1a; }
+.flowchart-node .node-settings-btn:hover img,
+.flowchart-node .node-remove-btn:hover img { filter: none !important; }
+.pipeline-error-node { border-color: #ff5c5c !important; }
+.pipeline-downstream-disabled { filter: grayscale(100%); opacity: 0.55; }
+.pipeline-downstream-disabled .icon-grayscale { filter: grayscale(100%) !important; }
+.pipeline-error-icon, .error-info-icon { pointer-events: auto; }
 `;
         document.head.appendChild(styleEl);
     }
 
-    // Fetch operations from server before rendering
+    initFlowchartRenderer();
+
     await fetchAvailableOperations();
 
-    // Fetch cameras from server and populate dropdown
     await fetchAvailableCameras();
-    populateCameraDropdown();
 
-    // Add camera selection event listener
-    if (cameraSelect) {
-        cameraSelect.addEventListener("change", handleCameraSelection);
-    }
-
-    // Add pipeline selection event listener
     if (pipelineSelect) {
         pipelineSelect.addEventListener("change", handlePipelineSelection);
     }
 
-    // Fetch pipelines for initially selected camera
-    if (selectedCamera) {
-        await fetchPipelinesForCamera(selectedCamera.name);
-        populatePipelineDropdown();
-    }
+    await fetchPipelines();
+    populatePipelineDropdown();
 
-    // Check for pre-selected values and trigger auto-fill if both are selected
     await checkAndTriggerAutoFill();
 
-    // Update delete button visibility
     updateDeleteButtonVisibility();
 
-    // Setup drag and drop handlers
-    const setupDragDrop = (element) => {
-        element.addEventListener("dragenter", (e) =>
-            handleDragEnterPipeline(e),
-        );
-        element.addEventListener("dragover", (e) => {
-            // Prevent drag-over feedback if no pipeline is selected
-            if (!selectedPipeline) {
-                e.preventDefault();
-                return;
-            }
-            handleDragOverPipeline(e, pipeline, pipelineContainer);
-        });
-        element.addEventListener("dragleave", (e) =>
-            handleDragLeavePipeline(e, pipeline, pipelinePlaceholder),
-        );
-        element.addEventListener("drop", async (e) => {
-            // Prevent dropping operations if no pipeline is selected
-            if (!selectedPipeline) {
-                console.log(
-                    "[PIPELINE] Cannot drop operations: no pipeline selected",
-                );
-                e.preventDefault();
-                return;
-            }
+    if (!useFlowchartMode) {
+        const setupDragDrop = (element) => {
+            if (!element) return;
 
-            const pipelineLengthBefore = pipeline.length;
-            const pipelineOrderBefore = pipeline
-                .map((item) => item.instanceId)
-                .join(",");
-
-            console.log("[PIPELINE] Processing drop event", {
-                pipelineLengthBefore,
-                pipelineOrderBefore: pipelineOrderBefore.split(","),
-                elementType: element.tagName,
-                elementId: element.id,
-                timestamp: new Date().toISOString(),
-            });
-
-            handleDropOnPipelineWithLogging(
-                e,
-                pipeline,
-                operations,
-                pipelineContainer,
-                pipelinePlaceholder,
-                {
-                    renderPipeline: () =>
-                        renderPipeline(
-                            pipeline,
-                            pipelineContainer,
-                            pipelinePlaceholder,
-                            {
-                                updateRunButton,
-                                handleDragStart: handleDragStartWithLogging,
-                                handleDragEnd: handleDragEndWithLogging,
-                                removeFromPipeline,
-                                openOperationSettings,
-                            },
-                        ),
-                    updateRunButton,
-                    openOperationSettings,
-                },
+            element.addEventListener("dragenter", (e) =>
+                handleDragEnterPipeline(e),
             );
-
-            // Check if pipeline structure changed (added, removed, or reordered)
-            const pipelineOrderAfter = pipeline
-                .map((item) => item.instanceId)
-                .join(",");
-            const structureChanged =
-                pipeline.length !== pipelineLengthBefore ||
-                pipelineOrderBefore !== pipelineOrderAfter;
-
-            let operationType = "UNCHANGED";
-            if (structureChanged) {
-                if (pipeline.length > pipelineLengthBefore) {
-                    operationType = "ADDED";
-                } else if (pipeline.length < pipelineLengthBefore) {
-                    operationType = "REMOVED";
-                } else {
-                    operationType = "REORDERED";
+            element.addEventListener("dragover", (e) => {
+                if (!getSelectedPipeline()) {
+                    e.preventDefault();
+                    return;
                 }
-            }
-            console.log("[PIPELINE] Structure change analysis", {
-                pipelineLengthAfter: pipeline.length,
-                pipelineOrderAfter: pipelineOrderAfter.split(","),
-                structureChanged,
-                operationType,
-                timestamp: new Date().toISOString(),
+                handleDragOverPipeline(e, getPipeline(), pipelineContainer);
             });
-
-            if (structureChanged) {
-                // Pipeline structure changed - always require restart
-                console.log(
-                    "[PIPELINE] Pipeline structure changed - requiring backend restart",
-                );
-                await updateRestartIndicator(true);
-                // Clear any existing parameter-level restart tracking since structure change overrides it
-                restartRequiredOperations.clear();
-
-                // Auto-save when pipeline structure changes (add, remove, reorder)
-                autoSavePipeline();
-            } else if (pipeline.length > pipelineLengthBefore) {
-                // If operations were added, check restart requirements for all operations
-                console.log(
-                    "[PIPELINE] New operations added, checking restart requirements",
-                );
-                for (const item of pipeline) {
-                    checkPipelineRestartRequirements(item);
+            element.addEventListener("dragleave", (e) =>
+                handleDragLeavePipeline(e, getPipeline(), pipelinePlaceholder),
+            );
+            element.addEventListener("drop", async (e) => {
+                if (!getSelectedPipeline()) {
+                    console.log(
+                        "[PIPELINE] Cannot drop operations: no pipeline selected",
+                    );
+                    e.preventDefault();
+                    return;
                 }
 
-                // Auto-save when operations are added
-                autoSavePipeline();
-            } else {
-                console.log("[PIPELINE] No structure changes detected");
-            }
-        });
-    };
+                const pipelineNodes = getPipeline();
+                const pipelineLengthBefore = pipelineNodes.length;
+                const pipelineOrderBefore = pipelineNodes
+                    .map((item) => item.instanceId)
+                    .join(",");
 
-    // Add drag/drop event listeners
-    setupDragDrop(pipelineArea);
-    setupDragDrop(pipelineContainer);
-    setupDragDrop(pipelinePlaceholder);
+                handleDropOnPipelineWithLogging(
+                    e,
+                    pipelineNodes,
+                    getOperations(),
+                    pipelineContainer,
+                    pipelinePlaceholder,
+                    {
+                        renderPipeline: () =>
+                            renderPipeline(
+                                getPipeline(),
+                                pipelineContainer,
+                                pipelinePlaceholder,
+                                {
+                                    updateRunButton,
+                                    handleDragStart: handleDragStartWithLogging,
+                                    handleDragEnd: handleDragEndWithLogging,
+                                    removeFromPipeline,
+                                    openOperationSettings,
+                                },
+                            ),
+                        updateRunButton,
+                        openOperationSettings,
+                    },
+                );
+
+                const pipelineNodesAfter = getPipeline();
+                const pipelineOrderAfter = pipelineNodesAfter
+                    .map((item) => item.instanceId)
+                    .join(",");
+                const structureChanged =
+                    pipelineNodesAfter.length !== pipelineLengthBefore ||
+                    pipelineOrderBefore !== pipelineOrderAfter;
+
+                if (structureChanged) {
+                    console.log(
+                        "[PIPELINE] Pipeline structure changed - requiring backend restart",
+                    );
+                    await updateRestartIndicator(true);
+                    pipelineStore.clearRestartRequired();
+                    autoSavePipeline();
+                }
+            });
+        };
+
+        setupDragDrop(pipelineArea);
+        setupDragDrop(pipelineContainer);
+        setupDragDrop(pipelinePlaceholder);
+    }
 
     if (runButton) {
         runButton.addEventListener("click", runPipeline);
@@ -1398,7 +1738,6 @@ export async function initPipelineCreator() {
         deletePipelineButton.addEventListener("click", deleteCurrentPipeline);
     }
 
-    // Set up restart button event listener (button is inside restartIndicator)
     if (restartIndicator) {
         const restartButton = restartIndicator.querySelector(
             "#restartBackendButton",
@@ -1408,37 +1747,14 @@ export async function initPipelineCreator() {
         }
     }
 
-    // Initial render
-    console.log("[PIPELINE] Initial render of operations and pipeline", {
-        operationsCount: operations.length,
-        pipelineLength: pipeline.length,
-        timestamp: new Date().toISOString(),
-    });
     renderOperations(
-        operations,
+        getOperations(),
         operationsList,
         openOperationSettings,
         handleDragStartWithLogging,
     );
-    renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-        openOperationSettings,
-        updateRunButton,
-        removeFromPipeline,
-        handleDragStart: handleDragStartWithLogging,
-        handleDragEnd: handleDragEndWithLogging,
-    });
 
-    // Check backend restart status on initialization
-    await checkBackendRestartStatus();
-
-    isInitialized = true;
-
-    // Check if backend restart indicator should be shown (legacy support)
-    if (globalThis.showBackendRestartIndicator) {
-        globalThis.showBackendRestartIndicator();
-    }
-
-    // Expose functions for external modules (like dragDrop.js)
+    // Initialize globalThis.pipelineCreator BEFORE rendering so it's available during placeholder checks
     globalThis.pipelineCreator = {
         autoSavePipeline: autoSavePipeline,
         updateRestartIndicator: updateRestartIndicator,
@@ -1446,5 +1762,26 @@ export async function initPipelineCreator() {
         checkBackendRestartStatus: checkBackendRestartStatus,
         restartIndicator: restartIndicator,
         refreshPipelineCreator: refreshPipelineCreator,
+        flowchartRenderer: flowchartRenderer,
+        selectedPipeline: null,
+        getAvailableCameras: () => pipelineStore.state.cameras,
+        refreshAvailableCameras: () => fetchAvailableCameras(),
+        handleOperationErrorUpdate: handleOperationErrorUpdate,
+        getOperations: () => pipelineStore.state.operations,
     };
+
+    Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {
+        get: () => getSelectedPipeline(),
+        enumerable: true,
+    });
+
+    await renderCurrentPipeline();
+
+    await checkBackendRestartStatus();
+
+    isInitialized = true;
+
+    if (globalThis.showBackendRestartIndicator) {
+        globalThis.showBackendRestartIndicator();
+    }
 }

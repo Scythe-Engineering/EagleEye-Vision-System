@@ -6,9 +6,10 @@ from pupil_apriltags import Detection
 from ..modules.apriltags.pnp_localization import PnpLocalization
 from ..modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class PnpCameraLocalizationDefinition:
+class PnpCameraLocalizationDefinition(OperationInstance):
     """Definition for camera localization operations using AprilTags."""
 
     def __init__(
@@ -47,25 +48,3 @@ class PnpCameraLocalizationDefinition:
             or None if pose estimation failed.
         """
         return self.pose_estimator.estimate_pose_from_detections(detections)
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the PnP camera localization outputs.
-
-        This operation returns pose estimation data (transform/numbers) only,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for transform-only operations.
-        """
-        return None
-
-    def update_config(self, _: dict) -> None:
-        """Update the configuration of the PnP camera localization. No live-updatable parameters available.
-
-        Args:
-            json_config: JSON configuration for the PnP camera localization (ignored).
-        """
-        pass

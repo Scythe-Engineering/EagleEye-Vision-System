@@ -64,13 +64,18 @@ The EagleEye WebUI is a comprehensive web-based interface for FIRST Robotics Com
 
 ### Pipeline Management
 
-- Visual pipeline creation and editing
-- Drag-and-drop interface for adding, removing, and reordering operations
-- Automatic pipeline saving on all structure changes (add, remove, reorder)
-- Settings configuration per pipeline stage
-- Backend state monitoring and restart requirements
-- Graceful handling of cameras without pipelines (see [Pipeline Error Handling](PIPELINE_ERROR_HANDLING.md))
-- Automatic creation of camera/pipeline entries when saving new pipelines
+- **Flowchart-style Visual Editor**: Interactive canvas-based pipeline creation with grid-based placement
+- **Drag-and-Drop Operations**: Drag operations from the operations panel onto the flowchart canvas
+- **Grid-Snapping**: Operations snap to a grid for organized layout and precise positioning
+- **Visual Node Interface**: Each operation displays as a node with input/output ports based on configuration data
+- **Connection Visualization**: SVG-based curved lines connecting operation nodes (future enhancement)
+- **Scrollable Canvas**: Large 4000x4000px canvas area for complex pipeline layouts
+- **Automatic Pipeline Saving**: Real-time saving on all structure changes (add, remove, reposition)
+- **Settings Configuration**: Click nodes to configure operation parameters
+- **Backend State Monitoring**: Automatic detection of restart requirements after pipeline changes
+- **Graceful Handling of Cameras**: Cameras without pipelines display appropriately (see [Pipeline Error Handling](PIPELINE_ERROR_HANDLING.md))
+- **Dynamic Pipeline Creation**: Automatic creation of camera/pipeline entries when saving new pipelines
+- **Detailed Documentation**: Comprehensive flowchart interface guide (see [Pipeline Flowchart Interface](PIPELINE_FLOWCHART_INTERFACE.md))
 
 ### Settings Management
 
@@ -103,6 +108,12 @@ webui/
 │   ├── main.js                # Application entry point
 │   ├── init3DView.js          # 3D visualization setup
 │   ├── pipeline/              # Pipeline management
+│   │   ├── flowchartCanvas.js    # Canvas and grid management
+│   │   ├── flowchartNode.js      # Operation node components
+│   │   ├── flowchartConnections.js # Connection visualization
+│   │   ├── rendering.js          # Flowchart renderer
+│   │   ├── pipelineCreator.js    # Pipeline state management
+│   │   └── dragDrop.js           # Drag-and-drop utilities
 │   ├── settings/              # Settings management
 │   ├── ui/                    # UI components
 │   ├── feeds/                 # Camera feed handling
@@ -123,7 +134,8 @@ webui/
 
 - **Python**: Core application logic
 - **Flask**: Web framework
-- **Server-Sent Events (SSE)**: Real-time communication
+- **SocketIO**: Primary real-time communication for bidirectional messaging
+- **Server-Sent Events (SSE)**: Fallback real-time communication (single-client support)
 - **Flask-CORS**: Cross-origin resource sharing
 - **OpenCV**: Camera processing and streaming
 - **NumPy**: Numerical computations
@@ -132,7 +144,8 @@ webui/
 
 - **JavaScript (ES6)**: Client-side logic
 - **Three.js**: 3D visualization
-- **EventSource API**: Real-time communication (SSE)
+- **Socket.IO Client**: Primary real-time communication library
+- **EventSource API**: Fallback for SSE communication
 - **Tailwind CSS**: Utility-first styling
 - **HTML5**: Semantic markup
 

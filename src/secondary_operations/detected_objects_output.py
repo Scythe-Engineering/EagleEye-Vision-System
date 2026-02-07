@@ -4,9 +4,10 @@ from typing import Any, Dict, List, Sequence
 import numpy as np
 
 from src.webui.web_server import EagleEyeInterface
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class DetectedObjectsOutput:
+class DetectedObjectsOutput(OperationInstance):
     def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Initialize detected objects output operation.
 
@@ -17,6 +18,14 @@ class DetectedObjectsOutput:
         self._last_signature: tuple | None = None
 
     def _is_valid_position(self, position: Any) -> bool:
+        """Check if a position is a valid 3D coordinate.
+
+        Args:
+            position: Candidate position value to validate.
+
+        Returns:
+            True if the position is a finite 3D coordinate, False otherwise.
+        """
         return (
             isinstance(position, Iterable)
             and len(position) == 3
@@ -29,6 +38,14 @@ class DetectedObjectsOutput:
     def _build_detection_payload(
         self, detection: Dict[str, Any]
     ) -> Dict[str, Any] | None:
+        """Build a sanitized payload for a single detection.
+
+        Args:
+            detection: Raw detection dictionary to normalize.
+
+        Returns:
+            Normalized payload dictionary, or None when invalid.
+        """
         position = detection.get("position_3d")
         if not self._is_valid_position(position):
             return None
@@ -48,6 +65,14 @@ class DetectedObjectsOutput:
         return payload
 
     def _compute_signature(self, detections: Sequence[Dict[str, Any]]) -> tuple:
+        """Compute a stable signature for a set of detections.
+
+        Args:
+            detections: Normalized detection payloads.
+
+        Returns:
+            Hashable signature tuple representing the detections.
+        """
         signature_items = []
         for detection in detections:
             position = detection.get("position_3d")
@@ -90,18 +115,3 @@ class DetectedObjectsOutput:
         self.web_interface.update_detected_objects(payloads)
         self._last_signature = signature
         return detections
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Return frame unchanged since visualization happens in web interface.
-
-        Args:
-            frame: Input frame.
-
-        Returns:
-            The input frame unchanged.
-        """
-        return frame
-
-    def update_config(self, _: Dict[str, Any]) -> None:
-        """Update configuration parameters (no live parameters available)."""
-        return None

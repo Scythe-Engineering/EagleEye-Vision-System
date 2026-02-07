@@ -1,8 +1,9 @@
 import numpy as np
 from typing import List, Dict, Any
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class AngleToObjects:
+class AngleToObjects(OperationInstance):
     """Calculate horizontal angles to detected objects from color threshold detections.
 
     This operation takes color threshold detection results and computes the horizontal

@@ -3,28 +3,32 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import numpy as np
+from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.device_management_utils.compute_pool import ComputePool
+from src.webui.web_server import EagleEyeInterface
 
 
-class RobotLocalToFieldTransform:
-    def __init__(self) -> None:
+class RobotLocalToFieldTransform(OperationInstance):
+    """Convert robot-local detections to field coordinates.
+
+    Inputs:
+        Detections in robot-local coordinates and optional robot pose transform.
+    Outputs:
+        Detections in field coordinates with updated position data.
+    """
+
+    def __init__(
+        self, web_interface: EagleEyeInterface, compute_pool: ComputePool
+    ) -> None:
         """Initialize robot-local to field transform operation.
 
-        This operation converts detection positions expressed in the robot's
-        local coordinate frame into field coordinates using the latest robot
-        pose transform.
-        """
-        self._latest_robot_transform: np.ndarray | None = None
-
-    def back_propagate_input(self, robot_transform: Any) -> None:
-        """Receive the latest robot transform via back propagation.
-
         Args:
-            robot_transform: Robot pose as a 4x4 world-from-robot transform.
+            web_interface: Web interface for runtime updates.
+            compute_pool: Compute pool available for device operations.
         """
-        matrix = np.asarray(robot_transform, dtype=float)
-        if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
-            raise ValueError("Robot transform must be a finite 4x4 matrix.")
-        self._latest_robot_transform = matrix
+        self.web_interface = web_interface
+        self.compute_pool = compute_pool
+        self._latest_robot_transform: np.ndarray | None = None
 
     @staticmethod
     def _extract_local_position(detection: Dict[str, Any]) -> np.ndarray | None:
@@ -63,21 +67,30 @@ class RobotLocalToFieldTransform:
         translation_vector = self._latest_robot_transform[:3, 3]
         return rotation_matrix @ local_position + translation_vector
 
-    def run(
-        self, detections: List[Dict[str, Any]] | None
-    ) -> List[Dict[str, Any]] | None:
-        """Convert robot-local detection positions to field coordinates.
+    def run(self, input_data: Any) -> List[Dict[str, Any]] | None:
+        """Transform detections from robot-local to field coordinates.
 
         Args:
-            detections: List of detection dictionaries.
+            input_data: Dict with `detections` list and optional `robot_pose` 4x4 matrix.
 
         Returns:
             Updated detections list with `position_3d` in field coordinates.
         """
+        if isinstance(input_data, dict):
+            detections = input_data.get("detections")
+            robot_pose = input_data.get("robot_pose")
+        else:
+            detections = input_data
+            robot_pose = None
+
+        if robot_pose is not None:
+            matrix = np.asarray(robot_pose, dtype=float)
+            if matrix.shape != (4, 4) or not np.all(np.isfinite(matrix)):
+                raise ValueError("Robot transform must be a finite 4x4 matrix.")
+            self._latest_robot_transform = matrix
+
         if detections is None:
             return None
-        if self._latest_robot_transform is None:
-            return detections
 
         transformed_detections: List[Dict[str, Any]] = []
         for detection in detections:
@@ -97,22 +110,3 @@ class RobotLocalToFieldTransform:
             transformed_detections.append(updated_detection)
 
         return transformed_detections
-
-    def visualize(self, frame: np.ndarray) -> np.ndarray:
-        """Return frame unchanged since visualization occurs in web interface.
-
-        Args:
-            frame: Input frame.
-
-        Returns:
-            The input frame unchanged.
-        """
-        return frame
-
-    def update_config(self, _: Dict[str, Any]) -> None:
-        """Update configuration parameters (no live parameters available).
-
-        Args:
-            _: Unused configuration dictionary.
-        """
-        return None

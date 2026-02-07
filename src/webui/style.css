@@ -88,3 +88,29 @@
     transform: translateX(120%) scale(0.8) !important;
     opacity: 0 !important;
 }
+
+/* Settings modal single-panel layout adjustments */
+#operationSettingsContent {
+    display: flex;
+    gap: 1rem;
+}
+
+#operationSettingsContent.single-panel-layout {
+    justify-content: center;
+    gap: 0;
+}
+
+#operationSettingsContent.single-panel-layout > #operationSettingsModal {
+    display: none;
+}
+
+#operationSettingsContent.single-panel-layout > #operationLiveViewPanel {
+    flex: 1;
+    max-width: 960px;
+    width: min(960px, 100%);
+}
+
+#operationLiveViewPanel.live-view-fullscreen {
+    max-width: 960px;
+    width: min(960px, 100%);
+}

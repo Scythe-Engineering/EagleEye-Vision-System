@@ -2,7 +2,21 @@
     "class_name": "ColorThresholdDetectionDefinition",
     "description": "Color-based object detection with downscaling, letterboxing, HSV color thresholding for multiple objects, contour extraction, and bounding box calculation. Returns detections with bounding boxes scaled to original frame coordinates.",
     "category": "det",
+    "input_nodes": [
+        {
+            "name": "frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": ["detections"],
     "parameters": {
+        "camera_parameters_path": {
+            "type": "str",
+            "description": "Path to the camera parameters file",
+            "default": "{project_root}/config/camera_parameters.json",
+            "required": true,
+            "restart_for_change": true
+        },
         "target_size": {
             "type": "int",
             "description": "Target size for square letterboxed image. Frame will be resized maintaining aspect ratio and padded to this size.",
@@ -14,10 +28,41 @@
         },
         "color_ranges": {
             "type": "list",
-            "description": "List of color dictionaries for multi-object detection. Each dictionary must contain: 'name' (string), 'class_id' (int), 'lower_hsv' (list of 3 ints), 'upper_hsv' (list of 3 ints). HSV values: H (0-179), S (0-255), V (0-255). If null, defaults to red color range.",
+            "item_type": "object",
+            "description": "List of color ranges for multi-object detection. Each color range contains name, class_id, and HSV bounds.",
             "default": null,
-            "required": false,
-            "restart_for_change": false
+            "required": true,
+            "restart_for_change": false,
+            "schema": {
+                "name": {
+                    "type": "str",
+                    "description": "Name of the color (e.g., 'red', 'blue')",
+                    "default": "new_color"
+                },
+                "class_id": {
+                    "type": "int",
+                    "description": "Integer class identifier for the color",
+                    "default": 0
+                },
+                "lower_hsv": {
+                    "type": "list",
+                    "item_type": "int",
+                    "description": "Lower HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
+                    "default": [0, 0, 0],
+                    "min_items": 3,
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"]
+                },
+                "upper_hsv": {
+                    "type": "list",
+                    "item_type": "int",
+                    "description": "Upper HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
+                    "default": [179, 255, 255],
+                    "min_items": 3,
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"]
+                }
+            }
         },
         "min_area": {
             "type": "int",

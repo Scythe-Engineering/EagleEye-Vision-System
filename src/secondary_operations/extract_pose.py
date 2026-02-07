@@ -1,8 +1,9 @@
 import numpy as np
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
+from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class ExtractPose:
+class ExtractPose(OperationInstance):
     """Extract 2D pose data (position and rotation) from a 4x4 transformation matrix."""
 
     def __init__(self) -> None:
@@ -34,27 +35,3 @@ class ExtractPose:
         rotation = float(np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0]))
 
         return {"x": x, "y": y, "rotation": rotation}
-
-    def visualize(self, frame: np.ndarray) -> None:
-        """Visualize the extract pose outputs.
-
-        This operation returns pose data only,
-        so no frame visualization is available.
-
-        Args:
-            frame: Input frame (unused).
-
-        Returns:
-            None - no visualization available for pose-only operations.
-        """
-        return None
-
-    def update_config(self, _: dict) -> None:
-        """Update the configuration of the extract pose operation.
-
-        No live-updatable parameters available.
-
-        Args:
-            json_config: JSON configuration for the extract pose operation (ignored).
-        """
-        pass

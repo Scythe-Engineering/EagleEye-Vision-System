@@ -3,7 +3,7 @@ import os
 import subprocess
 from pathlib import Path
 from time import sleep
-from typing import Dict, Set
+from typing import Dict
 
 faulthandler.enable()
 
@@ -13,20 +13,17 @@ from src.rust_implementations.build import main as rust_build  # noqa: E402
 from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
     CameraThreadManager,  # noqa: E402
 )
-from src.utils.camera_utils.check_and_add_new_cameras import (  # noqa: E402
-    check_and_add_new_cameras,  # noqa: E402
-)
 from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
-from networktables import NetworkTables  # noqa: E402
+from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
 from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
 import json  # noqa: E402
 
-# Build the Rust implementations (removed during uv sync)
+# Bootstrap Rust modules (removed during uv sync)
 logger = Logger()
 logger.log(
     f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
@@ -40,14 +37,17 @@ if not build_success:
     raise RuntimeError(error_msg)
 logger.log(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
 
+# Discover hardware devices early for compute pool initialization
 available_devices = get_available_devices(logger=logger)
 logger.log(
     f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}"
 )
 
+# Static configuration and NetworkTables schema keying
 current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
 
+# Ensure general config file exists for NetworkTables initialization
 if not os.path.exists("src/general_conf.json"):
     # make empty json file with 0.0.0.0 as the address
     with open("src/general_conf.json", "w") as f:
@@ -56,52 +56,23 @@ if not os.path.exists("src/general_conf.json"):
 general_conf = json.load(open("src/general_conf.json"))
 
 
-def add_video_file_cameras(
-    web_interface: EagleEyeInterface,
-    camera_manager: CameraThreadManager,
-    known_cameras: Set[str],
-    logger: Logger,
-) -> None:
-    """
-    Add video file cameras to the system. (Mostly for testing and development purposes)
-    """
-    # Add a video file cameras
-    video_folder = os.path.join(current_dir, "utils", "sim_videos")
-    video_files = list(Path(video_folder).glob("*.mp4"))
-    for video_file in video_files:
-        camera_name = video_file.stem
-        web_interface.add_camera(camera_name, -1)
-        camera_manager.start_camera_thread(
-            camera_name,
-            os.path.join(
-                current_dir,
-                "utils",
-                "camera_utils",
-                "camera_calibrations",
-                "sim_camera",
-            ),
-            str(video_file),
-        )
-        known_cameras.add(camera_name)
-        logger.log(
-            f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"
-        )
-
-
 class MainBackend:
     def __init__(self, logger: Logger):
         try:
             self.logger = logger
+            self.pipelines: Dict[str, Pipeline] = {}
 
             self.logger.log(
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
 
+            # NetworkTables wiring and schema publication
             NetworkTables.initialize(server=general_conf["network_table_address"])
             self.network_table = NetworkTables.getTable("EagleEye")
             schema_manifest_payload = generate_schema_manifest_bytes()
             self.network_table.putRaw(SCHEMA_MANIFEST_KEY, schema_manifest_payload)
 
+            # Web interface, camera manager, and known camera cache
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
                 pipeline_objects_callback=self.get_pipelines,
@@ -110,81 +81,20 @@ class MainBackend:
             self.camera_manager = CameraThreadManager(
                 self.web_interface, logger=self.logger
             )
-            self.known_cameras: Set[str] = set()
+            self.known_cameras = self.camera_manager.known_cameras
 
-            self.compute_pool = ComputePool()
-
-            # Add CPU device if available
-            if available_devices.get("CPU"):
-                cpu_device = CPU()
-                self.compute_pool.add_compute_device(cpu_device)
+            all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
+            if not all_cameras_ready:
                 self.logger.log(
-                    f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
+                    f"{Colors.YELLOW}Proceeding with pipeline creation despite camera readiness timeout.{Colors.RESET}"
                 )
 
-            # Set logger for MX3 module if available
-            if available_devices.get("MX3"):
-                from src.utils.device_management_utils.mx3_accelerator import (
-                    set_mx3_logger,
-                )
+            # Compute pool setup
+            self.compute_pool = ComputePool()
+            self._initialize_compute_devices()
 
-                set_mx3_logger(self.logger)
-
-            # Add TPU devices if available
-            tpu_devices = available_devices.get("TPU", [])
-            if tpu_devices:
-                from src.utils.device_management_utils.mx3_accelerator import (
-                    MX3Accelerator,
-                )  # noqa: E402
-
-                for tpu_device in tpu_devices:
-                    if tpu_device.startswith("memx:"):
-                        try:
-                            # Extract device index from memx:X
-                            device_parts = tpu_device.split(":", 1)
-                            if len(device_parts) != 2:
-                                self.logger.log(
-                                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
-                                )
-                                continue
-
-                            device_index = device_parts[1]
-                            mx3_device = MX3Accelerator(
-                                device_id=f"MX3_{device_index}", logger=self.logger
-                            )
-                            self.compute_pool.add_compute_device(mx3_device)
-
-                            self.logger.log(
-                                f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
-                            )
-                        except Exception as e:
-                            self.logger.log(
-                                f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
-                            )
-
-            # Add GPU devices if available
-            gpu_devices = available_devices.get("GPU", [])
-            if gpu_devices:
-                from src.utils.device_management_utils.gpu import GPU  # noqa: E402
-
-                for gpu_index, gpu_device_name in enumerate(gpu_devices):
-                    try:
-                        gpu_device = GPU(device_id=f"GPU_{gpu_index}")
-                        self.compute_pool.add_compute_device(gpu_device)
-
-                        self.logger.log(
-                            f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
-                        )
-                    except RuntimeError as e:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                        )
-                    except Exception as e:
-                        self.logger.log(
-                            f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                        )
-
-            self.pipelines: Dict[str, Dict[str, Pipeline]] = generate_all_pipelines(
+            # Pipeline creation and start-up
+            self.pipelines = generate_all_pipelines(
                 self.web_interface,
                 self.compute_pool,
                 self.network_table,
@@ -192,31 +102,30 @@ class MainBackend:
                 logger=self.logger,
             )
 
-            # Initial camera detection
-            self.logger.log(
-                f"{Colors.CYAN}Performing initial camera detection...{Colors.RESET}"
-            )
-            self.known_cameras = check_and_add_new_cameras(
-                self.web_interface, self.camera_manager, self.known_cameras, self.logger
-            )
-
-            add_video_file_cameras(
-                self.web_interface, self.camera_manager, self.known_cameras, self.logger
-            )
-
-            available_cameras = self.camera_manager.get_all_camera_names()
-            for camera_name, pipelines in self.pipelines.items():
-                if camera_name in available_cameras:
-                    for pipeline_name, pipeline in pipelines.items():
-                        pipeline.thread_run(self.camera_manager, camera_name)
-                        self.logger.log(
-                            f"{Colors.GREEN}Started pipeline for camera bus id: {camera_name} and pipeline name: {pipeline_name}{Colors.RESET}"
-                        )
-                else:
+            available_cameras = set(self.camera_manager.get_all_camera_names())
+            for pipeline_name, pipeline in self.pipelines.items():
+                camera_names = getattr(pipeline, "camera_bus_ids", [])
+                if not camera_names:
                     self.logger.log(
-                        f"{Colors.YELLOW}Pipeline bus id: {camera_name} was not found in available cameras{Colors.RESET}"
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} has no cameras configured. Skipping start.{Colors.RESET}"
                     )
+                    continue
+                missing_cameras = [
+                    camera_name
+                    for camera_name in camera_names
+                    if camera_name not in available_cameras
+                ]
+                if missing_cameras:
+                    self.logger.log(
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras {missing_cameras}. Skipping start.{Colors.RESET}"
+                    )
+                    continue
+                pipeline.thread_run(self.camera_manager)
+                self.logger.log(
+                    f"{Colors.GREEN}Started pipeline: {pipeline_name}{Colors.RESET}"
+                )
 
+            # Initial camera inventory logging
             if not self.known_cameras:
                 self.logger.log(
                     f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}"
@@ -228,7 +137,99 @@ class MainBackend:
         except KeyboardInterrupt:
             self.shutdown()
 
-    def get_pipelines(self) -> Dict[str, Dict[str, Pipeline]]:
+    def _initialize_compute_devices(self) -> None:
+        """
+        Initialize and add all available compute devices to the compute pool.
+        """
+        # Add CPU device if available
+        if available_devices.get("CPU"):
+            cpu_device = CPU()
+            self.compute_pool.add_compute_device(cpu_device)
+            self.logger.log(
+                f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
+            )
+
+        # Set logger for MX3 module if available
+        if available_devices.get("MX3"):
+            from src.utils.device_management_utils.mx3_accelerator import (
+                set_mx3_logger,
+            )
+
+            set_mx3_logger(self.logger)
+
+        self._initialize_tpu_devices()
+        self._initialize_gpu_devices()
+
+    def _initialize_tpu_devices(self) -> None:
+        """
+        Add TPU devices to the compute pool.
+        """
+        tpu_devices = available_devices.get("TPU", [])
+        if not tpu_devices:
+            return
+
+        from src.utils.device_management_utils.mx3_accelerator import (  # noqa: E402
+            MX3Accelerator,
+        )
+
+        for tpu_device in tpu_devices:
+            if not tpu_device.startswith("memx:"):
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                )
+                continue
+
+            try:
+                # Extract device index from memx:X
+                device_parts = tpu_device.split(":", 1)
+                if len(device_parts) != 2:
+                    self.logger.log(
+                        f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
+                    )
+                    continue
+
+                device_index = device_parts[1]
+                mx3_device = MX3Accelerator(
+                    device_id=f"MX3_{device_index}", logger=self.logger
+                )
+                self.compute_pool.add_compute_device(mx3_device)
+
+                self.logger.log(
+                    f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
+                )
+
+    def _initialize_gpu_devices(self) -> None:
+        """
+        Add GPU devices to the compute pool.
+        """
+        gpu_devices = available_devices.get("GPU", [])
+        if not gpu_devices:
+            return
+
+        from src.utils.device_management_utils.gpu import GPU  # noqa: E402
+
+        for gpu_index, gpu_device_name in enumerate(gpu_devices):
+            try:
+                gpu_device = GPU(device_id=f"GPU_{gpu_index}")
+                self.compute_pool.add_compute_device(gpu_device)
+
+                self.logger.log(
+                    f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
+                )
+            except RuntimeError as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
+                )
+
+    def get_pipelines(self) -> Dict[str, Pipeline]:
         """
         Get the pipelines.
         """
@@ -275,7 +276,6 @@ class MainBackend:
 
 def main() -> None:
     """Main function to initialize and continuously monitor for cameras."""
-    global backend
     try:
         backend = MainBackend(logger=logger)
         # Keep the main thread alive to allow restart threads to complete

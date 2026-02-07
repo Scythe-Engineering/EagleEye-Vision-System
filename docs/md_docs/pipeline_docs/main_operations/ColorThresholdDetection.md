@@ -52,7 +52,7 @@ Each detection contains:
 
 - **Default**: `null` (uses default red color range)
 - **Restart Required**: No
-- **Description**: List of color range dictionaries for multi-object detection.
+- **Description**: List of color dictionaries for multi-object detection. Each dictionary must contain HSV color ranges.
 
 Each dictionary must contain:
 
@@ -60,25 +60,24 @@ Each dictionary must contain:
 {
     "name": "red",           # String name for the color
     "class_id": 0,           # Integer class identifier
-    "target_rgb": [1.0, 0.0, 0.0],    # Target RGB color [R, G, B] (0.0-1.0)
-    "threshold": 0.3         # Color tolerance (0.0-1.0, higher = more tolerance)
+    "lower_hsv": [0, 100, 100],    # Lower HSV bound [H, S, V]
+    "upper_hsv": [10, 255, 255]   # Upper HSV bound [H, S, V]
 }
 ```
 
-**RGB Values**:
+**HSV Values**:
 
-- R (Red): 0.0-1.0
-- G (Green): 0.0-1.0
-- B (Blue): 0.0-1.0
-- Threshold: 0.0-1.0 (color distance tolerance)
+- H (Hue): 0-179
+- S (Saturation): 0-255
+- V (Value): 0-255
 
-**Common Colors and Thresholds**:
+**Common HSV Color Ranges**:
 
-- Red: `target_rgb: [1.0, 0.0, 0.0]`, `threshold: 0.3`
-- Blue: `target_rgb: [0.0, 0.0, 1.0]`, `threshold: 0.3`
-- Green: `target_rgb: [0.0, 1.0, 0.0]`, `threshold: 0.3`
-- Yellow: `target_rgb: [1.0, 1.0, 0.0]`, `threshold: 0.3`
-- Orange: `target_rgb: [1.0, 0.5, 0.0]`, `threshold: 0.3`
+- Red: `lower_hsv: [0, 100, 100]`, `upper_hsv: [10, 255, 255]`
+- Blue: `lower_hsv: [100, 100, 100]`, `upper_hsv: [130, 255, 255]`
+- Green: `lower_hsv: [40, 50, 50]`, `upper_hsv: [80, 255, 255]`
+- Yellow: `lower_hsv: [20, 100, 100]`, `upper_hsv: [30, 255, 255]`
+- Orange: `lower_hsv: [10, 100, 100]`, `upper_hsv: [20, 255, 255]`
 
 ### `min_area` (int)
 
@@ -111,9 +110,16 @@ Each dictionary must contain:
 ### `morphology_iterations` (int)
 
 - **Default**: 2
-- **Range**: 1-10
+- **Range**: 0-10 (0 to disable morphology, 1-10 for morphological operations)
 - **Restart Required**: No
-- **Description**: Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality.
+- **Description**: Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality. Set to 0 to disable morphology.
+
+### `camera_parameters_path` (str)
+
+- **Default**: `null`
+- **Restart Required**: No
+- **Required**: Yes
+- **Description**: Path to camera calibration parameters JSON file. Contains intrinsic and distortion matrices for the camera. Can be a direct file path or a camera bus ID (e.g., "0", "0-1") to auto-resolve from calibrations directory.
 
 ## Configuration Example
 
@@ -128,27 +134,28 @@ Each dictionary must contain:
             {
                 "name": "red",
                 "class_id": 0,
-                "target_rgb": [1.0, 0.0, 0.0],
-                "threshold": 0.3
+                "lower_hsv": [0, 100, 100],
+                "upper_hsv": [10, 255, 255]
             },
             {
                 "name": "blue",
                 "class_id": 1,
-                "target_rgb": [0.0, 0.0, 1.0],
-                "threshold": 0.3
+                "lower_hsv": [100, 100, 100],
+                "upper_hsv": [130, 255, 255]
             },
             {
                 "name": "green",
                 "class_id": 2,
-                "target_rgb": [0.0, 1.0, 0.0],
-                "threshold": 0.3
+                "lower_hsv": [40, 50, 50],
+                "upper_hsv": [80, 255, 255]
             }
         ],
         "min_area": 100,
         "max_area": 50000,
         "blur_kernel_size": 5,
         "morphology_kernel_size": 5,
-        "morphology_iterations": 2
+        "morphology_iterations": 2,
+        "camera_parameters_path": "src/utils/camera_utils/camera_calibrations/0/intrinsics.json"
     }
 }
 ```
@@ -164,14 +171,14 @@ color_ranges = [
     {
         "name": "red",
         "class_id": 0,
-        "target_rgb": [1.0, 0.0, 0.0],
-        "threshold": 0.3
+        "lower_hsv": [0, 100, 100],
+        "upper_hsv": [10, 255, 255]
     },
     {
         "name": "blue",
         "class_id": 1,
-        "target_rgb": [0.0, 0.0, 1.0],
-        "threshold": 0.3
+        "lower_hsv": [100, 100, 100],
+        "upper_hsv": [130, 255, 255]
     }
 ]
 
@@ -179,7 +186,10 @@ detector = ColorThresholdDetectionDefinition(
     target_size=320,
     color_ranges=color_ranges,
     min_area=100,
-    max_area=50000
+    max_area=50000,
+    blur_kernel_size=5,
+    morphology_iterations=2,
+    camera_parameters_path="src/utils/camera_utils/camera_calibrations/0/intrinsics.json"
 )
 
 frame = cv2.imread("input.jpg")
@@ -203,7 +213,7 @@ for detection in detections:
 - Higher `target_size` for better small object detection (e.g., 640)
 - Increase `morphology_iterations` for cleaner masks
 - Tune `min_area` and `max_area` based on expected object sizes
-- Fine-tune RGB ranges for specific lighting conditions
+- Fine-tune HSV ranges for specific lighting conditions
 
 ### Memory Usage
 
@@ -273,7 +283,7 @@ cv2.destroyAllWindows()
 1. Start with threshold = 0.3 for most applications
 2. If too many false positives, decrease threshold (more restrictive)
 3. If missing valid detections, increase threshold (more permissive)
-4. Adjust target_rgb values to match your specific color conditions
+4. Adjust lower_hsv and upper_hsv values to match your specific color conditions
 
 ### Morphological Operations
 
@@ -369,14 +379,29 @@ Track colored balls in sports or robotics:
 
 ## Visualization
 
-The operation includes a `visualize()` method that draws bounding boxes and labels on frames:
+The operation includes a `visualize()` method that displays detection results with a split-screen view:
 
 ### Features
 
+- **Split-screen display**: Left side shows original camera frame with bounding boxes and labels, right side shows the thresholded mask overlay
 - **Color-coded boxes**: Bounding boxes are drawn in the actual detected color (red, blue, green, etc.)
 - **Labels**: Shows color name and class ID for each detection
+- **Binary mask overlay**: Right side displays the binary mask showing all detected pixels after thresholding and morphological operations
 - **Thread-safe**: Uses locks to safely access detection data
 - **Automatic color mapping**: Maps common color names to BGR values
+
+### Display Layout
+
+**Left side (Original Frame):**
+- Original camera input
+- Bounding boxes with detected object outlines
+- Color-coded labels with class IDs
+
+**Right side (Threshold Mask):**
+- Binary mask showing all pixels that passed color thresholding
+- White pixels indicate detected colors, black indicates background
+- Shows the result of morphological operations for noise reduction
+- Useful for debugging HSV range tuning and morphology settings
 
 ### Usage
 
@@ -386,7 +411,7 @@ detector = ColorThresholdDetectionDefinition(...)
 # Run detection
 detections = detector.run(frame)
 
-# Visualize detections on frame
+# Visualize detections with split-screen (original + mask)
 visualized_frame = detector.visualize(frame.copy())
 ```
 
