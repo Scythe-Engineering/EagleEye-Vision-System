@@ -64,9 +64,12 @@ class Pipeline:
         self.camera_manager = camera_manager
         self.logger = logger
         self.camera_bus_id = camera_bus_id
-        self.camera_bus_ids = camera_bus_ids or (
-            [] if camera_bus_id is None else [camera_bus_id]
-        )
+        if camera_bus_ids is not None:
+            self.camera_bus_ids = camera_bus_ids
+        elif camera_bus_id is not None:
+            self.camera_bus_ids = [camera_bus_id]
+        else:
+            self.camera_bus_ids = []
         self.pipeline_name = pipeline_name or "unknown"
 
         self.thread_running = False

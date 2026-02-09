@@ -1442,6 +1442,20 @@ class EagleEyeInterface:
     def _instance_has_visualization(
         self, operation_instance: OperationInstance
     ) -> bool:
+        """Check whether an operation instance has a custom visualize method.
+
+        Determines if the operation instance has overridden the base visualize
+        method from OperationInstance, indicating it provides visualization
+        capabilities.
+
+        Args:
+            operation_instance (OperationInstance): The operation instance to
+                check for visualization support.
+
+        Returns:
+            bool: True if the instance's class has overridden the visualize
+                method, False if it uses the default OperationInstance.visualize.
+        """
         return operation_instance.__class__.visualize is not OperationInstance.visualize
 
     def restart_backend(self) -> tuple[dict, int]:

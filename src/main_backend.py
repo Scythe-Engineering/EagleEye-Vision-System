@@ -166,7 +166,7 @@ class MainBackend:
         if not tpu_devices:
             return
 
-        from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator  # noqa: E402
+        from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
 
         for tpu_device in tpu_devices:
             if not tpu_device.startswith("memx:"):
