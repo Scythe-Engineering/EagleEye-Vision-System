@@ -683,6 +683,14 @@ class Pipeline:
             "operations": thread_info,
         }
 
+    def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
+        """Get the latest per-frame profiling snapshot.
+
+        Returns:
+            Latest profiling payload or None when unavailable.
+        """
+        return self.flow_manager.get_latest_profile_snapshot()
+
     def record_operation_error(self, operation: Operation, message: str) -> None:
         """Record an operation error entry.
 

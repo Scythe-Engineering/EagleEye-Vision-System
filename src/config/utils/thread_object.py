@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import traceback
+from time import perf_counter
 from typing import TYPE_CHECKING, Any
 from line_profiler import profile
 
@@ -24,8 +25,12 @@ class ThreadObject:
         self.error: str | None = None
 
         self.current_timestep: int = 0
+        self.current_cycle_id: int = 0
 
         self.number_of_occupied_timesteps: int = 0
+        self.last_execution_time_ms: float | None = None
+        self.last_operation_uuid: str | None = None
+        self.last_cycle_id: int = 0
 
         self.processing_thread_object: threading.Thread = threading.Thread(
             target=self.processing_thread, daemon=True
@@ -81,14 +86,25 @@ class ThreadObject:
                     # Release condition lock during operation execution
                     self.condition.release()
                     try:
+                        operation_start = perf_counter()
                         output_data = obligation.run(input_data)
+                        operation_end = perf_counter()
                         # Re-acquire lock to update state
                         self.condition.acquire()
                         self.output_data = output_data
+                        self.last_execution_time_ms = max(
+                            (operation_end - operation_start) * 1000.0,
+                            0.0,
+                        )
+                        self.last_operation_uuid = obligation.uuid
+                        self.last_cycle_id = self.current_cycle_id
                         self.state = "done"
                     except Exception as _:
                         self.condition.acquire()
                         self.output_data = None
+                        self.last_execution_time_ms = None
+                        self.last_operation_uuid = None
+                        self.last_cycle_id = self.current_cycle_id
                         self._set_error(
                             f"Error in operation {obligation.name}: {traceback.format_exc()}"
                         )
@@ -98,7 +114,9 @@ class ThreadObject:
                 self.condition.notify()
 
     @profile
-    def set_needs_processing(self, input_data: Any, time_step: int) -> None:
+    def set_needs_processing(
+        self, input_data: Any, time_step: int, cycle_id: int = 0
+    ) -> None:
         """Set the needs_processing flag and input data for the thread.
 
         Args:
@@ -120,9 +138,25 @@ class ThreadObject:
                 )
 
             self.current_timestep = time_step
+            self.current_cycle_id = cycle_id
             self.input_data = input_data
             self.state = "processing"
             self.condition.notify()
+
+    def get_last_cycle_timing(self, cycle_id: int) -> tuple[str | None, float | None]:
+        """Get timing data for the requested cycle id.
+
+        Args:
+            cycle_id (int): Cycle identifier for stale-data protection.
+
+        Returns:
+            Tuple of operation UUID and execution time in milliseconds.
+            Returns (None, None) when no timing is available for the cycle.
+        """
+        with self.condition:
+            if self.last_cycle_id != cycle_id:
+                return None, None
+            return self.last_operation_uuid, self.last_execution_time_ms
 
     @profile
     def is_done_processing(self) -> bool:
@@ -179,6 +213,8 @@ class ThreadObject:
             self.had_error = False
             self.error = None
             self.output_data = None
+            self.last_execution_time_ms = None
+            self.last_operation_uuid = None
             self.state = "idle"
 
     # functions for initializing the flow, not runtime execution

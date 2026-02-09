@@ -48,6 +48,8 @@ class PipelineStore {
                 restartRequiredNodes: new Set(),
                 operationErrors: new Map(),
                 downstreamDisabledNodes: new Set(),
+                profilingByPipeline: new Map(),
+                profilingLastUpdateMsByPipeline: new Map(),
             },
         };
 
@@ -454,8 +456,56 @@ class PipelineStore {
         this.instanceIdToUuid.clear();
         this.clearRestartRequired();
         this.clearOperationErrors();
+        this.clearProfilingSnapshots();
 
         this.emit("pipeline:cleared");
+    }
+
+    setProfilingSnapshot(snapshot) {
+        const pipelineName = snapshot?.pipeline_name;
+        if (!pipelineName || typeof pipelineName !== "string") {
+            return;
+        }
+
+        const copiedSnapshot = {
+            ...snapshot,
+            operations: { ...(snapshot.operations || {}) },
+            timesteps: Array.isArray(snapshot.timesteps)
+                ? snapshot.timesteps.map((row) => ({ ...row }))
+                : [],
+        };
+
+        this.state.ui.profilingByPipeline.set(pipelineName, copiedSnapshot);
+        this.state.ui.profilingLastUpdateMsByPipeline.set(pipelineName, Date.now());
+        this.emit("profiling:updated", {
+            pipelineName,
+            snapshot: copiedSnapshot,
+        });
+    }
+
+    getProfilingSnapshot(pipelineName) {
+        const snapshot = this.state.ui.profilingByPipeline.get(pipelineName);
+        if (!snapshot) {
+            return null;
+        }
+
+        return {
+            ...snapshot,
+            operations: { ...(snapshot.operations || {}) },
+            timesteps: Array.isArray(snapshot.timesteps)
+                ? snapshot.timesteps.map((row) => ({ ...row }))
+                : [],
+        };
+    }
+
+    getProfilingLastUpdateMs(pipelineName) {
+        return this.state.ui.profilingLastUpdateMsByPipeline.get(pipelineName) || 0;
+    }
+
+    clearProfilingSnapshots() {
+        this.state.ui.profilingByPipeline.clear();
+        this.state.ui.profilingLastUpdateMsByPipeline.clear();
+        this.emit("profiling:cleared", {});
     }
 
     setOperationErrors(errors) {

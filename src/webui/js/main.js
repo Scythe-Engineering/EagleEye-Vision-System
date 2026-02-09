@@ -234,6 +234,25 @@ window.onload = async () => {
         }
     });
 
+    es.addEventListener("profiling_update", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            const hasRequiredFields =
+                typeof data?.pipeline_name === "string" &&
+                Number.isFinite(data?.frame_seq) &&
+                Number.isFinite(data?.frame_time_ms) &&
+                Number.isFinite(data?.timestamp_ms) &&
+                typeof data?.operations === "object" &&
+                Array.isArray(data?.timesteps);
+            if (!hasRequiredFields) {
+                return;
+            }
+            globalThis.pipelineCreator?.handleProfilingUpdate?.(data);
+        } catch (err) {
+            console.warn("Failed to parse SSE profiling_update event", err);
+        }
+    });
+
     es.addEventListener("system_status", (e) => {
         try {
             const data = JSON.parse(e.data);

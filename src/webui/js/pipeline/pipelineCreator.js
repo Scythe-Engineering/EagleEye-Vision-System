@@ -107,6 +107,7 @@ let flowchartRenderer = null;
 let useFlowchartMode = true;
 
 const restartRequiredOperations = new Map();
+const PROFILING_STALE_TIMEOUT_MS = 2000;
 
 let pipelineArea;
 let pipelineContainer;
@@ -119,6 +120,9 @@ let newPipelineButton;
 let deletePipelineButton;
 let restartIndicator;
 let flowchartCanvas;
+let executionTimestepsList;
+let executionSummaryContent;
+let profilingStaleIntervalId = null;
 
 let pipelineErrorPopup;
 const operationErrorsByUuid = new Map();
@@ -148,6 +152,164 @@ function getSelectedPipeline() {
         (p) => p.name === pipelineName,
     );
     return selectedPipeline ?? null;
+}
+
+function hideAllProfilingBadges() {
+    if (!flowchartRenderer) {
+        return;
+    }
+    for (const node of flowchartRenderer.nodes.values()) {
+        node.hideProfilingBadge?.();
+    }
+}
+
+function getProfilingThreadColor(threadNumber) {
+    const threadColors = [
+        "#ff6b6b",
+        "#4ecdc4",
+        "#45b7d1",
+        "#96ceb4",
+        "#ffeaa7",
+        "#dfe6e9",
+        "#fd79a8",
+        "#a29bfe",
+        "#00b894",
+        "#e17055",
+    ];
+    const normalizedThread = Number(threadNumber);
+    if (!Number.isFinite(normalizedThread) || normalizedThread <= 0) {
+        return "#5a5a5a";
+    }
+    return threadColors[(normalizedThread - 1) % threadColors.length];
+}
+
+function renderExecutionTimestepsPanel(snapshot) {
+    if (!executionTimestepsList) {
+        return;
+    }
+
+    const timesteps = Array.isArray(snapshot?.timesteps)
+        ? [...snapshot.timesteps]
+        : [];
+    if (timesteps.length === 0) {
+        executionTimestepsList.innerHTML =
+            '<div class="text-[#888]">No profiling data</div>';
+        return;
+    }
+
+    const operationsByUuid = snapshot?.operations || {};
+    timesteps.sort((a, b) => (a?.timestep ?? 0) - (b?.timestep ?? 0));
+    executionTimestepsList.innerHTML = timesteps
+        .map((row) => {
+            const total = Number(row?.total_time_ms) || 0;
+            const timestep = Number(row?.timestep) || 0;
+            const limiterUuid = row?.max_operation_uuid;
+            const limiterThread = limiterUuid
+                ? operationsByUuid?.[limiterUuid]?.thread
+                : null;
+            const circleColor = getProfilingThreadColor(limiterThread);
+            return `<div class="flex items-center gap-2 py-1">
+                <div
+                    class="w-5 h-5 rounded-full text-[10px] font-semibold text-black flex items-center justify-center"
+                    style="background-color: ${circleColor};"
+                    title="Timestep ${timestep}"
+                >${timestep}</div>
+                <div class="text-[#f1f1f1]">${total.toFixed(2)}ms</div>
+            </div>`;
+        })
+        .join("");
+}
+
+function renderExecutionSummary(snapshot) {
+    if (!executionSummaryContent) {
+        return;
+    }
+
+    const frameTimeMs = Number(snapshot?.frame_time_ms);
+    if (!Number.isFinite(frameTimeMs) || frameTimeMs <= 0) {
+        executionSummaryContent.innerHTML =
+            '<div class="text-[#888]">No profiling data</div>';
+        return;
+    }
+
+    const estimatedFps = 1000 / frameTimeMs;
+    executionSummaryContent.innerHTML = `<div class="text-[#f1f1f1]">Flow: ${frameTimeMs.toFixed(2)}ms</div>
+        <div class="text-[#9ad1a8]">FPS: ${estimatedFps.toFixed(1)}</div>`;
+}
+
+function clearProfilingUI() {
+    hideAllProfilingBadges();
+    renderExecutionTimestepsPanel(null);
+    renderExecutionSummary(null);
+}
+
+function applyProfilingSnapshot(snapshot) {
+    const selectedPipeline = getSelectedPipeline();
+    if (!selectedPipeline || !snapshot) {
+        clearProfilingUI();
+        return;
+    }
+
+    if (snapshot.pipeline_name !== selectedPipeline.name) {
+        return;
+    }
+
+    if (flowchartRenderer) {
+        const operations = snapshot.operations || {};
+        for (const [instanceId, node] of flowchartRenderer.nodes) {
+            const uuid = pipelineStore.instanceIdToUuid.get(instanceId);
+            const profilingInfo = uuid ? operations[uuid] : null;
+            if (profilingInfo) {
+                node.updateProfilingInfo?.(profilingInfo);
+            } else {
+                node.hideProfilingBadge?.();
+            }
+        }
+    }
+
+    renderExecutionTimestepsPanel(snapshot);
+    renderExecutionSummary(snapshot);
+}
+
+function applySelectedPipelineProfiling() {
+    const selectedPipeline = getSelectedPipeline();
+    if (!selectedPipeline) {
+        clearProfilingUI();
+        return;
+    }
+
+    const snapshot = pipelineStore.getProfilingSnapshot(selectedPipeline.name);
+    if (!snapshot) {
+        clearProfilingUI();
+        return;
+    }
+    applyProfilingSnapshot(snapshot);
+}
+
+function handleProfilingUpdate(payload) {
+    if (!payload || typeof payload.pipeline_name !== "string") {
+        return;
+    }
+
+    pipelineStore.setProfilingSnapshot(payload);
+}
+
+function checkAndClearStaleProfiling() {
+    const selectedPipeline = getSelectedPipeline();
+    if (!selectedPipeline) {
+        clearProfilingUI();
+        return;
+    }
+
+    const lastUpdateMs = pipelineStore.getProfilingLastUpdateMs(selectedPipeline.name);
+    if (lastUpdateMs <= 0) {
+        clearProfilingUI();
+        return;
+    }
+
+    if (Date.now() - lastUpdateMs > PROFILING_STALE_TIMEOUT_MS) {
+        clearProfilingUI();
+    }
 }
 
 function getDeviceInputNodes() {
@@ -392,6 +554,7 @@ async function handlePipelineSelection() {
     if (selectedPipeline) {
         pipelineStore.setCurrentPipeline(selectedPipeline.name);
         await loadPipelineIntoBuilder(selectedPipeline.name);
+        applySelectedPipelineProfiling();
     }
 
     updateDeleteButtonVisibility();
@@ -438,6 +601,7 @@ async function renderCurrentPipeline() {
         await flowchartRenderer.renderPipeline(pipeline, options);
         applyPipelineErrorHighlights();
         await fetchAndUpdateThreadInfo();
+        applySelectedPipelineProfiling();
     } else {
         renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
             openOperationSettings,
@@ -872,6 +1036,11 @@ function hideAllThreadBadges() {
             node.hideThreadBadge();
         }
     }
+}
+
+function hideAllThreadAndProfilingBadges() {
+    hideAllThreadBadges();
+    clearProfilingUI();
 }
 
 async function checkAndTriggerAutoFill() {
@@ -1343,7 +1512,7 @@ async function updateRestartIndicator(show = false) {
     }
 
     if (show) {
-        hideAllThreadBadges();
+        hideAllThreadAndProfilingBadges();
     }
 }
 
@@ -1605,6 +1774,8 @@ export async function initPipelineCreator() {
     newPipelineButton = document.getElementById("newPipelineButton");
     deletePipelineButton = document.getElementById("deletePipelineButton");
     restartIndicator = document.getElementById("restartIndicator");
+    executionTimestepsList = document.getElementById("executionTimestepsList");
+    executionSummaryContent = document.getElementById("executionSummaryContent");
 
     createDescriptionPopup();
 
@@ -1629,6 +1800,14 @@ export async function initPipelineCreator() {
     }
 
     initFlowchartRenderer();
+
+    pipelineStore.subscribe("profiling:updated", ({ snapshot, pipelineName }) => {
+        const selectedPipeline = getSelectedPipeline();
+        if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
+            return;
+        }
+        applyProfilingSnapshot(snapshot);
+    });
 
     await fetchAvailableOperations();
 
@@ -1767,6 +1946,7 @@ export async function initPipelineCreator() {
         getAvailableCameras: () => pipelineStore.state.cameras,
         refreshAvailableCameras: () => fetchAvailableCameras(),
         handleOperationErrorUpdate: handleOperationErrorUpdate,
+        handleProfilingUpdate: handleProfilingUpdate,
         getOperations: () => pipelineStore.state.operations,
     };
 
@@ -1776,6 +1956,10 @@ export async function initPipelineCreator() {
     });
 
     await renderCurrentPipeline();
+
+    if (!profilingStaleIntervalId) {
+        profilingStaleIntervalId = setInterval(checkAndClearStaleProfiling, 500);
+    }
 
     await checkBackendRestartStatus();
 
