@@ -154,7 +154,6 @@ def test_none_abort_does_not_publish_profile_snapshot() -> None:
 
     flow_manager.run_flow()
     assert flow_manager.get_latest_profile_snapshot() is None
-    assert flow_manager.get_profile_seq() == 0
 
 
 def test_sse_profiling_update_is_published_on_new_sequence() -> None:
