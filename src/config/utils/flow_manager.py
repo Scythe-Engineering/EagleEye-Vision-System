@@ -1,6 +1,8 @@
 from __future__ import annotations
+import threading
 import traceback
-from time import sleep
+from collections import deque
+from time import perf_counter, sleep, time
 from typing import Any, Callable
 from line_profiler import profile
 
@@ -8,6 +10,11 @@ from src.config.utils.operation import Operation
 from src.config.utils.thread_object import ThreadObject
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+
+
+PROFILE_ENABLED_DEFAULT = True
+PROFILE_HISTORY_LENGTH = 50
+PROFILE_DEBUG_LOG_CADENCE = 120
 
 
 def recursive_forward_flow_register(
@@ -235,6 +242,13 @@ class FlowManager:
 
         self.operation_outputs: dict[str, Any] = {}
         self.previous_operation_outputs: dict[str, Any] = {}
+        self._profile_enabled = PROFILE_ENABLED_DEFAULT
+        self._profile_lock = threading.Lock()
+        self._last_frame_profile: dict[str, Any] | None = None
+        self._profile_history: deque[dict[str, Any]] = deque(
+            maxlen=PROFILE_HISTORY_LENGTH
+        )
+        self._profile_seq = 0
 
     @profile
     def run_flow(self) -> None:
@@ -243,23 +257,38 @@ class FlowManager:
         Automatically uses direct execution for single-threaded pipelines,
         or threaded execution for multi-threaded pipelines.
         """
+        previous_profile_seq = self.get_profile_seq()
         if self.num_threads == 1:
             self._run_flow_direct()
         else:
             self._run_flow_threaded()
+
+        current_profile_seq = self.get_profile_seq()
+        if current_profile_seq != previous_profile_seq:
+            self._emit_profile_debug_summary()
 
     @profile
     def _run_flow_direct(self) -> None:
         """Direct execution without thread signaling for linear pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
+        frame_start = perf_counter()
+        operation_time_by_uuid_ms: dict[str, float] = {}
+        timestep_total_ms: dict[int, float] = {}
 
-        for operation_group in self.execution_time_groups:
+        for timestep, operation_group in enumerate(self.execution_time_groups):
+            timestep_start = perf_counter()
             for operation in operation_group:
                 input_for_op = self._gather_operation_inputs(operation)
 
                 try:
+                    operation_start = perf_counter()
                     output = operation.instance.run(input_for_op)
+                    operation_end = perf_counter()
+                    operation_time_by_uuid_ms[operation.uuid] = max(
+                        (operation_end - operation_start) * 1000.0,
+                        0.0,
+                    )
                     if self.on_operation_success is not None:
                         self.on_operation_success(operation)
                     self.operation_outputs[operation.uuid] = output
@@ -279,15 +308,34 @@ class FlowManager:
                         f"Operation {operation.name} had an error: {traceback.format_exc()}"
                     ) from e
 
+            timestep_end = perf_counter()
+            timestep_total_ms[timestep] = max(
+                (timestep_end - timestep_start) * 1000.0,
+                0.0,
+            )
+
+        frame_end = perf_counter()
+        frame_time_ms = max((frame_end - frame_start) * 1000.0, 0.0)
+        self._record_profile_snapshot(
+            frame_time_ms=frame_time_ms,
+            operation_time_by_uuid_ms=operation_time_by_uuid_ms,
+            timestep_total_ms=timestep_total_ms,
+        )
+
     @profile
     def _run_flow_threaded(self) -> None:
         """Threaded execution for parallel pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
+        frame_start = perf_counter()
+        operation_time_by_uuid_ms: dict[str, float] = {}
+        timestep_total_ms: dict[int, float] = {}
+        cycle_id = self.get_profile_seq() + 1
 
         max_timestep = len(self.execution_time_groups)
 
         for current_timestep in range(max_timestep):
+            timestep_start = perf_counter()
             operation_group = self.execution_time_groups[current_timestep]
 
             for operation in operation_group:
@@ -297,7 +345,9 @@ class FlowManager:
                 if thread_obj is None:
                     raise ValueError(f"Operation {operation.name} has no thread object")
                 try:
-                    thread_obj.set_needs_processing(input_for_op, current_timestep)
+                    thread_obj.set_needs_processing(
+                        input_for_op, current_timestep, cycle_id
+                    )
                 except Exception as _:
                     sleep(1)  # wait a bit before trying again
                     raise ValueError(
@@ -340,8 +390,29 @@ class FlowManager:
 
                 output_data = thread_obj.get_output_data()
                 self.operation_outputs[operation.uuid] = output_data
+                timing_uuid, execution_time_ms = thread_obj.get_last_cycle_timing(
+                    cycle_id
+                )
+                if timing_uuid == operation.uuid and execution_time_ms is not None:
+                    operation_time_by_uuid_ms[operation.uuid] = max(
+                        execution_time_ms, 0.0
+                    )
                 if self.on_operation_success is not None:
                     self.on_operation_success(operation)
+
+            timestep_end = perf_counter()
+            timestep_total_ms[current_timestep] = max(
+                (timestep_end - timestep_start) * 1000.0,
+                0.0,
+            )
+
+        frame_end = perf_counter()
+        frame_time_ms = max((frame_end - frame_start) * 1000.0, 0.0)
+        self._record_profile_snapshot(
+            frame_time_ms=frame_time_ms,
+            operation_time_by_uuid_ms=operation_time_by_uuid_ms,
+            timestep_total_ms=timestep_total_ms,
+        )
 
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.
@@ -535,3 +606,167 @@ class FlowManager:
             }
 
         return result
+
+    def _get_operation_thread_number(self, operation: Operation) -> int:
+        """Get 1-indexed thread number for an operation.
+
+        Args:
+            operation: Operation to resolve.
+
+        Returns:
+            Thread number, or 1 when unassigned.
+        """
+        thread_obj = operation.assigned_thread_object
+        if thread_obj is None:
+            return 1
+
+        for index, thread in enumerate(self.thread_objects):
+            if thread is thread_obj:
+                return index + 1
+        return 1
+
+    def _build_timestep_rows(
+        self,
+        operation_time_by_uuid_ms: dict[str, float],
+        timestep_total_ms: dict[int, float],
+    ) -> list[dict[str, Any]]:
+        """Build timestep profiling rows from runtime metrics.
+
+        Args:
+            operation_time_by_uuid_ms: Operation runtime map for current frame.
+            timestep_total_ms: Timestep wall-clock duration map.
+
+        Returns:
+            Timestep rows for profile payload.
+        """
+        rows: list[dict[str, Any]] = []
+        for timestep, operations in enumerate(self.execution_time_groups):
+            candidate_rows: list[tuple[Operation, float]] = []
+            for operation in operations:
+                operation_time_ms = operation_time_by_uuid_ms.get(operation.uuid)
+                if operation_time_ms is None:
+                    continue
+                candidate_rows.append((operation, operation_time_ms))
+
+            max_operation = (
+                max(candidate_rows, key=lambda item: item[1])
+                if candidate_rows
+                else None
+            )
+            rows.append(
+                {
+                    "timestep": timestep,
+                    "total_time_ms": float(timestep_total_ms.get(timestep, 0.0)),
+                    "max_operation_uuid": max_operation[0].uuid
+                    if max_operation
+                    else None,
+                    "max_operation_name": max_operation[0].name
+                    if max_operation
+                    else None,
+                    "max_operation_time_ms": float(max_operation[1])
+                    if max_operation
+                    else 0.0,
+                    "operation_count": len(candidate_rows),
+                }
+            )
+        return rows
+
+    def _record_profile_snapshot(
+        self,
+        frame_time_ms: float,
+        operation_time_by_uuid_ms: dict[str, float],
+        timestep_total_ms: dict[int, float],
+    ) -> None:
+        """Record a lock-safe profiling snapshot for the current frame.
+
+        Args:
+            frame_time_ms: Frame wall-clock runtime.
+            operation_time_by_uuid_ms: Per-operation runtime map.
+            timestep_total_ms: Per-timestep wall-clock runtime map.
+        """
+        if not self._profile_enabled:
+            return
+
+        try:
+            operations_payload: dict[str, dict[str, Any]] = {}
+            for operation in self.operations.values():
+                execution_time_ms = operation_time_by_uuid_ms.get(operation.uuid)
+                if execution_time_ms is None:
+                    continue
+                operations_payload[operation.uuid] = {
+                    "name": operation.name,
+                    "timestep": operation.execution_timestep
+                    if operation.execution_timestep is not None
+                    else -1,
+                    "thread": self._get_operation_thread_number(operation),
+                    "execution_time_ms": float(execution_time_ms),
+                }
+
+            timestep_rows = self._build_timestep_rows(
+                operation_time_by_uuid_ms,
+                timestep_total_ms,
+            )
+
+            with self._profile_lock:
+                self._profile_seq += 1
+                snapshot = {
+                    "pipeline_name": self.pipeline_name,
+                    "frame_seq": self._profile_seq,
+                    "frame_time_ms": float(frame_time_ms),
+                    "timestamp_ms": int(time() * 1000),
+                    "operations": operations_payload,
+                    "timesteps": timestep_rows,
+                }
+                self._last_frame_profile = snapshot
+                self._profile_history.append(snapshot)
+        except Exception as error:
+            self.logger.log(
+                f"{Colors.YELLOW}Profiling snapshot failed for pipeline "
+                f"{self.pipeline_name}: {error}{Colors.RESET}"
+            )
+
+    def _emit_profile_debug_summary(self) -> None:
+        """Emit periodic debug summary for profiling metrics."""
+        if PROFILE_DEBUG_LOG_CADENCE <= 0:
+            return
+
+        snapshot = self.get_latest_profile_snapshot()
+        if snapshot is None:
+            return
+
+        frame_seq = int(snapshot.get("frame_seq", 0))
+        if frame_seq <= 0 or frame_seq % PROFILE_DEBUG_LOG_CADENCE != 0:
+            return
+
+    def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
+        """Get a copy of the latest profiling snapshot.
+
+        Returns:
+            Latest profiling snapshot or None when unavailable.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is None:
+                return None
+
+            operations = {
+                operation_uuid: row.copy()
+                for operation_uuid, row in self._last_frame_profile.get(
+                    "operations", {}
+                ).items()
+            }
+            timesteps = [
+                row.copy() for row in self._last_frame_profile.get("timesteps", [])
+            ]
+            snapshot = self._last_frame_profile.copy()
+            snapshot["operations"] = operations
+            snapshot["timesteps"] = timesteps
+            return snapshot
+
+    def get_profile_seq(self) -> int:
+        """Get current profiling sequence id.
+
+        Returns:
+            Current sequence number for frame snapshots.
+        """
+        with self._profile_lock:
+            return self._profile_seq

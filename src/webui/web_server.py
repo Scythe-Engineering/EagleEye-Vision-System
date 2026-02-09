@@ -46,6 +46,8 @@ CORS_ALLOWED_ORIGINS = [
 PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
 TEXT_PLAIN_MIMETYPE = "text/plain"
 VISUALIZATION_STREAM_FPS = 12
+PROFILING_PUBLISH_INTERVAL_SECONDS = 0.3
+SSE_SERIALIZATION_WARN_INTERVAL_SECONDS = 5.0
 
 
 class EagleEyeInterface:
@@ -133,6 +135,10 @@ class EagleEyeInterface:
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
         self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
+        self._pipeline_profile_last_seq_sent: dict[str, int] = {}
+        self._profiling_publish_interval = PROFILING_PUBLISH_INTERVAL_SECONDS
+        self._last_profiling_publish_ts = 0.0
+        self._last_sse_serialization_warning_ts = 0.0
 
         self.cameras = {}
         self.log(f"Initialized with cameras: {self.cameras}")
@@ -617,7 +623,19 @@ class EagleEyeInterface:
         """
         Publish a named SSE event (JSON-serialized) to all connected subscribers.
         """
-        payload = json.dumps(data, allow_nan=False)
+        try:
+            payload = json.dumps(data, allow_nan=False)
+        except Exception as error:
+            now = time.time()
+            if (
+                now - self._last_sse_serialization_warning_ts
+                >= SSE_SERIALIZATION_WARN_INTERVAL_SECONDS
+            ):
+                self._last_sse_serialization_warning_ts = now
+                self.log(
+                    f"Failed to serialize SSE event {event_name}: {error}"
+                )
+            return
         msg = self._format_sse(event_name, payload)
         # publish only to the single client's queue if present
         with self._sse_queue_lock:
@@ -662,15 +680,54 @@ class EagleEyeInterface:
         """
         Periodically publish a heartbeat event for connection tracking.
         """
+        last_heartbeat_sent = 0.0
         while True:
             try:
                 self._publish_cached_pipeline_errors()
-                self._publish_event("heartbeat", {"ts": time.time()})
-                # Optional: Uncomment for verbose heartbeat logging
-                # self.log(f"Heartbeat sent at {time.time()}")
+                self._publish_profiling_updates()
+                now = time.time()
+                if now - last_heartbeat_sent >= self._heartbeat_interval:
+                    self._publish_event("heartbeat", {"ts": now})
+                    last_heartbeat_sent = now
             except Exception as e:
                 self.log(f"Error sending heartbeat: {e}")
-            time.sleep(self._heartbeat_interval)
+            time.sleep(min(self._profiling_publish_interval, 0.1))
+
+    def _publish_profiling_updates(self) -> None:
+        """Publish latest pipeline profiling snapshots over SSE."""
+        now = time.time()
+        if now - self._last_profiling_publish_ts < self._profiling_publish_interval:
+            return
+        self._last_profiling_publish_ts = now
+
+        try:
+            pipelines = self.pipeline_objects_callback() or {}
+        except Exception as error:
+            self.log(f"Failed to get pipelines for profiling SSE: {error}")
+            return
+
+        for pipeline_name, pipeline in pipelines.items():
+            try:
+                snapshot = pipeline.get_latest_profile_snapshot()
+                if not snapshot:
+                    continue
+                frame_seq = int(snapshot.get("frame_seq", 0))
+                if frame_seq <= 0:
+                    continue
+
+                last_sent_seq = self._pipeline_profile_last_seq_sent.get(
+                    pipeline_name,
+                    0,
+                )
+                if frame_seq <= last_sent_seq:
+                    continue
+
+                self._publish_event("profiling_update", snapshot)
+                self._pipeline_profile_last_seq_sent[pipeline_name] = frame_seq
+            except Exception as error:
+                self.log(
+                    f"Failed to publish profiling_update for {pipeline_name}: {error}"
+                )
 
     def serve_camera_feed_route(self, camera_name: str) -> Response:
         """

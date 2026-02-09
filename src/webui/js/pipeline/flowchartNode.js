@@ -31,6 +31,8 @@ export class FlowchartNode {
         this.gridSpacing = options.gridSpacing || 20;
 
         this.configDataLoaded = false;
+        this.threadInfo = null;
+        this.profilingInfo = null;
     }
 
     async loadConfigData() {
@@ -174,7 +176,26 @@ export class FlowchartNode {
                     color: white;
                     z-index: 10;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                ">${hasTimestep ? timestep : ""}</div>
+                 ">${hasTimestep ? timestep : ""}</div>
+                <div class="profiling-badge" style="
+                    position: absolute;
+                    top: -12px;
+                    right: -12px;
+                    min-width: 44px;
+                    height: 24px;
+                    padding: 0 8px;
+                    background-color: #14532d;
+                    border: 2px solid #404040;
+                    border-radius: 8px;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #dcfce7;
+                    z-index: 10;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+                "></div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
                     <span style="
                         background-color: ${categoryColor};
@@ -234,7 +255,6 @@ export class FlowchartNode {
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        ${this.operationData.id === "device_input.py" ? "display: none;" : ""}
                     ">
                         <img src="../../../assets/delete.svg" alt="Delete" style="width: 14px; height: 14px; filter: grayscale(100%); transition: filter 0.15s;" />
                     </button>
@@ -636,6 +656,31 @@ export class FlowchartNode {
     hideThreadBadge() {
         this.threadInfo = null;
         const badge = this.element?.querySelector(".thread-badge");
+        if (badge) {
+            badge.style.display = "none";
+        }
+    }
+
+    updateProfilingInfo(profilingInfo) {
+        this.profilingInfo = profilingInfo;
+        const badge = this.element?.querySelector(".profiling-badge");
+        if (!badge) {
+            return;
+        }
+
+        const executionTimeMs = Number(profilingInfo?.execution_time_ms);
+        if (!Number.isFinite(executionTimeMs) || executionTimeMs < 0) {
+            badge.style.display = "none";
+            return;
+        }
+
+        badge.style.display = "flex";
+        badge.textContent = `${executionTimeMs.toFixed(2)}ms`;
+    }
+
+    hideProfilingBadge() {
+        this.profilingInfo = null;
+        const badge = this.element?.querySelector(".profiling-badge");
         if (badge) {
             badge.style.display = "none";
         }

@@ -1207,7 +1207,7 @@ export function renderPipeline(
             <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
               <img src="../../../assets/settings.svg" alt="Settings" class="w-4 h-4 icon-grayscale" />
             </button>
-            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove" style="${item.id === "device_input.py" ? "display: none;" : ""}"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
+            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
           </div>
         </div>
       `;

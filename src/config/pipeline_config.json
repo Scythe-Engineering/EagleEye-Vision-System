@@ -304,38 +304,6 @@
                     "custom_waypoints": null
                 }
             ]
-        },
-        {
-            "action_name": "device_input.py",
-            "action_params": {
-                "camera_name": "FaceTime HD Camera"
-            },
-            "position": {
-                "x": -400,
-                "y": -260
-            },
-            "uuid": "op-ml5ee66b-6r1u",
-            "connections": [
-                {
-                    "from_uuid": "op-ml5ee66b-6r1u",
-                    "from_port": "frame",
-                    "to_uuid": "op-ml5eefuk-24bg",
-                    "to_port": "frame",
-                    "data_type": "frame",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "detect_apriltags.py",
-            "action_params": {},
-            "position": {
-                "x": -100,
-                "y": -260
-            },
-            "uuid": "op-ml5eefuk-24bg",
-            "connections": []
         }
     ]
 }
