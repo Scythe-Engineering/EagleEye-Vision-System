@@ -8,25 +8,26 @@ import time
 import traceback
 from collections import deque
 from typing import TYPE_CHECKING, Any, Dict
-from line_profiler import profile
 
-import cv2
 import numpy as np
+from line_profiler import profile
 from networktables import NetworkTable
 
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
+from src.config.utils.flow_manager import FlowManager
+from src.config.utils.operation import Connection, Operation
+from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
-from src.config.utils.operation import Operation, Connection
-from src.main_operations.definitions.base.base_class import OperationInstance
-from src.config.utils.flow_manager import FlowManager
 
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
     from src.webui.web_server import EagleEyeInterface
 
 debug_mode = False
+NT_COMMAND_PREFIX = "commands"
+NT_ACTIVE_COMMAND = "active"
 
 
 class Pipeline:
@@ -63,11 +64,18 @@ class Pipeline:
         self.camera_manager = camera_manager
         self.logger = logger
         self.camera_bus_id = camera_bus_id
-        self.camera_bus_ids = camera_bus_ids or ([] if camera_bus_id is None else [camera_bus_id])
+        if camera_bus_ids is not None:
+            self.camera_bus_ids = camera_bus_ids
+        elif camera_bus_id is not None:
+            self.camera_bus_ids = [camera_bus_id]
+        else:
+            self.camera_bus_ids = []
         self.pipeline_name = pipeline_name or "unknown"
 
         self.thread_running = False
+        self.thread_active = False
         self.thread = None
+        self.thread_state_lock = threading.Lock()
         self.operation_errors: dict[str, dict[str, Any]] = {}
         self.operation_errors_lock = threading.Lock()
         self.operations: dict[str, Operation] = self._initialize_operations()
@@ -90,6 +98,7 @@ class Pipeline:
         self.visualization_data = None
         self.visualization_data_lock = threading.Lock()
         self.visualization_operation_uuid = None
+        self._last_nt_active_state = True
 
     def _snake_to_camel(self, snake_str: str) -> str:
         """Convert snake_case string to CamelCase.
@@ -398,7 +407,9 @@ class Pipeline:
 
         return None
 
-    def _find_upstream_device_input(self, operation_uuid: str | None) -> Operation | None:
+    def _find_upstream_device_input(
+        self, operation_uuid: str | None
+    ) -> Operation | None:
         """Find the nearest upstream device_input operation for a target operation.
 
         Args:
@@ -502,36 +513,41 @@ class Pipeline:
                     f"{Colors.RED}Operation {action_name} ({action_uuid}) not found in pipeline{Colors.RESET}"
                 )
 
-    def thread_run(
-        self, camera_thread_manager: CameraThreadManager
-    ) -> None:
+    def thread_run(self, camera_thread_manager: CameraThreadManager) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
         """
-        self.thread_running = True
-        self.thread = threading.Thread(
-            target=self._thread_run, args=(camera_thread_manager,)
-        )
-        self.thread.start()
+        with self.thread_state_lock:
+            self.thread_running = True
+            self.thread_active = False
+            self.thread = threading.Thread(
+                target=self._thread_run, args=(camera_thread_manager,)
+            )
+            self.thread.start()
 
-    def _thread_run(
-        self, camera_thread_manager: CameraThreadManager
-    ) -> None:
+    def _thread_run(self, camera_thread_manager: CameraThreadManager) -> None:
         """Run the pipeline continuously in a thread.
 
         Args:
             camera_thread_manager: The camera thread manager.
         """
         if self.logger:
-            self.logger.log(
-                f"{Colors.CYAN}Starting pipeline thread{Colors.RESET}"
-            )
+            self.logger.log(f"{Colors.CYAN}Starting pipeline thread{Colors.RESET}")
         time.sleep(0.1)
 
         while self.thread_running:
             try:
+                if not self._is_enabled_from_networktables():
+                    with self.thread_state_lock:
+                        self.thread_active = False
+                    time.sleep(0.05)
+                    continue
+
+                with self.thread_state_lock:
+                    self.thread_active = True
+
                 # Snapshot visualize state and target name atomically
                 with self.visualization_data_lock:
                     should_visualize = self.set_visualize
@@ -554,12 +570,37 @@ class Pipeline:
                 else:
                     self.run()
             except Exception as _:
+                with self.thread_state_lock:
+                    self.thread_active = False
                 if self.logger:
                     self.logger.log(
                         f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
                     )
 
             time.sleep(0.001)
+
+        with self.thread_state_lock:
+            self.thread_active = False
+
+    def _is_enabled_from_networktables(self) -> bool:
+        """Return whether this pipeline should actively process frames.
+
+        Returns:
+            bool: True when the command topic is enabled or unavailable.
+        """
+        command_topic = f"{NT_COMMAND_PREFIX}/{self.pipeline_name}/{NT_ACTIVE_COMMAND}"
+        try:
+            active_value = bool(self.network_table.getBoolean(command_topic, True))
+        except Exception:
+            return True
+
+        if active_value != self._last_nt_active_state and self.logger:
+            self.logger.log(
+                f"{Colors.CYAN}Pipeline {self.pipeline_name} active command set to {active_value}{Colors.RESET}"
+            )
+            self._last_nt_active_state = active_value
+
+        return active_value
 
     def _visualize(
         self, start_frame: np.ndarray, action_uuid: str | None
@@ -598,10 +639,34 @@ class Pipeline:
 
     def stop(self) -> None:
         """Stop the pipeline thread."""
-        self.thread_running = False
-        if self.thread is not None:
-            self.thread.join()
-            self.thread = None
+        with self.thread_state_lock:
+            self.thread_running = False
+            self.thread_active = False
+            thread = self.thread
+        if thread is not None:
+            thread.join()
+            with self.thread_state_lock:
+                if self.thread is thread:
+                    self.thread = None
+
+    def is_active(self) -> bool:
+        """Return whether the pipeline processing thread is currently active.
+
+        Returns:
+            bool: True when the pipeline thread is alive and actively processing.
+        """
+        with self.thread_state_lock:
+            thread = self.thread
+            thread_active = self.thread_active
+
+        if not thread_active:
+            return False
+        if thread is None:
+            return False
+        try:
+            return bool(thread.is_alive())
+        except Exception:
+            return False
 
     def get_pipeline_thread_info(self) -> dict[str, Any]:
         """Get total number of threads, thread assignment, and execution timestep for each operation.
@@ -668,7 +733,9 @@ class Pipeline:
         """
         with self.operation_errors_lock:
             errors = [record.copy() for record in self.operation_errors.values()]
-        return sorted(errors, key=lambda record: record.get("last_seen_ts", 0), reverse=True)
+        return sorted(
+            errors, key=lambda record: record.get("last_seen_ts", 0), reverse=True
+        )
 
     def _publish_operation_error_update(self, operation: Operation) -> None:
         """Publish SSE update for the current operation error state.
