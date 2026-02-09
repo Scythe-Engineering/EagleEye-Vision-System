@@ -234,24 +234,40 @@ window.onload = async () => {
         }
     });
 
-    es.addEventListener("profiling_update", (e) => {
+    if (typeof globalThis.profilingUpdateSseHandler === "function") {
+        es.removeEventListener(
+            "profiling_update",
+            globalThis.profilingUpdateSseHandler,
+        );
+        delete globalThis.profilingUpdateSseHandler;
+    }
+
+    const socket = globalThis.socket;
+    const handleProfilingUpdateFromSocket = (data) => {
         try {
-            const data = JSON.parse(e.data);
+            const parsedData = typeof data === "string" ? JSON.parse(data) : data;
             const hasRequiredFields =
-                typeof data?.pipeline_name === "string" &&
-                Number.isFinite(data?.frame_seq) &&
-                Number.isFinite(data?.frame_time_ms) &&
-                Number.isFinite(data?.timestamp_ms) &&
-                typeof data?.operations === "object" &&
-                Array.isArray(data?.timesteps);
+                typeof parsedData?.pipeline_name === "string" &&
+                Number.isFinite(parsedData?.frame_seq) &&
+                Number.isFinite(parsedData?.frame_time_ms) &&
+                Number.isFinite(parsedData?.timestamp_ms) &&
+                typeof parsedData?.operations === "object" &&
+                Array.isArray(parsedData?.timesteps);
             if (!hasRequiredFields) {
                 return;
             }
-            globalThis.pipelineCreator?.handleProfilingUpdate?.(data);
+            globalThis.pipelineCreator?.handleProfilingUpdate?.(parsedData);
         } catch (err) {
-            console.warn("Failed to parse SSE profiling_update event", err);
+            console.warn("Failed to parse Socket.IO profiling_update event", err);
         }
-    });
+    };
+
+    if (socket?.on) {
+        socket.off?.("profiling_update", handleProfilingUpdateFromSocket);
+        socket.on("profiling_update", handleProfilingUpdateFromSocket);
+    } else {
+        console.warn("Socket.IO client unavailable for profiling_update events");
+    }
 
     es.addEventListener("system_status", (e) => {
         try {

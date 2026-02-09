@@ -689,8 +689,6 @@ class EagleEyeInterface:
                 if now - last_heartbeat_sent >= self._heartbeat_interval:
                     self._publish_event("heartbeat", {"ts": now})
                     last_heartbeat_sent = now
-                    # Optional: Uncomment for verbose heartbeat logging
-                    # self.log(f"Heartbeat sent at {time.time()}")
             except Exception as e:
                 self.log(f"Error sending heartbeat: {e}")
             time.sleep(min(self._profiling_publish_interval, 0.1))
