@@ -1,8 +1,7 @@
 from __future__ import annotations
 import threading
 import traceback
-from collections import deque
-from time import perf_counter, sleep, time
+from time import perf_counter, perf_counter_ns, sleep, time
 from typing import Any, Callable
 from line_profiler import profile
 
@@ -10,11 +9,6 @@ from src.config.utils.operation import Operation
 from src.config.utils.thread_object import ThreadObject
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
-
-
-PROFILE_ENABLED_DEFAULT = True
-PROFILE_HISTORY_LENGTH = 50
-PROFILE_DEBUG_LOG_CADENCE = 120
 
 
 def recursive_forward_flow_register(
@@ -242,12 +236,8 @@ class FlowManager:
 
         self.operation_outputs: dict[str, Any] = {}
         self.previous_operation_outputs: dict[str, Any] = {}
-        self._profile_enabled = PROFILE_ENABLED_DEFAULT
         self._profile_lock = threading.Lock()
         self._last_frame_profile: dict[str, Any] | None = None
-        self._profile_history: deque[dict[str, Any]] = deque(
-            maxlen=PROFILE_HISTORY_LENGTH
-        )
         self._profile_seq = 0
 
     @profile
@@ -257,15 +247,10 @@ class FlowManager:
         Automatically uses direct execution for single-threaded pipelines,
         or threaded execution for multi-threaded pipelines.
         """
-        previous_profile_seq = self.get_profile_seq()
         if self.num_threads == 1:
             self._run_flow_direct()
         else:
             self._run_flow_threaded()
-
-        current_profile_seq = self.get_profile_seq()
-        if current_profile_seq != previous_profile_seq:
-            self._emit_profile_debug_summary()
 
     @profile
     def _run_flow_direct(self) -> None:
@@ -330,7 +315,7 @@ class FlowManager:
         frame_start = perf_counter()
         operation_time_by_uuid_ms: dict[str, float] = {}
         timestep_total_ms: dict[int, float] = {}
-        cycle_id = self.get_profile_seq() + 1
+        cycle_id = perf_counter_ns()
 
         max_timestep = len(self.execution_time_groups)
 
@@ -684,9 +669,6 @@ class FlowManager:
             operation_time_by_uuid_ms: Per-operation runtime map.
             timestep_total_ms: Per-timestep wall-clock runtime map.
         """
-        if not self._profile_enabled:
-            return
-
         try:
             operations_payload: dict[str, dict[str, Any]] = {}
             for operation in self.operations.values():
@@ -718,25 +700,11 @@ class FlowManager:
                     "timesteps": timestep_rows,
                 }
                 self._last_frame_profile = snapshot
-                self._profile_history.append(snapshot)
         except Exception as error:
             self.logger.log(
                 f"{Colors.YELLOW}Profiling snapshot failed for pipeline "
                 f"{self.pipeline_name}: {error}{Colors.RESET}"
             )
-
-    def _emit_profile_debug_summary(self) -> None:
-        """Emit periodic debug summary for profiling metrics."""
-        if PROFILE_DEBUG_LOG_CADENCE <= 0:
-            return
-
-        snapshot = self.get_latest_profile_snapshot()
-        if snapshot is None:
-            return
-
-        frame_seq = int(snapshot.get("frame_seq", 0))
-        if frame_seq <= 0 or frame_seq % PROFILE_DEBUG_LOG_CADENCE != 0:
-            return
 
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
         """Get a copy of the latest profiling snapshot.
@@ -761,12 +729,3 @@ class FlowManager:
             snapshot["operations"] = operations
             snapshot["timesteps"] = timesteps
             return snapshot
-
-    def get_profile_seq(self) -> int:
-        """Get current profiling sequence id.
-
-        Returns:
-            Current sequence number for frame snapshots.
-        """
-        with self._profile_lock:
-            return self._profile_seq
