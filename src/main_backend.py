@@ -151,9 +151,7 @@ class MainBackend:
 
         # Set logger for MX3 module if available
         if available_devices.get("MX3"):
-            from src.utils.device_management_utils.mx3_accelerator import (
-                set_mx3_logger,
-            )
+            from src.utils.device_management_utils.mx3_accelerator import set_mx3_logger
 
             set_mx3_logger(self.logger)
 
@@ -168,9 +166,7 @@ class MainBackend:
         if not tpu_devices:
             return
 
-        from src.utils.device_management_utils.mx3_accelerator import (  # noqa: E402
-            MX3Accelerator,
-        )
+        from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator  # noqa: E402
 
         for tpu_device in tpu_devices:
             if not tpu_device.startswith("memx:"):
@@ -267,6 +263,8 @@ class MainBackend:
                 self.logger.log(f"{Colors.RED}{error_msg}{Colors.RESET}")
                 raise RuntimeError(error_msg) from e
 
+        return None
+
     def restart(self) -> None:
         """
         Restart the backend by shutting down and triggering systemctl service restart.
@@ -278,7 +276,6 @@ def main() -> None:
     """Main function to initialize and continuously monitor for cameras."""
     try:
         backend = MainBackend(logger=logger)
-        # Keep the main thread alive to allow restart threads to complete
         while True:
             sleep(1)
     except KeyboardInterrupt:

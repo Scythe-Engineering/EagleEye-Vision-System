@@ -891,9 +891,7 @@ class EagleEyeInterface:
             "operations": main_operations + secondary_operations,
         }
 
-    def _operation_has_visualization(
-        self, filename: str, is_secondary: bool
-    ) -> bool:
+    def _operation_has_visualization(self, filename: str, is_secondary: bool) -> bool:
         """Check if an operation overrides the base visualize method."""
         module_path = (
             f"src.secondary_operations.{filename[:-3]}"
@@ -911,9 +909,7 @@ class EagleEyeInterface:
                 ):
                     return attr.visualize is not OperationInstance.visualize
         except Exception as e:
-            self.log(
-                f"Warning: Could not detect visualization for {filename}: {e}"
-            )
+            self.log(f"Warning: Could not detect visualization for {filename}: {e}")
         return False
 
     def get_operation_config_data(
@@ -1440,16 +1436,13 @@ class EagleEyeInterface:
                 )
 
             yield (
-                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-                + frame_bytes
-                + b"\r\n"
+                b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
             )
 
-    def _instance_has_visualization(self, operation_instance: OperationInstance) -> bool:
-        return (
-            operation_instance.__class__.visualize
-            is not OperationInstance.visualize
-        )
+    def _instance_has_visualization(
+        self, operation_instance: OperationInstance
+    ) -> bool:
+        return operation_instance.__class__.visualize is not OperationInstance.visualize
 
     def restart_backend(self) -> tuple[dict, int]:
         """
@@ -1520,7 +1513,7 @@ class EagleEyeInterface:
 
     def get_pipeline_active(self, pipeline_name: str) -> tuple[dict, int]:
         """
-        Return placeholder activity status for a pipeline.
+        Return activity status for a pipeline.
 
         Args:
             pipeline_name: Name of the pipeline.
@@ -1528,7 +1521,19 @@ class EagleEyeInterface:
         Returns:
             tuple[dict, int]: Dictionary containing active flag.
         """
-        return {"pipeline": pipeline_name, "active": True}, 200
+        try:
+            pipeline = self.pipeline_objects_callback()[pipeline_name]
+        except KeyError:
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
+
+        try:
+            active = bool(pipeline.is_active())
+        except Exception as error:
+            self.log(
+                f"Failed to read active status for pipeline {pipeline_name}: {error}"
+            )
+            active = False
+        return {"pipeline": pipeline_name, "active": active}, 200
 
     def get_system_status(self) -> tuple[dict, int]:
         """
@@ -1605,18 +1610,42 @@ class EagleEyeInterface:
 
     def _build_pipeline_status_list(self) -> list[dict[str, Any]]:
         """
-        Build a list of pipelines with placeholder active status.
+        Build a list of pipelines with live active status.
 
         Returns:
             list[dict[str, Any]]: Pipeline status list.
         """
         try:
             pipeline_names = self.get_pipeline_names()
-        except Exception as e:
-            self.log(f"Error loading pipeline names for status: {e}")
+        except Exception as error:
+            self.log(f"Error loading pipeline names for status: {error}")
             pipeline_names = []
 
-        return [{"name": name, "active": True} for name in pipeline_names]
+        try:
+            pipeline_objects = self.pipeline_objects_callback()
+        except Exception as error:
+            self.log(f"Error loading pipeline objects for status: {error}")
+            pipeline_objects = {}
+
+        statuses: list[dict[str, Any]] = []
+        for pipeline_name in pipeline_names:
+            pipeline = pipeline_objects.get(pipeline_name)
+            if pipeline is None:
+                self.log(
+                    f"Warning: Pipeline {pipeline_name} is present in config but not loaded"
+                )
+                continue
+
+            try:
+                is_active = bool(pipeline.is_active())
+            except Exception as error:
+                self.log(
+                    f"Failed to read active status for pipeline {pipeline_name}: {error}"
+                )
+                is_active = False
+            statuses.append({"name": pipeline_name, "active": is_active})
+
+        return statuses
 
     def download_log_file(self) -> tuple[str, int] | tuple[dict, int]:
         """
