@@ -17,6 +17,27 @@ class DeviceInput(OperationInstance):
     This operation handles frame rotation, which is configured at the operation
     level rather than the camera level. This allows different pipelines to
     apply different rotations to the same camera source.
+
+    The run() method signature:
+
+        run(self, input) -> np.ndarray | None
+
+    Input:
+        _input_data (Any): Unused parameter. Data source operations don't consume
+            input from previous pipeline stages. The camera source is determined
+            by the `camera_name` constructor parameter.
+
+    Output:
+        np.ndarray | None: The current camera frame as a numpy array in BGR format
+            with rotation applied if configured. Returns None if the camera is
+            unavailable or no frame has been captured yet. The array shape is
+            (height, width, 3) for color images.
+
+    Example:
+        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "camera_0", 90)
+        >>> frame = device_input.run(None)
+        >>> if frame is not None:
+        ...     print(frame.shape)  # e.g., (720, 1280, 3)
     """
 
     VALID_ROTATIONS = {0, 90, 180, 270}

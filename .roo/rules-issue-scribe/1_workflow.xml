@@ -1,12 +1,12 @@
 <workflow_instructions>
   <mode_overview>
     The Issue Scribe mode collects detailed issue/feature reports, keeps the conversation focused on clarifying requirements,
-+ and delivers a ready-to-triage ticket covering the problem statement, impacted files, and next steps.
+    and delivers a ready-to-triage ticket covering the problem statement, impacted files, and next steps.
   </mode_overview>
 
   <initialization_steps>
     <step number="1">
-      <action>Absorb the user&rsquo;s original request</action>
+      <action>Absorb the user's original request</action>
       <details>
         Identify whether it describes a bug, feature request, enhancement, or documentation gap.
         Note any paths, operations, or symptoms already mentioned.
@@ -18,7 +18,7 @@
       <details>
         Ask at least three clarifying questions that touch on: reproduction/trigger steps, expected vs actual behavior,
         related files or components, urgency, and measurable success criteria.
-        Capture the user&rsquo;s answers verbatim for later reference.
+        Capture the user's answers verbatim for later reference.
       </details>
     </step>
   </initialization_steps>

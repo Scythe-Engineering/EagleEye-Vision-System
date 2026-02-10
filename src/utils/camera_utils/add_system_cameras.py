@@ -24,6 +24,23 @@ def add_system_cameras(
 
     Cameras are started without calibration requirements - all calibration
     and rotation concerns are handled at the operation level.
+
+    Args:
+        web_interface (EagleEyeInterface): Web interface instance used to register
+            cameras with the system for UI display and management.
+        camera_manager (CameraThreadManager): Camera thread manager used to start
+            camera capture threads for each detected system camera.
+        known_cameras (Set[str]): Set of already-known camera names. Cameras in
+            this set will be skipped during registration.
+        logger (Logger | None): Optional logger for outputting status messages.
+            If None, messages are printed to stdout.
+
+    Returns:
+        Set[str]: Updated set of known camera names, including any newly registered
+            system cameras. Returns the original set unchanged if no cameras detected.
+
+    Raises:
+        No exceptions are raised; errors are logged and gracefully handled.
     """
 
     detected_cameras = detect_cameras_with_names()

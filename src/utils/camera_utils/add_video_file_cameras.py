@@ -21,6 +21,24 @@ def add_video_file_cameras(
 
     Cameras are started without calibration requirements - all calibration
     and rotation concerns are handled at the operation level.
+
+    Args:
+        web_interface (EagleEyeInterface): Web interface instance used to register
+            video file cameras with the system for UI display and management.
+        camera_manager (CameraThreadManager): Camera thread manager used to start
+            camera capture threads for each video file.
+        known_cameras (Set[str]): Set of already-known camera names. Cameras in
+            this set will be skipped during registration.
+        logger (Logger): Logger instance for outputting status messages about
+            detected video files and registration results.
+
+    Returns:
+        Set[str]: Updated set of known camera names, including any newly registered
+            video file cameras. Returns the original set unchanged if no video
+            files found in the sim_videos directory.
+
+    Raises:
+        No exceptions are raised; errors are logged and gracefully handled.
     """
     current_dir = Path(__file__).resolve().parent
     sim_videos_dir = current_dir.parent / "sim_videos"

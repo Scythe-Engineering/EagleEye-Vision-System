@@ -142,5 +142,11 @@ class PhysicalCamera(Camera):
         return frame
 
     def get_achieved_fps(self) -> int:
-        """Get the FPS that the camera is operating at."""
+        """Get the FPS that the camera is operating at.
+
+        Returns:
+            int: The achieved frames per second of the camera, representing the
+                actual capture rate. This value is updated during camera operation
+                and reflects the achieved_fps attribute.
+        """
         return self.achieved_fps
