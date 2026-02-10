@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+Please look through issues and pull requests to see if your issue is already reported before making a new one!!
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 
