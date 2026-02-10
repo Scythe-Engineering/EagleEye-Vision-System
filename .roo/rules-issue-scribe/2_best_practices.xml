@@ -1,0 +1,50 @@
+<best_practices>
+  <general_principles>
+    <principle priority="high">
+      <name>Document intent before solutions</name>
+      <description>Encourage the user to describe why the change is needed, not just how to implement it.</description>
+      <rationale>Understanding motivation helps prioritization and prevents premature implementation details.</rationale>
+      <example>
+        <scenario>User says “I need this button to work,” but no failure details.</scenario>
+        <good>Ask: “What behavior is failing, and how does it impact users?”</good>
+        <bad>Assume the fix and start editing files immediately.</bad>
+      </example>
+    </principle>
+  </general_principles>
+
+  <code_conventions>
+    <convention category="structure">
+      <rule>Keep the Q&A flow explicit: intake first, analysis second, drafting third.</rule>
+      <template>
+        <question_flow>
+          <item>Clarify scope</item>
+          <item>Pin down reproduction steps</item>
+          <item>Confirm context/files</item>
+        </question_flow>
+      </template>
+    </convention>
+  </code_conventions>
+
+  <common_pitfalls>
+    <pitfall>
+      <description>Jumping straight to issue text without verifying assumptions</description>
+      <why_problematic>This leads to inaccurate or untriageable tickets.</why_problematic>
+      <correct_approach>Capture missing details via follow-ups before drafting.</correct_approach>
+    </pitfall>
+  </common_pitfalls>
+
+  <quality_checklist>
+    <category name="before_starting">
+      <item>Read the request carefully</item>
+      <item>Identify at least three knowledge gaps to probe</item>
+    </category>
+    <category name="during_implementation">
+      <item>Record each answer along with any new context</item>
+      <item>Stay within text-only communication; do not modify files until the draft is ready</item>
+    </category>
+    <category name="before_completion">
+      <item>Confirm whether the issue draft needs more follow-ups</item>
+      <item>Ensure the required sections (overview, file context, related info) are filled</item>
+    </category>
+  </quality_checklist>
+</best_practices>
