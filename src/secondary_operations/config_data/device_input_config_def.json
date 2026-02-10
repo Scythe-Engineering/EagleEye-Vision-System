@@ -14,6 +14,13 @@
             "default": "",
             "required": true,
             "restart_for_change": true
+        },
+        "frame_rotation": {
+            "type": "int",
+            "description": "Rotation angle in degrees to apply to frames. Must be one of: 0, 90, 180, 270.",
+            "default": 0,
+            "required": false,
+            "restart_for_change": false
         }
     }
 }

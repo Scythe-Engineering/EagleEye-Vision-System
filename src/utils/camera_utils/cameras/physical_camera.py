@@ -3,7 +3,6 @@ import subprocess
 import re
 
 import cv2
-import imutils
 import numpy as np
 
 from src.utils.camera_utils.cameras.camera import Camera
@@ -17,23 +16,27 @@ class PhysicalCamera(Camera):
         self,
         camera_name: str,
         camera_index: int,
-        camera_calibration_folder: str | None,
+        frame_width: int = 1280,
+        frame_height: int = 720,
         log: Callable[[str], None] = print,
     ) -> None:
-        """
+        """Initialize the physical camera.
+
         Args:
             camera_name: Name of the camera.
-            camera_index: Index of the camera.
-            camera_calibration_folder: Path to the camera calibration folder.
+            camera_index: Index of the camera device.
+            frame_width: Desired frame width in pixels. Defaults to 1280.
+            frame_height: Desired frame height in pixels. Defaults to 720.
             log: Logging function.
         """
         self.camera_index: int = camera_index
+        self.frame_width: int = frame_width
+        self.frame_height: int = frame_height
         self.achieved_fps: int = 30
-        super().__init__(camera_name, camera_calibration_folder, log)
+        super().__init__(camera_name, log)
 
     def get_available_fps_for_resolution(self) -> list[int]:
-        """
-        Query available FPS for the configured resolution using v4l2-ctl.
+        """Query available FPS for the configured resolution using v4l2-ctl.
 
         Returns:
             List of available FPS values in descending order, or empty list if unavailable.
@@ -96,19 +99,13 @@ class PhysicalCamera(Camera):
                 f"Error opening camera at index {self.camera_index} with name {self.name}"
             )
 
-        # Set capture properties to reduce V4L2 timeouts
-        # Set buffer size to reduce latency and avoid timeouts
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        # Set frame width and height from extrinsics configuration
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
 
-        # Prefer MJPG codec for better performance and frame rate
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG") # type: ignore
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # type: ignore
         self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
 
-        # Get available FPS for the configured resolution
         available_fps = self.get_available_fps_for_resolution()
 
         if available_fps:
@@ -118,7 +115,6 @@ class PhysicalCamera(Camera):
             self.achieved_fps = int(actual_fps)
         else:
             self.achieved_fps = 15
-            # Fallback to standard FPS values if v4l2-ctl is unavailable
             for target_fps in [120, 100, 90, 60, 30, 15]:
                 self.cap.set(cv2.CAP_PROP_FPS, target_fps)
                 actual_fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -130,18 +126,21 @@ class PhysicalCamera(Camera):
             f"{Colors.GREEN}Camera {self.name}: Set resolution to {self.frame_width}x{self.frame_height} @ {self.achieved_fps} fps{Colors.RESET}"
         )
 
-        # Enable autofocus if available
         self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
 
         self.camera_ready = True
 
     def get_frame(self) -> np.ndarray | None:
+        """Read a raw frame from the camera without rotation.
+
+        Returns:
+            Raw frame as numpy array, or None on read failure.
+        """
         ret, frame = self.cap.read()
         if not ret:
             return None
-        if self.frame_rotation != 0:
-            return imutils.rotate_bound(frame, self.frame_rotation)
         return frame
 
     def get_achieved_fps(self) -> int:
+        """Get the FPS that the camera is operating at."""
         return self.achieved_fps

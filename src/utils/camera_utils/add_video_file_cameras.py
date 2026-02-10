@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Set
 
@@ -18,8 +17,10 @@ def add_video_file_cameras(
     known_cameras: Set[str],
     logger: Logger,
 ) -> Set[str]:
-    """
-    Add video file cameras to the system. (Mostly for testing and development purposes)
+    """Add video file cameras to the system for testing and development.
+
+    Cameras are started without calibration requirements - all calibration
+    and rotation concerns are handled at the operation level.
     """
     current_dir = Path(__file__).resolve().parent
     sim_videos_dir = current_dir.parent / "sim_videos"
@@ -39,11 +40,6 @@ def add_video_file_cameras(
         web_interface.add_camera(camera_name, -1)
         started = camera_manager.start_camera_thread(
             camera_name,
-            os.path.join(
-                current_dir,
-                "camera_calibrations",
-                "sim_camera",
-            ),
             video_file_path=str(video_file),
         )
         if started:
