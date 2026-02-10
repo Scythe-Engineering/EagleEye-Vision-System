@@ -1,0 +1,42 @@
+<complete_examples>
+  <example name="issue_capture">
+    <scenario>
+      User reports: “The new pipeline editor UI throws when I add a camera fragment.”
+    </scenario>
+    <user_request>
+      Add more context via questions about the error, reproduction steps, and relevant files (webui or backend).
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Clarify reproduction</description>
+        <approach>Ask: “What are the exact steps to reproduce, and is there an error message?”
+          Outcome: Capture the stack trace and precise buttons clicked.</approach>
+        <expected_outcome>Precise reproduction steps with any command arguments included.</expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Map to files</description>
+        <approach>Ask: “Which files or UI tabs touched this area? WebUI frontend, backend endpoint, or shared renderer?”
+          Outcome: User confirms webui/js/main.js and src/main_backend.py are involved.</approach>
+        <analysis>Document that the failure occurs during WebUI camera fragment addition, with backend log mention.</analysis>
+      </step>
+
+      <step number="3">
+        <description>Draft the issue</description>
+        <approach>Summarize the problem impact, list the two files, mention follow-ups (logs, repro scripts), and note urgent triage.</approach>
+      </step>
+    </workflow>
+
+    <completion>
+      Issue overview: describe the crash, its impact, and desired fix.
+      Basic file context: list webui/js/main.js and src/main_backend.py.
+      Other related info: reproduction commands, logs to grab, remaining unknowns.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>Keep follow-up answers paired with the questions for traceability.</takeaway>
+      <takeaway>Always verify whether backend logs are needed before closing the conversation.</takeaway>
+    </key_takeaways>
+  </example>
+</complete_examples>

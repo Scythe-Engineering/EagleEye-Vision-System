@@ -211,18 +211,19 @@ class CameraThreadManager:
     def start_camera_thread(
         self,
         camera_name: str,
-        camera_calibration_folder: str | None,
         video_file_path: Optional[str] = None,
         camera_index: Optional[int] = None,
+        frame_width: int = 1280,
+        frame_height: int = 720,
     ) -> bool:
-        """
-        Start a thread for a specific camera.
+        """Start a thread for a specific camera.
 
         Args:
             camera_name: The name of the camera.
-            camera_calibration_folder: The path to the camera calibration folder.
-            video_file_path: The path to the video file.
-            camera_index: The index of the physical camera.
+            video_file_path: The path to the video file (for video file cameras).
+            camera_index: The index of the physical camera (for physical cameras).
+            frame_width: Desired frame width for physical cameras. Defaults to 1280.
+            frame_height: Desired frame height for physical cameras. Defaults to 720.
 
         Returns:
             True if the thread was started successfully, False otherwise.
@@ -231,7 +232,6 @@ class CameraThreadManager:
             if video_file_path:
                 camera = VideoFileCamera(
                     camera_name,
-                    camera_calibration_folder,
                     video_file_path,
                     self.logger.log,
                 )
@@ -241,7 +241,8 @@ class CameraThreadManager:
                 camera = PhysicalCamera(
                     camera_name,
                     camera_index,
-                    camera_calibration_folder,
+                    frame_width,
+                    frame_height,
                     self.logger.log,
                 )
 

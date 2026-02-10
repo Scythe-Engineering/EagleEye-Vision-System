@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Set
 
@@ -12,7 +11,6 @@ from src.webui.web_server import EagleEyeInterface
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
 
-current_dir = Path(__file__).parent
 spacer = " " * 4
 
 
@@ -22,7 +20,28 @@ def add_system_cameras(
     known_cameras: Set[str],
     logger: Logger | None = None,
 ) -> Set[str]:
-    """Register every system camera with the camera manager."""
+    """Register every system camera with the camera manager.
+
+    Cameras are started without calibration requirements - all calibration
+    and rotation concerns are handled at the operation level.
+
+    Args:
+        web_interface (EagleEyeInterface): Web interface instance used to register
+            cameras with the system for UI display and management.
+        camera_manager (CameraThreadManager): Camera thread manager used to start
+            camera capture threads for each detected system camera.
+        known_cameras (Set[str]): Set of already-known camera names. Cameras in
+            this set will be skipped during registration.
+        logger (Logger | None): Optional logger for outputting status messages.
+            If None, messages are printed to stdout.
+
+    Returns:
+        Set[str]: Updated set of known camera names, including any newly registered
+            system cameras. Returns the original set unchanged if no cameras detected.
+
+    Raises:
+        No exceptions are raised; errors are logged and gracefully handled.
+    """
 
     detected_cameras = detect_cameras_with_names()
     if not detected_cameras:
@@ -47,14 +66,6 @@ def add_system_cameras(
         if camera_name in known_cameras:
             continue
 
-        camera_info["index"] = index
-        calibration_folder = os.path.join(
-            current_dir, "camera_calibrations", f"{camera_info['bus_value']}"
-        )
-
-        if not os.path.exists(calibration_folder):
-            calibration_folder = None
-
         web_interface.add_camera(camera_name, index)
         try:
             camera_index = int(index)
@@ -62,7 +73,7 @@ def add_system_cameras(
             camera_index = None
 
         if camera_manager.start_camera_thread(
-            camera_name, calibration_folder, camera_index=camera_index
+            camera_name, camera_index=camera_index
         ):
             known_cameras.add(camera_name)
         else:

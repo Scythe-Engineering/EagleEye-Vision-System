@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Set
 
@@ -18,8 +17,28 @@ def add_video_file_cameras(
     known_cameras: Set[str],
     logger: Logger,
 ) -> Set[str]:
-    """
-    Add video file cameras to the system. (Mostly for testing and development purposes)
+    """Add video file cameras to the system for testing and development.
+
+    Cameras are started without calibration requirements - all calibration
+    and rotation concerns are handled at the operation level.
+
+    Args:
+        web_interface (EagleEyeInterface): Web interface instance used to register
+            video file cameras with the system for UI display and management.
+        camera_manager (CameraThreadManager): Camera thread manager used to start
+            camera capture threads for each video file.
+        known_cameras (Set[str]): Set of already-known camera names. Cameras in
+            this set will be skipped during registration.
+        logger (Logger): Logger instance for outputting status messages about
+            detected video files and registration results.
+
+    Returns:
+        Set[str]: Updated set of known camera names, including any newly registered
+            video file cameras. Returns the original set unchanged if no video
+            files found in the sim_videos directory.
+
+    Raises:
+        No exceptions are raised; errors are logged and gracefully handled.
     """
     current_dir = Path(__file__).resolve().parent
     sim_videos_dir = current_dir.parent / "sim_videos"
@@ -39,11 +58,6 @@ def add_video_file_cameras(
         web_interface.add_camera(camera_name, -1)
         started = camera_manager.start_camera_thread(
             camera_name,
-            os.path.join(
-                current_dir,
-                "camera_calibrations",
-                "sim_camera",
-            ),
             video_file_path=str(video_file),
         )
         if started:

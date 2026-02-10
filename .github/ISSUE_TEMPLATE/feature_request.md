@@ -1,13 +1,13 @@
 ---
 name: Feature request
 about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: ''
-
+title: ""
+labels: ""
+assignees: ""
 ---
 
-**Is your feature request related to a problem? Make an bug report instead!**
+**Is your feature request related to a problem? Please describe.**
+If existing functionality is broken or not working as documented, please file a bug report instead.
 
 **Describe the solution you'd like**
 A clear and concise description of what you want to happen.
