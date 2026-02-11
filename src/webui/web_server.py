@@ -1671,13 +1671,17 @@ class EagleEyeInterface:
         try:
             pipeline_names = self.get_pipeline_names()
         except Exception as error:
-            self.log(f"Error loading pipeline names for status: {error}")
+            self.log(
+                f"{Colors.RED}Error loading pipeline names for status: {error}{Colors.RESET}"
+            )
             pipeline_names = []
 
         try:
             pipeline_objects = self.pipeline_objects_callback()
         except Exception as error:
-            self.log(f"Error loading pipeline objects for status: {error}")
+            self.log(
+                f"{Colors.RED}Error loading pipeline objects for status: {error}{Colors.RESET}"
+            )
             pipeline_objects = {}
 
         statuses: list[dict[str, Any]] = []
@@ -1685,7 +1689,7 @@ class EagleEyeInterface:
             pipeline = pipeline_objects.get(pipeline_name)
             if pipeline is None:
                 self.log(
-                    f"Warning: Pipeline {pipeline_name} is present in config but not loaded"
+                    f"{Colors.YELLOW}Pipeline {pipeline_name} not found in pipeline objects callback.{Colors.RESET}"
                 )
                 continue
 
@@ -1693,7 +1697,7 @@ class EagleEyeInterface:
                 is_active = bool(pipeline.is_active())
             except Exception as error:
                 self.log(
-                    f"Failed to read active status for pipeline {pipeline_name}: {error}"
+                    f"{Colors.RED}Failed to read active status for pipeline {pipeline_name}: {error}{Colors.RESET}"
                 )
                 is_active = False
             statuses.append({"name": pipeline_name, "active": is_active})
@@ -1708,7 +1712,9 @@ class EagleEyeInterface:
             with open(os.path.join(self.logger.current_log_file), "r") as f:
                 return f.read(), 200
         except Exception as e:
-            self.logger.log(f"Error downloading log file: {e}")
+            self.logger.log(
+                f"{Colors.RED}Error downloading log file: {e}{Colors.RESET}"
+            )
             return {"error": str(e)}, 500
 
     def get_general_conf(self) -> tuple[dict, int]:
@@ -1730,7 +1736,9 @@ class EagleEyeInterface:
                 json.dump(request.get_json(), f)
             return {"message": "General configuration saved successfully"}, 200
         except Exception as e:
-            self.logger.log(f"Error saving general configuration: {e}")
+            self.logger.log(
+                f"{Colors.RED}Error saving general configuration: {e}{Colors.RESET}"
+            )
             return {"error": str(e)}, 500
 
     def get_pipeline_thread_info(self, pipeline_name: str) -> tuple[dict, int]:
