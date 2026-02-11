@@ -19,7 +19,7 @@ The operation implements a camera frame fetching pattern:
 ### Camera Integration
 
 - **Camera Thread Manager Access**: Retrieves frames from active camera threads
-- **Per-Camera Configuration**: Specifies which camera to read frames from via `camera_name` parameter
+- **Per-Camera Configuration**: Specifies which camera to read frames from via the deterministic `bus_id` parameter (USB port index)
 - **Non-Blocking Retrieval**: Returns current frame if available, None otherwise
 
 ### Frame Data Handling
@@ -32,17 +32,17 @@ The operation implements a camera frame fetching pattern:
 
 ### Required Parameters
 
-- **camera_name** (`str`): Name of the camera to fetch frames from
+- **bus_id** (`str`): USB bus ID of the camera to fetch frames from (matches `camera_manager` registration)
 
 ### Constructor
 
 ```python
-def __init__(self, camera_manager: CameraThreadManager, camera_name: str) -> None:
+def __init__(self, camera_manager: CameraThreadManager, bus_id: str) -> None:
     """Initialize the device input operation.
 
     Args:
         camera_manager: Camera thread manager to fetch frames from.
-        camera_name: Name of the camera to read frames from.
+        bus_id: Deterministic bus ID of the camera to read frames from.
     """
 ```
 
@@ -50,9 +50,9 @@ def __init__(self, camera_manager: CameraThreadManager, camera_name: str) -> Non
 
 ### Processing Flow
 
-1. **Initialization**: DeviceInput is created with reference to camera manager and camera name
+1. **Initialization**: DeviceInput is created with reference to camera manager and camera bus ID
 2. **Frame Request**: `run()` method called to fetch current frame
-3. **Camera Lookup**: Calls `camera_manager.get_current_frame(camera_name)`
+3. **Camera Lookup**: Calls `camera_manager.get_current_frame_by_bus_id(bus_id)`
 4. **Frame Return**: Returns numpy array frame or None if unavailable
 5. **Pipeline Processing**: Returned frame enters next operation in pipeline
 
