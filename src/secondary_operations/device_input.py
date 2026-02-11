@@ -1,4 +1,4 @@
-from typing import Any, Mapping, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import cv2
 import numpy as np

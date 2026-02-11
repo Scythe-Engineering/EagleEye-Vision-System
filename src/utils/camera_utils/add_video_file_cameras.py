@@ -58,13 +58,20 @@ def add_video_file_cameras(
     for video_file in video_files:
         camera_name = video_file.stem
         bus_id = camera_name
-        web_interface.add_camera(camera_name, -1)
+        web_interface.add_camera(
+            camera_name,
+            -1,
+            camera_bus_id=bus_id,
+        )
         started = camera_manager.start_camera_thread(
             camera_name,
             video_file_path=str(video_file),
         )
         if started:
             camera_manager.register_bus_id(bus_id, camera_name)
+            legacy_bus_id = "-1"
+            if camera_manager.get_camera_name_by_bus_id(legacy_bus_id) is None:
+                camera_manager.register_bus_id(legacy_bus_id, camera_name)
             known_cameras.append({"name": camera_name, "index": -1, "bus_id": bus_id})
             logger.log(
                 f"{Colors.GREEN}Added video file camera: {camera_name}{Colors.RESET}"

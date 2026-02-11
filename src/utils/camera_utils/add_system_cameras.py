@@ -61,7 +61,11 @@ def add_system_cameras(
         except ValueError:
             camera_index = None
 
-        web_interface.add_camera(camera_name, index)
+        web_interface.add_camera(
+            camera_name,
+            index,
+            camera_bus_id=str(bus_id),
+        )
 
         if camera_manager.start_camera_thread(camera_name, camera_index=camera_index):
             camera_manager.register_bus_id(bus_id, camera_name)

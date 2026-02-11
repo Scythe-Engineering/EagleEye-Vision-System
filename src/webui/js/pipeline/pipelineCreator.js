@@ -406,14 +406,20 @@ async function fetchAvailableCameras() {
         }
         const data = await response.json();
 
-        const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => ({
-            name: name,
-            urlSafeName: cameraInfo?.name ?? name.replaceAll(" ", "_"),
-            id:
-                cameraInfo?.id !== undefined && cameraInfo?.id !== null
-                    ? String(cameraInfo.id)
-                    : name,
-        }));
+        const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => {
+            let resolvedCameraId = name;
+            if (cameraInfo?.bus_id != null) {
+                resolvedCameraId = String(cameraInfo.bus_id);
+            } else if (cameraInfo?.id != null) {
+                resolvedCameraId = String(cameraInfo.id);
+            }
+
+            return {
+                name: name,
+                urlSafeName: cameraInfo?.name ?? name.replaceAll(" ", "_"),
+                id: resolvedCameraId,
+            };
+        });
 
         pipelineStore.setCameras(cameras);
         console.log("Loaded cameras from server:", cameras);

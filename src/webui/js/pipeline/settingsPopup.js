@@ -52,16 +52,28 @@ import { BACKEND_BASE_URL } from "../config.js";
                 return response.json();
             })
             .then((data) => {
-                const cameras = Object.entries(data || {}).map(
-                    ([name, cameraInfo]) => ({
+                const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => {
+                    let id;
+
+                    if (
+                        cameraInfo?.bus_id !== undefined &&
+                        cameraInfo?.bus_id !== null
+                    ) {
+                        id = String(cameraInfo.bus_id);
+                    } else if (
+                        cameraInfo?.id !== undefined &&
+                        cameraInfo?.id !== null
+                    ) {
+                        id = String(cameraInfo.id);
+                    } else {
+                        id = name;
+                    }
+
+                    return {
                         name,
-                        id:
-                            cameraInfo?.id !== undefined &&
-                            cameraInfo?.id !== null
-                                ? String(cameraInfo.id)
-                                : name,
-                    }),
-                );
+                        id,
+                    };
+                });
                 _availableCameras = cameras;
                 return cameras;
             })

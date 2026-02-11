@@ -424,13 +424,22 @@ class EagleEyeInterface:
             self.log(f"Error during shutdown: {e}")
             return {"message": "Failed to shutdown server"}, 500
 
-    def add_camera(self, camera_name: str, camera_id: int | str | None = None) -> None:
+    def add_camera(
+        self,
+        camera_name: str,
+        camera_id: int | str | None = None,
+        camera_bus_id: str | None = None,
+    ) -> None:
         """
         Add a camera to the available cameras list.
 
         Args:
             camera_name (str): The name of the camera.
-            camera_id (int | str | None, optional): The ID of the camera. If None, uses the camera name.
+            camera_id (int | str | None, optional): The camera ID used by UI
+                for display/debugging. If None, uses the camera name.
+            camera_bus_id (str | None, optional): Deterministic bus_id used by
+                pipeline device_input selection. If None, falls back to
+                string(camera_id).
         """
         if camera_id is None:
             camera_id = camera_name
@@ -445,6 +454,9 @@ class EagleEyeInterface:
             self.available_cameras[camera_name] = {
                 "name": url_safe_name,
                 "id": camera_id,
+                "bus_id": camera_bus_id
+                if camera_bus_id is not None
+                else str(camera_id),
             }
 
         self.log(f"Added camera: {camera_name} with ID: {camera_id}")
@@ -1685,12 +1697,15 @@ class EagleEyeInterface:
             pipeline_objects = {}
 
         statuses: list[dict[str, Any]] = []
+        pipeline_objects_available = bool(pipeline_objects)
         for pipeline_name in pipeline_names:
             pipeline = pipeline_objects.get(pipeline_name)
             if pipeline is None:
-                self.log(
-                    f"{Colors.YELLOW}Pipeline {pipeline_name} not found in pipeline objects callback.{Colors.RESET}"
-                )
+                if pipeline_objects_available:
+                    self.log(
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} not found in pipeline objects callback.{Colors.RESET}"
+                    )
+                statuses.append({"name": pipeline_name, "active": False})
                 continue
 
             try:
