@@ -54,8 +54,8 @@ class Pipeline:
             network_table: The network table to use for the pipelines.
             logger: Logger instance for logging.
             camera_manager: The camera manager to use for the pipelines.
-            camera_bus_id: Camera name to associate with this pipeline.
-            camera_bus_ids: List of camera names referenced by device_input operations.
+            camera_bus_id: USB bus ID to associate with this pipeline.
+            camera_bus_ids: List of USB bus IDs referenced by device_input operations.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface

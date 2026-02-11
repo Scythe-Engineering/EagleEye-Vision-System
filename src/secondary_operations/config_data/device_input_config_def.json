@@ -8,9 +8,9 @@
         "frame"
     ],
     "parameters": {
-        "camera_name": {
+        "bus_id": {
             "type": "str",
-            "description": "Name of the camera to read frames from",
+            "description": "USB bus identifier for the camera (e.g., '1' for USB port 1)",
             "default": "",
             "required": true,
             "restart_for_change": true

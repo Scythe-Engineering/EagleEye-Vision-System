@@ -85,6 +85,7 @@ class FakeCameraThreadManager:
 
     default_frame: np.ndarray
     camera_objects: Dict[str, FakeCameraWorker] = field(default_factory=dict)
+    bus_id_to_name: Dict[str, str] = field(default_factory=dict)
 
     def add_camera(self, camera_name: str, frame: Optional[np.ndarray] = None) -> None:
         self.camera_objects[camera_name] = FakeCameraWorker(
@@ -92,8 +93,25 @@ class FakeCameraThreadManager:
             frame=frame if frame is not None else self.default_frame,
         )
 
+    def register_bus_id(self, bus_id: str, camera_name: str) -> None:
+        self.bus_id_to_name[bus_id] = camera_name
+
+    def get_camera_name_by_bus_id(self, bus_id: str) -> Optional[str]:
+        return self.bus_id_to_name.get(bus_id)
+
     def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
         worker = self.camera_objects.get(camera_name)
         if worker is None:
             return None
         return worker.get_current_frame()
+
+    def get_current_frame_by_bus_id(
+        self, bus_id: str
+    ) -> Optional[Tuple[np.ndarray, float]]:
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        return self.get_current_frame(camera_name)
+
+    def get_all_bus_ids(self) -> list[str]:
+        return list(self.bus_id_to_name.keys())

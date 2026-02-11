@@ -102,22 +102,22 @@ class MainBackend:
                 logger=self.logger,
             )
 
-            available_cameras = set(self.camera_manager.get_all_camera_names())
+            available_bus_ids = set(self.camera_manager.get_all_bus_ids())
             for pipeline_name, pipeline in self.pipelines.items():
-                camera_names = getattr(pipeline, "camera_bus_ids", [])
-                if not camera_names:
+                bus_ids = getattr(pipeline, "camera_bus_ids", [])
+                if not bus_ids:
                     self.logger.log(
                         f"{Colors.YELLOW}Pipeline {pipeline_name} has no cameras configured. Skipping start.{Colors.RESET}"
                     )
                     continue
-                missing_cameras = [
-                    camera_name
-                    for camera_name in camera_names
-                    if camera_name not in available_cameras
+                missing_bus_ids = [
+                    bus_id
+                    for bus_id in bus_ids
+                    if bus_id not in available_bus_ids
                 ]
-                if missing_cameras:
+                if missing_bus_ids:
                     self.logger.log(
-                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras {missing_cameras}. Skipping start.{Colors.RESET}"
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras with bus_ids {missing_bus_ids}. Skipping start.{Colors.RESET}"
                     )
                     continue
                 pipeline.thread_run(self.camera_manager)
@@ -128,11 +128,11 @@ class MainBackend:
             # Initial camera inventory logging
             if not self.known_cameras:
                 self.logger.log(
-                    f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}"
+                    f"{Colors.RED}No cameras detected initially.{Colors.RED}"
                 )
             else:
                 self.logger.log(
-                    f"{Colors.CYAN}Initially detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
+                    f"{Colors.CYAN}Detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
         except KeyboardInterrupt:
             self.shutdown()

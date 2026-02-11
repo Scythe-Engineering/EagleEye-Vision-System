@@ -52,15 +52,56 @@ def _should_skip_device(device_name: str) -> bool:
 def _extract_camera_info(
     device_name: str, device_path: str
 ) -> tuple[str, dict[str, str]] | None:
-    """Extract camera index and info from device name and path."""
+    """Extract camera index and info from device name and path.
+
+    The bus_id is extracted from the v4l2 device name format:
+    "Camera Name: usb-0000:00:14.0-1:" -> bus_id is "1" (USB port number)
+
+    This bus_id is deterministic across restarts for the same physical USB port.
+    """
     if not device_path.startswith("/dev/video"):
         return None
 
     camera_index = device_path.split("/dev/video")[1]
     clean_name = device_name.split(":")[0]
-    bus_value = device_name.split(".")[-1][:-1]
 
-    return camera_index, {"name": clean_name, "bus_value": bus_value}
+    bus_id = _extract_bus_id(device_name)
+
+    return camera_index, {"name": clean_name, "bus_id": bus_id}
+
+
+def _extract_bus_id(device_name: str) -> str:
+    """Extract the USB bus ID from a v4l2 device name.
+
+    Args:
+        device_name: Device name from v4l2-ctl output, e.g.,
+            "Logitech C920: usb-0000:00:14.0-1:"
+
+    Returns:
+        The USB port number as a string, e.g., "1".
+        Falls back to the full bus info if extraction fails.
+    """
+    if ":" not in device_name:
+        return "unknown"
+
+    parts = device_name.split(":")
+    if len(parts) < 2:
+        return "unknown"
+
+    bus_info = parts[1].strip()
+    if not bus_info.startswith("usb-"):
+        return "unknown"
+
+    if "-" not in bus_info:
+        return bus_info
+
+    last_dash_index = bus_info.rfind("-")
+    bus_id = bus_info[last_dash_index + 1 :]
+
+    if not bus_id:
+        return bus_info
+
+    return bus_id
 
 
 def _parse_v4l2_output(output: str) -> dict[str, dict[str, str]]:
@@ -144,7 +185,7 @@ def detect_windows_cameras() -> dict[str, dict[str, str]] | None:
     Detect available cameras on Windows using DirectShow.
 
     Returns:
-        Dictionary mapping camera indices to dictionaries with camera names and bus values.
+        Dictionary mapping camera indices to dictionaries with camera names and bus IDs.
     """
     try:
         comtypes.CoInitialize()
@@ -153,7 +194,7 @@ def detect_windows_cameras() -> dict[str, dict[str, str]] | None:
 
         mapping = {}
         for index, name in enumerate(device_names):
-            mapping[str(index)] = {"name": name, "bus_value": str(index)}
+            mapping[str(index)] = {"name": name, "bus_id": str(index)}
         return mapping
     except Exception:
         return None
@@ -164,7 +205,7 @@ def detect_macos_cameras() -> dict[str, dict[str, str]] | None:
     Detect available cameras on macOS using system_profiler.
 
     Returns:
-        Dictionary mapping camera indices to dictionaries with camera names and bus values.
+        Dictionary mapping camera indices to dictionaries with camera names and bus IDs.
     """
     dev_name_mapping = get_macos_camera_mapping()
     if not dev_name_mapping:
@@ -172,24 +213,21 @@ def detect_macos_cameras() -> dict[str, dict[str, str]] | None:
 
     mapping = {}
     for index, name in enumerate(dev_name_mapping.values()):
-        mapping[str(index)] = {"name": name, "bus_value": str(index)}
+        mapping[str(index)] = {"name": name, "bus_id": str(index)}
     return mapping
 
 
 def detect_cameras_with_names() -> dict[str, dict[str, str]] | None:
     """
-    Detect available cameras with their names and indices.
+    Detect available cameras with their names and bus IDs.
 
     Attempts to detect cameras using platform-specific methods to get
     meaningful names. Falls back to generic detection if platform-specific
     methods are not available.
 
-    Args:
-        max_tested: Maximum number of camera indices to test for generic detection.
-
     Returns:
-        Dictionary mapping camera indices to dictionaries with camera names and bus values.
-        Format: {"camera_index": {"name": "camera_name", "bus_value": "bus_value"}}
+        Dictionary mapping camera indices to dictionaries with camera names and bus IDs.
+        Format: {"camera_index": {"name": "camera_name", "bus_id": "bus_id"}}
         Returns None if no cameras are detected or detection fails.
     """
     system = platform.system()
@@ -207,7 +245,7 @@ if __name__ == "__main__":
         print(f"{Colors.CYAN}Detected Cameras:{Colors.RESET}")
         for camera_index, camera_info in detected.items():
             print(
-                f"{Colors.CYAN}Index: {camera_index}, Name: {camera_info['name']}, Bus Value: {camera_info.get('bus_value', 'N/A')}{Colors.RESET}"
+                f"{Colors.CYAN}Index: {camera_index}, Name: {camera_info['name']}, Bus ID: {camera_info.get('bus_id', 'N/A')}{Colors.RESET}"
             )
     else:
         print(f"{Colors.YELLOW}No cameras detected.{Colors.RESET}")

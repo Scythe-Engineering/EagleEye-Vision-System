@@ -51,10 +51,10 @@ def replace_values(config_data: dict) -> dict:
     return config_data
 
 
-def _get_device_input_camera_names(
+def _get_device_input_bus_ids(
     pipeline_name: str, pipeline_config: list[dict[str, Any]], logger: Logger
 ) -> list[str]:
-    """Collect camera names from a pipeline's device_input operations.
+    """Collect bus IDs from a pipeline's device_input operations.
 
     Args:
         pipeline_name: Name of the pipeline.
@@ -62,7 +62,7 @@ def _get_device_input_camera_names(
         logger: Logger instance for logging.
 
     Returns:
-        List of camera names referenced by device_input operations.
+        List of bus IDs referenced by device_input operations.
     """
     device_input_configs = [
         operation
@@ -76,24 +76,24 @@ def _get_device_input_camera_names(
         )
         return []
 
-    camera_names: list[str] = []
+    bus_ids: list[str] = []
     for device_config in device_input_configs:
         action_params = device_config.get("action_params", {})
-        camera_name = action_params.get("camera_name")
-        if isinstance(camera_name, str) and camera_name:
-            camera_names.append(camera_name)
+        bus_id = action_params.get("bus_id")
+        if isinstance(bus_id, str) and bus_id:
+            bus_ids.append(bus_id)
         else:
             logger.log(
-                f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid camera_name in device_input{Colors.RESET}"
+                f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid bus_id in device_input{Colors.RESET}"
             )
 
-    if not camera_names:
+    if not bus_ids:
         return []
 
     logger.log(
-        f"{Colors.CYAN}Resolved device_input cameras for pipeline {pipeline_name}: {camera_names}{Colors.RESET}"
+        f"{Colors.CYAN}Resolved device_input bus_ids for pipeline {pipeline_name}: {bus_ids}{Colors.RESET}"
     )
-    return camera_names
+    return bus_ids
 
 
 def generate_all_pipelines(
@@ -134,7 +134,7 @@ def generate_all_pipelines(
 
     for pipeline_name, config in config_data.items():
         try:
-            camera_names = _get_device_input_camera_names(
+            bus_ids = _get_device_input_bus_ids(
                 pipeline_name, config, logger
             )
             pipeline = Pipeline(
@@ -144,8 +144,8 @@ def generate_all_pipelines(
                 network_table,
                 logger,
                 camera_manager,
-                camera_bus_id=camera_names[0] if len(camera_names) == 1 else None,
-                camera_bus_ids=camera_names,
+                camera_bus_id=bus_ids[0] if len(bus_ids) == 1 else None,
+                camera_bus_ids=bus_ids,
                 pipeline_name=pipeline_name,
             )
         except Exception:

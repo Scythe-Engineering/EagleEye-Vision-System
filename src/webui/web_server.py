@@ -442,7 +442,10 @@ class EagleEyeInterface:
                 self.frame_locks[camera_name] = threading.Lock()
 
             url_safe_name = camera_name.replace(" ", "_")
-            self.available_cameras[camera_name] = url_safe_name
+            self.available_cameras[camera_name] = {
+                "name": url_safe_name,
+                "id": camera_id,
+            }
 
         self.log(f"Added camera: {camera_name} with ID: {camera_id}")
 
@@ -468,33 +471,14 @@ class EagleEyeInterface:
 
                 self.log(f"Removed camera: {camera_name}")
 
-    def set_cameras(self, cameras_dict: dict[str, int | str]) -> None:
-        """
-        Set multiple cameras at once, replacing the current camera list.
-
-        Args:
-            cameras_dict (dict[str, int | str]): A dictionary mapping camera names to camera IDs.
-        """
-        with self.frame_list_structure_lock:
-            self.cameras = cameras_dict.copy()
-            self.frame_list = {}
-            self.available_cameras = {}
-            self.frame_locks = {}
-
-            for camera_name in self.cameras:
-                self.frame_list[camera_name] = no_image
-                self.frame_locks[camera_name] = threading.Lock()
-                url_safe_name = camera_name.replace(" ", "_")
-                self.available_cameras[camera_name] = url_safe_name
-
-        self.log(f"Set cameras: {self.cameras}")
-
     def get_available_cameras(self) -> dict:
         """
         Get a dict of available cameras.
 
         Returns:
-            dict: A dict of available cameras.
+            dict: A dict where keys are camera names and values are dicts with:
+                - name (str): URL-safe camera name (spaces replaced with underscores)
+                - id (int | str): The camera identifier
         """
         return self.available_cameras
 
@@ -632,9 +616,7 @@ class EagleEyeInterface:
                 >= SSE_SERIALIZATION_WARN_INTERVAL_SECONDS
             ):
                 self._last_sse_serialization_warning_ts = now
-                self.log(
-                    f"Failed to serialize SSE event {event_name}: {error}"
-                )
+                self.log(f"Failed to serialize SSE event {event_name}: {error}")
             return
         msg = self._format_sse(event_name, payload)
         # publish only to the single client's queue if present
@@ -745,8 +727,8 @@ class EagleEyeInterface:
         # Check if camera exists in our available cameras
         if original_camera_name not in self.cameras:
             # Try to find camera by URL-safe name in reverse mapping
-            for orig_name, url_name in self.available_cameras.items():
-                if url_name == camera_name:
+            for orig_name, cam_info in self.available_cameras.items():
+                if isinstance(cam_info, dict) and cam_info.get("name") == camera_name:
                     original_camera_name = orig_name
                     break
             else:
