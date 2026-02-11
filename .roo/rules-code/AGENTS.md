@@ -37,3 +37,7 @@ The wrapper instantiates the implementation class and delegates the `run()` meth
 - Vite root is `src/webui/` not project root - all relative paths in vite.config.js are relative to this directory
 - Must run `npm run build` before Flask server can serve the pipeline editor UI
 - Vite dev server runs on port 5173 by default, backend on 5001
+
+## Code Style
+
+- **Python**: Black formatting, mandatory type hints, Google-style docstrings, architectural comments encouraged for complex blocks and non-obvious design decisions; avoid frivolous line-by-line explanations and prioritize readable code over comment band-aids

@@ -157,7 +157,7 @@ Currently available skills for **{{mode}}** mode:
 
 **Code Style**:
 
-- **Python**: Black formatting, mandatory type hints, Google docstrings, no comments.
+    - **Python**: Black formatting, mandatory type hints, Google docstrings, architectural comments encouraged for complex blocks and non-obvious design decisions; avoid frivolous line-by-line explanations and prioritize readable code over comment band-aids.
 - **JavaScript**: Prettier (`tabWidth: 4`).
 
 **Operation Structure**:
