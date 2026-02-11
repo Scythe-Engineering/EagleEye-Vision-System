@@ -47,6 +47,8 @@ PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
 TEXT_PLAIN_MIMETYPE = "text/plain"
 VISUALIZATION_STREAM_FPS = 12
 PROFILING_PUBLISH_INTERVAL_SECONDS = 0.3
+PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL = 10
+PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS = 1.0
 SSE_SERIALIZATION_WARN_INTERVAL_SECONDS = 5.0
 
 
@@ -134,7 +136,11 @@ class EagleEyeInterface:
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
+        self._pipeline_error_lock = threading.Lock()
         self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
+        self._pipeline_error_dirty_pipelines: set[str] = set()
+        self._pipeline_error_last_seq_sent: dict[str, int] = {}
+        self._pipeline_error_last_publish_ts: dict[str, float] = {}
         self._pipeline_profile_last_seq_sent: dict[str, int] = {}
         self._profiling_publish_interval = PROFILING_PUBLISH_INTERVAL_SECONDS
         self._last_profiling_publish_ts = 0.0
@@ -594,6 +600,9 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
+        with self._pipeline_error_lock:
+            self._pipeline_error_dirty_pipelines.update(self._pipeline_error_cache.keys())
+
         self._publish_cached_pipeline_errors()
 
         try:
@@ -661,12 +670,72 @@ class EagleEyeInterface:
                 self.log(f"SSE publish error for {event_name}: {e}")
 
     def _publish_cached_pipeline_errors(self) -> None:
-        """Publish cached pipeline operation errors to the active SSE client."""
-        if not self._pipeline_error_cache:
+        """Publish cached pipeline operation errors to the active SSE client.
+
+        Error snapshots are published in batches (all operation errors in one
+        payload per pipeline) and throttled to reduce event spam.
+        """
+        with self._pipeline_error_lock:
+            cached_payloads = {
+                pipeline_name: payload.copy()
+                for pipeline_name, payload in self._pipeline_error_cache.items()
+            }
+            dirty_pipelines = set(self._pipeline_error_dirty_pipelines)
+            last_seq_sent = self._pipeline_error_last_seq_sent.copy()
+            last_publish_ts = self._pipeline_error_last_publish_ts.copy()
+
+        if not cached_payloads:
             return
-        for payload in self._pipeline_error_cache.values():
+
+        now = time.time()
+        frame_seq_by_pipeline: dict[str, int] = {}
+        try:
+            pipelines = self.pipeline_objects_callback() or {}
+            for pipeline_name, pipeline in pipelines.items():
+                snapshot = pipeline.get_latest_profile_snapshot()
+                if not snapshot:
+                    continue
+                frame_seq = int(snapshot.get("frame_seq", 0))
+                if frame_seq > 0:
+                    frame_seq_by_pipeline[pipeline_name] = frame_seq
+        except Exception as error:
+            self.log(f"Failed to read pipelines for error batching: {error}")
+
+        for pipeline_name, payload in cached_payloads.items():
+            if pipeline_name not in dirty_pipelines:
+                continue
+
+            current_frame_seq = frame_seq_by_pipeline.get(pipeline_name, 0)
+            previously_sent_seq = last_seq_sent.get(pipeline_name, 0)
+            previously_sent_ts = last_publish_ts.get(pipeline_name, 0.0)
+
+            frame_gate_open = (
+                current_frame_seq > 0
+                and current_frame_seq - previously_sent_seq
+                >= PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL
+            )
+            fallback_gate_open = (
+                now - previously_sent_ts
+                >= PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS
+            )
+
+            if not frame_gate_open and not fallback_gate_open:
+                continue
+
+            errors = payload.get("errors")
+            normalized_payload = {
+                "pipeline_name": pipeline_name,
+                "errors": errors if isinstance(errors, list) else [],
+            }
             try:
-                self._publish_event("pipeline_operation_errors", payload)
+                self._publish_event("pipeline_operation_errors", normalized_payload)
+                with self._pipeline_error_lock:
+                    self._pipeline_error_dirty_pipelines.discard(pipeline_name)
+                    self._pipeline_error_last_publish_ts[pipeline_name] = now
+                    if current_frame_seq > 0:
+                        self._pipeline_error_last_seq_sent[pipeline_name] = (
+                            current_frame_seq
+                        )
             except Exception:
                 continue
 
@@ -1255,8 +1324,14 @@ class EagleEyeInterface:
         """
         try:
             pipeline_name = payload.get("pipeline_name") or "unknown"
-            self._pipeline_error_cache[pipeline_name] = payload
-            self._publish_event("pipeline_operation_errors", payload)
+            errors = payload.get("errors")
+            normalized_payload = {
+                "pipeline_name": pipeline_name,
+                "errors": errors if isinstance(errors, list) else [],
+            }
+            with self._pipeline_error_lock:
+                self._pipeline_error_cache[pipeline_name] = normalized_payload
+                self._pipeline_error_dirty_pipelines.add(pipeline_name)
         except Exception as e:
             self.log(f"Failed to publish pipeline_operation_errors: {e}")
 

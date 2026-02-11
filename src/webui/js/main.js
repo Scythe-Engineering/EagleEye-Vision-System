@@ -243,7 +243,7 @@ window.onload = async () => {
     }
 
     const socket = globalThis.socket;
-    const handleProfilingUpdateFromSocket = (data) => {
+    const handleProfilingUpdatePayload = (data) => {
         try {
             const parsedData = typeof data === "string" ? JSON.parse(data) : data;
             const hasRequiredFields =
@@ -258,8 +258,19 @@ window.onload = async () => {
             }
             globalThis.pipelineCreator?.handleProfilingUpdate?.(parsedData);
         } catch (err) {
-            console.warn("Failed to parse Socket.IO profiling_update event", err);
+            console.warn("Failed to parse profiling_update event payload", err);
         }
+    };
+
+    const handleProfilingUpdateFromSse = (e) => {
+        handleProfilingUpdatePayload(e?.data);
+    };
+
+    es.addEventListener("profiling_update", handleProfilingUpdateFromSse);
+    globalThis.profilingUpdateSseHandler = handleProfilingUpdateFromSse;
+
+    const handleProfilingUpdateFromSocket = (data) => {
+        handleProfilingUpdatePayload(data);
     };
 
     if (socket?.on) {
