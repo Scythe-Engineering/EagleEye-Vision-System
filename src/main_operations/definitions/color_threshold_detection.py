@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from src.main_operations.modules.object_detection.color_threshold_detection.implementation import (
     ColorThresholdDetectionImplementation,
 )
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 from src.main_operations.definitions.base.base_class import OperationInstance
 
@@ -31,6 +32,7 @@ class ColorThresholdDetectionDefinition(OperationInstance):
 
     def __init__(
         self,
+        camera_bus_id: str,
         target_size: int = 320,
         color_ranges: List[Dict[str, Any]] | None = None,
         min_area: int = 100,
@@ -38,12 +40,12 @@ class ColorThresholdDetectionDefinition(OperationInstance):
         blur_kernel_size: int = 5,
         morphology_kernel_size: int = 5,
         morphology_iterations: int = 2,
-        camera_parameters_path: Optional[str] = None,
-        pipeline: Any = None,
+        camera_config_registry: CameraConfigRegistry | None = None,
     ):
         """Initialize color threshold detection operation.
 
         Args:
+            camera_bus_id: Camera bus ID used to resolve calibration files.
             target_size: Target size for square letterboxed image
             color_ranges: List of color range dictionaries with format:
                 {
@@ -59,17 +61,14 @@ class ColorThresholdDetectionDefinition(OperationInstance):
             blur_kernel_size: Gaussian blur kernel size (0 to disable)
             morphology_kernel_size: Kernel size for morphological operations
             morphology_iterations: Number of morphological operation iterations
-            intrinsics_path: Path to camera intrinsics JSON file, or camera bus ID
-                (e.g., "0", "0-1") to auto-resolve path. If None, no undistortion applied.
-            pipeline: Injected pipeline reference for accessing camera information
+            camera_config_registry: Injected shared camera config registry.
         """
-        self.camera_parameters_path = camera_parameters_path
-        self.pipeline = pipeline
+        self.camera_bus_id = camera_bus_id
+        self.camera_config_registry = camera_config_registry
 
         self.camera_matrix: Optional[np.ndarray] = None
         self.distortion_coefficients: Optional[np.ndarray] = None
-        if self.camera_parameters_path is not None:
-            self._load_camera_parameters()
+        self._load_camera_parameters()
 
         if color_ranges is None:
             raise ValueError("Color ranges are required")
@@ -95,16 +94,20 @@ class ColorThresholdDetectionDefinition(OperationInstance):
         self.color_map: Dict[str, tuple] = {}
 
     def _load_camera_parameters(self) -> None:
-        """Load camera intrinsics from file or resolve from camera bus ID."""
-        intrinsics_path = self.camera_parameters_path
-
-        if not isinstance(intrinsics_path, str):
-            raise ValueError("Intrinsics path must be a string")
-
-        if self.pipeline is not None:
-            camera_bus_id = getattr(self.pipeline, "camera_bus_id", None)
-            if camera_bus_id is not None and not intrinsics_path.endswith(".json"):
-                intrinsics_path = f"src/utils/camera_utils/camera_calibrations/{camera_bus_id}/intrinsics.json"
+        """Load camera intrinsics from the camera config registry."""
+        intrinsics_path: str
+        if self.camera_config_registry is not None:
+            camera_config = self.camera_config_registry.get_config(self.camera_bus_id)
+            if camera_config.intrinsics_path is None:
+                raise ValueError(
+                    f"No intrinsics path found for camera bus ID '{self.camera_bus_id}'"
+                )
+            intrinsics_path = camera_config.intrinsics_path
+        else:
+            intrinsics_path = (
+                f"src/utils/camera_utils/camera_calibrations/"
+                f"{self.camera_bus_id}/intrinsics.json"
+            )
 
         try:
             self.camera_matrix, self.distortion_coefficients = load_camera_parameters(

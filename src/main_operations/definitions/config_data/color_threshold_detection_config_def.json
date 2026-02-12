@@ -10,10 +10,9 @@
     ],
     "output_nodes": ["detections"],
     "parameters": {
-        "camera_parameters_path": {
+        "camera_bus_id": {
             "type": "str",
-            "description": "Path to the camera parameters file",
-            "default": "{project_root}/config/camera_parameters.json",
+            "description": "Camera USB bus ID used to resolve calibration files (for example: '0' or '0-1').",
             "required": true,
             "restart_for_change": true
         },

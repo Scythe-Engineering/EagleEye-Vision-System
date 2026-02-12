@@ -11,6 +11,7 @@ except ImportError:
     TemporalAcceleration = None
 
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 from src.main_operations.definitions.base.base_class import OperationInstance
 
@@ -26,20 +27,22 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
 
     def __init__(
         self,
-        camera_parameters_path: str,
+        camera_bus_id: str,
         apriltag_map_path: str,
         padding_factor: float = 0.65,
         max_regions: int = 10,
         min_region_size_px: int = 16,
+        camera_config_registry: CameraConfigRegistry | None = None,
     ) -> None:
         """Initialize the temporal acceleration definition with Rust backend.
 
         Args:
-            camera_parameters_path: Path to camera intrinsics JSON.
+            camera_bus_id: Camera bus ID used to resolve calibration files.
             apriltag_map_path: Path to fmap apriltag map JSON.
             padding_factor: Fractional padding applied to ROI size.
             max_regions: Maximum number of ROIs to return.
             min_region_size_px: Minimum side length for ROI squares.
+            camera_config_registry: Injected shared camera config registry.
         """
         if TemporalAcceleration is None:
             raise ImportError(
@@ -47,8 +50,22 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 "Please build the Rust extension first."
             )
 
+        intrinsics_path: str
+        if camera_config_registry is not None:
+            camera_config = camera_config_registry.get_config(camera_bus_id)
+            if camera_config.intrinsics_path is None:
+                raise ValueError(
+                    f"No intrinsics path found for camera bus ID '{camera_bus_id}'"
+                )
+            intrinsics_path = camera_config.intrinsics_path
+        else:
+            intrinsics_path = (
+                f"src/utils/camera_utils/camera_calibrations/"
+                f"{camera_bus_id}/intrinsics.json"
+            )
+
         camera_matrix, distortion_coefficients = load_camera_parameters(
-            camera_parameters_path
+            intrinsics_path
         )
         apriltag_map = load_fmap_file(apriltag_map_path)
 

@@ -91,7 +91,6 @@ class CameraConfig:
                 src/utils/camera_utils/camera_calibrations/.
         """
         self._camera_id: str = camera_id
-        self._intrinsics_path: Optional[str] = None
         self._extrinsics: CameraExtrinsics = CameraExtrinsics()
 
         if base_path is None:
@@ -99,6 +98,8 @@ class CameraConfig:
                 os.path.dirname(__file__), "camera_calibrations", camera_id
             )
         self._base_path: str = base_path
+        self._intrinsics_file: str = os.path.join(base_path, "intrinsics.json")
+        self._intrinsics_path: Optional[str] = self._intrinsics_file
         self._extrinsics_file: str = os.path.join(base_path, "extrinsics.json")
 
     @property
