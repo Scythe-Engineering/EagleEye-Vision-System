@@ -88,18 +88,54 @@ class FakeCameraThreadManager:
     bus_id_to_name: Dict[str, str] = field(default_factory=dict)
 
     def add_camera(self, camera_name: str, frame: Optional[np.ndarray] = None) -> None:
+        """Add a fake camera worker to the in-memory registry.
+
+        Args:
+            camera_name: Human-readable camera name.
+            frame: Optional frame override for this camera. If omitted,
+                ``default_frame`` is used.
+
+        Returns:
+            None.
+        """
         self.camera_objects[camera_name] = FakeCameraWorker(
             camera_index=len(self.camera_objects),
             frame=frame if frame is not None else self.default_frame,
         )
 
     def register_bus_id(self, bus_id: str, camera_name: str) -> None:
+        """Associate a deterministic bus ID with a camera name.
+
+        Args:
+            bus_id: Camera bus identifier.
+            camera_name: Camera name mapped to the provided bus ID.
+
+        Returns:
+            None.
+        """
         self.bus_id_to_name[bus_id] = camera_name
 
     def get_camera_name_by_bus_id(self, bus_id: str) -> Optional[str]:
+        """Resolve a camera name from its bus ID.
+
+        Args:
+            bus_id: Camera bus identifier.
+
+        Returns:
+            Optional[str]: The mapped camera name, or ``None`` when missing.
+        """
         return self.bus_id_to_name.get(bus_id)
 
     def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
+        """Get the latest frame tuple for a camera by name.
+
+        Args:
+            camera_name: Camera name to query.
+
+        Returns:
+            Optional[Tuple[np.ndarray, float]]: ``(frame, timestamp)`` when the
+            camera exists and has a frame, otherwise ``None``.
+        """
         worker = self.camera_objects.get(camera_name)
         if worker is None:
             return None
@@ -108,10 +144,27 @@ class FakeCameraThreadManager:
     def get_current_frame_by_bus_id(
         self, bus_id: str
     ) -> Optional[Tuple[np.ndarray, float]]:
+        """Get the latest frame tuple for a camera by bus ID.
+
+        Args:
+            bus_id: Camera bus identifier.
+
+        Returns:
+            Optional[Tuple[np.ndarray, float]]: ``(frame, timestamp)`` when the
+            bus ID maps to a camera with an available frame, otherwise ``None``.
+        """
         camera_name = self.get_camera_name_by_bus_id(bus_id)
         if camera_name is None:
             return None
         return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
+        """Return all registered camera bus IDs.
+
+        Args:
+            None.
+
+        Returns:
+            list[str]: Registered bus IDs in insertion order.
+        """
         return list(self.bus_id_to_name.keys())

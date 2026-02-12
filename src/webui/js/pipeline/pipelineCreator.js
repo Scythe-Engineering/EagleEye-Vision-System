@@ -325,8 +325,8 @@ function getDeviceInputBusIds() {
         const operationId = pipelineStore.normalizeOperationId(node.operationId);
         if (operationId === "device_input") {
             const busId = node.config?.bus_id;
-            if (busId) {
-                busIds.add(busId);
+            if (busId !== undefined && busId !== null) {
+                busIds.add(String(busId));
             }
         }
     });

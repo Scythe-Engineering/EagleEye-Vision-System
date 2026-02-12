@@ -13,7 +13,9 @@ except ImportError:
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
+from src.utils.device_management_utils.compute_pool import ComputePool
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.webui.web_server import EagleEyeInterface
 
 
 class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
@@ -33,6 +35,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         max_regions: int = 10,
         min_region_size_px: int = 16,
         camera_config_registry: CameraConfigRegistry | None = None,
+        web_interface: EagleEyeInterface | None = None,
+        compute_pool: ComputePool | None = None,
     ) -> None:
         """Initialize the temporal acceleration definition with Rust backend.
 
@@ -49,6 +53,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 "Rust temporal_acceleration module not available. "
                 "Please build the Rust extension first."
             )
+
+        self.web_interface = web_interface
+        self.compute_pool = compute_pool
 
         intrinsics_path: str
         if camera_config_registry is not None:

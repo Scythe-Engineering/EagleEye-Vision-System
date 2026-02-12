@@ -11,10 +11,10 @@ from src.config.utils.generate_all_pipelines import generate_all_pipelines  # no
 from src.config.utils.pipeline import Pipeline  # noqa: E402
 from src.rust_implementations.build import main as rust_build  # noqa: E402
 from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
-    CameraThreadManager,  # noqa: E402
+    CameraThreadManager,
 )
 from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
-    CameraConfigRegistry,  # noqa: E402
+    CameraConfigRegistry,
 )
 from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
@@ -23,7 +23,7 @@ from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
-from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
+from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
 import json  # noqa: E402
 
 # Bootstrap Rust modules (removed during uv sync)
@@ -223,7 +223,7 @@ class MainBackend:
         if not gpu_devices:
             return
 
-        from src.utils.device_management_utils.gpu import GPU  # noqa: E402
+        from src.utils.device_management_utils.gpu import GPU
 
         for gpu_index, gpu_device_name in enumerate(gpu_devices):
             try:

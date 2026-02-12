@@ -84,7 +84,7 @@ def _extract_bus_id(device_name: str) -> str:
     if ":" not in device_name:
         return "unknown"
 
-    parts = device_name.split(":")
+    parts = device_name.split(":", 1)
     if len(parts) < 2:
         return "unknown"
 

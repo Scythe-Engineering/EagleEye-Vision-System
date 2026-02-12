@@ -325,8 +325,8 @@ class CameraConfig:
         Creates the directory if it doesn't exist.
         """
         os.makedirs(self._base_path, exist_ok=True)
-        with open(self._extrinsics_file, "w") as f:
-            json.dump(self._extrinsics.to_dict(), f, indent=4)
+        with open(self._extrinsics_file, "w") as extrinsics_file:
+            json.dump(self._extrinsics.to_dict(), extrinsics_file, indent=4)
 
     def load_extrinsics(self) -> None:
         """Load extrinsics from JSON file.
@@ -338,8 +338,8 @@ class CameraConfig:
             raise FileNotFoundError(
                 f"Extrinsics file not found: {self._extrinsics_file}"
             )
-        with open(self._extrinsics_file, "r") as f:
-            data = json.load(f)
+        with open(self._extrinsics_file, "r") as extrinsics_file:
+            data = json.load(extrinsics_file)
         self._extrinsics = CameraExtrinsics.from_dict(data)
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.logging.logger import Logger
 from tests.utils.dummy_dependencies import (
     DummyComputePool,
@@ -32,6 +33,7 @@ def test_pipeline_initialization_only(tmp_path: Path) -> None:
     compute_pool = DummyComputePool()
     logger = Logger(log_directory="logs/test")
     camera_manager = FakeCameraThreadManager(default_frame=dummy_frame())
+    camera_config_registry = CameraConfigRegistry()
     camera_manager.add_camera("basic_test")
     camera_manager.add_camera("FaceTime HD Camera")
     camera_manager.add_camera("test_camera")
@@ -46,6 +48,7 @@ def test_pipeline_initialization_only(tmp_path: Path) -> None:
         cast(Any, compute_pool),
         cast(Any, network_table),
         cast(Any, camera_manager),
+        camera_config_registry=camera_config_registry,
         logger=logger,
         pipeline_config=str(temp_config_path),
     )

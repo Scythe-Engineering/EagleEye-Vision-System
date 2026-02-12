@@ -56,23 +56,30 @@ def add_system_cameras(
 
     for index, camera_info in detected_cameras.items():
         camera_name = camera_info["name"]
-        bus_id = camera_info.get("bus_id", "unknown")
+        bus_id = camera_info.get("bus_id")
 
         try:
             camera_index = int(index)
         except ValueError:
             camera_index = None
 
+        bus_id_fallback = camera_index if camera_index is not None else camera_name
+        resolved_bus_id = str(bus_id) if bus_id is not None else str(bus_id_fallback)
+
         web_interface.add_camera(
             camera_name,
             index,
-            camera_bus_id=str(bus_id),
+            camera_bus_id=resolved_bus_id,
         )
 
         if camera_manager.start_camera_thread(camera_name, camera_index=camera_index):
-            camera_manager.register_bus_id(bus_id, camera_name)
+            camera_manager.register_bus_id(resolved_bus_id, camera_name)
             known_cameras.append(
-                {"name": camera_name, "index": camera_index, "bus_id": bus_id}
+                {
+                    "name": camera_name,
+                    "index": camera_index,
+                    "bus_id": resolved_bus_id,
+                }
             )
         else:
             web_interface.remove_camera(camera_name)

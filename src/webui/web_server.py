@@ -532,6 +532,8 @@ class EagleEyeInterface:
             dict: A dict where keys are camera names and values are dicts with:
                 - name (str): URL-safe camera name (spaces replaced with underscores)
                 - id (int | str): The camera identifier
+                - bus_id (str): The camera bus identifier, or string
+                  representation of id if bus_id is not available
         """
         return self.available_cameras
 
