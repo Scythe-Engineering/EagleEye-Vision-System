@@ -157,7 +157,7 @@ Currently available skills for **{{mode}}** mode:
 
 **Code Style**:
 
-    - **Python**: Black formatting, mandatory type hints, Google docstrings, architectural comments encouraged for complex blocks and non-obvious design decisions; avoid frivolous line-by-line explanations and prioritize readable code over comment band-aids.
+    - **Python**: Black formatting, mandatory type hints, Google docstrings, and a reconciled comment rule: keep "architectural comments for complex blocks and non-obvious design decisions", but do not apply "Do not use comments in Python code; instead use descriptive variable names and function extraction to make code self-documenting" as an absolute ban; comments are allowed only for high-level architectural rationale and must not be frivolous or line-by-line.
 - **JavaScript**: Prettier (`tabWidth: 4`).
 
 **Operation Structure**:

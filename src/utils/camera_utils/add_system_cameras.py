@@ -17,7 +17,7 @@ def add_system_cameras(
     web_interface: EagleEyeInterface,
     camera_manager: CameraThreadManager,
     logger: Logger,
-) -> list[dict[str, str | int]]:
+) -> list[dict[str, str | int | None]]:
     """Register every system camera with the camera manager.
 
     Cameras are started without calibration requirements - all calibration
@@ -32,10 +32,12 @@ def add_system_cameras(
             camera detection and registration progress.
 
     Returns:
-        list[dict[str, str | int]]: List of dictionaries containing camera
-            information with "name", "index", and "bus_id" keys for each
-            successfully registered camera. Returns empty list if no system
-            cameras are detected.
+        list[dict[str, str | int | None]]: List of dictionaries containing
+            camera information with "name", "index", and "bus_id" keys for
+            each successfully registered camera. The returned "index" value is
+            derived from ``camera_index`` and may be ``None`` when the detected
+            camera index cannot be parsed as an integer. Returns empty list if
+            no system cameras are detected.
 
     Raises:
         No exceptions are raised; errors are logged and gracefully handled.

@@ -527,6 +527,7 @@ export function initCameraConfigUtils() {
     });
 
     setupDropzone();
+    void loadCameraList();
     initialized = true;
 }
 

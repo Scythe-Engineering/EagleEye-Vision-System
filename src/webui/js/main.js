@@ -251,6 +251,7 @@ window.onload = async () => {
                 Number.isFinite(parsedData?.frame_seq) &&
                 Number.isFinite(parsedData?.frame_time_ms) &&
                 Number.isFinite(parsedData?.timestamp_ms) &&
+                parsedData?.operations !== null &&
                 typeof parsedData?.operations === "object" &&
                 Array.isArray(parsedData?.timesteps);
             if (!hasRequiredFields) {
@@ -274,8 +275,15 @@ window.onload = async () => {
     };
 
     if (socket?.on) {
-        socket.off?.("profiling_update", handleProfilingUpdateFromSocket);
-        socket.on("profiling_update", handleProfilingUpdateFromSocket);
+        if (typeof globalThis.profilingUpdateSocketHandler === "function") {
+            socket.off?.(
+                "profiling_update",
+                globalThis.profilingUpdateSocketHandler,
+            );
+        }
+        globalThis.profilingUpdateSocketHandler =
+            handleProfilingUpdateFromSocket;
+        socket.on("profiling_update", globalThis.profilingUpdateSocketHandler);
     } else {
         console.warn("Socket.IO client unavailable for profiling_update events");
     }

@@ -122,7 +122,7 @@ class DeviceInput(OperationInstance):
         """Update runtime-configurable settings for the operation.
 
         Args:
-            config: Runtime configuration overrides. Supports:
+            json_config: Runtime configuration overrides. Supports:
                 - bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """

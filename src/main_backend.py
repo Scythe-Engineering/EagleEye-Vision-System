@@ -145,7 +145,7 @@ class MainBackend:
             # Initial camera inventory logging
             if not self.known_cameras:
                 self.logger.log(
-                    f"{Colors.RED}No cameras detected initially.{Colors.RED}"
+                    f"{Colors.RED}No cameras detected initially.{Colors.RESET}"
                 )
             else:
                 self.logger.log(

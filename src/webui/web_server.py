@@ -8,7 +8,7 @@ import time
 import traceback
 from pathlib import Path
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Callable, Generator, List
+from typing import TYPE_CHECKING, Any, Callable, Generator, List, Optional
 
 import cv2
 import numpy as np
@@ -18,7 +18,10 @@ from flask_socketio import SocketIO
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
-from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
+from src.utils.camera_utils.camera_config_manager import (
+    CameraConfig,
+    CameraConfigRegistry,
+)
 
 if TYPE_CHECKING:
     from src.config.utils.pipeline import Pipeline
@@ -553,7 +556,7 @@ class EagleEyeInterface:
         cameras.sort(key=lambda camera: camera["name"])
         return {"cameras": cameras}, 200
 
-    def _resolve_camera_config(self, camera_bus_id: str):
+    def _resolve_camera_config(self, camera_bus_id: str) -> Optional[CameraConfig]:
         """Resolve the camera config for a bus ID.
 
         Args:

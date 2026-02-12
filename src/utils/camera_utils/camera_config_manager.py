@@ -148,7 +148,6 @@ class CameraConfig:
         setattr(self._extrinsics, field_name, value)
         self.save_and_reload_extrinsics()
 
-    # Extrinsics getters
     def get_horizontal_fov(self) -> float:
         """Get horizontal field of view.
 
@@ -213,7 +212,6 @@ class CameraConfig:
         """
         return self._extrinsics.z_offset
 
-    # Extrinsics setters
     def set_horizontal_fov(self, value: float) -> None:
         """Set horizontal field of view.
 

@@ -13,7 +13,7 @@
     <template>
       <loop>
         <question>What impact does this have?</question>
-        <answer>Record the user&rsquo;s reply verbatim.</answer>
+        <answer>Record the user’s reply verbatim.</answer>
         <question>Which files are involved?</question>
         <answer>Note any examples or paths mentioned.</answer>
         <question>What would success look like?</question>
