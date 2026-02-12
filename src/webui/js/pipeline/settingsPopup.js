@@ -558,8 +558,10 @@ import { BACKEND_BASE_URL } from "../config.js";
             normalizedOperationName === "device_input" &&
             name === "bus_id" &&
             def.type === "str";
+        const isCameraBusIdParameter =
+            name === "camera_bus_id" && def.type === "str";
 
-        if (isDeviceInputBusId) {
+        if (isDeviceInputBusId || isCameraBusIdParameter) {
             input = createElement("select", {
                 id: fieldId,
                 className:

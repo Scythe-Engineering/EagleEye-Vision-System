@@ -1,0 +1,159 @@
+<div id="view-utils" class="view hidden p-4 h-full overflow-auto">
+    <div
+        class="max-w-4xl mx-auto bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5"
+        style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
+    >
+        <div class="mb-5">
+            <h2 class="text-xl font-bold text-[#f9c845]">Camera Config Utils</h2>
+            <p class="text-[#ac8a2f] mt-1">
+                Configure camera extrinsics and manage camera intrinsics files.
+            </p>
+        </div>
+
+        <div class="mb-6">
+            <label
+                for="utilsCameraSelect"
+                class="block text-sm font-medium text-[#f9c845] mb-2"
+                >Camera</label
+            >
+            <select
+                id="utilsCameraSelect"
+                class="w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
+            >
+                <option value="">Loading cameras...</option>
+            </select>
+            <p id="utilsCameraMeta" class="text-xs text-[#ac8a2f] mt-2"></p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <label class="text-sm text-[#f9c845]"
+                >Horizontal FOV
+                <input
+                    id="utils-horizontal-fov"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Vertical FOV
+                <input
+                    id="utils-vertical-fov"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Pitch
+                <input
+                    id="utils-pitch"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Yaw
+                <input
+                    id="utils-yaw"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Roll
+                <input
+                    id="utils-roll"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >X Offset
+                <input
+                    id="utils-x-offset"
+                    type="number"
+                    step="0.001"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Y Offset
+                <input
+                    id="utils-y-offset"
+                    type="number"
+                    step="0.001"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+            <label class="text-sm text-[#f9c845]"
+                >Z Offset
+                <input
+                    id="utils-z-offset"
+                    type="number"
+                    step="0.001"
+                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                />
+            </label>
+        </div>
+
+        <div class="flex flex-wrap gap-3 mb-8">
+            <button
+                id="utilsSaveExtrinsicsBtn"
+                type="button"
+                class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+            >
+                Save Extrinsics
+            </button>
+            <button
+                id="utilsRefreshConfigBtn"
+                type="button"
+                class="px-4 py-2 bg-[#232323] text-white font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+            >
+                Refresh
+            </button>
+        </div>
+
+        <div class="border-t border-[#414141] pt-5">
+            <h3 class="text-lg font-semibold text-[#f9c845] mb-2">
+                Intrinsics File Manager
+            </h3>
+            <p id="utilsIntrinsicsStatus" class="text-sm text-[#ac8a2f] mb-3">
+                No camera selected.
+            </p>
+
+            <div
+                id="utilsIntrinsicsDropzone"
+                class="mb-4 border-2 border-dashed border-[#414141] rounded-md p-5 text-center text-[#ac8a2f]"
+            >
+                Drag and drop an intrinsics JSON file here, or use Upload.
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <input
+                    id="utilsIntrinsicsFileInput"
+                    type="file"
+                    accept=".json,application/json"
+                    class="hidden"
+                />
+                <button
+                    id="utilsUploadIntrinsicsBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                >
+                    Upload Intrinsics
+                </button>
+                <button
+                    id="utilsDeleteIntrinsicsBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#232323] text-red-300 font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors"
+                >
+                    Delete Current Intrinsics
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

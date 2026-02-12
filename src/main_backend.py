@@ -97,6 +97,7 @@ class MainBackend:
                     continue
                 self.camera_config_registry.get_config(str(camera_bus_id))
             self.camera_configs = self.camera_config_registry.get_all_configs()
+            self.web_interface.camera_config_registry = self.camera_config_registry
 
             all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
             if not all_cameras_ready:
