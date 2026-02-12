@@ -18,6 +18,7 @@ export class FlowchartNode {
         this.dynamicOutputNodes = [];
         this.dynamicGroup = null;
         this.inputNodeConfig = new Map();
+        this.outputNodeConfig = new Map();
         this.element = null;
         this.inputPorts = new Map();
         this.outputPorts = new Map();
@@ -132,6 +133,7 @@ export class FlowchartNode {
 
     initializePortsFromConfig(configData) {
         this.inputNodeConfig.clear();
+        this.outputNodeConfig.clear();
 
         const rawInputNodes = configData.input_nodes || ["data"];
         const rawOutputNodes = configData.output_nodes || ["data"];
@@ -147,15 +149,26 @@ export class FlowchartNode {
             return node;
         });
 
+        const normalizedOutputNodes = rawOutputNodes.map((node) => {
+            if (typeof node === "object" && node.name) {
+                this.outputNodeConfig.set(node.name, {
+                    hasDefault: node.has_default ?? false,
+                });
+                return node.name;
+            }
+            this.outputNodeConfig.set(node, { hasDefault: false });
+            return node;
+        });
+
         this.dynamicGroup = this.normalizeDynamicGroup(
             configData.dynamic_group,
             normalizedInputNodes,
-            rawOutputNodes,
+            normalizedOutputNodes,
         );
 
         if (!this.dynamicGroup) {
             this.staticInputNodes = [...normalizedInputNodes];
-            this.staticOutputNodes = [...rawOutputNodes];
+            this.staticOutputNodes = [...normalizedOutputNodes];
             this.dynamicInputNodes = [];
             this.dynamicOutputNodes = [];
             this.inputNodes = [...this.staticInputNodes];
@@ -169,7 +182,7 @@ export class FlowchartNode {
               )
             : [...normalizedInputNodes];
 
-        this.staticOutputNodes = rawOutputNodes.filter((name) => {
+        this.staticOutputNodes = normalizedOutputNodes.filter((name) => {
             if (this.dynamicGroup.hasDynamicOutputGroup) {
                 return name !== this.dynamicGroup.outputBaseName;
             }

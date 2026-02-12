@@ -1299,10 +1299,14 @@ class EagleEyeInterface:
         """Normalize optional dynamic group metadata in operation config.
 
         Args:
-            config_data: Raw operation config definition JSON.
+            config_data (dict[str, Any]): Raw operation config definition JSON,
+                including optional `dynamic_group` metadata that is normalized
+                for downstream port handling.
 
         Returns:
-            Config data with normalized `dynamic_group` metadata.
+            dict[str, Any]: Config data with normalized `dynamic_group`
+            metadata values (for example max counts, boolean flags, and base
+            node names).
         """
         if not isinstance(config_data, dict):
             return {}
