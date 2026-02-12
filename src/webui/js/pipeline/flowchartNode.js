@@ -12,7 +12,13 @@ export class FlowchartNode {
         this.position = operationData.position || { x: 100, y: 100 };
         this.inputNodes = [];
         this.outputNodes = [];
+        this.staticInputNodes = [];
+        this.staticOutputNodes = [];
+        this.dynamicInputNodes = [];
+        this.dynamicOutputNodes = [];
+        this.dynamicGroup = null;
         this.inputNodeConfig = new Map();
+        this.outputNodeConfig = new Map();
         this.element = null;
         this.inputPorts = new Map();
         this.outputPorts = new Map();
@@ -35,6 +41,377 @@ export class FlowchartNode {
         this.profilingInfo = null;
     }
 
+    buildIndexedPortName(baseName, index) {
+        return `${baseName}_${index}`;
+    }
+
+    parseDynamicPortIndex(portName, baseName) {
+        if (!portName || !baseName) {
+            return null;
+        }
+
+        if (portName === baseName) {
+            return 1;
+        }
+
+        const prefix = `${baseName}_`;
+        if (!portName.startsWith(prefix)) {
+            return null;
+        }
+
+        const maybeIndex = Number.parseInt(portName.slice(prefix.length), 10);
+        if (!Number.isInteger(maybeIndex) || maybeIndex < 1) {
+            return null;
+        }
+
+        return maybeIndex;
+    }
+
+    normalizeDynamicGroup(rawDynamicGroup, rawInputNodes, rawOutputNodes) {
+        if (!rawDynamicGroup || typeof rawDynamicGroup !== "object") {
+            return null;
+        }
+
+        const maxInputs = Math.max(
+            1,
+            Number.parseInt(rawDynamicGroup.max_inputs ?? 1, 10) || 1,
+        );
+        const maxOutputs = Math.max(
+            1,
+            Number.parseInt(rawDynamicGroup.max_outputs ?? maxInputs, 10) ||
+                maxInputs,
+        );
+
+        const mirroredOutputGroup =
+            rawDynamicGroup.mirrored_output_group === true ||
+            String(rawDynamicGroup.mirrored_output_group).toLowerCase() === "true";
+
+        const outputDynamicGroup =
+            rawDynamicGroup.output_dynamic_group === true ||
+            String(rawDynamicGroup.output_dynamic_group).toLowerCase() === "true";
+        const inputDynamicGroupDisabled =
+            rawDynamicGroup.input_dynamic_group === false ||
+            String(rawDynamicGroup.input_dynamic_group).toLowerCase() === "false";
+
+        const hasDynamicInputGroup = !inputDynamicGroupDisabled;
+        const hasDynamicOutputGroup = mirroredOutputGroup || outputDynamicGroup;
+
+        const coupledGroups =
+            rawDynamicGroup.coupled_groups === undefined
+                ? mirroredOutputGroup
+                : rawDynamicGroup.coupled_groups === true ||
+                  String(rawDynamicGroup.coupled_groups).toLowerCase() === "true";
+
+        const inputBaseName =
+            rawDynamicGroup.input_base_name ||
+            rawDynamicGroup.input_node ||
+            (rawInputNodes.length > 0 ? rawInputNodes[rawInputNodes.length - 1] : "data");
+
+        const outputBaseName =
+            rawDynamicGroup.output_base_name ||
+            rawDynamicGroup.output_node ||
+            (rawOutputNodes.length > 0
+                ? rawOutputNodes[rawOutputNodes.length - 1]
+                : inputBaseName);
+
+        return {
+            maxInputs,
+            maxOutputs,
+            mirroredOutputGroup,
+            outputDynamicGroup,
+            hasDynamicInputGroup,
+            hasDynamicOutputGroup,
+            coupledGroups: coupledGroups && hasDynamicInputGroup && hasDynamicOutputGroup,
+            inputBaseName,
+            outputBaseName,
+            inputCount: hasDynamicInputGroup ? 1 : 0,
+            outputCount: hasDynamicOutputGroup ? 1 : 0,
+            connectedInputCount: 0,
+            connectedOutputCount: 0,
+        };
+    }
+
+    initializePortsFromConfig(configData) {
+        this.inputNodeConfig.clear();
+        this.outputNodeConfig.clear();
+
+        const rawInputNodes = configData.input_nodes || ["data"];
+        const rawOutputNodes = configData.output_nodes || ["data"];
+
+        const normalizedInputNodes = rawInputNodes.map((node) => {
+            if (typeof node === "object" && node.name) {
+                this.inputNodeConfig.set(node.name, {
+                    hasDefault: node.has_default ?? false,
+                });
+                return node.name;
+            }
+            this.inputNodeConfig.set(node, { hasDefault: false });
+            return node;
+        });
+
+        const normalizedOutputNodes = rawOutputNodes.map((node) => {
+            if (typeof node === "object" && node.name) {
+                this.outputNodeConfig.set(node.name, {
+                    hasDefault: node.has_default ?? false,
+                });
+                return node.name;
+            }
+            this.outputNodeConfig.set(node, { hasDefault: false });
+            return node;
+        });
+
+        this.dynamicGroup = this.normalizeDynamicGroup(
+            configData.dynamic_group,
+            normalizedInputNodes,
+            normalizedOutputNodes,
+        );
+
+        if (!this.dynamicGroup) {
+            this.staticInputNodes = [...normalizedInputNodes];
+            this.staticOutputNodes = [...normalizedOutputNodes];
+            this.dynamicInputNodes = [];
+            this.dynamicOutputNodes = [];
+            this.inputNodes = [...this.staticInputNodes];
+            this.outputNodes = [...this.staticOutputNodes];
+            return;
+        }
+
+        this.staticInputNodes = this.dynamicGroup.hasDynamicInputGroup
+            ? normalizedInputNodes.filter(
+                  (name) => name !== this.dynamicGroup.inputBaseName,
+              )
+            : [...normalizedInputNodes];
+
+        this.staticOutputNodes = normalizedOutputNodes.filter((name) => {
+            if (this.dynamicGroup.hasDynamicOutputGroup) {
+                return name !== this.dynamicGroup.outputBaseName;
+            }
+            return true;
+        });
+
+        this.rebuildDynamicPortNames({
+            inputCount: this.dynamicGroup.inputCount,
+            outputCount: this.dynamicGroup.outputCount,
+        });
+    }
+
+    rebuildDynamicPortNames({
+        inputCount = this.dynamicGroup?.inputCount ?? 0,
+        outputCount = this.dynamicGroup?.outputCount ?? 0,
+        connectedInputCount = this.dynamicGroup?.connectedInputCount ?? 0,
+        connectedOutputCount = this.dynamicGroup?.connectedOutputCount ?? 0,
+    } = {}) {
+        if (!this.dynamicGroup) {
+            this.inputNodes = [...this.staticInputNodes];
+            this.outputNodes = [...this.staticOutputNodes];
+            return;
+        }
+
+        const boundedInputCount = this.dynamicGroup.hasDynamicInputGroup
+            ? Math.max(1, Math.min(this.dynamicGroup.maxInputs, inputCount))
+            : 0;
+        const boundedOutputCount = this.dynamicGroup.hasDynamicOutputGroup
+            ? Math.max(1, Math.min(this.dynamicGroup.maxOutputs, outputCount))
+            : 0;
+
+        const boundedConnectedInputCount = this.dynamicGroup.hasDynamicInputGroup
+            ? Math.max(0, Math.min(boundedInputCount, connectedInputCount))
+            : 0;
+        const boundedConnectedOutputCount = this.dynamicGroup.hasDynamicOutputGroup
+            ? Math.max(0, Math.min(boundedOutputCount, connectedOutputCount))
+            : 0;
+
+        this.dynamicGroup.inputCount = boundedInputCount;
+        this.dynamicGroup.outputCount = boundedOutputCount;
+        this.dynamicGroup.connectedInputCount = boundedConnectedInputCount;
+        this.dynamicGroup.connectedOutputCount = boundedConnectedOutputCount;
+
+        this.dynamicInputNodes = this.dynamicGroup.hasDynamicInputGroup
+            ? Array.from({ length: boundedInputCount }, (_, idx) =>
+                  this.buildIndexedPortName(this.dynamicGroup.inputBaseName, idx + 1),
+              )
+            : [];
+
+        this.dynamicOutputNodes = this.dynamicGroup.hasDynamicOutputGroup
+            ? Array.from({ length: boundedOutputCount }, (_, idx) =>
+                  this.buildIndexedPortName(this.dynamicGroup.outputBaseName, idx + 1),
+              )
+            : [];
+
+        this.inputNodes = [...this.staticInputNodes, ...this.dynamicInputNodes];
+        this.outputNodes = [...this.staticOutputNodes, ...this.dynamicOutputNodes];
+
+        this.dynamicInputNodes.forEach((portName) => {
+            this.inputNodeConfig.set(portName, { hasDefault: false });
+        });
+    }
+
+    syncDynamicPorts(connectionData = []) {
+        if (!this.dynamicGroup) {
+            return false;
+        }
+
+        const connectedDynamicInputPorts = new Set();
+        const connectedDynamicOutputPorts = new Set();
+        connectionData.forEach((conn) => {
+            if (
+                this.dynamicGroup.hasDynamicInputGroup &&
+                conn.toNodeId === this.instanceId &&
+                this.parseDynamicPortIndex(
+                    conn.toPortName,
+                    this.dynamicGroup.inputBaseName,
+                ) !== null
+            ) {
+                connectedDynamicInputPorts.add(conn.toPortName);
+            }
+
+            if (
+                this.dynamicGroup.hasDynamicOutputGroup &&
+                conn.fromNodeId === this.instanceId &&
+                this.parseDynamicPortIndex(
+                    conn.fromPortName,
+                    this.dynamicGroup.outputBaseName,
+                ) !== null
+            ) {
+                connectedDynamicOutputPorts.add(conn.fromPortName);
+            }
+        });
+
+        const connectedDynamicInputCount = connectedDynamicInputPorts.size;
+        const connectedDynamicOutputCount = connectedDynamicOutputPorts.size;
+
+        const desiredInputCount = this.dynamicGroup.hasDynamicInputGroup
+            ? Math.min(
+                  this.dynamicGroup.maxInputs,
+                  Math.max(1, connectedDynamicInputCount + 1),
+              )
+            : 0;
+        const desiredOutputCount = this.dynamicGroup.hasDynamicOutputGroup
+            ? Math.min(
+                  this.dynamicGroup.maxOutputs,
+                  Math.max(1, connectedDynamicOutputCount + 1),
+              )
+            : 0;
+        const desiredConnectedInputCount = connectedDynamicInputCount;
+        const desiredConnectedOutputCount = connectedDynamicOutputCount;
+
+        const desiredState = this.dynamicGroup.coupledGroups
+            ? (() => {
+                  const sharedConnected = Math.max(
+                      desiredConnectedInputCount,
+                      desiredConnectedOutputCount,
+                  );
+                  const sharedCount = Math.min(
+                      Math.min(this.dynamicGroup.maxInputs, this.dynamicGroup.maxOutputs),
+                      Math.max(1, sharedConnected + 1),
+                  );
+                  return {
+                      inputCount: sharedCount,
+                      outputCount: sharedCount,
+                      connectedInputCount: desiredConnectedInputCount,
+                      connectedOutputCount: desiredConnectedOutputCount,
+                  };
+              })()
+            : {
+                  inputCount: desiredInputCount,
+                  outputCount: desiredOutputCount,
+                  connectedInputCount: desiredConnectedInputCount,
+                  connectedOutputCount: desiredConnectedOutputCount,
+              };
+
+        if (
+            desiredState.inputCount === this.dynamicGroup.inputCount &&
+            desiredState.outputCount === this.dynamicGroup.outputCount &&
+            desiredState.connectedInputCount ===
+                this.dynamicGroup.connectedInputCount &&
+            desiredState.connectedOutputCount ===
+                this.dynamicGroup.connectedOutputCount
+        ) {
+            return false;
+        }
+
+        this.rebuildDynamicPortNames(desiredState);
+        if (this.element) {
+            this.renderContent();
+        }
+        return true;
+    }
+
+    ensureDynamicPortsForConnectionPort(portName, portType = "input") {
+        if (!this.dynamicGroup) {
+            return false;
+        }
+
+        const baseName =
+            portType === "output"
+                ? this.dynamicGroup.outputBaseName
+                : this.dynamicGroup.inputBaseName;
+
+        const parsedIndex = this.parseDynamicPortIndex(portName, baseName);
+        if (parsedIndex === null) {
+            return false;
+        }
+
+        const isOutputPort = portType === "output";
+        const currentCount = isOutputPort
+            ? this.dynamicGroup.outputCount
+            : this.dynamicGroup.inputCount;
+        const currentConnectedCount = isOutputPort
+            ? this.dynamicGroup.connectedOutputCount
+            : this.dynamicGroup.connectedInputCount;
+
+        if (parsedIndex <= currentCount && parsedIndex <= currentConnectedCount) {
+            return false;
+        }
+
+        const maxCount = isOutputPort
+            ? this.dynamicGroup.maxOutputs
+            : this.dynamicGroup.maxInputs;
+        const desiredSideCount = Math.min(
+            maxCount,
+            Math.max(currentCount, parsedIndex < maxCount ? parsedIndex + 1 : parsedIndex),
+        );
+
+        if (this.dynamicGroup.coupledGroups) {
+            const sharedMax = Math.min(
+                this.dynamicGroup.maxInputs,
+                this.dynamicGroup.maxOutputs,
+            );
+            const sharedCount = Math.min(sharedMax, desiredSideCount);
+
+            this.rebuildDynamicPortNames({
+                inputCount: sharedCount,
+                outputCount: sharedCount,
+                connectedInputCount: isOutputPort
+                    ? this.dynamicGroup.connectedInputCount
+                    : Math.max(this.dynamicGroup.connectedInputCount, parsedIndex),
+                connectedOutputCount: isOutputPort
+                    ? Math.max(this.dynamicGroup.connectedOutputCount, parsedIndex)
+                    : this.dynamicGroup.connectedOutputCount,
+            });
+        } else {
+            this.rebuildDynamicPortNames({
+                inputCount: isOutputPort
+                    ? this.dynamicGroup.inputCount
+                    : desiredSideCount,
+                outputCount: isOutputPort
+                    ? desiredSideCount
+                    : this.dynamicGroup.outputCount,
+                connectedInputCount: isOutputPort
+                    ? this.dynamicGroup.connectedInputCount
+                    : Math.max(this.dynamicGroup.connectedInputCount, parsedIndex),
+                connectedOutputCount: isOutputPort
+                    ? Math.max(this.dynamicGroup.connectedOutputCount, parsedIndex)
+                    : this.dynamicGroup.connectedOutputCount,
+            });
+        }
+
+        if (this.element) {
+            this.renderContent();
+        }
+        return true;
+    }
+
     async loadConfigData() {
         if (this.configDataLoaded) return;
 
@@ -46,18 +423,7 @@ export class FlowchartNode {
 
             if (response.ok) {
                 const configData = await response.json();
-                const rawInputNodes = configData.input_nodes || ["data"];
-                this.inputNodes = rawInputNodes.map((node) => {
-                    if (typeof node === "object" && node.name) {
-                        this.inputNodeConfig.set(node.name, {
-                            hasDefault: node.has_default ?? false,
-                        });
-                        return node.name;
-                    }
-                    this.inputNodeConfig.set(node, { hasDefault: false });
-                    return node;
-                });
-                this.outputNodes = configData.output_nodes || ["data"];
+                this.initializePortsFromConfig(configData);
                 this.configDataLoaded = true;
             } else {
                 console.warn(
@@ -65,6 +431,11 @@ export class FlowchartNode {
                 );
                 this.inputNodes = ["data"];
                 this.outputNodes = ["data"];
+                this.staticInputNodes = ["data"];
+                this.staticOutputNodes = ["data"];
+                this.dynamicInputNodes = [];
+                this.dynamicOutputNodes = [];
+                this.dynamicGroup = null;
                 this.configDataLoaded = true;
             }
         } catch (error) {
@@ -74,6 +445,11 @@ export class FlowchartNode {
             );
             this.inputNodes = ["data"];
             this.outputNodes = ["data"];
+            this.staticInputNodes = ["data"];
+            this.staticOutputNodes = ["data"];
+            this.dynamicInputNodes = [];
+            this.dynamicOutputNodes = [];
+            this.dynamicGroup = null;
             this.configDataLoaded = true;
         }
     }
@@ -290,7 +666,7 @@ export class FlowchartNode {
     }
 
     renderInputPorts() {
-        return this.inputNodes
+        const staticPortsMarkup = this.staticInputNodes
             .map(
                 (nodeName) => `
             <div class="port-row input-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="input" style="
@@ -323,10 +699,76 @@ export class FlowchartNode {
         `,
             )
             .join("");
+
+        if (!this.dynamicGroup || !this.dynamicGroup.hasDynamicInputGroup) {
+            return staticPortsMarkup;
+        }
+
+        const dynamicRows = this.dynamicInputNodes
+            .map((nodeName, index) => {
+                const displayLabel = `${this.dynamicGroup.inputBaseName}`;
+                return `
+            <div class="port-row input-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="input" style="
+                display: flex;
+                align-items: center;
+                padding: 4px 12px;
+                gap: 8px;
+                height: 24px;
+            ">
+                <div class="port-connector input-connector" data-port-name="${escapeHtml(nodeName)}" data-port-type="input" style="
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #404040;
+                    border: 2px solid #606060;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                    margin-left: -18px;
+                    flex-shrink: 0;
+                "></div>
+                <span style="
+                    color: #a0a0a0;
+                    font-size: 11px;
+                    font-weight: 500;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                ">${escapeHtml(displayLabel)}</span>
+            </div>
+        `;
+            })
+            .join("");
+
+        return `
+            ${staticPortsMarkup}
+            <div class="dynamic-port-group" style="
+                margin: 4px 8px 0 8px;
+                border: 2px solid #f9c845;
+                border-radius: 8px;
+                padding: 4px 0;
+                display: inline-block;
+                width: fit-content;
+                max-width: calc(100% - 16px);
+                box-shadow: 0 0 8px rgba(249, 200, 69, 0.25);
+            ">
+                <div style="
+                    color: #f9c845;
+                    font-size: 8px;
+                    font-weight: 600;
+                    letter-spacing: 0;
+                    display: flex;
+                    align-items: center;
+                    height: 16px;
+                    line-height: 16px;
+                    padding: 0 8px 2px 8px;
+                ">(${this.dynamicInputNodes.length}/${this.dynamicGroup.maxInputs})</div>
+                ${dynamicRows}
+            </div>
+        `;
     }
 
     renderOutputPorts() {
-        return this.outputNodes
+        const staticPortsMarkup = this.staticOutputNodes
             .map(
                 (nodeName) => `
             <div class="port-row output-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="output" style="
@@ -360,6 +802,76 @@ export class FlowchartNode {
         `,
             )
             .join("");
+
+        if (!this.dynamicGroup || !this.dynamicGroup.hasDynamicOutputGroup) {
+            return staticPortsMarkup;
+        }
+
+        const dynamicRows = this.dynamicOutputNodes
+            .map((nodeName, index) => {
+                const displayLabel = `${this.dynamicGroup.outputBaseName}`;
+                return `
+            <div class="port-row output-port-row" data-port-name="${escapeHtml(nodeName)}" data-port-type="output" style="
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                padding: 4px 12px;
+                gap: 8px;
+                height: 24px;
+            ">
+                <span style="
+                    color: #a0a0a0;
+                    font-size: 11px;
+                    font-weight: 500;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                ">${escapeHtml(displayLabel)}</span>
+                <div class="port-connector output-connector" data-port-name="${escapeHtml(nodeName)}" data-port-type="output" style="
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #404040;
+                    border: 2px solid #606060;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                    margin-right: -18px;
+                    flex-shrink: 0;
+                "></div>
+            </div>
+        `;
+            })
+            .join("");
+
+        return `
+            ${staticPortsMarkup}
+            <div class="dynamic-port-group" style="
+                margin: 4px 8px 0 8px;
+                border: 2px solid #f9c845;
+                border-radius: 8px;
+                padding: 4px 0;
+                display: inline-block;
+                width: fit-content;
+                max-width: calc(100% - 16px);
+                margin-left: auto;
+                box-shadow: 0 0 8px rgba(249, 200, 69, 0.25);
+            ">
+                <div style="
+                    color: #f9c845;
+                    font-size: 8px;
+                    font-weight: 600;
+                    letter-spacing: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    height: 16px;
+                    line-height: 16px;
+                    padding: 0 8px 2px 8px;
+                    text-align: right;
+                ">(${this.dynamicOutputNodes.length}/${this.dynamicGroup.maxOutputs})</div>
+                ${dynamicRows}
+            </div>
+        `;
     }
 
     cachePortElements() {

@@ -32,7 +32,165 @@ import { BACKEND_BASE_URL } from "../config.js";
 
     function operationHasSettings(config) {
         const params = config?.parameters;
-        return params && typeof params === "object" && Object.keys(params).length > 0;
+        const hasParameters =
+            params && typeof params === "object" && Object.keys(params).length > 0;
+        const hasDynamicGroup =
+            config?.dynamic_group && typeof config.dynamic_group === "object";
+        return hasParameters || hasDynamicGroup;
+    }
+
+    function renderPortGroupsSummary(modalBody, config) {
+        const inputNodes = Array.isArray(config?.input_nodes) ? config.input_nodes : [];
+        const outputNodes = Array.isArray(config?.output_nodes)
+            ? config.output_nodes
+            : [];
+        const dynamicGroup =
+            config?.dynamic_group && typeof config.dynamic_group === "object"
+                ? config.dynamic_group
+                : null;
+
+        const staticInputNames = inputNodes.map((node) =>
+            typeof node === "object" && node?.name ? node.name : String(node),
+        );
+        const staticOutputNames = outputNodes.map((node) =>
+            typeof node === "object" && node?.name ? node.name : String(node),
+        );
+
+        let dynamicInputBase = null;
+        let dynamicOutputBase = null;
+        let maxInputs = 0;
+        let mirrored = false;
+        let hasDynamicInput = false;
+        let hasDynamicOutput = false;
+
+        if (dynamicGroup) {
+            const inputDynDisabled =
+                dynamicGroup.input_dynamic_group === false ||
+                String(dynamicGroup.input_dynamic_group).toLowerCase() === "false";
+            hasDynamicInput = !inputDynDisabled;
+
+            mirrored =
+                dynamicGroup.mirrored_output_group === true ||
+                String(dynamicGroup.mirrored_output_group).toLowerCase() ===
+                    "true";
+            const outputDyn =
+                dynamicGroup.output_dynamic_group === true ||
+                String(dynamicGroup.output_dynamic_group).toLowerCase() === "true";
+            hasDynamicOutput = mirrored || outputDyn;
+
+            dynamicInputBase =
+                dynamicGroup.input_base_name ||
+                dynamicGroup.input_node ||
+                staticInputNames[staticInputNames.length - 1] ||
+                "data";
+            dynamicOutputBase =
+                dynamicGroup.output_base_name ||
+                dynamicGroup.output_node ||
+                staticOutputNames[staticOutputNames.length - 1] ||
+                dynamicInputBase;
+            maxInputs = Math.max(
+                1,
+                Number.parseInt(dynamicGroup.max_inputs ?? 1, 10) || 1,
+            );
+        }
+
+        const effectiveStaticInputs = dynamicInputBase && hasDynamicInput
+            ? staticInputNames.filter((name) => name !== dynamicInputBase)
+            : staticInputNames;
+
+        const effectiveStaticOutputs = dynamicOutputBase && hasDynamicOutput
+            ? staticOutputNames.filter((name) => name !== dynamicOutputBase)
+            : staticOutputNames;
+
+        if (
+            effectiveStaticInputs.length === 0 &&
+            effectiveStaticOutputs.length === 0 &&
+            !dynamicGroup
+        ) {
+            return;
+        }
+
+        const summaryContainer = createElement("div", {
+            className:
+                "mb-5 bg-[#1a1a1a] border border-[#414141] rounded-lg p-3 space-y-3",
+        });
+
+        const summaryTitle = createElement("div", {
+            className: "text-sm font-semibold text-[#f9c845]",
+            text: "Pipeline Ports",
+        });
+        summaryContainer.appendChild(summaryTitle);
+
+        const blocksContainer = createElement("div", {
+            className: "grid grid-cols-1 md:grid-cols-2 gap-3",
+        });
+
+        const staticBlock = createElement("div", {
+            className: "bg-[#232323] border border-[#3a3a3a] rounded-md p-3",
+        });
+        staticBlock.appendChild(
+            createElement("div", {
+                className: "text-xs uppercase tracking-wide text-[#ac8a2f] mb-2",
+                text: "Static slots",
+            }),
+        );
+
+        const staticInputsLine = createElement("div", {
+            className: "text-xs text-gray-300 mb-1",
+            text: `Inputs: ${effectiveStaticInputs.length > 0 ? effectiveStaticInputs.join(", ") : "None"}`,
+        });
+        const staticOutputsLine = createElement("div", {
+            className: "text-xs text-gray-300",
+            text: `Outputs: ${effectiveStaticOutputs.length > 0 ? effectiveStaticOutputs.join(", ") : "None"}`,
+        });
+        staticBlock.appendChild(staticInputsLine);
+        staticBlock.appendChild(staticOutputsLine);
+        blocksContainer.appendChild(staticBlock);
+
+        if (dynamicGroup) {
+            const dynamicBlock = createElement("div", {
+                className: "bg-[#1a2430] border border-[#2f5f89] rounded-md p-3",
+            });
+            dynamicBlock.appendChild(
+                createElement("div", {
+                    className: "text-xs uppercase tracking-wide text-[#8dc8ff] mb-2",
+                    text: "Dynamic group",
+                }),
+            );
+            if (hasDynamicInput) {
+                dynamicBlock.appendChild(
+                    createElement("div", {
+                        className: "text-xs text-[#d9ecff] mb-1",
+                        text: `Input base: ${dynamicInputBase} (starts at 1, max ${maxInputs})`,
+                    }),
+                );
+            }
+            if (hasDynamicOutput) {
+                const maxOutputs = Math.max(
+                    1,
+                    Number.parseInt(dynamicGroup.max_outputs ?? maxInputs, 10) || maxInputs,
+                );
+                dynamicBlock.appendChild(
+                    createElement("div", {
+                        className: "text-xs text-[#d9ecff]",
+                        text: mirrored
+                            ? `Output base: ${dynamicOutputBase} (mirrored to input count)`
+                            : `Output base: ${dynamicOutputBase} (starts at 1, max ${maxOutputs})`,
+                    }),
+                );
+            } else {
+                dynamicBlock.appendChild(
+                    createElement("div", {
+                        className: "text-xs text-[#d9ecff]",
+                        text: "Output mirroring: disabled",
+                    }),
+                );
+            }
+            blocksContainer.appendChild(dynamicBlock);
+        }
+
+        summaryContainer.appendChild(blocksContainer);
+        modalBody.appendChild(summaryContainer);
     }
 
     async function loadAvailableCameras() {
@@ -968,6 +1126,8 @@ import { BACKEND_BASE_URL } from "../config.js";
     ) {
         modalBody.innerHTML = "";
         const fields = [];
+
+        renderPortGroupsSummary(modalBody, config);
 
         const params = config?.parameters || {};
         // Object.keys() preserves insertion order in ES2015+

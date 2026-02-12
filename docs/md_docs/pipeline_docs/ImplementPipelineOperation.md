@@ -2,6 +2,10 @@
 
 This file contains the exact, essential rules and minimal examples needed to add a new pipeline operation. For high-level architecture and rationale, see `docs/md_docs/pipeline_docs/PipelineOverview.md`.
 
+For dynamic input/output node group configuration (including mirrored coupling
+and standalone dynamic outputs), see
+`docs/md_docs/pipeline_docs/DynamicPortGroups.md`.
+
 ### Placement and naming
 
 - Main operations (definitions): put the wrapper in `src/main_operations/definitions/{operation_name}.py` and name the class `CamelCaseDefinition` (e.g., `MyOpDefinition`).
