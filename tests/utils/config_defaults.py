@@ -124,6 +124,9 @@ def _apply_overrides(
         ]
         sources.setdefault("color_ranges", "override")
     overrides: Dict[str, Any] = {
+        "camera_bus_id": os.environ.get(
+            "EAGLEEYE_TEST_CAMERA_BUS_ID", "sim_camera"
+        ),
         "camera_parameters_path": os.environ.get(
             "EAGLEEYE_TEST_CAMERA_PARAMETERS_PATH",
             str(

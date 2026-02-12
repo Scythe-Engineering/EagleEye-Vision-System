@@ -68,7 +68,10 @@ def test_operation_run(spec) -> None:
                 init_params[name] = value
 
     if spec.action_name == "device_input":
-        dependencies["camera_manager"].add_camera(init_params.get("camera_name", "test_camera"))
+        bus_id = init_params.get("bus_id", "test_camera")
+        camera_name = f"camera_{bus_id}"
+        dependencies["camera_manager"].add_camera(camera_name)
+        dependencies["camera_manager"].register_bus_id(bus_id, camera_name)
 
     operation_class_callable = operation_class
     if operation_class_callable is None:

@@ -11,7 +11,10 @@ from src.config.utils.generate_all_pipelines import generate_all_pipelines  # no
 from src.config.utils.pipeline import Pipeline  # noqa: E402
 from src.rust_implementations.build import main as rust_build  # noqa: E402
 from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
-    CameraThreadManager,  # noqa: E402
+    CameraThreadManager,
+)
+from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
+    CameraConfigRegistry,
 )
 from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
@@ -20,7 +23,7 @@ from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
-from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E40, E402
+from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
 import json  # noqa: E402
 
 # Bootstrap Rust modules (removed during uv sync)
@@ -83,6 +86,19 @@ class MainBackend:
             )
             self.known_cameras = self.camera_manager.known_cameras
 
+            # Camera configuration registry and shared config object for
+            # operation-level injection. This centralizes camera config access
+            # so operations do not need every camera parameter in action_params.
+            self.camera_config_registry = CameraConfigRegistry()
+            self.camera_config_registry.load_all_from_directory()
+            for camera_info in self.known_cameras:
+                camera_bus_id = camera_info.get("bus_id")
+                if camera_bus_id is None:
+                    continue
+                self.camera_config_registry.get_config(str(camera_bus_id))
+            self.camera_configs = self.camera_config_registry.get_all_configs()
+            self.web_interface.camera_config_registry = self.camera_config_registry
+
             all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
             if not all_cameras_ready:
                 self.logger.log(
@@ -99,25 +115,26 @@ class MainBackend:
                 self.compute_pool,
                 self.network_table,
                 self.camera_manager,
+                self.camera_config_registry,
                 logger=self.logger,
             )
 
-            available_cameras = set(self.camera_manager.get_all_camera_names())
+            available_bus_ids = set(self.camera_manager.get_all_bus_ids())
             for pipeline_name, pipeline in self.pipelines.items():
-                camera_names = getattr(pipeline, "camera_bus_ids", [])
-                if not camera_names:
+                bus_ids = getattr(pipeline, "camera_bus_ids", [])
+                if not bus_ids:
                     self.logger.log(
                         f"{Colors.YELLOW}Pipeline {pipeline_name} has no cameras configured. Skipping start.{Colors.RESET}"
                     )
                     continue
-                missing_cameras = [
-                    camera_name
-                    for camera_name in camera_names
-                    if camera_name not in available_cameras
+                missing_bus_ids = [
+                    bus_id
+                    for bus_id in bus_ids
+                    if bus_id not in available_bus_ids
                 ]
-                if missing_cameras:
+                if missing_bus_ids:
                     self.logger.log(
-                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras {missing_cameras}. Skipping start.{Colors.RESET}"
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} missing cameras with bus_ids {missing_bus_ids}. Skipping start.{Colors.RESET}"
                     )
                     continue
                 pipeline.thread_run(self.camera_manager)
@@ -128,11 +145,11 @@ class MainBackend:
             # Initial camera inventory logging
             if not self.known_cameras:
                 self.logger.log(
-                    f"{Colors.YELLOW}No cameras detected initially.{Colors.RESET}"
+                    f"{Colors.RED}No cameras detected initially.{Colors.RESET}"
                 )
             else:
                 self.logger.log(
-                    f"{Colors.CYAN}Initially detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
+                    f"{Colors.CYAN}Detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
         except KeyboardInterrupt:
             self.shutdown()
@@ -206,7 +223,7 @@ class MainBackend:
         if not gpu_devices:
             return
 
-        from src.utils.device_management_utils.gpu import GPU  # noqa: E402
+        from src.utils.device_management_utils.gpu import GPU
 
         for gpu_index, gpu_device_name in enumerate(gpu_devices):
             try:

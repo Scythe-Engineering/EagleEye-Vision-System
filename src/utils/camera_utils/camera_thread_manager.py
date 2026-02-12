@@ -113,7 +113,8 @@ class CameraThreadManager:
         self.logger = logger
         self.cameras: Dict[str, CameraWorker] = {}
         self.start_time_ms = time.time() * 1000.0
-        self.known_cameras: Set[str] = set()
+        self.known_cameras: list[dict[str, str | int]] = []
+        self.bus_id_to_name: Dict[str, str] = {}
         self._initialize_cameras()
 
     def _initialize_cameras(self) -> None:
@@ -124,14 +125,12 @@ class CameraThreadManager:
         self.known_cameras = add_system_cameras(
             self.web_interface,
             self,
-            self.known_cameras,
             logger=self.logger,
         )
 
         self.known_cameras = add_video_file_cameras(
             self.web_interface,
             self,
-            self.known_cameras,
             logger=self.logger,
         )
 
@@ -366,9 +365,7 @@ class CameraThreadManager:
             )
             return False
 
-        self.logger.log(
-            f"{Colors.GREEN}All cameras are ready.{Colors.RESET}"
-        )
+        self.logger.log(f"{Colors.GREEN}All cameras are ready.{Colors.RESET}")
         return True
 
     def get_camera_ready(self, camera_name: str) -> bool:
@@ -381,11 +378,46 @@ class CameraThreadManager:
         worker = self.cameras.get(camera_name)
         return worker.camera.camera_ready if worker else False
 
-    def get_video_camera_index(self) -> int:
+    def register_bus_id(self, bus_id: str, camera_name: str) -> None:
+        """Register a mapping from bus_id to camera name.
+
+        Args:
+            bus_id: The USB bus identifier for the camera.
+            camera_name: The camera name associated with this bus_id.
         """
-        Get the index of the video camera.
+        self.bus_id_to_name[bus_id] = camera_name
+
+    def get_camera_name_by_bus_id(self, bus_id: str) -> Optional[str]:
+        """Get the camera name associated with a bus_id.
+
+        Args:
+            bus_id: The USB bus identifier to look up.
+
+        Returns:
+            The camera name if found, None otherwise.
         """
-        for worker in self.cameras.values():
-            if isinstance(worker.camera, VideoFileCamera):
-                return worker.camera.get_frame_index()
-        return -1
+        return self.bus_id_to_name.get(bus_id)
+
+    def get_current_frame_by_bus_id(
+        self, bus_id: str
+    ) -> Optional[Tuple[np.ndarray, float]]:
+        """Get the current frame for a camera identified by bus_id.
+
+        Args:
+            bus_id: The USB bus identifier for the camera.
+
+        Returns:
+            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
+        """
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        return self.get_current_frame(camera_name)
+
+    def get_all_bus_ids(self) -> list[str]:
+        """Get all registered bus IDs.
+
+        Returns:
+            List of registered bus IDs.
+        """
+        return list(self.bus_id_to_name.keys())

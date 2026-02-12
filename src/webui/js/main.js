@@ -243,7 +243,7 @@ window.onload = async () => {
     }
 
     const socket = globalThis.socket;
-    const handleProfilingUpdateFromSocket = (data) => {
+    const handleProfilingUpdatePayload = (data) => {
         try {
             const parsedData = typeof data === "string" ? JSON.parse(data) : data;
             const hasRequiredFields =
@@ -251,6 +251,7 @@ window.onload = async () => {
                 Number.isFinite(parsedData?.frame_seq) &&
                 Number.isFinite(parsedData?.frame_time_ms) &&
                 Number.isFinite(parsedData?.timestamp_ms) &&
+                parsedData?.operations !== null &&
                 typeof parsedData?.operations === "object" &&
                 Array.isArray(parsedData?.timesteps);
             if (!hasRequiredFields) {
@@ -258,13 +259,31 @@ window.onload = async () => {
             }
             globalThis.pipelineCreator?.handleProfilingUpdate?.(parsedData);
         } catch (err) {
-            console.warn("Failed to parse Socket.IO profiling_update event", err);
+            console.warn("Failed to parse profiling_update event payload", err);
         }
     };
 
+    const handleProfilingUpdateFromSse = (e) => {
+        handleProfilingUpdatePayload(e?.data);
+    };
+
+    es.addEventListener("profiling_update", handleProfilingUpdateFromSse);
+    globalThis.profilingUpdateSseHandler = handleProfilingUpdateFromSse;
+
+    const handleProfilingUpdateFromSocket = (data) => {
+        handleProfilingUpdatePayload(data);
+    };
+
     if (socket?.on) {
-        socket.off?.("profiling_update", handleProfilingUpdateFromSocket);
-        socket.on("profiling_update", handleProfilingUpdateFromSocket);
+        if (typeof globalThis.profilingUpdateSocketHandler === "function") {
+            socket.off?.(
+                "profiling_update",
+                globalThis.profilingUpdateSocketHandler,
+            );
+        }
+        globalThis.profilingUpdateSocketHandler =
+            handleProfilingUpdateFromSocket;
+        socket.on("profiling_update", globalThis.profilingUpdateSocketHandler);
     } else {
         console.warn("Socket.IO client unavailable for profiling_update events");
     }

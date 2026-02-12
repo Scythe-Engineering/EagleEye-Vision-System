@@ -303,11 +303,12 @@ def __init__(self, web_interface: EagleEyeInterface, threshold: float):
 
 #### Code Style
 
-- **Python**: Black-style formatting
-    - Type hints mandatory (all params + return values)
-    - Google-style docstrings for all functions
-    - No comments (use descriptive names + function extraction)
-- **JavaScript**: Prettier.js with `tabWidth: 4` (from `package.json`)
+    - **Python**: Black-style formatting
+        - Type hints mandatory (all params + return values)
+        - Google-style docstrings for all functions
+        - Architectural comments encouraged for complex blocks and non-obvious design decisions; avoid frivolous line-by-line notes and prioritize readable code instead of comment band-aids
+    - **JavaScript**: Prettier.js with `tabWidth: 4` (from `package.json`)
+        - Architectural comments encouraged where clarity benefits; avoid redundant comments that merely restate the code and keep logic expressive on its own
 
 ---
 

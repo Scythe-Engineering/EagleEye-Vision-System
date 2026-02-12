@@ -1,31 +1,137 @@
 {
-    "test": [
+    "Test": [
         {
             "action_name": "device_input.py",
             "action_params": {
-                "camera_name": "basic_test"
+                "bus_id": "basic_test",
+                "frame_rotation": 0
             },
             "position": {
-                "x": -380,
+                "x": 100,
                 "y": 100
             },
-            "uuid": "op-mk60jqlu-vb7",
+            "uuid": "op-mljk5q36-arwb",
             "connections": [
                 {
-                    "from_uuid": "op-mk60jqlu-vb7",
+                    "from_uuid": "op-mljk5q36-arwb",
                     "from_port": "frame",
-                    "to_uuid": "op-mkcoqjzs-g79z",
+                    "to_uuid": "op-mljk60f4-az78",
                     "to_port": "frame",
                     "data_type": "frame",
                     "is_default": false,
                     "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "temporal_acceleration_preprocessor_rust.py",
+            "action_params": {
+                "camera_bus_id": "basic_test",
+                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
+                "padding_factor": 0.35,
+                "max_regions": 20,
+                "min_region_size_px": 16
+            },
+            "position": {
+                "x": 380,
+                "y": 100
+            },
+            "uuid": "op-mljk60f4-az78",
+            "connections": [
+                {
+                    "from_uuid": "op-mljk60f4-az78",
+                    "from_port": "processed_frame",
+                    "to_uuid": "op-mljku0sh-80n9",
+                    "to_port": "frame",
+                    "data_type": "processed_frame",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "pnp_camera_localization.py",
+            "action_params": {
+                "camera_bus_id": "basic_test",
+                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
+                "jump_threshold": 2
+            },
+            "position": {
+                "x": 1140,
+                "y": 100
+            },
+            "uuid": "op-mljk64nf-hrl6",
+            "connections": [
+                {
+                    "from_uuid": "op-mljk64nf-hrl6",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mljk6p6b-k985",
+                    "to_port": "pose_3d",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
                 },
                 {
-                    "from_uuid": "op-mk60jqlu-vb7",
-                    "from_port": "frame",
-                    "to_uuid": "op-mkh3fc5l-gtks",
-                    "to_port": "frame",
-                    "data_type": "frame",
+                    "from_uuid": "op-mljk64nf-hrl6",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mljk60f4-az78",
+                    "to_port": "camera_pose",
+                    "data_type": "camera_pose",
+                    "is_default": true,
+                    "custom_waypoints": [
+                        {
+                            "x": 1415,
+                            "y": 160.99995278122617
+                        },
+                        {
+                            "x": 1440,
+                            "y": 160.99995278122617
+                        },
+                        {
+                            "x": 1440,
+                            "y": 240
+                        },
+                        {
+                            "x": 340,
+                            "y": 240
+                        },
+                        {
+                            "x": 340,
+                            "y": 184.99997201128417
+                        },
+                        {
+                            "x": 370,
+                            "y": 184.99997201128417
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "action_name": "robot_pose_output.py",
+            "action_params": {},
+            "position": {
+                "x": 1900,
+                "y": 100
+            },
+            "uuid": "op-mljk6jqh-xgi",
+            "connections": []
+        },
+        {
+            "action_name": "flatten_pose.py",
+            "action_params": {},
+            "position": {
+                "x": 1560,
+                "y": 100
+            },
+            "uuid": "op-mljk6p6b-k985",
+            "connections": [
+                {
+                    "from_uuid": "op-mljk6p6b-k985",
+                    "from_port": "pose_2d",
+                    "to_uuid": "op-mljk6jqh-xgi",
+                    "to_port": "pose",
+                    "data_type": "pose_2d",
                     "is_default": false,
                     "custom_waypoints": null
                 }
@@ -42,264 +148,17 @@
                 "decode_sharpening": 0.25
             },
             "position": {
-                "x": 360,
-                "y": 100
-            },
-            "uuid": "op-mk60jrt5-9es1",
-            "connections": [
-                {
-                    "from_uuid": "op-mk60jrt5-9es1",
-                    "from_port": "detections",
-                    "to_uuid": "op-mk60k0f0-5bb0",
-                    "to_port": "detections",
-                    "data_type": "detections",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "pnp_camera_localization.py",
-            "action_params": {
-                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
-                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
-                "jump_threshold": 2
-            },
-            "position": {
-                "x": 720,
-                "y": 100
-            },
-            "uuid": "op-mk60k0f0-5bb0",
-            "connections": [
-                {
-                    "from_uuid": "op-mk60k0f0-5bb0",
-                    "from_port": "camera_pose",
-                    "to_uuid": "op-mk60kmaw-kwwt",
-                    "to_port": "pose_3d",
-                    "data_type": "camera_pose",
-                    "is_default": false,
-                    "custom_waypoints": null
-                },
-                {
-                    "from_uuid": "op-mk60k0f0-5bb0",
-                    "from_port": "camera_pose",
-                    "to_uuid": "op-mkcoqjzs-g79z",
-                    "to_port": "camera_pose",
-                    "data_type": "camera_pose",
-                    "is_default": true,
-                    "custom_waypoints": [
-                        {
-                            "x": 961,
-                            "y": 161.00002931553445
-                        },
-                        {
-                            "x": 980,
-                            "y": 161.00002931553445
-                        },
-                        {
-                            "x": 980,
-                            "y": 220
-                        },
-                        {
-                            "x": -100,
-                            "y": 220
-                        },
-                        {
-                            "x": -100,
-                            "y": 185.00004793691684
-                        },
-                        {
-                            "x": -70,
-                            "y": 185.00004793691684
-                        }
-                    ]
-                },
-                {
-                    "from_uuid": "op-mk60k0f0-5bb0",
-                    "from_port": "camera_pose",
-                    "to_uuid": "op-mkh3fvk1-fevc",
-                    "to_port": "robot_pose",
-                    "data_type": "camera_pose",
-                    "is_default": false,
-                    "custom_waypoints": [
-                        {
-                            "x": 961,
-                            "y": 160.99993217222533
-                        },
-                        {
-                            "x": 980,
-                            "y": 160.99993217222533
-                        },
-                        {
-                            "x": 980,
-                            "y": 80
-                        },
-                        {
-                            "x": 680,
-                            "y": 80
-                        },
-                        {
-                            "x": 680,
-                            "y": 44.99992111259118
-                        },
-                        {
-                            "x": 710,
-                            "y": 44.99992111259118
-                        }
-                    ]
-                }
-            ]
-        },
-        {
-            "action_name": "flatten_pose.py",
-            "action_params": {},
-            "position": {
-                "x": 1100,
-                "y": 100
-            },
-            "uuid": "op-mk60kmaw-kwwt",
-            "connections": [
-                {
-                    "from_uuid": "op-mk60kmaw-kwwt",
-                    "from_port": "pose_2d",
-                    "to_uuid": "op-mk60ks00-1rdu",
-                    "to_port": "pose",
-                    "data_type": "pose_2d",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "robot_pose_output.py",
-            "action_params": {},
-            "position": {
-                "x": 1400,
-                "y": 100
-            },
-            "uuid": "op-mk60ks00-1rdu",
-            "connections": []
-        },
-        {
-            "action_name": "temporal_acceleration_preprocessor_rust.py",
-            "action_params": {
-                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json",
-                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
-                "padding_factor": 0.35,
-                "max_regions": 20,
-                "min_region_size_px": 16
-            },
-            "position": {
-                "x": -60,
-                "y": 100
-            },
-            "uuid": "op-mkcoqjzs-g79z",
-            "connections": [
-                {
-                    "from_uuid": "op-mkcoqjzs-g79z",
-                    "from_port": "processed_frame",
-                    "to_uuid": "op-mk60jrt5-9es1",
-                    "to_port": "frame",
-                    "data_type": "processed_frame",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "color_threshold_detection.py",
-            "action_params": {
-                "target_size": 320,
-                "color_ranges": [
-                    {
-                        "name": "new_color",
-                        "class_id": 0,
-                        "lower_hsv": [
-                            0,
-                            0,
-                            0
-                        ],
-                        "upper_hsv": [
-                            179,
-                            255,
-                            255
-                        ]
-                    }
-                ],
-                "min_area": 100,
-                "max_area": 50000,
-                "blur_kernel_size": 0,
-                "morphology_kernel_size": 5,
-                "morphology_iterations": 0,
-                "camera_parameters_path": "{project_root}/files/camera_parameters_path/intrinsics.json"
-            },
-            "position": {
-                "x": -60,
-                "y": -40
-            },
-            "uuid": "op-mkh3fc5l-gtks",
-            "connections": [
-                {
-                    "from_uuid": "op-mkh3fc5l-gtks",
-                    "from_port": "detections",
-                    "to_uuid": "op-mkh3fhl7-2j0j",
-                    "to_port": "detections",
-                    "data_type": "detections",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "ground_plane_intersection.py",
-            "action_params": {
-                "camera_height": 1,
-                "camera_pitch": 0,
-                "fov_horizontal": 60,
-                "fov_vertical": 45
-            },
-            "position": {
-                "x": 360,
-                "y": -40
-            },
-            "uuid": "op-mkh3fhl7-2j0j",
-            "connections": [
-                {
-                    "from_uuid": "op-mkh3fhl7-2j0j",
-                    "from_port": "positions_3d",
-                    "to_uuid": "op-mkh3fvk1-fevc",
-                    "to_port": "detections",
-                    "data_type": "positions_3d",
-                    "is_default": false,
-                    "custom_waypoints": null
-                }
-            ]
-        },
-        {
-            "action_name": "detected_objects_output.py",
-            "action_params": {},
-            "position": {
-                "x": 1120,
-                "y": -40
-            },
-            "uuid": "op-mkh3fqm1-5adr",
-            "connections": []
-        },
-        {
-            "action_name": "robot_local_to_field_transform.py",
-            "action_params": {},
-            "position": {
                 "x": 760,
-                "y": -40
+                "y": 100
             },
-            "uuid": "op-mkh3fvk1-fevc",
+            "uuid": "op-mljku0sh-80n9",
             "connections": [
                 {
-                    "from_uuid": "op-mkh3fvk1-fevc",
-                    "from_port": "field_detections",
-                    "to_uuid": "op-mkh3fqm1-5adr",
+                    "from_uuid": "op-mljku0sh-80n9",
+                    "from_port": "detections",
+                    "to_uuid": "op-mljk64nf-hrl6",
                     "to_port": "detections",
-                    "data_type": "field_detections",
+                    "data_type": "detections",
                     "is_default": false,
                     "custom_waypoints": null
                 }

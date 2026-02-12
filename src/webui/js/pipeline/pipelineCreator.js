@@ -319,37 +319,37 @@ function getDeviceInputNodes() {
     });
 }
 
-function getDeviceInputCameraNames() {
-    const names = new Set();
+function getDeviceInputBusIds() {
+    const busIds = new Set();
     pipelineStore.getNodes().forEach((node) => {
         const operationId = pipelineStore.normalizeOperationId(node.operationId);
         if (operationId === "device_input") {
-            const cameraName = node.config?.camera_name;
-            if (cameraName) {
-                names.add(cameraName);
+            const busId = node.config?.bus_id;
+            if (busId !== undefined && busId !== null) {
+                busIds.add(String(busId));
             }
         }
     });
-    return Array.from(names);
+    return Array.from(busIds);
 }
 
-function formatPipelineCameraNote(cameraNames) {
-    if (cameraNames.length === 0) {
-        return { text: "No cameras configured", title: "" };
+function formatPipelineCameraNote(busIds) {
+    if (busIds.length === 0) {
+        return { text: "No camera bus IDs configured", title: "" };
     }
-    const sortedNames = [...cameraNames].sort((first, second) =>
+    const sortedBusIds = [...busIds].sort((first, second) =>
         first.localeCompare(second, undefined, { sensitivity: "accent" }),
     );
-    if (sortedNames.length <= 2) {
+    if (sortedBusIds.length <= 2) {
         return {
-            text: `Cameras: ${sortedNames.join(", ")}`,
-            title: sortedNames.join(", "),
+            text: `Bus IDs: ${sortedBusIds.join(", ")}`,
+            title: sortedBusIds.join(", "),
         };
     }
-    const visibleNames = sortedNames.slice(0, 2).join(", ");
+    const visibleBusIds = sortedBusIds.slice(0, 2).join(", ");
     return {
-        text: `Cameras: ${visibleNames} (+${sortedNames.length - 2} more)`,
-        title: sortedNames.join(", "),
+        text: `Bus IDs: ${visibleBusIds} (+${sortedBusIds.length - 2} more)`,
+        title: sortedBusIds.join(", "),
     };
 }
 
@@ -357,8 +357,8 @@ function updatePipelineCameraNote() {
     if (!pipelineCameraNote) {
         return;
     }
-    const cameraNames = getDeviceInputCameraNames();
-    const note = formatPipelineCameraNote(cameraNames);
+    const busIds = getDeviceInputBusIds();
+    const note = formatPipelineCameraNote(busIds);
     pipelineCameraNote.textContent = note.text;
     pipelineCameraNote.title = note.title;
 }
@@ -406,10 +406,20 @@ async function fetchAvailableCameras() {
         }
         const data = await response.json();
 
-        const cameras = Object.entries(data).map(([name, urlSafeName]) => ({
-            name: name,
-            urlSafeName: urlSafeName,
-        }));
+        const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => {
+            let resolvedCameraId = name;
+            if (cameraInfo?.bus_id != null) {
+                resolvedCameraId = String(cameraInfo.bus_id);
+            } else if (cameraInfo?.id != null) {
+                resolvedCameraId = String(cameraInfo.id);
+            }
+
+            return {
+                name: name,
+                urlSafeName: cameraInfo?.name ?? name.replaceAll(" ", "_"),
+                id: resolvedCameraId,
+            };
+        });
 
         pipelineStore.setCameras(cameras);
         console.log("Loaded cameras from server:", cameras);
@@ -1112,7 +1122,7 @@ async function removeFromPipeline(instanceId) {
     const deviceInputCountAfter = getDeviceInputNodes().length;
     if (deviceInputCountBefore > 0 && deviceInputCountAfter === 0) {
         showWarning(
-            "No device_input nodes configured; camera_name required for camera input.",
+            "No device_input nodes configured; bus_id required for camera input.",
         );
     }
 

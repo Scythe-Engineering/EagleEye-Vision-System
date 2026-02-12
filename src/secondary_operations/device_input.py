@@ -1,4 +1,4 @@
-from typing import Any, Mapping, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -25,7 +25,7 @@ class DeviceInput(OperationInstance):
     Input:
         _input_data (Any): Unused parameter. Data source operations don't consume
             input from previous pipeline stages. The camera source is determined
-            by the `camera_name` constructor parameter.
+            by the `bus_id` constructor parameter.
 
     Output:
         np.ndarray | None: The current camera frame as a numpy array in BGR format
@@ -34,7 +34,7 @@ class DeviceInput(OperationInstance):
             (height, width, 3) for color images.
 
     Example:
-        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "camera_0", 90)
+        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "1", 90)
         >>> frame = device_input.run(None)
         >>> if frame is not None:
         ...     print(frame.shape)  # e.g., (720, 1280, 3)
@@ -47,7 +47,7 @@ class DeviceInput(OperationInstance):
         web_interface: EagleEyeInterface,
         compute_pool: ComputePool,
         camera_manager: "CameraThreadManager",
-        camera_name: str,
+        bus_id: str,
         frame_rotation: int = 0,
     ) -> None:
         """Initialize the device input operation.
@@ -56,13 +56,13 @@ class DeviceInput(OperationInstance):
             web_interface: Web interface for runtime updates.
             compute_pool: Compute pool available for device operations.
             camera_manager: Camera thread manager to fetch frames from.
-            camera_name: Name of the camera to read frames from.
+            bus_id: USB bus identifier for the camera to read frames from.
             frame_rotation: Rotation angle in degrees (0, 90, 180, or 270). Defaults to 0.
         """
         self.web_interface = web_interface
         self.compute_pool = compute_pool
         self.camera_manager = camera_manager
-        self.camera_name = camera_name
+        self.bus_id = bus_id
         self.frame_rotation = self._normalize_rotation(frame_rotation)
 
     def _normalize_rotation(self, rotation: int) -> int:
@@ -112,25 +112,25 @@ class DeviceInput(OperationInstance):
         Returns:
             Current camera frame as numpy array (rotated if configured), or None if camera unavailable.
         """
-        frame_result = self.camera_manager.get_current_frame(self.camera_name)
+        frame_result = self.camera_manager.get_current_frame_by_bus_id(self.bus_id)
         if frame_result is not None:
             frame, _ = frame_result
             return self._apply_rotation(frame)
         return None
 
-    def update_config(self, config: Mapping[str, Any]) -> None:
+    def update_config(self, json_config: dict[str, Any]) -> None:
         """Update runtime-configurable settings for the operation.
 
         Args:
-            config: Runtime configuration overrides. Supports:
-                - camera_name: Changes the camera source (requires restart).
+            json_config: Runtime configuration overrides. Supports:
+                - bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """
-        self.camera_name = config.get("camera_name", self.camera_name)
+        self.bus_id = json_config.get("bus_id", self.bus_id)
 
-        if "frame_rotation" in config:
+        if "frame_rotation" in json_config:
             try:
-                new_rotation = self._normalize_rotation(config["frame_rotation"])
+                new_rotation = self._normalize_rotation(json_config["frame_rotation"])
                 if new_rotation != self.frame_rotation:
                     self.frame_rotation = new_rotation
             except ValueError:

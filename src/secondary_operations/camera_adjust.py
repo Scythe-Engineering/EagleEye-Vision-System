@@ -131,13 +131,16 @@ class CameraAdjust(OperationInstance):
         """
         if self.camera_manager is None or self.pipeline is None:
             return None
-        camera_name = getattr(self.pipeline, "camera_bus_id", None)
+        bus_id = getattr(self.pipeline, "camera_bus_id", None)
+        if bus_id is None:
+            return None
+        camera_name = self.camera_manager.get_camera_name_by_bus_id(bus_id)
         if camera_name is None:
             return None
-        camera_obj = self.camera_manager.camera_objects.get(camera_name)
-        if camera_obj is None:
+        worker = self.camera_manager.cameras.get(camera_name)
+        if worker is None:
             return None
-        camera_index = getattr(camera_obj, "camera_index", None)
+        camera_index = getattr(worker.camera, "camera_index", None)
         if camera_index is None:
             return None
         return f"/dev/video{int(camera_index)}"

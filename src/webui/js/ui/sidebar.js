@@ -7,6 +7,10 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 import { refreshLogMessages } from "../settings/terminalHandler.js";
+import {
+    initCameraConfigUtils,
+    refreshCameraConfigUtils,
+} from "../utils/cameraConfigUtils.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -14,6 +18,7 @@ const VIEWS = {
     SETTINGS: "view-settings",
     PIPELINE: "view-pipeline",
     SYSTEM: "view-system",
+    UTILS: "view-utils",
 };
 
 const FIELD_ASSETS = {
@@ -91,6 +96,11 @@ class ViewManager {
                 break;
             case VIEWS.SYSTEM:
                 pauseCameraFeeds();
+                break;
+            case VIEWS.UTILS:
+                pauseCameraFeeds();
+                initCameraConfigUtils();
+                refreshCameraConfigUtils();
                 break;
             default:
                 pauseCameraFeeds();

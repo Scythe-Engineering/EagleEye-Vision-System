@@ -8,7 +8,7 @@ import time
 import traceback
 from pathlib import Path
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Callable, Generator, List
+from typing import TYPE_CHECKING, Any, Callable, Generator, List, Optional
 
 import cv2
 import numpy as np
@@ -18,6 +18,10 @@ from flask_socketio import SocketIO
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.camera_utils.camera_config_manager import (
+    CameraConfig,
+    CameraConfigRegistry,
+)
 
 if TYPE_CHECKING:
     from src.config.utils.pipeline import Pipeline
@@ -47,6 +51,8 @@ PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
 TEXT_PLAIN_MIMETYPE = "text/plain"
 VISUALIZATION_STREAM_FPS = 12
 PROFILING_PUBLISH_INTERVAL_SECONDS = 0.3
+PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL = 10
+PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS = 1.0
 SSE_SERIALIZATION_WARN_INTERVAL_SECONDS = 5.0
 
 
@@ -134,7 +140,11 @@ class EagleEyeInterface:
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
+        self._pipeline_error_lock = threading.Lock()
         self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
+        self._pipeline_error_dirty_pipelines: set[str] = set()
+        self._pipeline_error_last_seq_sent: dict[str, int] = {}
+        self._pipeline_error_last_publish_ts: dict[str, float] = {}
         self._pipeline_profile_last_seq_sent: dict[str, int] = {}
         self._profiling_publish_interval = PROFILING_PUBLISH_INTERVAL_SECONDS
         self._last_profiling_publish_ts = 0.0
@@ -144,6 +154,7 @@ class EagleEyeInterface:
         self.log(f"Initialized with cameras: {self.cameras}")
         self.frame_list = {}
         self.available_cameras = {}
+        self.camera_config_registry: CameraConfigRegistry | None = None
 
         self.frame_locks = {}
         self.frame_list_structure_lock = threading.Lock()
@@ -209,6 +220,36 @@ class EagleEyeInterface:
             "get_available_cameras",
             self.get_available_cameras,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/cameras",
+            "get_camera_config_cameras",
+            self.get_camera_config_cameras,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>",
+            "get_camera_config",
+            self.get_camera_config,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/extrinsics",
+            "save_camera_extrinsics",
+            self.save_camera_extrinsics,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/intrinsics",
+            "upload_camera_intrinsics",
+            self.upload_camera_intrinsics,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/intrinsics",
+            "delete_camera_intrinsics",
+            self.delete_camera_intrinsics,
+            methods=["DELETE"],
         )
         self.app.add_url_rule(
             "/feed/<string:camera_name>",
@@ -424,13 +465,22 @@ class EagleEyeInterface:
             self.log(f"Error during shutdown: {e}")
             return {"message": "Failed to shutdown server"}, 500
 
-    def add_camera(self, camera_name: str, camera_id: int | str | None = None) -> None:
+    def add_camera(
+        self,
+        camera_name: str,
+        camera_id: int | str | None = None,
+        camera_bus_id: str | None = None,
+    ) -> None:
         """
         Add a camera to the available cameras list.
 
         Args:
             camera_name (str): The name of the camera.
-            camera_id (int | str | None, optional): The ID of the camera. If None, uses the camera name.
+            camera_id (int | str | None, optional): The camera ID used by UI
+                for display/debugging. If None, uses the camera name.
+            camera_bus_id (str | None, optional): Deterministic bus_id used by
+                pipeline device_input selection. If None, falls back to
+                string(camera_id).
         """
         if camera_id is None:
             camera_id = camera_name
@@ -442,7 +492,13 @@ class EagleEyeInterface:
                 self.frame_locks[camera_name] = threading.Lock()
 
             url_safe_name = camera_name.replace(" ", "_")
-            self.available_cameras[camera_name] = url_safe_name
+            self.available_cameras[camera_name] = {
+                "name": url_safe_name,
+                "id": camera_id,
+                "bus_id": camera_bus_id
+                if camera_bus_id is not None
+                else str(camera_id),
+            }
 
         self.log(f"Added camera: {camera_name} with ID: {camera_id}")
 
@@ -468,35 +524,199 @@ class EagleEyeInterface:
 
                 self.log(f"Removed camera: {camera_name}")
 
-    def set_cameras(self, cameras_dict: dict[str, int | str]) -> None:
-        """
-        Set multiple cameras at once, replacing the current camera list.
-
-        Args:
-            cameras_dict (dict[str, int | str]): A dictionary mapping camera names to camera IDs.
-        """
-        with self.frame_list_structure_lock:
-            self.cameras = cameras_dict.copy()
-            self.frame_list = {}
-            self.available_cameras = {}
-            self.frame_locks = {}
-
-            for camera_name in self.cameras:
-                self.frame_list[camera_name] = no_image
-                self.frame_locks[camera_name] = threading.Lock()
-                url_safe_name = camera_name.replace(" ", "_")
-                self.available_cameras[camera_name] = url_safe_name
-
-        self.log(f"Set cameras: {self.cameras}")
-
     def get_available_cameras(self) -> dict:
         """
         Get a dict of available cameras.
 
         Returns:
-            dict: A dict of available cameras.
+            dict: A dict where keys are camera names and values are dicts with:
+                - name (str): URL-safe camera name (spaces replaced with underscores)
+                - id (int | str): The camera identifier
+                - bus_id (str): The camera bus identifier, or string
+                  representation of id if bus_id is not available
         """
         return self.available_cameras
+
+    def get_camera_config_cameras(self) -> tuple[dict, int]:
+        """Return active camera entries for the camera config UI.
+
+        Returns:
+            tuple[dict, int]: Camera list payload with HTTP status.
+        """
+        cameras: list[dict[str, str]] = []
+        for camera_name, camera_info in self.available_cameras.items():
+            if isinstance(camera_info, dict):
+                bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
+            else:
+                bus_id = str(camera_info)
+
+            if not bus_id:
+                continue
+
+            cameras.append({"name": str(camera_name), "bus_id": bus_id})
+
+        cameras.sort(key=lambda camera: camera["name"])
+        return {"cameras": cameras}, 200
+
+    def _resolve_camera_config(self, camera_bus_id: str) -> Optional[CameraConfig]:
+        """Resolve the camera config for a bus ID.
+
+        Args:
+            camera_bus_id: Deterministic bus ID for the camera.
+
+        Returns:
+            CameraConfig instance or None if unavailable.
+        """
+        if self.camera_config_registry is None:
+            return None
+        return self.camera_config_registry.get_config(str(camera_bus_id))
+
+    def get_camera_config(self, camera_bus_id: str) -> tuple[dict, int]:
+        """Get camera extrinsics and intrinsics metadata for a bus ID.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            tuple[dict, int]: Camera config payload with HTTP status.
+        """
+        config = self._resolve_camera_config(camera_bus_id)
+        if config is None:
+            return {"error": "Camera config registry unavailable"}, 503
+
+        intrinsics_path = config.intrinsics_path
+        return {
+            "camera_bus_id": str(config.camera_id),
+            "extrinsics": config.extrinsics.to_dict(),
+            "intrinsics_path": intrinsics_path,
+            "intrinsics_exists": bool(
+                intrinsics_path is not None and os.path.exists(intrinsics_path)
+            ),
+        }, 200
+
+    def save_camera_extrinsics(self, camera_bus_id: str) -> tuple[dict, int]:
+        """Save camera extrinsics for a bus ID.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            tuple[dict, int]: Save result payload with HTTP status.
+        """
+        config = self._resolve_camera_config(camera_bus_id)
+        if config is None:
+            return {"error": "Camera config registry unavailable"}, 503
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "Expected JSON object payload"}, 400
+
+        try:
+            config.update_extrinsics_live(payload)
+        except ValueError as error:
+            return {"error": str(error)}, 400
+        except Exception as error:
+            self.log(f"Failed saving camera extrinsics for {camera_bus_id}: {error}")
+            return {"error": "Failed to save camera extrinsics"}, 500
+
+        return {
+            "success": True,
+            "camera_bus_id": str(config.camera_id),
+            "extrinsics": config.extrinsics.to_dict(),
+        }, 200
+
+    def _default_intrinsics_path(self, camera_bus_id: str) -> str:
+        """Return canonical intrinsics path for a camera bus ID.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            str: Expected intrinsics JSON path.
+        """
+        return os.path.join(
+            src_path,
+            "utils",
+            "camera_utils",
+            "camera_calibrations",
+            str(camera_bus_id),
+            "intrinsics.json",
+        )
+
+    def upload_camera_intrinsics(self, camera_bus_id: str) -> tuple[dict, int]:
+        """Upload and set camera intrinsics JSON for a bus ID.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            tuple[dict, int]: Upload result payload with HTTP status.
+        """
+        config = self._resolve_camera_config(camera_bus_id)
+        if config is None:
+            return {"error": "Camera config registry unavailable"}, 503
+
+        if "file" not in request.files:
+            return {"error": "No file provided"}, 400
+
+        upload = request.files["file"]
+        if upload.filename is None or upload.filename.strip() == "":
+            return {"error": "No file selected"}, 400
+
+        if not upload.filename.lower().endswith(".json"):
+            return {"error": "Only .json intrinsics files are supported"}, 400
+
+        target_path = config.intrinsics_path or self._default_intrinsics_path(camera_bus_id)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        try:
+            upload.save(target_path)
+            config.intrinsics_path = target_path
+        except Exception as error:
+            self.log(f"Failed uploading intrinsics for {camera_bus_id}: {error}")
+            return {"error": "Failed to upload intrinsics file"}, 500
+
+        return {
+            "success": True,
+            "camera_bus_id": str(config.camera_id),
+            "intrinsics_path": config.intrinsics_path,
+            "intrinsics_exists": True,
+        }, 200
+
+    def delete_camera_intrinsics(self, camera_bus_id: str) -> tuple[dict, int]:
+        """Delete the current intrinsics file for a camera bus ID.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            tuple[dict, int]: Delete result payload with HTTP status.
+        """
+        config = self._resolve_camera_config(camera_bus_id)
+        if config is None:
+            return {"error": "Camera config registry unavailable"}, 503
+
+        intrinsics_path = config.intrinsics_path
+        if intrinsics_path is None:
+            return {"error": "No intrinsics file configured"}, 404
+
+        if not os.path.exists(intrinsics_path):
+            config.intrinsics_path = None
+            return {"error": "Intrinsics file not found"}, 404
+
+        try:
+            os.remove(intrinsics_path)
+            config.intrinsics_path = None
+        except Exception as error:
+            self.log(f"Failed deleting intrinsics for {camera_bus_id}: {error}")
+            return {"error": "Failed to delete intrinsics file"}, 500
+
+        return {
+            "success": True,
+            "camera_bus_id": str(config.camera_id),
+            "intrinsics_path": None,
+            "intrinsics_exists": False,
+        }, 200
 
     def run(self) -> None:
         """
@@ -598,6 +818,9 @@ class EagleEyeInterface:
         with self._sse_queue_lock:
             self._sse_queue = q
 
+        with self._pipeline_error_lock:
+            self._pipeline_error_dirty_pipelines.update(self._pipeline_error_cache.keys())
+
         self._publish_cached_pipeline_errors()
 
         try:
@@ -632,9 +855,7 @@ class EagleEyeInterface:
                 >= SSE_SERIALIZATION_WARN_INTERVAL_SECONDS
             ):
                 self._last_sse_serialization_warning_ts = now
-                self.log(
-                    f"Failed to serialize SSE event {event_name}: {error}"
-                )
+                self.log(f"Failed to serialize SSE event {event_name}: {error}")
             return
         msg = self._format_sse(event_name, payload)
         # publish only to the single client's queue if present
@@ -667,12 +888,72 @@ class EagleEyeInterface:
                 self.log(f"SSE publish error for {event_name}: {e}")
 
     def _publish_cached_pipeline_errors(self) -> None:
-        """Publish cached pipeline operation errors to the active SSE client."""
-        if not self._pipeline_error_cache:
+        """Publish cached pipeline operation errors to the active SSE client.
+
+        Error snapshots are published in batches (all operation errors in one
+        payload per pipeline) and throttled to reduce event spam.
+        """
+        with self._pipeline_error_lock:
+            cached_payloads = {
+                pipeline_name: payload.copy()
+                for pipeline_name, payload in self._pipeline_error_cache.items()
+            }
+            dirty_pipelines = set(self._pipeline_error_dirty_pipelines)
+            last_seq_sent = self._pipeline_error_last_seq_sent.copy()
+            last_publish_ts = self._pipeline_error_last_publish_ts.copy()
+
+        if not cached_payloads:
             return
-        for payload in self._pipeline_error_cache.values():
+
+        now = time.time()
+        frame_seq_by_pipeline: dict[str, int] = {}
+        try:
+            pipelines = self.pipeline_objects_callback() or {}
+            for pipeline_name, pipeline in pipelines.items():
+                snapshot = pipeline.get_latest_profile_snapshot()
+                if not snapshot:
+                    continue
+                frame_seq = int(snapshot.get("frame_seq", 0))
+                if frame_seq > 0:
+                    frame_seq_by_pipeline[pipeline_name] = frame_seq
+        except Exception as error:
+            self.log(f"Failed to read pipelines for error batching: {error}")
+
+        for pipeline_name, payload in cached_payloads.items():
+            if pipeline_name not in dirty_pipelines:
+                continue
+
+            current_frame_seq = frame_seq_by_pipeline.get(pipeline_name, 0)
+            previously_sent_seq = last_seq_sent.get(pipeline_name, 0)
+            previously_sent_ts = last_publish_ts.get(pipeline_name, 0.0)
+
+            frame_gate_open = (
+                current_frame_seq > 0
+                and current_frame_seq - previously_sent_seq
+                >= PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL
+            )
+            fallback_gate_open = (
+                now - previously_sent_ts
+                >= PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS
+            )
+
+            if not frame_gate_open and not fallback_gate_open:
+                continue
+
+            errors = payload.get("errors")
+            normalized_payload = {
+                "pipeline_name": pipeline_name,
+                "errors": errors if isinstance(errors, list) else [],
+            }
             try:
-                self._publish_event("pipeline_operation_errors", payload)
+                self._publish_event("pipeline_operation_errors", normalized_payload)
+                with self._pipeline_error_lock:
+                    self._pipeline_error_dirty_pipelines.discard(pipeline_name)
+                    self._pipeline_error_last_publish_ts[pipeline_name] = now
+                    if current_frame_seq > 0:
+                        self._pipeline_error_last_seq_sent[pipeline_name] = (
+                            current_frame_seq
+                        )
             except Exception:
                 continue
 
@@ -745,8 +1026,8 @@ class EagleEyeInterface:
         # Check if camera exists in our available cameras
         if original_camera_name not in self.cameras:
             # Try to find camera by URL-safe name in reverse mapping
-            for orig_name, url_name in self.available_cameras.items():
-                if url_name == camera_name:
+            for orig_name, cam_info in self.available_cameras.items():
+                if isinstance(cam_info, dict) and cam_info.get("name") == camera_name:
                     original_camera_name = orig_name
                     break
             else:
@@ -1261,8 +1542,14 @@ class EagleEyeInterface:
         """
         try:
             pipeline_name = payload.get("pipeline_name") or "unknown"
-            self._pipeline_error_cache[pipeline_name] = payload
-            self._publish_event("pipeline_operation_errors", payload)
+            errors = payload.get("errors")
+            normalized_payload = {
+                "pipeline_name": pipeline_name,
+                "errors": errors if isinstance(errors, list) else [],
+            }
+            with self._pipeline_error_lock:
+                self._pipeline_error_cache[pipeline_name] = normalized_payload
+                self._pipeline_error_dirty_pipelines.add(pipeline_name)
         except Exception as e:
             self.log(f"Failed to publish pipeline_operation_errors: {e}")
 
@@ -1689,29 +1976,36 @@ class EagleEyeInterface:
         try:
             pipeline_names = self.get_pipeline_names()
         except Exception as error:
-            self.log(f"Error loading pipeline names for status: {error}")
+            self.log(
+                f"{Colors.RED}Error loading pipeline names for status: {error}{Colors.RESET}"
+            )
             pipeline_names = []
 
         try:
             pipeline_objects = self.pipeline_objects_callback()
         except Exception as error:
-            self.log(f"Error loading pipeline objects for status: {error}")
+            self.log(
+                f"{Colors.RED}Error loading pipeline objects for status: {error}{Colors.RESET}"
+            )
             pipeline_objects = {}
 
         statuses: list[dict[str, Any]] = []
+        pipeline_objects_available = bool(pipeline_objects)
         for pipeline_name in pipeline_names:
             pipeline = pipeline_objects.get(pipeline_name)
             if pipeline is None:
-                self.log(
-                    f"Warning: Pipeline {pipeline_name} is present in config but not loaded"
-                )
+                if pipeline_objects_available:
+                    self.log(
+                        f"{Colors.YELLOW}Pipeline {pipeline_name} not found in pipeline objects callback.{Colors.RESET}"
+                    )
+                statuses.append({"name": pipeline_name, "active": False})
                 continue
 
             try:
                 is_active = bool(pipeline.is_active())
             except Exception as error:
                 self.log(
-                    f"Failed to read active status for pipeline {pipeline_name}: {error}"
+                    f"{Colors.RED}Failed to read active status for pipeline {pipeline_name}: {error}{Colors.RESET}"
                 )
                 is_active = False
             statuses.append({"name": pipeline_name, "active": is_active})
@@ -1726,7 +2020,9 @@ class EagleEyeInterface:
             with open(os.path.join(self.logger.current_log_file), "r") as f:
                 return f.read(), 200
         except Exception as e:
-            self.logger.log(f"Error downloading log file: {e}")
+            self.logger.log(
+                f"{Colors.RED}Error downloading log file: {e}{Colors.RESET}"
+            )
             return {"error": str(e)}, 500
 
     def get_general_conf(self) -> tuple[dict, int]:
@@ -1748,7 +2044,9 @@ class EagleEyeInterface:
                 json.dump(request.get_json(), f)
             return {"message": "General configuration saved successfully"}, 200
         except Exception as e:
-            self.logger.log(f"Error saving general configuration: {e}")
+            self.logger.log(
+                f"{Colors.RED}Error saving general configuration: {e}{Colors.RESET}"
+            )
             return {"error": str(e)}, 500
 
     def get_pipeline_thread_info(self, pipeline_name: str) -> tuple[dict, int]:

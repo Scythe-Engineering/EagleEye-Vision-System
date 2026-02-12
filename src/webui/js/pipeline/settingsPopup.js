@@ -52,7 +52,28 @@ import { BACKEND_BASE_URL } from "../config.js";
                 return response.json();
             })
             .then((data) => {
-                const cameras = Object.entries(data).map(([name]) => name);
+                const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => {
+                    let id;
+
+                    if (
+                        cameraInfo?.bus_id !== undefined &&
+                        cameraInfo?.bus_id !== null
+                    ) {
+                        id = String(cameraInfo.bus_id);
+                    } else if (
+                        cameraInfo?.id !== undefined &&
+                        cameraInfo?.id !== null
+                    ) {
+                        id = String(cameraInfo.id);
+                    } else {
+                        id = name;
+                    }
+
+                    return {
+                        name,
+                        id,
+                    };
+                });
                 _availableCameras = cameras;
                 return cameras;
             })
@@ -533,12 +554,14 @@ import { BACKEND_BASE_URL } from "../config.js";
             .replace(/\.py$/i, "")
             .toLowerCase()
             .replaceAll(/\s+/g, "_");
-        const isDeviceInputCameraName =
+        const isDeviceInputBusId =
             normalizedOperationName === "device_input" &&
-            name === "camera_name" &&
+            name === "bus_id" &&
             def.type === "str";
+        const isCameraBusIdParameter =
+            name === "camera_bus_id" && def.type === "str";
 
-        if (isDeviceInputCameraName) {
+        if (isDeviceInputBusId || isCameraBusIdParameter) {
             input = createElement("select", {
                 id: fieldId,
                 className:
@@ -551,7 +574,7 @@ import { BACKEND_BASE_URL } from "../config.js";
             });
             input.appendChild(fallbackOption);
 
-            const updateOptions = (cameraNames) => {
+            const updateOptions = (cameras) => {
                 const selectedValue =
                     input.value ||
                     (currentValue !== undefined && currentValue !== null
@@ -559,24 +582,50 @@ import { BACKEND_BASE_URL } from "../config.js";
                         : "");
                 input.innerHTML = "";
 
-                const hasCameraNames =
-                    Array.isArray(cameraNames) && cameraNames.length > 0;
-                if (hasCameraNames) {
-                    const normalizedNames = cameraNames.filter(Boolean);
-                    normalizedNames.forEach((cameraName) => {
+                const normalizedCameras = Array.isArray(cameras)
+                    ? cameras
+                          .map((camera) => {
+                              if (typeof camera === "string") {
+                                  return { id: camera, name: camera };
+                              }
+                              if (!camera || typeof camera !== "object") {
+                                  return null;
+                              }
+                              const cameraId =
+                                  camera.id !== undefined && camera.id !== null
+                                      ? String(camera.id)
+                                      : "";
+                              if (!cameraId) {
+                                  return null;
+                              }
+                              return {
+                                  id: cameraId,
+                                  name: String(camera.name || cameraId),
+                              };
+                          })
+                          .filter(Boolean)
+                    : [];
+                if (normalizedCameras.length > 0) {
+                    normalizedCameras.forEach((camera) => {
+                        const optionText =
+                            camera.name && camera.name !== camera.id
+                                ? `${camera.id} (${camera.name})`
+                                : camera.id;
                         const optEl = createElement("option", {
-                            value: cameraName,
-                            text: cameraName,
+                            value: camera.id,
+                            text: optionText,
                         });
-                        if (cameraName === selectedValue) {
+                        if (camera.id === selectedValue) {
                             optEl.selected = true;
                         }
                         input.appendChild(optEl);
                     });
 
+                    const knownBusIds = normalizedCameras.map((camera) => camera.id);
+
                     if (
                         selectedValue &&
-                        !normalizedNames.includes(selectedValue)
+                        !knownBusIds.includes(selectedValue)
                     ) {
                         const customOption = createElement("option", {
                             value: selectedValue,
@@ -598,11 +647,10 @@ import { BACKEND_BASE_URL } from "../config.js";
                 input.appendChild(customOption);
             };
 
-            const pipelineCameras =
-                globalThis.pipelineCreator?.getAvailableCameras?.() || [];
-            const pipelineNames = pipelineCameras.map((camera) => camera.name);
-            if (pipelineNames.length > 0) {
-                updateOptions(pipelineNames);
+            const pipelineCameras = globalThis.pipelineCreator
+                ?.getAvailableCameras?.() || [];
+            if (pipelineCameras.length > 0) {
+                updateOptions(pipelineCameras);
             } else {
                 void loadAvailableCameras().then((cameras) => {
                     updateOptions(cameras);

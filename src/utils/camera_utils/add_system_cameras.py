@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Set
+from typing import TYPE_CHECKING
 
 from src.utils.colors import Colors
 from src.utils.camera_utils.get_available_cameras import detect_cameras_with_names
@@ -17,9 +16,8 @@ spacer = " " * 4
 def add_system_cameras(
     web_interface: EagleEyeInterface,
     camera_manager: CameraThreadManager,
-    known_cameras: Set[str],
-    logger: Logger | None = None,
-) -> Set[str]:
+    logger: Logger,
+) -> list[dict[str, str | int | None]]:
     """Register every system camera with the camera manager.
 
     Cameras are started without calibration requirements - all calibration
@@ -30,60 +28,63 @@ def add_system_cameras(
             cameras with the system for UI display and management.
         camera_manager (CameraThreadManager): Camera thread manager used to start
             camera capture threads for each detected system camera.
-        known_cameras (Set[str]): Set of already-known camera names. Cameras in
-            this set will be skipped during registration.
-        logger (Logger | None): Optional logger for outputting status messages.
-            If None, messages are printed to stdout.
+        logger (Logger): Logger instance for outputting status messages about
+            camera detection and registration progress.
 
     Returns:
-        Set[str]: Updated set of known camera names, including any newly registered
-            system cameras. Returns the original set unchanged if no cameras detected.
+        list[dict[str, str | int | None]]: List of dictionaries containing
+            camera information with "name", "index", and "bus_id" keys for
+            each successfully registered camera. The returned "index" value is
+            derived from ``camera_index`` and may be ``None`` when the detected
+            camera index cannot be parsed as an integer. Returns empty list if
+            no system cameras are detected.
 
     Raises:
         No exceptions are raised; errors are logged and gracefully handled.
     """
+    known_cameras = []
 
     detected_cameras = detect_cameras_with_names()
     if not detected_cameras:
         message = f"{Colors.YELLOW}{spacer}No system cameras detected.{Colors.RESET}"
-        if logger:
-            logger.log(message)
-        else:
-            print(message)
+        logger.log(message)
         return known_cameras
 
     camera_list = [camera_info["name"] for camera_info in detected_cameras.values()]
-    message = (
-        f"{Colors.CYAN}{spacer}Detected {len(camera_list)} system cameras: {camera_list}{Colors.RESET}"
-    )
-    if logger:
-        logger.log(message)
-    else:
-        print(message)
+    message = f"{Colors.CYAN}{spacer}Detected {len(camera_list)} system cameras: {camera_list}{Colors.RESET}"
+    logger.log(message)
 
     for index, camera_info in detected_cameras.items():
         camera_name = camera_info["name"]
-        if camera_name in known_cameras:
-            continue
+        bus_id = camera_info.get("bus_id")
 
-        web_interface.add_camera(camera_name, index)
         try:
             camera_index = int(index)
         except ValueError:
             camera_index = None
 
-        if camera_manager.start_camera_thread(
-            camera_name, camera_index=camera_index
-        ):
-            known_cameras.add(camera_name)
+        bus_id_fallback = camera_index if camera_index is not None else camera_name
+        resolved_bus_id = str(bus_id) if bus_id is not None else str(bus_id_fallback)
+
+        web_interface.add_camera(
+            camera_name,
+            index,
+            camera_bus_id=resolved_bus_id,
+        )
+
+        if camera_manager.start_camera_thread(camera_name, camera_index=camera_index):
+            camera_manager.register_bus_id(resolved_bus_id, camera_name)
+            known_cameras.append(
+                {
+                    "name": camera_name,
+                    "index": camera_index,
+                    "bus_id": resolved_bus_id,
+                }
+            )
         else:
             web_interface.remove_camera(camera_name)
-            failure_message = (
+            logger.log(
                 f"{Colors.RED}{spacer}Failed to start thread for system camera: {camera_name}{Colors.RESET}"
             )
-            if logger:
-                logger.log(failure_message)
-            else:
-                print(failure_message)
 
     return known_cameras
