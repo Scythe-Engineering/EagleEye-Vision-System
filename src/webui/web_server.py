@@ -1286,13 +1286,105 @@ class EagleEyeInterface:
 
         try:
             with open(config_path, "r") as f:
-                return json.load(f, object_pairs_hook=dict)
+                config_data = json.load(f, object_pairs_hook=dict)
+                return self._normalize_dynamic_group_config(config_data)
         except FileNotFoundError:
             # Don't log errors for missing configs when trying both locations
             return {}
         except json.JSONDecodeError as e:
             self.log(f"Error loading config for operation {operation_name}: {e}")
             return {}
+
+    def _normalize_dynamic_group_config(self, config_data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize optional dynamic group metadata in operation config.
+
+        Args:
+            config_data: Raw operation config definition JSON.
+
+        Returns:
+            Config data with normalized `dynamic_group` metadata.
+        """
+        if not isinstance(config_data, dict):
+            return {}
+
+        dynamic_group = config_data.get("dynamic_group")
+        if not isinstance(dynamic_group, dict):
+            return config_data
+
+        normalized_group = dict(dynamic_group)
+        try:
+            normalized_group["max_inputs"] = max(
+                1,
+                int(dynamic_group.get("max_inputs", 1)),
+            )
+        except (TypeError, ValueError):
+            normalized_group["max_inputs"] = 1
+
+        try:
+            normalized_group["max_outputs"] = max(
+                1,
+                int(dynamic_group.get("max_outputs", normalized_group["max_inputs"])),
+            )
+        except (TypeError, ValueError):
+            normalized_group["max_outputs"] = normalized_group["max_inputs"]
+
+        mirrored_output_group = dynamic_group.get("mirrored_output_group", False)
+        if isinstance(mirrored_output_group, str):
+            mirrored_output_group = mirrored_output_group.lower() == "true"
+        normalized_group["mirrored_output_group"] = bool(mirrored_output_group)
+
+        output_dynamic_group = dynamic_group.get("output_dynamic_group", False)
+        if isinstance(output_dynamic_group, str):
+            output_dynamic_group = output_dynamic_group.lower() == "true"
+        normalized_group["output_dynamic_group"] = bool(output_dynamic_group)
+
+        input_dynamic_group = dynamic_group.get("input_dynamic_group", True)
+        if isinstance(input_dynamic_group, str):
+            input_dynamic_group = input_dynamic_group.lower() == "true"
+        normalized_group["input_dynamic_group"] = bool(input_dynamic_group)
+
+        coupled_groups = dynamic_group.get(
+            "coupled_groups",
+            normalized_group["mirrored_output_group"],
+        )
+        if isinstance(coupled_groups, str):
+            coupled_groups = coupled_groups.lower() == "true"
+        normalized_group["coupled_groups"] = bool(coupled_groups)
+
+        input_nodes = config_data.get("input_nodes") or []
+        output_nodes = config_data.get("output_nodes") or []
+
+        input_base_name = normalized_group.get("input_base_name") or normalized_group.get(
+            "input_node"
+        )
+        output_base_name = normalized_group.get("output_base_name") or normalized_group.get(
+            "output_node"
+        )
+
+        if not input_base_name:
+            if input_nodes:
+                candidate = input_nodes[-1]
+                if isinstance(candidate, dict):
+                    input_base_name = candidate.get("name")
+                elif isinstance(candidate, str):
+                    input_base_name = candidate
+            if not input_base_name:
+                input_base_name = "data"
+        normalized_group["input_base_name"] = input_base_name
+
+        if not output_base_name:
+            if output_nodes:
+                candidate = output_nodes[-1]
+                if isinstance(candidate, dict):
+                    output_base_name = candidate.get("name")
+                elif isinstance(candidate, str):
+                    output_base_name = candidate
+            if not output_base_name:
+                output_base_name = input_base_name
+        normalized_group["output_base_name"] = output_base_name
+
+        config_data["dynamic_group"] = normalized_group
+        return config_data
 
     def _reorder_operation_params(
         self, operation_name: str, action_params: dict[str, Any]

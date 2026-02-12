@@ -450,6 +450,8 @@ export class FlowchartRenderer {
             this.restoreConnections(options.connections);
         }
 
+        this.syncAllDynamicNodes();
+
         // Update minimap with current nodes
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map(
@@ -505,6 +507,37 @@ export class FlowchartRenderer {
         this.nodes.set(item.instanceId, node);
 
         return node;
+    }
+
+    syncNodeDynamicPorts(node) {
+        if (!node || !node.dynamicGroup) {
+            return false;
+        }
+
+        const didChange = node.syncDynamicPorts(this.connections.getConnectionData());
+        if (!didChange) {
+            return false;
+        }
+
+        const changedNodeIds = new Set([node.instanceId]);
+        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
+        return true;
+    }
+
+    syncAllDynamicNodes() {
+        let anyChanged = false;
+        for (let pass = 0; pass < 3; pass += 1) {
+            let changedThisPass = false;
+            for (const node of this.nodes.values()) {
+                changedThisPass =
+                    this.syncNodeDynamicPorts(node) || changedThisPass;
+            }
+            anyChanged = anyChanged || changedThisPass;
+            if (!changedThisPass) {
+                break;
+            }
+        }
+        return anyChanged;
     }
 
     handleNodeDragStart(node, event) {
@@ -933,6 +966,8 @@ export class FlowchartRenderer {
             false,
         );
 
+        this.syncAllDynamicNodes();
+
         if (this.minimap) {
             this.minimap.updateConnections(
                 this.connections.getConnectionData(),
@@ -995,6 +1030,7 @@ export class FlowchartRenderer {
                 this.connections.getConnectionData(),
             );
         }
+        this.syncAllDynamicNodes();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
     }
@@ -1144,6 +1180,15 @@ export class FlowchartRenderer {
             const toNode = this.nodes.get(conn.toNodeId);
 
             if (fromNode && toNode) {
+                fromNode.ensureDynamicPortsForConnectionPort(
+                    conn.fromPortName,
+                    "output",
+                );
+                toNode.ensureDynamicPortsForConnectionPort(
+                    conn.toPortName,
+                    "input",
+                );
+
                 const connectionId = `${conn.fromNodeId}-${conn.fromPortName}-${conn.toNodeId}-${conn.toPortName}`;
                 const fromUuid = pipelineStore.instanceIdToUuid.get(
                     conn.fromNodeId,

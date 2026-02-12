@@ -104,6 +104,24 @@
                             "y": 184.99997201128417
                         }
                     ]
+                },
+                {
+                    "from_uuid": "op-mljk64nf-hrl6",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mljwwkcw-45d",
+                    "to_port": "pose_1",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
+                },
+                {
+                    "from_uuid": "op-mljk64nf-hrl6",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-mljwwkcw-45d",
+                    "to_port": "pose_2",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
             ]
         },
@@ -161,8 +179,27 @@
                     "data_type": "detections",
                     "is_default": false,
                     "custom_waypoints": null
+                },
+                {
+                    "from_uuid": "op-mljku0sh-80n9",
+                    "from_port": "detections",
+                    "to_uuid": "op-mljwwkcw-45d",
+                    "to_port": "reference_pose",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
                 }
             ]
+        },
+        {
+            "action_name": "dynamic_pose_group_test.py",
+            "action_params": {},
+            "position": {
+                "x": 1440,
+                "y": -120
+            },
+            "uuid": "op-mljwwkcw-45d",
+            "connections": []
         }
     ]
 }
