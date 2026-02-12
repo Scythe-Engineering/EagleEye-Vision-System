@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
 from src.utils.colors import Colors
@@ -101,6 +102,7 @@ def generate_all_pipelines(
     compute_pool: ComputePool,
     network_table: NetworkTable,
     camera_manager,
+    camera_config_registry: CameraConfigRegistry,
     logger: Logger,
     pipeline_config: str | None = None,
 ) -> Dict[str, Pipeline]:
@@ -111,6 +113,7 @@ def generate_all_pipelines(
         compute_pool: The compute pool to use for the pipelines.
         network_table: The network table to use for the pipelines.
         camera_manager: The camera manager to use for the pipelines.
+        camera_config_registry: Shared camera config registry.
         logger: Logger instance for logging.
         pipeline_config: The pipeline configuration to use for the pipelines. (Optional, mostly for testing)
 
@@ -144,6 +147,7 @@ def generate_all_pipelines(
                 network_table,
                 logger,
                 camera_manager,
+                camera_config_registry=camera_config_registry,
                 camera_bus_id=bus_ids[0] if len(bus_ids) == 1 else None,
                 camera_bus_ids=bus_ids,
                 pipeline_name=pipeline_name,

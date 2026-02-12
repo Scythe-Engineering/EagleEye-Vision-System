@@ -13,6 +13,9 @@ from src.rust_implementations.build import main as rust_build  # noqa: E402
 from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
     CameraThreadManager,  # noqa: E402
 )
+from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
+    CameraConfigRegistry,  # noqa: E402
+)
 from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
@@ -83,6 +86,18 @@ class MainBackend:
             )
             self.known_cameras = self.camera_manager.known_cameras
 
+            # Camera configuration registry and shared config object for
+            # operation-level injection. This centralizes camera config access
+            # so operations do not need every camera parameter in action_params.
+            self.camera_config_registry = CameraConfigRegistry()
+            self.camera_config_registry.load_all_from_directory()
+            for camera_info in self.known_cameras:
+                camera_bus_id = camera_info.get("bus_id")
+                if camera_bus_id is None:
+                    continue
+                self.camera_config_registry.get_config(str(camera_bus_id))
+            self.camera_configs = self.camera_config_registry.get_all_configs()
+
             all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
             if not all_cameras_ready:
                 self.logger.log(
@@ -99,6 +114,7 @@ class MainBackend:
                 self.compute_pool,
                 self.network_table,
                 self.camera_manager,
+                self.camera_config_registry,
                 logger=self.logger,
             )
 

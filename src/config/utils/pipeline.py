@@ -17,6 +17,7 @@ from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
@@ -41,6 +42,7 @@ class Pipeline:
         network_table: NetworkTable,
         logger: Logger,
         camera_manager: CameraThreadManager | None = None,
+        camera_config_registry: CameraConfigRegistry | None = None,
         camera_bus_id: str | None = None,
         camera_bus_ids: list[str] | None = None,
         pipeline_name: str | None = None,
@@ -54,6 +56,8 @@ class Pipeline:
             network_table: The network table to use for the pipelines.
             logger: Logger instance for logging.
             camera_manager: The camera manager to use for the pipelines.
+            camera_config_registry: Shared camera config registry for
+                camera intrinsics/extrinsics access.
             camera_bus_id: USB bus ID to associate with this pipeline.
             camera_bus_ids: List of USB bus IDs referenced by device_input operations.
         """
@@ -62,6 +66,7 @@ class Pipeline:
         self.compute_pool = compute_pool
         self.network_table = network_table
         self.camera_manager = camera_manager
+        self.camera_config_registry = camera_config_registry
         self.logger = logger
         self.camera_bus_id = camera_bus_id
         if camera_bus_ids is not None:
@@ -347,6 +352,23 @@ class Pipeline:
                 and "camera_manager" in operation_class.__init__.__code__.co_varnames
             ):
                 init_params["camera_manager"] = self.camera_manager
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "camera_config_registry"
+                in operation_class.__init__.__code__.co_varnames
+            ):
+                init_params["camera_config_registry"] = self.camera_config_registry
+
+            if (
+                hasattr(operation_class.__init__, "__code__")
+                and "camera_configs" in operation_class.__init__.__code__.co_varnames
+            ):
+                init_params["camera_configs"] = (
+                    self.camera_config_registry.get_all_configs()
+                    if self.camera_config_registry is not None
+                    else {}
+                )
 
             if (
                 hasattr(operation_class.__init__, "__code__")
