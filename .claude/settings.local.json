@@ -8,7 +8,10 @@
       "Bash(npm run build:*)",
       "Bash(ls:*)",
       "Bash(tree:*)",
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "mcp__secure-api__init_knowledge",
+      "Bash(python -m pytest:*)",
+      "Bash(uv run pytest:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
