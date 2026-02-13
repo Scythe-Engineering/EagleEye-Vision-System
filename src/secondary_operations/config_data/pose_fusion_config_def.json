@@ -1,0 +1,28 @@
+{
+    "class_name": "PoseFusion",
+    "description": "Fuses multiple 4x4 transformation matrix poses into a single consensus pose using weighted averaging with outlier rejection",
+    "category": "proc",
+    "dynamic_group": {
+        "input_prefix": "pose",
+        "max_inputs": "unlimited",
+        "min_inputs": 1
+    },
+    "output_nodes": ["fused_pose"],
+    "parameters": {
+        "outlier_threshold": {
+            "type": "float",
+            "description": "Distance threshold (in meters) for outlier rejection when 4+ inputs are present",
+            "default": 1.0,
+            "required": false,
+            "min": 0.0
+        },
+        "rotation_weight": {
+            "type": "float",
+            "description": "Weight factor for rotation distance in outlier detection (relative to translation distance)",
+            "default": 0.5,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0
+        }
+    }
+}
