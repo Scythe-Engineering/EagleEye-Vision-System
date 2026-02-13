@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 from unittest.mock import MagicMock
 from src.secondary_operations.pose_fusion import PoseFusion
 
@@ -163,5 +162,5 @@ def test_update_config():
 
     fusion.update_config({"outlier_threshold": 2.0, "rotation_weight": 0.8})
 
-    assert fusion.outlier_threshold == 2.0
-    assert fusion.rotation_weight == 0.8
+    assert abs(fusion.outlier_threshold - 2.0) < 1e-9
+    assert abs(fusion.rotation_weight - 0.8) < 1e-9

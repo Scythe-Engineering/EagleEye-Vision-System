@@ -98,6 +98,10 @@ def average_quaternions(quaternions: List[np.ndarray], weights: np.ndarray) -> n
 
     weighted_sum = np.sum(quaternion_array * weights[:, np.newaxis], axis=0)
 
-    avg_quat = weighted_sum / np.linalg.norm(weighted_sum)
+    norm = np.linalg.norm(weighted_sum)
+    if norm < 1e-12:
+        avg_quat = quaternion_array[0] / np.linalg.norm(quaternion_array[0])
+    else:
+        avg_quat = weighted_sum / norm
 
     return avg_quat
