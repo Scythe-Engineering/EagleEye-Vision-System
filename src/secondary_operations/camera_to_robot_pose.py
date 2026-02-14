@@ -27,6 +27,7 @@ class CameraToRobotPose(OperationInstance):
         """
         self.camera_bus_id = str(camera_bus_id)
         self.camera_config_registry = camera_config_registry
+        self._cached_camera_from_robot_transform: np.ndarray | None = None
 
     @staticmethod
     def _fast_se3_inverse(transform: np.ndarray) -> np.ndarray:
@@ -61,7 +62,7 @@ class CameraToRobotPose(OperationInstance):
             ValueError: If camera config registry is unavailable.
         """
         if self.camera_config_registry is None:
-            raise ValueError("camera_config_registry is required for CameraToRobotPose")
+            return np.eye(4, dtype=float)
 
         camera_config = self.camera_config_registry.get_config(self.camera_bus_id)
         extrinsics = camera_config.extrinsics
@@ -90,14 +91,43 @@ class CameraToRobotPose(OperationInstance):
         robot_from_camera = self._build_camera_to_robot_transform()
         return self._fast_se3_inverse(robot_from_camera)
 
+    def _get_cached_inverse_transform(self) -> np.ndarray:
+        """Get cached ``T_camera_from_robot`` and build it lazily if needed.
+
+        Returns:
+            Cached or newly built 4x4 inverse extrinsics transform.
+        """
+        if self._cached_camera_from_robot_transform is None:
+            self._cached_camera_from_robot_transform = self._build_inverse_transform()
+        return self._cached_camera_from_robot_transform
+
     def update_config(self, json_config: dict[str, object]) -> None:
         """Update runtime-configurable operation parameters.
 
         Args:
             json_config: Configuration dictionary with updated values.
         """
+        invalidate_cache = False
+
         if "camera_bus_id" in json_config:
-            self.camera_bus_id = str(json_config["camera_bus_id"])
+            next_camera_bus_id = str(json_config["camera_bus_id"])
+            if next_camera_bus_id != self.camera_bus_id:
+                self.camera_bus_id = next_camera_bus_id
+                invalidate_cache = True
+
+        extrinsics_keys = {
+            "pitch",
+            "yaw",
+            "roll",
+            "x_offset",
+            "y_offset",
+            "z_offset",
+        }
+        if any(key in json_config for key in extrinsics_keys):
+            invalidate_cache = True
+
+        if invalidate_cache:
+            self._cached_camera_from_robot_transform = None
 
     def run(self, camera_pose: np.ndarray | None) -> np.ndarray | None:
         """Convert camera pose to robot pose.
@@ -106,19 +136,15 @@ class CameraToRobotPose(OperationInstance):
             camera_pose: 4x4 camera pose transform, or None.
 
         Returns:
-            4x4 robot pose transform, or None if input is None.
-
-        Raises:
-            ValueError: If ``camera_pose`` is not a finite 4x4 matrix.
+            4x4 robot pose transform, or None if input is None/invalid.
         """
         if camera_pose is None:
             return None
 
         camera_pose_matrix = np.asarray(camera_pose, dtype=float)
         if camera_pose_matrix.shape != (4, 4) or not np.all(np.isfinite(camera_pose_matrix)):
-            raise ValueError("camera_pose must be a finite 4x4 matrix")
+            return None
 
-        camera_from_robot_transform = self._build_inverse_transform()
+        camera_from_robot_transform = self._get_cached_inverse_transform()
         robot_pose = camera_pose_matrix @ camera_from_robot_transform
         return robot_pose
-

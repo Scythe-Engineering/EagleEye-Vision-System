@@ -31,6 +31,7 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "fps_limiter": dummy_data.dummy_frame,
         "extract_pose": dummy_data.dummy_pose_matrix,
         "flatten_pose": dummy_data.dummy_pose_matrix,
+        "camera_to_robot_pose": dummy_data.dummy_pose_matrix,
         "pose_outlier_filter_rust": dummy_data.dummy_pose_matrix,
     }
 
