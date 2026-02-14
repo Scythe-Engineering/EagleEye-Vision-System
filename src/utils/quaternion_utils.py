@@ -105,3 +105,63 @@ def average_quaternions(quaternions: List[np.ndarray], weights: np.ndarray) -> n
         avg_quat = weighted_sum / norm
 
     return avg_quat
+
+
+def euler_to_rotation_matrix(pitch: float, yaw: float, roll: float) -> np.ndarray:
+    """Convert Euler angles in degrees to a 4x4 homogeneous transform.
+
+    The rotation convention is intrinsic Z-Y-X, composed as:
+    ``R = Rz(yaw) @ Ry(pitch) @ Rx(roll)``.
+
+    Args:
+        pitch: Rotation around Y-axis in degrees.
+        yaw: Rotation around Z-axis in degrees.
+        roll: Rotation around X-axis in degrees.
+
+    Returns:
+        4x4 homogeneous transformation matrix with rotation in the upper-left
+        3x3 block and zero translation.
+    """
+    pitch_rad = np.deg2rad(pitch)
+    yaw_rad = np.deg2rad(yaw)
+    roll_rad = np.deg2rad(roll)
+
+    cos_pitch = np.cos(pitch_rad)
+    sin_pitch = np.sin(pitch_rad)
+    cos_yaw = np.cos(yaw_rad)
+    sin_yaw = np.sin(yaw_rad)
+    cos_roll = np.cos(roll_rad)
+    sin_roll = np.sin(roll_rad)
+
+    rotation_x = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, cos_roll, -sin_roll],
+            [0.0, sin_roll, cos_roll],
+        ],
+        dtype=float,
+    )
+
+    rotation_y = np.array(
+        [
+            [cos_pitch, 0.0, sin_pitch],
+            [0.0, 1.0, 0.0],
+            [-sin_pitch, 0.0, cos_pitch],
+        ],
+        dtype=float,
+    )
+
+    rotation_z = np.array(
+        [
+            [cos_yaw, -sin_yaw, 0.0],
+            [sin_yaw, cos_yaw, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+
+    rotation_matrix = rotation_z @ rotation_y @ rotation_x
+
+    transform = np.eye(4, dtype=float)
+    transform[:3, :3] = rotation_matrix
+    return transform

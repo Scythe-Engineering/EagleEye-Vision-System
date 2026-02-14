@@ -1,0 +1,22 @@
+{
+    "class_name": "CameraToRobotPose",
+    "description": "Transforms a 4x4 camera pose into robot pose using live camera extrinsics (pitch, yaw, roll, and XYZ offsets)",
+    "category": "proc",
+    "input_nodes": [
+        {
+            "name": "camera_pose",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "robot_pose"
+    ],
+    "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Camera bus ID used to read extrinsics from the camera config registry",
+            "required": true,
+            "restart_for_change": false
+        }
+    }
+}
