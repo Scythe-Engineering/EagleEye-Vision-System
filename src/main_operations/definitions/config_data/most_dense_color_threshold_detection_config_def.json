@@ -50,7 +50,9 @@
                     "default": [0, 0, 0],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"]
+                    "item_labels": ["H", "S", "V"],
+                    "item_min": [0, 0, 0],
+                    "item_max": [179, 255, 255]
                 },
                 "upper_hsv": {
                     "type": "list",
@@ -59,7 +61,9 @@
                     "default": [179, 255, 255],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"]
+                    "item_labels": ["H", "S", "V"],
+                    "item_min": [0, 0, 0],
+                    "item_max": [179, 255, 255]
                 }
             }
         },

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from threading import Lock
-from typing import List, Dict, Any, Optional
+from typing import ClassVar, List, Dict, Any, Optional
 
 from src.main_operations.modules.object_detection.color_threshold_detection.implementation import (
     ColorThresholdDetectionImplementation,
@@ -30,7 +30,7 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         - area: Contour area in letterboxed coordinates
     """
 
-    _COLOR_NAME_TO_BGR: Dict[str, tuple] = {
+    _COLOR_NAME_TO_BGR: ClassVar[Dict[str, tuple]] = {
         "red": (0, 0, 255),
         "blue": (255, 0, 0),
         "green": (0, 255, 0),
@@ -165,11 +165,14 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
             Single-element list containing the selected detection, or empty list if
             no detections were found.
         """
+        with self.last_detection_lock:
+            selection_mode = self.selection_mode
+
         detections, thresholded_frame = self.delegate.run(frame)
 
         selected: Optional[Dict[str, Any]] = None
         if detections:
-            selector = max if self.selection_mode == "most_dense" else min
+            selector = max if selection_mode == "most_dense" else min
             selected = selector(detections, key=lambda d: d["area"])
 
         with self.last_detection_lock:
@@ -177,6 +180,9 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
             self.last_thresholded_frame = thresholded_frame
 
         return [selected] if selected is not None else []
+
+    # Per-channel (H, S, V) inclusive bounds enforced at validation time.
+    _HSV_LIMITS: ClassVar[List[tuple]] = [(0, 179), (0, 255), (0, 255)]
 
     @staticmethod
     def _validate_color_ranges(color_ranges: Any) -> List[Dict[str, Any]]:
@@ -189,23 +195,31 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
             The validated list.
 
         Raises:
-            ValueError: If the list or any entry is malformed.
+            TypeError: If the list structure or entry types are wrong.
+            ValueError: If the list is empty or HSV values are out of range.
         """
         if not isinstance(color_ranges, list) or len(color_ranges) == 0:
             raise ValueError("color_ranges must be a non-empty list")
         for i, entry in enumerate(color_ranges):
             if not isinstance(entry, dict):
-                raise ValueError(f"color_ranges[{i}] must be a dict")
+                raise TypeError(f"color_ranges[{i}] must be a dict")
             if not isinstance(entry.get("name"), str):
-                raise ValueError(f"color_ranges[{i}].name must be a str")
+                raise TypeError(f"color_ranges[{i}].name must be a str")
             if not isinstance(entry.get("class_id"), int):
-                raise ValueError(f"color_ranges[{i}].class_id must be an int")
+                raise TypeError(f"color_ranges[{i}].class_id must be an int")
             for field in ("lower_hsv", "upper_hsv"):
                 hsv = entry.get(field)
                 if not isinstance(hsv, list) or len(hsv) != 3:
-                    raise ValueError(f"color_ranges[{i}].{field} must be a list of 3 ints")
+                    raise TypeError(f"color_ranges[{i}].{field} must be a list of 3 ints")
                 if not all(isinstance(v, int) for v in hsv):
-                    raise ValueError(f"color_ranges[{i}].{field} values must be ints")
+                    raise TypeError(f"color_ranges[{i}].{field} values must be ints")
+                limits = MostDenseColorThresholdDetectionDefinition._HSV_LIMITS
+                labels = ("H", "S", "V")
+                for j, (v, (lo, hi)) in enumerate(zip(hsv, limits)):
+                    if not (lo <= v <= hi):
+                        raise ValueError(
+                            f"color_ranges[{i}].{field}[{j}] ({labels[j]}={v}) out of range [{lo}, {hi}]"
+                        )
         return color_ranges
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
@@ -214,49 +228,67 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         Handles: selection_mode, color_ranges, min_area, max_area,
         blur_kernel_size, morphology_kernel_size, morphology_iterations.
 
+        Validation is performed before the lock is acquired so invalid inputs
+        are rejected without ever mutating state.
+
         Args:
             json_config: Dictionary of parameter keys and new values.
         """
+        new_mode = None
         if "selection_mode" in json_config:
             new_mode = json_config["selection_mode"]
             if new_mode not in ("most_dense", "least_dense"):
                 raise ValueError(
                     f"selection_mode must be 'most_dense' or 'least_dense', got '{new_mode}'"
                 )
-            self.selection_mode = new_mode
 
+        new_ranges = None
         if "color_ranges" in json_config:
             new_ranges = self._validate_color_ranges(json_config["color_ranges"])
-            self.delegate.color_ranges = new_ranges
 
-        if "min_area" in json_config:
-            self.delegate.min_area = int(json_config["min_area"])
+        new_min_area = int(json_config["min_area"]) if "min_area" in json_config else None
+        new_max_area = int(json_config["max_area"]) if "max_area" in json_config else None
 
-        if "max_area" in json_config:
-            self.delegate.max_area = int(json_config["max_area"])
-
+        new_blur = None
         if "blur_kernel_size" in json_config:
             new_blur = int(json_config["blur_kernel_size"])
             if new_blur != 0 and new_blur % 2 == 0:
                 raise ValueError(
                     f"blur_kernel_size must be 0 (disabled) or an odd positive integer, got {new_blur}"
                 )
-            self.delegate.blur_kernel_size = new_blur
 
+        new_morph = None
+        new_morph_kernel = None
         if "morphology_kernel_size" in json_config:
             new_morph = int(json_config["morphology_kernel_size"])
             if new_morph != 0 and new_morph % 2 == 0:
                 raise ValueError(
                     f"morphology_kernel_size must be 0 (disabled) or an odd positive integer, got {new_morph}"
                 )
-            self.delegate.morphology_kernel_size = new_morph
             if new_morph > 0:
-                self.delegate.morphology_kernel = cv2.getStructuringElement(
+                new_morph_kernel = cv2.getStructuringElement(
                     cv2.MORPH_ELLIPSE, (new_morph, new_morph)
                 )
 
-        if "morphology_iterations" in json_config:
-            self.delegate.morphology_iterations = int(json_config["morphology_iterations"])
+        new_iters = int(json_config["morphology_iterations"]) if "morphology_iterations" in json_config else None
+
+        with self.last_detection_lock:
+            if new_mode is not None:
+                self.selection_mode = new_mode
+            if new_ranges is not None:
+                self.delegate.color_ranges = new_ranges
+            if new_min_area is not None:
+                self.delegate.min_area = new_min_area
+            if new_max_area is not None:
+                self.delegate.max_area = new_max_area
+            if new_blur is not None:
+                self.delegate.blur_kernel_size = new_blur
+            if new_morph is not None:
+                self.delegate.morphology_kernel_size = new_morph
+                if new_morph_kernel is not None:
+                    self.delegate.morphology_kernel = new_morph_kernel
+            if new_iters is not None:
+                self.delegate.morphology_iterations = new_iters
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Visualize the selected detection alongside the thresholded mask.
