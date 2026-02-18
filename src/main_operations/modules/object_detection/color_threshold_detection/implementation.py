@@ -168,6 +168,7 @@ class ColorThresholdDetectionImplementation:
                     "bbox": bbox,
                     "class_id": class_id,
                     "color_name": color_name,
+                    "area": area,
                 }
 
                 detections.append(detection)

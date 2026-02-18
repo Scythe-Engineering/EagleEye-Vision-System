@@ -1,0 +1,124 @@
+{
+    "class_name": "MostDenseColorThresholdDetectionDefinition",
+    "description": "Color-based detection that returns exactly one region selected by contour-area density. Supports runtime switching between most-dense and least-dense selection without a pipeline restart.",
+    "category": "det",
+    "input_nodes": [
+        {
+            "name": "frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": ["detection"],
+    "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Camera USB bus ID used to resolve calibration files (for example: '0' or '0-1').",
+            "required": true,
+            "restart_for_change": true
+        },
+        "target_size": {
+            "type": "int",
+            "description": "Target size for square letterboxed image. Frame will be resized maintaining aspect ratio and padded to this size.",
+            "default": 320,
+            "required": false,
+            "min": 64,
+            "max": 1024,
+            "restart_for_change": true
+        },
+        "color_ranges": {
+            "type": "list",
+            "item_type": "object",
+            "description": "List of color ranges for detection. Each entry contains name, class_id, and HSV bounds.",
+            "default": null,
+            "required": true,
+            "restart_for_change": false,
+            "schema": {
+                "name": {
+                    "type": "str",
+                    "description": "Name of the color (e.g., 'red', 'blue')",
+                    "default": "new_color"
+                },
+                "class_id": {
+                    "type": "int",
+                    "description": "Integer class identifier for the color",
+                    "default": 0
+                },
+                "lower_hsv": {
+                    "type": "list",
+                    "item_type": "int",
+                    "description": "Lower HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
+                    "default": [0, 0, 0],
+                    "min_items": 3,
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"],
+                    "item_min": [0, 0, 0],
+                    "item_max": [179, 255, 255]
+                },
+                "upper_hsv": {
+                    "type": "list",
+                    "item_type": "int",
+                    "description": "Upper HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
+                    "default": [179, 255, 255],
+                    "min_items": 3,
+                    "max_items": 3,
+                    "item_labels": ["H", "S", "V"],
+                    "item_min": [0, 0, 0],
+                    "item_max": [179, 255, 255]
+                }
+            }
+        },
+        "min_area": {
+            "type": "int",
+            "description": "Minimum contour area in pixels to consider as valid detection. Smaller contours are filtered out as noise.",
+            "default": 100,
+            "required": false,
+            "min": 1,
+            "max": 100000,
+            "restart_for_change": false
+        },
+        "max_area": {
+            "type": "int",
+            "description": "Maximum contour area in pixels to consider as valid detection. Larger contours are filtered out.",
+            "default": 50000,
+            "required": false,
+            "min": 100,
+            "max": 1000000,
+            "restart_for_change": false
+        },
+        "blur_kernel_size": {
+            "type": "int",
+            "description": "Gaussian blur kernel size for noise reduction. Must be odd number. Set to 0 to disable blurring.",
+            "default": 5,
+            "required": false,
+            "min": 0,
+            "max": 31,
+            "restart_for_change": false
+        },
+        "morphology_kernel_size": {
+            "type": "int",
+            "description": "Kernel size for morphological operations (opening and closing) to clean up masks. Must be odd number.",
+            "default": 5,
+            "required": false,
+            "min": 3,
+            "max": 31,
+            "restart_for_change": false
+        },
+        "morphology_iterations": {
+            "type": "int",
+            "description": "Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality. Set to 0 to disable morphological operations.",
+            "default": 2,
+            "required": false,
+            "min": 0,
+            "max": 10,
+            "restart_for_change": false
+        },
+        "selection_mode": {
+            "type": "str",
+            "description": "Which candidate to select after thresholding. 'most_dense' returns the largest-area region; 'least_dense' returns the smallest-area region.",
+            "default": "most_dense",
+            "required": false,
+            "options": ["most_dense", "least_dense"],
+            "restart_for_change": false
+        }
+    }
+}
