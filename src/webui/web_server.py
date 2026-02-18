@@ -501,7 +501,19 @@ class EagleEyeInterface:
     _VALID_OP_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
     def _validate_op_name(self, name: str) -> bool:
-        """Return True if name is a safe snake_case identifier."""
+        """Return True if name is a safe snake_case identifier.
+
+        Validation is performed using :attr:`_VALID_OP_NAME_RE`.  The name
+        must start with a lowercase letter and contain only lowercase letters,
+        digits, and underscores.
+
+        Args:
+            name: Candidate operation name to validate.
+
+        Returns:
+            bool: True if ``name`` matches the safe snake_case pattern, False
+                otherwise.
+        """
         return bool(self._VALID_OP_NAME_RE.match(name))
 
     def _op_code_path(self, name: str) -> Path:
@@ -634,7 +646,7 @@ class EagleEyeInterface:
                             "tool": "ruff",
                             "line": loc.get("row", 0),
                             "column": loc.get("column", 0),
-                            "severity": "error" if d.get("code", "").startswith("E") else "warning",
+                            "severity": "warning" if d.get("code", "").startswith(("W", "C", "D", "ANN", "N")) else "error",
                             "message": f"[{d.get('code', '')}] {d.get('message', '')}",
                         })
                 except json.JSONDecodeError:

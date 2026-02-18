@@ -81,9 +81,11 @@ export class OperationBrowser {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name }),
             });
-            const data = await res.json();
             if (!res.ok) {
-                alert(`Failed to create operation: ${data.error || res.status}`);
+                const body = await res.text();
+                let msg = body;
+                try { msg = JSON.parse(body).error || body; } catch (_) {}
+                alert(`Failed to create operation: ${msg || res.status}`);
                 return;
             }
             await this.refresh();

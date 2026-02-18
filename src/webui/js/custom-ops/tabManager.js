@@ -1,8 +1,9 @@
 export class TabManager {
-    constructor({ tabBarEl, onSelect, onClose }) {
+    constructor({ tabBarEl, onSelect, onClose, emptyTabEl = null }) {
         this._tabBarEl = tabBarEl;
         this._onSelect = onSelect;
         this._onClose = onClose;
+        this._emptyEl = emptyTabEl;
         this._tabs = new Map(); // tabId -> {operationName, fileType, content, isDirty, diagnostics}
         this._activeTabId = null;
     }
@@ -74,6 +75,15 @@ export class TabManager {
         this._renderDirtyIndicator(this._activeTabId, false);
     }
 
+    markCleanFor(operationName, fileType) {
+        const id = this._tabId(operationName, fileType);
+        const tab = this._tabs.get(id);
+        if (!tab) return;
+        tab.originalContent = tab.content;
+        tab.isDirty = false;
+        this._renderDirtyIndicator(id, false);
+    }
+
     setDiagnostics(diagnostics) {
         if (!this._activeTabId) return;
         const tab = this._tabs.get(this._activeTabId);
@@ -132,11 +142,10 @@ export class TabManager {
     }
 
     _render() {
-        const emptyEl = document.getElementById("customOpsTabBarEmpty");
         this._tabBarEl.innerHTML = "";
 
         if (this._tabs.size === 0) {
-            if (emptyEl) this._tabBarEl.appendChild(emptyEl);
+            if (this._emptyEl) this._tabBarEl.appendChild(this._emptyEl);
             return;
         }
 

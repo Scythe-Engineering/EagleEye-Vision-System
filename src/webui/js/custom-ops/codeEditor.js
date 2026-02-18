@@ -49,6 +49,7 @@ export class CodeEditor {
     }
 
     setContent(text) {
+        if (!this._view) return;
         const view = this._view;
         view.dispatch({
             changes: { from: 0, to: view.state.doc.length, insert: text },
@@ -56,10 +57,12 @@ export class CodeEditor {
     }
 
     getContent() {
+        if (!this._view) return "";
         return this._view.state.doc.toString();
     }
 
     setLanguage(lang) {
+        if (!this._view) return;
         if (lang === this._lang) return;
         this._lang = lang;
         const content = this.getContent();
@@ -71,6 +74,7 @@ export class CodeEditor {
     }
 
     setDiagnostics(diagnostics) {
+        if (!this._view) return;
         const doc = this._view.state.doc;
         const cmDiags = diagnostics
             .map((d) => {
@@ -92,6 +96,7 @@ export class CodeEditor {
     }
 
     clearDiagnostics() {
+        if (!this._view) return;
         this._view.dispatch(setDiagnostics(this._view.state, []));
     }
 

@@ -45,6 +45,7 @@ export class CustomOpsController {
 
         this._tabManager = new TabManager({
             tabBarEl,
+            emptyTabEl: document.getElementById("customOpsTabBarEmpty"),
             onSelect: (tab) => {
                 editorContainer.classList.remove("hidden");
                 editorPlaceholder.classList.add("hidden");
@@ -255,24 +256,30 @@ export class CustomOpsController {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ code, config }),
             });
-            const data = await res.json();
 
             if (!res.ok) {
-                saveStatus.textContent = `Save failed: ${data.error || res.status}`;
+                const body = await res.text();
+                let errData = {};
+                try { errData = JSON.parse(body); } catch (_) {}
+                saveStatus.textContent = `Save failed: ${errData.error || res.status}`;
                 saveStatus.className = "text-red-400 text-xs ml-auto";
-                if (data.diagnostics) {
-                    this._tabManager.setDiagnostics(data.diagnostics);
-                    this._editor.setDiagnostics(data.diagnostics);
-                    this._updateLintStatus(data.diagnostics);
+                if (errData.diagnostics) {
+                    this._tabManager.setDiagnostics(errData.diagnostics);
+                    this._editor.setDiagnostics(errData.diagnostics);
+                    this._updateLintStatus(errData.diagnostics);
                 }
                 return;
             }
+
+            const data = await res.json();
 
             // Update cache with the freshly saved content.
             this._contentCache.set(`${tab.operationName}::code`, code);
             this._contentCache.set(`${tab.operationName}::config`, config);
 
-            this._tabManager.markClean();
+            // Mark both tabs clean since both files were saved together.
+            this._tabManager.markCleanFor(tab.operationName, "code");
+            this._tabManager.markCleanFor(tab.operationName, "config");
             saveStatus.textContent = "Saved";
             saveStatus.className = "text-green-400 text-xs ml-auto";
             setTimeout(() => { saveStatus.textContent = ""; }, 3000);
