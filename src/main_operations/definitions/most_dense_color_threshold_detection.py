@@ -165,8 +165,41 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
 
         return [selected] if selected is not None else []
 
+    @staticmethod
+    def _validate_color_ranges(color_ranges: Any) -> List[Dict[str, Any]]:
+        """Validate a color_ranges list against the expected schema.
+
+        Args:
+            color_ranges: Value to validate.
+
+        Returns:
+            The validated list.
+
+        Raises:
+            ValueError: If the list or any entry is malformed.
+        """
+        if not isinstance(color_ranges, list) or len(color_ranges) == 0:
+            raise ValueError("color_ranges must be a non-empty list")
+        for i, entry in enumerate(color_ranges):
+            if not isinstance(entry, dict):
+                raise ValueError(f"color_ranges[{i}] must be a dict")
+            if not isinstance(entry.get("name"), str):
+                raise ValueError(f"color_ranges[{i}].name must be a str")
+            if not isinstance(entry.get("class_id"), int):
+                raise ValueError(f"color_ranges[{i}].class_id must be an int")
+            for field in ("lower_hsv", "upper_hsv"):
+                hsv = entry.get(field)
+                if not isinstance(hsv, list) or len(hsv) != 3:
+                    raise ValueError(f"color_ranges[{i}].{field} must be a list of 3 ints")
+                if not all(isinstance(v, int) for v in hsv):
+                    raise ValueError(f"color_ranges[{i}].{field} values must be ints")
+        return color_ranges
+
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update runtime-configurable parameters without restarting.
+
+        Handles: selection_mode, color_ranges, min_area, max_area,
+        blur_kernel_size, morphology_kernel_size, morphology_iterations.
 
         Args:
             json_config: Dictionary of parameter keys and new values.
@@ -178,6 +211,39 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
                     f"selection_mode must be 'most_dense' or 'least_dense', got '{new_mode}'"
                 )
             self.selection_mode = new_mode
+
+        if "color_ranges" in json_config:
+            new_ranges = self._validate_color_ranges(json_config["color_ranges"])
+            self.delegate.color_ranges = new_ranges
+
+        if "min_area" in json_config:
+            self.delegate.min_area = int(json_config["min_area"])
+
+        if "max_area" in json_config:
+            self.delegate.max_area = int(json_config["max_area"])
+
+        if "blur_kernel_size" in json_config:
+            new_blur = int(json_config["blur_kernel_size"])
+            if new_blur != 0 and new_blur % 2 == 0:
+                raise ValueError(
+                    f"blur_kernel_size must be 0 (disabled) or an odd positive integer, got {new_blur}"
+                )
+            self.delegate.blur_kernel_size = new_blur
+
+        if "morphology_kernel_size" in json_config:
+            new_morph = int(json_config["morphology_kernel_size"])
+            if new_morph != 0 and new_morph % 2 == 0:
+                raise ValueError(
+                    f"morphology_kernel_size must be 0 (disabled) or an odd positive integer, got {new_morph}"
+                )
+            self.delegate.morphology_kernel_size = new_morph
+            if new_morph > 0:
+                self.delegate.morphology_kernel = cv2.getStructuringElement(
+                    cv2.MORPH_ELLIPSE, (new_morph, new_morph)
+                )
+
+        if "morphology_iterations" in json_config:
+            self.delegate.morphology_iterations = int(json_config["morphology_iterations"])
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Visualize the selected detection alongside the thresholded mask.
