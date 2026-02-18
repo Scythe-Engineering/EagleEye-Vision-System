@@ -30,6 +30,19 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         - area: Contour area in letterboxed coordinates
     """
 
+    _COLOR_NAME_TO_BGR: Dict[str, tuple] = {
+        "red": (0, 0, 255),
+        "blue": (255, 0, 0),
+        "green": (0, 255, 0),
+        "yellow": (0, 255, 255),
+        "orange": (0, 165, 255),
+        "purple": (255, 0, 255),
+        "cyan": (255, 255, 0),
+        "pink": (203, 192, 255),
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+    }
+
     def __init__(
         self,
         camera_bus_id: str,
@@ -137,7 +150,7 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         except Exception as e:
             raise ValueError(
                 f"Failed to load camera parameters from {intrinsics_path}: {e}"
-            )
+            ) from e
 
         if self.camera_matrix is None:
             raise ValueError("Camera matrix not loaded")
@@ -156,8 +169,8 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
 
         selected: Optional[Dict[str, Any]] = None
         if detections:
-            reverse = self.selection_mode == "most_dense"
-            selected = sorted(detections, key=lambda d: d["area"], reverse=reverse)[0]
+            selector = max if self.selection_mode == "most_dense" else min
+            selected = selector(detections, key=lambda d: d["area"])
 
         with self.last_detection_lock:
             self.last_detection = selected
@@ -274,19 +287,7 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
             y2 = int(y2_pct * height)
 
             if color_name not in self.color_map:
-                color_name_to_bgr = {
-                    "red": (0, 0, 255),
-                    "blue": (255, 0, 0),
-                    "green": (0, 255, 0),
-                    "yellow": (0, 255, 255),
-                    "orange": (0, 165, 255),
-                    "purple": (255, 0, 255),
-                    "cyan": (255, 255, 0),
-                    "pink": (203, 192, 255),
-                    "white": (255, 255, 255),
-                    "black": (0, 0, 0),
-                }
-                self.color_map[color_name] = color_name_to_bgr.get(
+                self.color_map[color_name] = self._COLOR_NAME_TO_BGR.get(
                     color_name.lower(), (255, 255, 255)
                 )
 

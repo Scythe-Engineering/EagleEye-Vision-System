@@ -84,7 +84,7 @@
         "blur_kernel_size": {
             "type": "int",
             "description": "Gaussian blur kernel size for noise reduction. Must be odd number. Set to 0 to disable blurring.",
-            "default": 0,
+            "default": 5,
             "required": false,
             "min": 0,
             "max": 31,
@@ -102,7 +102,7 @@
         "morphology_iterations": {
             "type": "int",
             "description": "Number of iterations for morphological operations. Higher values provide more aggressive noise removal but may affect detection quality. Set to 0 to disable morphological operations.",
-            "default": 0,
+            "default": 2,
             "required": false,
             "min": 0,
             "max": 10,
