@@ -11,7 +11,8 @@
       "Bash(python -m py_compile:*)",
       "mcp__secure-api__init_knowledge",
       "Bash(python -m pytest:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(node --print:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

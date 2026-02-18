@@ -1,8 +1,12 @@
 from __future__ import annotations
+import ast
 import json
 import logging
 import os
 import queue
+import re
+import subprocess
+import tempfile
 import threading
 import time
 import traceback
@@ -435,6 +439,42 @@ class EagleEyeInterface:
             self.get_system_status,
             methods=["GET"],
         )
+        self.app.add_url_rule(
+            "/custom-operations",
+            "list_custom_operations",
+            self.list_custom_operations,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/custom-operations",
+            "create_custom_operation",
+            self.create_custom_operation,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/custom-operations/<string:operation_name>/<string:file_type>",
+            "read_custom_operation_file",
+            self.read_custom_operation_file,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/custom-operations/<string:operation_name>/lint",
+            "lint_custom_operation",
+            self.lint_custom_operation,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/custom-operations/<string:operation_name>/save",
+            "save_custom_operation",
+            self.save_custom_operation,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/custom-operations/<string:operation_name>",
+            "delete_custom_operation",
+            self.delete_custom_operation,
+            methods=["DELETE"],
+        )
 
         # SSE stream for frontend (named events)
         self.app.add_url_rule(
@@ -451,6 +491,291 @@ class EagleEyeInterface:
                 },
             ),
         )
+
+    # -------------------------------------------------------------------------
+    # Custom Operations editor endpoints
+    # -------------------------------------------------------------------------
+
+    _CUSTOM_OPS_DIR: Path = Path(src_path) / "secondary_operations"
+    _CUSTOM_OPS_CONFIG_DIR: Path = Path(src_path) / "secondary_operations" / "config_data"
+    _VALID_OP_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+    def _validate_op_name(self, name: str) -> bool:
+        """Return True if name is a safe snake_case identifier."""
+        return bool(self._VALID_OP_NAME_RE.match(name))
+
+    def _op_code_path(self, name: str) -> Path:
+        return self._CUSTOM_OPS_DIR / f"{name}.py"
+
+    def _op_config_path(self, name: str) -> Path:
+        return self._CUSTOM_OPS_CONFIG_DIR / f"{name}_config_def.json"
+
+    def list_custom_operations(self) -> tuple[dict, int]:
+        """List all secondary (custom) operations.
+
+        Returns:
+            tuple[dict, int]: JSON list of operations with metadata and HTTP 200.
+        """
+        ops: list[dict[str, Any]] = []
+        try:
+            for py_file in sorted(self._CUSTOM_OPS_DIR.iterdir()):
+                if not py_file.suffix == ".py" or py_file.stem.startswith("_"):
+                    continue
+                name = py_file.stem
+                config_path = self._op_config_path(name)
+                description = ""
+                has_config = config_path.exists()
+                if has_config:
+                    try:
+                        with open(config_path) as f:
+                            cfg = json.load(f)
+                        description = cfg.get("description", "")
+                    except Exception:
+                        pass
+                ops.append({"name": name, "description": description, "has_config": has_config})
+        except Exception as e:
+            return {"error": str(e)}, 500
+        return {"operations": ops}, 200
+
+    def read_custom_operation_file(self, operation_name: str, file_type: str) -> tuple[dict, int]:
+        """Read the code or config file for a custom operation.
+
+        Args:
+            operation_name: Snake_case name of the operation.
+            file_type: Either "code" or "config".
+
+        Returns:
+            tuple[dict, int]: File content, filename, last_modified and HTTP status.
+        """
+        if not self._validate_op_name(operation_name):
+            return {"error": "Invalid operation name"}, 400
+        if file_type == "code":
+            path = self._op_code_path(operation_name)
+        elif file_type == "config":
+            path = self._op_config_path(operation_name)
+        else:
+            return {"error": "file_type must be 'code' or 'config'"}, 400
+        if not path.exists():
+            return {"error": "File not found"}, 404
+        try:
+            content = path.read_text(encoding="utf-8")
+            return {
+                "content": content,
+                "filename": path.name,
+                "last_modified": path.stat().st_mtime,
+            }, 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    def _run_lint(self, code: str) -> list[dict[str, Any]]:
+        """Run available linters on code, returning a list of diagnostic dicts."""
+        diagnostics: list[dict[str, Any]] = []
+        # Syntax check via ast
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            diagnostics.append({
+                "tool": "syntax",
+                "line": e.lineno or 0,
+                "column": e.offset or 0,
+                "severity": "error",
+                "message": str(e.msg),
+            })
+            return diagnostics  # further linting is pointless
+
+        # Try ruff via uvx (no install required)
+        with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as tf:
+            tf.write(code)
+            tmp_path = tf.name
+        try:
+            result = subprocess.run(
+                ["uvx", "ruff", "check", "--output-format=json", tmp_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode in (0, 1):
+                try:
+                    ruff_diags = json.loads(result.stdout or "[]")
+                    for d in ruff_diags:
+                        loc = d.get("location", {})
+                        diagnostics.append({
+                            "tool": "ruff",
+                            "line": loc.get("row", 0),
+                            "column": loc.get("column", 0),
+                            "severity": "error" if d.get("code", "").startswith("E") else "warning",
+                            "message": f"[{d.get('code', '')}] {d.get('message', '')}",
+                        })
+                except json.JSONDecodeError:
+                    pass
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return diagnostics
+
+    def lint_custom_operation(self, operation_name: str) -> tuple[dict, int]:
+        """Lint the code for a custom operation.
+
+        Args:
+            operation_name: Snake_case name of the operation.
+
+        Returns:
+            tuple[dict, int]: Lint results with diagnostics list and HTTP status.
+        """
+        if not self._validate_op_name(operation_name):
+            return {"error": "Invalid operation name"}, 400
+        payload = request.get_json(silent=True) or {}
+        code: str = payload.get("code", "")
+        config_str: str = payload.get("config", "")
+
+        diagnostics = self._run_lint(code)
+
+        if config_str:
+            try:
+                json.loads(config_str)
+            except json.JSONDecodeError as e:
+                diagnostics.append({
+                    "tool": "json",
+                    "line": e.lineno,
+                    "column": e.colno,
+                    "severity": "error",
+                    "message": f"Invalid JSON: {e.msg}",
+                })
+
+        has_errors = any(d["severity"] == "error" for d in diagnostics)
+        return {"valid": not has_errors, "diagnostics": diagnostics}, 200
+
+    def save_custom_operation(self, operation_name: str) -> tuple[dict, int]:
+        """Save code and config files for a custom operation.
+
+        Args:
+            operation_name: Snake_case name of the operation.
+
+        Returns:
+            tuple[dict, int]: Save result with restart_required flag and HTTP status.
+        """
+        if not self._validate_op_name(operation_name):
+            return {"error": "Invalid operation name"}, 400
+        payload = request.get_json(silent=True) or {}
+        code: str = payload.get("code", "")
+        config_str: str = payload.get("config", "")
+
+        if not code:
+            return {"error": "code is required"}, 400
+        if not config_str:
+            return {"error": "config is required"}, 400
+
+        # Validate config JSON
+        try:
+            json.loads(config_str)
+        except json.JSONDecodeError as e:
+            return {"error": f"Invalid config JSON: {e.msg}"}, 400
+
+        # Lint check — reject on syntax errors
+        diagnostics = self._run_lint(code)
+        if any(d["severity"] == "error" and d["tool"] == "syntax" for d in diagnostics):
+            return {
+                "error": "Code has syntax errors, fix before saving",
+                "diagnostics": diagnostics,
+            }, 422
+
+        try:
+            self._CUSTOM_OPS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            self._op_code_path(operation_name).write_text(code, encoding="utf-8")
+            self._op_config_path(operation_name).write_text(config_str, encoding="utf-8")
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+        self.restart_required_for_config = True
+        return {"success": True, "restart_required": True}, 200
+
+    def create_custom_operation(self) -> tuple[dict, int]:
+        """Create a new custom operation with template files.
+
+        Returns:
+            tuple[dict, int]: Created operation name and HTTP 201, or error.
+        """
+        payload = request.get_json(silent=True) or {}
+        name: str = payload.get("name", "").strip()
+        if not self._validate_op_name(name):
+            return {"error": "Name must be snake_case (lowercase letters, digits, underscores, start with letter)"}, 400
+        if self._op_code_path(name).exists():
+            return {"error": f"Operation '{name}' already exists"}, 409
+
+        class_name = "".join(part.capitalize() for part in name.split("_"))
+        code_template = (
+            f"from typing import Any\n"
+            f"import numpy as np\n"
+            f"from src.main_operations.definitions.base.base_class import OperationInstance\n\n\n"
+            f"class {class_name}(OperationInstance):\n"
+            f"    \"\"\"Custom operation: {name}.\"\"\"\n\n"
+            f"    def __init__(self) -> None:\n"
+            f"        pass\n\n"
+            f"    def run(self, input: Any) -> Any:\n"
+            f"        \"\"\"Process input and return output.\n\n"
+            f"        Args:\n"
+            f"            input: Input data from the previous operation.\n\n"
+            f"        Returns:\n"
+            f"            Processed output for the next operation.\n"
+            f"        \"\"\"\n"
+            f"        return input\n\n"
+            f"    def update_config(self, json_config: dict[str, Any]) -> None:\n"
+            f"        \"\"\"Update configuration at runtime.\"\"\"\n"
+            f"        for key, value in json_config.items():\n"
+            f"            if hasattr(self, key):\n"
+            f"                setattr(self, key, value)\n"
+        )
+        config_template = json.dumps({
+            "class_name": class_name,
+            "description": f"Custom operation: {name}",
+            "category": "proc",
+            "input_nodes": [{"name": "data", "has_default": False}],
+            "output_nodes": ["data"],
+            "parameters": {},
+        }, indent=4)
+
+        try:
+            self._CUSTOM_OPS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            self._op_code_path(name).write_text(code_template, encoding="utf-8")
+            self._op_config_path(name).write_text(config_template, encoding="utf-8")
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+        self.restart_required_for_config = True
+        return {"name": name, "success": True, "restart_required": True}, 201
+
+    def delete_custom_operation(self, operation_name: str) -> tuple[dict, int]:
+        """Delete a custom operation's code and config files.
+
+        Args:
+            operation_name: Snake_case name of the operation to delete.
+
+        Returns:
+            tuple[dict, int]: Deletion result and HTTP status.
+        """
+        if not self._validate_op_name(operation_name):
+            return {"error": "Invalid operation name"}, 400
+        code_path = self._op_code_path(operation_name)
+        config_path = self._op_config_path(operation_name)
+        if not code_path.exists():
+            return {"error": f"Operation '{operation_name}' not found"}, 404
+
+        deleted: list[str] = []
+        try:
+            code_path.unlink()
+            deleted.append("code")
+            if config_path.exists():
+                config_path.unlink()
+                deleted.append("config")
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+        self.restart_required_for_config = True
+        return {"success": True, "deleted": deleted, "restart_required": True}, 200
+
+    # -------------------------------------------------------------------------
 
     def shutdown(self) -> tuple[dict, int]:
         """

@@ -1,0 +1,112 @@
+<div id="view-custom-ops" class="view hidden flex flex-1 min-h-0">
+    <div class="h-full min-h-0 bg-transparent text-white flex-1">
+        <div class="flex h-full min-h-0 gap-4 p-0">
+
+            <!-- Left Panel: Operation Browser -->
+            <div
+                class="w-72 bg-[#1f1f1f] flex flex-col rounded-[15px] min-h-0 mt-[5px]"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
+            >
+                <div
+                    class="p-4 border-b border-[#414141] rounded-[15px] bg-[#1E1E1E]"
+                    style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
+                >
+                    <h2 class="text-2xl font-bold text-[#f9c845]">Custom Ops</h2>
+                    <p class="text-[#ac8a2f] mt-1 text-sm">Secondary operations</p>
+                </div>
+
+                <div class="p-3 border-b border-[#414141] flex flex-col gap-2">
+                    <input
+                        id="customOpsSearch"
+                        type="text"
+                        placeholder="Search operations..."
+                        class="w-full px-3 py-1.5 bg-[#2a2a2a] text-white text-sm rounded-md border border-[#414141] focus:outline-none focus:border-[#f9c845] placeholder-[#666]"
+                    />
+                    <button
+                        id="customOpsNewBtn"
+                        class="w-full px-3 py-1.5 bg-[#232323] text-[#f9c845] text-sm font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                    >
+                        + New Operation
+                    </button>
+                </div>
+
+                <div
+                    id="customOpsList"
+                    class="flex-1 overflow-y-auto p-2 dark:[color-scheme:dark]"
+                >
+                    <div class="text-[#666] text-sm p-2">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Main Editor Area -->
+            <div
+                class="flex-1 flex flex-col bg-[#1f1f1f] rounded-[15px] min-h-0 mt-[5px] relative"
+                style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
+            >
+                <!-- Restart Banner -->
+                <div
+                    id="customOpsRestartBanner"
+                    class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
+                >
+                    <svg class="w-5 h-5 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z">
+                        </path>
+                    </svg>
+                    <span class="text-red-100 text-sm font-medium">Restart Required</span>
+                    <button
+                        id="customOpsRestartBtn"
+                        class="ml-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+                    >
+                        Restart
+                    </button>
+                </div>
+
+                <!-- Editor Tab Bar -->
+                <div
+                    id="customOpsTabBar"
+                    class="flex items-center gap-1 px-3 pt-3 pb-0 bg-[#1E1E1E] border-b border-[#414141] rounded-t-[15px] overflow-x-auto min-h-[44px]"
+                >
+                    <span id="customOpsTabBarEmpty" class="text-[#666] text-sm px-2">No files open</span>
+                </div>
+
+                <!-- Editor Toolbar -->
+                <div
+                    id="customOpsToolbar"
+                    class="hidden flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border-b border-[#333]"
+                >
+                    <span id="customOpsCurrentFile" class="text-[#ac8a2f] text-sm flex-1 truncate"></span>
+                    <button
+                        id="customOpsSaveBtn"
+                        class="px-3 py-1 bg-[#f9c845] text-black text-xs font-semibold rounded-md hover:bg-[#e6b73c] transition-colors"
+                        title="Save (Ctrl+S / Cmd+S)"
+                    >
+                        Save
+                    </button>
+                </div>
+
+                <!-- CodeMirror mount point -->
+                <div id="customOpsEditorMount" class="flex-1 overflow-hidden min-h-0 relative">
+                    <div
+                        id="customOpsEditorPlaceholder"
+                        class="absolute inset-0 flex items-center justify-center"
+                    >
+                        <div class="text-center">
+                            <p class="text-[#ac8a2f] text-lg">Select an operation to start editing</p>
+                            <p class="text-[#666] text-sm mt-2">Use the panel on the left to open files</p>
+                        </div>
+                    </div>
+                    <div id="customOpsEditorContainer" class="absolute inset-0 hidden"></div>
+                </div>
+
+                <!-- Status Bar -->
+                <div
+                    class="px-4 py-1.5 bg-[#1a1a1a] border-t border-[#333] rounded-b-[15px] flex items-center gap-4"
+                >
+                    <span id="customOpsLintStatus" class="text-[#666] text-xs">No file open</span>
+                    <span id="customOpsSaveStatus" class="text-[#666] text-xs ml-auto"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -11,6 +11,7 @@ import {
     initCameraConfigUtils,
     refreshCameraConfigUtils,
 } from "../utils/cameraConfigUtils.js";
+import { initCustomOpsEditor } from "../custom-ops/index.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -19,6 +20,7 @@ const VIEWS = {
     PIPELINE: "view-pipeline",
     SYSTEM: "view-system",
     UTILS: "view-utils",
+    CUSTOM_OPS: "view-custom-ops",
 };
 
 const FIELD_ASSETS = {
@@ -101,6 +103,10 @@ class ViewManager {
                 pauseCameraFeeds();
                 initCameraConfigUtils();
                 refreshCameraConfigUtils();
+                break;
+            case VIEWS.CUSTOM_OPS:
+                pauseCameraFeeds();
+                initCustomOpsEditor();
                 break;
             default:
                 pauseCameraFeeds();
