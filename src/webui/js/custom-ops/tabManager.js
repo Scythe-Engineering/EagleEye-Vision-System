@@ -27,8 +27,12 @@ export class TabManager {
                 diagnostics: [],
             });
         }
-        this._render();
         this.select(operationName, fileType);
+    }
+
+    getContent(operationName, fileType) {
+        const tab = this._tabs.get(this._tabId(operationName, fileType));
+        return tab ? tab.content : null;
     }
 
     select(operationName, fileType) {
@@ -78,8 +82,7 @@ export class TabManager {
 
     _saveCurrentContent() {
         if (!this._activeTabId) return;
-        const activeEl = this._tabBarEl.querySelector(`[data-tab-id="${CSS.escape(this._activeTabId)}"]`);
-        // Content is saved externally via updateContent calls from the editor
+        // Content is kept current via updateContent() calls from the editor change listener.
     }
 
     close(tabId, force = false) {
@@ -94,10 +97,11 @@ export class TabManager {
             this._activeTabId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
         }
         this._render();
-        if (this._onClose) this._onClose(tabId, this._activeTabId);
         if (this._activeTabId) {
             const activeTab = this._tabs.get(this._activeTabId);
             if (activeTab && this._onSelect) this._onSelect(activeTab);
+        } else if (this._onClose) {
+            this._onClose(tabId, null);
         }
     }
 

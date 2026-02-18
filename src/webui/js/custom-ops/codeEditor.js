@@ -6,7 +6,15 @@ import { lintGutter, setDiagnostics } from "@codemirror/lint";
 import { oneDark } from "@codemirror/theme-one-dark";
 
 function buildExtensions(lang, onChange) {
-    const langExtension = lang === "python" ? python() : json();
+    let langExtension;
+    if (lang === "python") {
+        langExtension = python();
+    } else if (lang === "json") {
+        langExtension = json();
+    } else {
+        console.warn(`codeEditor: unrecognized language "${lang}", falling back to JSON mode`);
+        langExtension = json();
+    }
     return [
         basicSetup,
         oneDark,

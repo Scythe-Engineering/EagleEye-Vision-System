@@ -505,9 +505,25 @@ class EagleEyeInterface:
         return bool(self._VALID_OP_NAME_RE.match(name))
 
     def _op_code_path(self, name: str) -> Path:
+        """Return the filesystem path for an operation's Python source file.
+
+        Args:
+            name: Snake_case operation name (e.g. ``fps_limiter``).
+
+        Returns:
+            Path: Absolute path to ``<name>.py`` inside the secondary operations directory.
+        """
         return self._CUSTOM_OPS_DIR / f"{name}.py"
 
     def _op_config_path(self, name: str) -> Path:
+        """Return the filesystem path for an operation's config definition file.
+
+        Args:
+            name: Snake_case operation name (e.g. ``fps_limiter``).
+
+        Returns:
+            Path: Absolute path to ``<name>_config_def.json`` inside ``config_data/``.
+        """
         return self._CUSTOM_OPS_CONFIG_DIR / f"{name}_config_def.json"
 
     def list_custom_operations(self) -> tuple[dict, int]:
@@ -530,8 +546,10 @@ class EagleEyeInterface:
                         with open(config_path) as f:
                             cfg = json.load(f)
                         description = cfg.get("description", "")
-                    except Exception:
-                        pass
+                    except json.JSONDecodeError as e:
+                        self.log(f"Warning: failed to parse config JSON for {config_path}: {e}")
+                    except Exception as e:
+                        self.log(f"Warning: could not read config metadata for {config_path}: {e}")
                 ops.append({"name": name, "description": description, "has_config": has_config})
         except Exception as e:
             return {"error": str(e)}, 500
@@ -568,7 +586,22 @@ class EagleEyeInterface:
             return {"error": str(e)}, 500
 
     def _run_lint(self, code: str) -> list[dict[str, Any]]:
-        """Run available linters on code, returning a list of diagnostic dicts."""
+        """Run available linters on Python source code.
+
+        Performs a syntax check via :mod:`ast` first.  If syntax is valid,
+        attempts to run ``ruff`` through ``uvx`` for style/lint diagnostics.
+
+        Args:
+            code: Python source code string to lint.
+
+        Returns:
+            list[dict[str, Any]]: List of diagnostic dictionaries, each containing:
+                - ``tool`` (str): Linter that produced the diagnostic (``"syntax"`` or ``"ruff"``).
+                - ``line`` (int): 1-based line number of the issue.
+                - ``column`` (int): 1-based column number of the issue.
+                - ``severity`` (str): Either ``"error"`` or ``"warning"``.
+                - ``message`` (str): Human-readable description of the issue.
+        """
         diagnostics: list[dict[str, Any]] = []
         # Syntax check via ast
         try:
@@ -713,14 +746,14 @@ class EagleEyeInterface:
             f"    \"\"\"Custom operation: {name}.\"\"\"\n\n"
             f"    def __init__(self) -> None:\n"
             f"        pass\n\n"
-            f"    def run(self, input: Any) -> Any:\n"
-            f"        \"\"\"Process input and return output.\n\n"
+            f"    def run(self, input_data: Any) -> Any:\n"
+            f"        \"\"\"Process input_data and return output.\n\n"
             f"        Args:\n"
-            f"            input: Input data from the previous operation.\n\n"
+            f"            input_data: Input data from the previous operation.\n\n"
             f"        Returns:\n"
             f"            Processed output for the next operation.\n"
             f"        \"\"\"\n"
-            f"        return input\n\n"
+            f"        return input_data\n\n"
             f"    def update_config(self, json_config: dict[str, Any]) -> None:\n"
             f"        \"\"\"Update configuration at runtime.\"\"\"\n"
             f"        for key, value in json_config.items():\n"
@@ -764,13 +797,13 @@ class EagleEyeInterface:
 
         deleted: list[str] = []
         try:
-            code_path.unlink()
-            deleted.append("code")
             if config_path.exists():
                 config_path.unlink()
                 deleted.append("config")
+            code_path.unlink()
+            deleted.append("code")
         except Exception as e:
-            return {"error": str(e)}, 500
+            return {"error": str(e), "deleted": deleted}, 500
 
         self.restart_required_for_config = True
         return {"success": True, "deleted": deleted, "restart_required": True}, 200

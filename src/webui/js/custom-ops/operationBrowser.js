@@ -56,7 +56,7 @@ export class OperationBrowser {
             if (typeof this._onOpenConfig === "function") {
                 card.querySelector(".btn-config").addEventListener("click", () => this._onOpenConfig(op.name));
             }
-            if (typeof this._confirmDelete === "function") {
+            if (typeof this._onDelete === "function") {
                 card.querySelector(".btn-delete").addEventListener("click", () => this._confirmDelete(op.name));
             }
             this._listEl.appendChild(card);
