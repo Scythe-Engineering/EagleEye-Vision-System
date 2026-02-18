@@ -91,6 +91,7 @@ export class CustomOpsController {
             try {
                 const res = await fetch(`${BACKEND_BASE_URL}/restart-backend`, { method: "POST" });
                 if (res.ok) {
+                    restartBanner?.classList.add("hidden");
                     saveStatus.textContent = "Backend restarting...";
                     saveStatus.className = "text-green-400 text-xs ml-auto";
                 } else {
@@ -186,6 +187,10 @@ export class CustomOpsController {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ code: code || "", config: config || "" }),
             });
+            if (!res.ok) {
+                console.warn(`customOpsController: lint endpoint returned ${res.status} for "${tab.operationName}"`);
+                return;
+            }
             const data = await res.json();
             const diags = data.diagnostics || [];
             this._tabManager.setDiagnostics(diags);

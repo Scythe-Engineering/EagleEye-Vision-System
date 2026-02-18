@@ -728,8 +728,21 @@ class EagleEyeInterface:
 
         try:
             self._CUSTOM_OPS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            self._op_code_path(operation_name).write_text(code, encoding="utf-8")
-            self._op_config_path(operation_name).write_text(config_str, encoding="utf-8")
+            # Write config then code, each atomically via temp-file + os.replace.
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8",
+                dir=self._CUSTOM_OPS_CONFIG_DIR, delete=False, suffix=".tmp",
+            ) as tf:
+                tf.write(config_str)
+                config_tmp = tf.name
+            os.replace(config_tmp, str(self._op_config_path(operation_name)))
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8",
+                dir=self._CUSTOM_OPS_DIR, delete=False, suffix=".tmp",
+            ) as tf:
+                tf.write(code)
+                code_tmp = tf.name
+            os.replace(code_tmp, str(self._op_code_path(operation_name)))
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -812,8 +825,9 @@ class EagleEyeInterface:
             if config_path.exists():
                 config_path.unlink()
                 deleted.append("config")
-            code_path.unlink()
-            deleted.append("code")
+            if code_path.exists():
+                code_path.unlink()
+                deleted.append("code")
         except Exception as e:
             return {"error": str(e), "deleted": deleted}, 500
 

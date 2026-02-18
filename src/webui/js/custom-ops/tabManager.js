@@ -161,17 +161,26 @@ export class TabManager {
                     : "bg-[#2a2a2a] text-[#888] hover:text-[#ccc]",
             ].join(" ");
 
-            tabEl.innerHTML = `
-                <span class="dirty-dot w-2 h-2 rounded-full bg-[#f9c845] ${tab.isDirty ? "" : "hidden"}"></span>
-                <span class="max-w-[160px] truncate" title="${label}">${label}</span>
-                <button class="close-btn ml-1 text-[#666] hover:text-[#f9c845]" title="Close">×</button>
-            `;
+            const dirtyDot = document.createElement("span");
+            dirtyDot.className = `dirty-dot w-2 h-2 rounded-full bg-[#f9c845]${tab.isDirty ? "" : " hidden"}`;
+
+            const labelSpan = document.createElement("span");
+            labelSpan.className = "max-w-[160px] truncate";
+            labelSpan.title = label;
+            labelSpan.textContent = label;
+
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "close-btn ml-1 text-[#666] hover:text-[#f9c845]";
+            closeBtn.title = "Close";
+            closeBtn.textContent = "×";
+
+            tabEl.append(dirtyDot, labelSpan, closeBtn);
 
             tabEl.addEventListener("click", (e) => {
                 if (e.target.classList.contains("close-btn")) return;
                 this.select(tab.operationName, tab.fileType);
             });
-            tabEl.querySelector(".close-btn").addEventListener("click", (e) => {
+            closeBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this.close(id);
             });
