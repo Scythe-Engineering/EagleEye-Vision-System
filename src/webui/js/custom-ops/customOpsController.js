@@ -76,8 +76,10 @@ export class CustomOpsController {
 
     _bindKeyboardShortcuts(saveStatus, restartBanner) {
         this._onKeydown = (e) => {
-            const active = document.getElementById("view-custom-ops");
-            if (!active || active.classList.contains("hidden")) return;
+            const utilsView = document.getElementById("view-utils");
+            const customOpsPanel = document.getElementById("utilsSubtabCustomOps");
+            if (!utilsView || utilsView.classList.contains("hidden")) return;
+            if (!customOpsPanel || customOpsPanel.classList.contains("hidden")) return;
             if ((e.ctrlKey || e.metaKey) && e.key === "s") {
                 e.preventDefault();
                 this._save(saveStatus, restartBanner);

@@ -1,171 +1,303 @@
-<div id="view-utils" class="view hidden p-4 h-full overflow-auto">
+<div id="view-utils" class="view hidden p-4 h-full min-h-0 flex flex-col">
+    <div class="mb-4 flex flex-wrap gap-2">
+        <button
+            id="utilsSubtabCameraConfigBtn"
+            type="button"
+            data-utils-subtab="camera-config"
+            class="px-4 py-2 bg-[#2a2a2a] text-[#f9c845] font-semibold rounded-md border border-[#f9c845] transition-colors"
+        >
+            Camera Config
+        </button>
+        <button
+            id="utilsSubtabCustomOpsBtn"
+            type="button"
+            data-utils-subtab="custom-ops"
+            class="px-4 py-2 bg-[#1f1f1f] text-[#bdbdbd] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] hover:text-[#f9c845] transition-colors"
+        >
+            Custom Ops Editor
+        </button>
+    </div>
+
     <div
-        class="max-w-4xl mx-auto bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5"
-        style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
+        id="utilsSubtabCameraConfig"
+        class="utils-subtab-panel flex-1 min-h-0 overflow-auto pr-1"
     >
-        <div class="mb-5">
-            <h2 class="text-xl font-bold text-[#f9c845]">Camera Config Utils</h2>
-            <p class="text-[#ac8a2f] mt-1">
-                Configure camera extrinsics and manage camera intrinsics files.
-            </p>
-        </div>
-
-        <div class="mb-6">
-            <label
-                for="utilsCameraSelect"
-                class="block text-sm font-medium text-[#f9c845] mb-2"
-                >Camera</label
-            >
-            <select
-                id="utilsCameraSelect"
-                class="w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
-            >
-                <option value="">Loading cameras...</option>
-            </select>
-            <p id="utilsCameraMeta" class="text-xs text-[#ac8a2f] mt-2"></p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <label class="text-sm text-[#f9c845]"
-                >Horizontal FOV
-                <input
-                    id="utils-horizontal-fov"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Vertical FOV
-                <input
-                    id="utils-vertical-fov"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Pitch
-                <input
-                    id="utils-pitch"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Yaw
-                <input
-                    id="utils-yaw"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Roll
-                <input
-                    id="utils-roll"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >X Offset
-                <input
-                    id="utils-x-offset"
-                    type="number"
-                    step="0.001"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Y Offset
-                <input
-                    id="utils-y-offset"
-                    type="number"
-                    step="0.001"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-            <label class="text-sm text-[#f9c845]"
-                >Z Offset
-                <input
-                    id="utils-z-offset"
-                    type="number"
-                    step="0.001"
-                    class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
-                />
-            </label>
-        </div>
-
-        <div class="mb-6">
-            <h3 class="text-lg font-semibold text-[#f9c845] mb-2">
-                Camera Position Preview
-            </h3>
-            <p class="text-sm text-[#ac8a2f] mb-3">
-                Relative to robot chassis. Front is labeled on the model.
-            </p>
-            <div
-                id="utilsCameraPoseViz"
-                class="w-full h-[240px] bg-[#232323] border border-[#414141] rounded-md overflow-hidden"
-            ></div>
-        </div>
-
-        <div class="flex flex-wrap gap-3 mb-8">
-            <button
-                id="utilsSaveExtrinsicsBtn"
-                type="button"
-                class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
-            >
-                Save Extrinsics
-            </button>
-            <button
-                id="utilsRefreshConfigBtn"
-                type="button"
-                class="px-4 py-2 bg-[#232323] text-white font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
-            >
-                Refresh
-            </button>
-        </div>
-
-        <div class="border-t border-[#414141] pt-5">
-            <h3 class="text-lg font-semibold text-[#f9c845] mb-2">
-                Intrinsics File Manager
-            </h3>
-            <p id="utilsIntrinsicsStatus" class="text-sm text-[#ac8a2f] mb-3">
-                No camera selected.
-            </p>
-
-            <div
-                id="utilsIntrinsicsDropzone"
-                class="mb-4 border-2 border-dashed border-[#414141] rounded-md p-5 text-center text-[#ac8a2f]"
-            >
-                Drag and drop an intrinsics JSON file here, or use Upload.
+        <div
+            class="max-w-4xl mx-auto bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5"
+            style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
+        >
+            <div class="mb-5">
+                <h2 class="text-xl font-bold text-[#f9c845]">Camera Config Utils</h2>
+                <p class="text-[#ac8a2f] mt-1">
+                    Configure camera extrinsics and manage camera intrinsics files.
+                </p>
             </div>
 
-            <div class="flex flex-wrap gap-3">
-                <input
-                    id="utilsIntrinsicsFileInput"
-                    type="file"
-                    accept=".json,application/json"
-                    class="hidden"
-                />
+            <div class="mb-6">
+                <label
+                    for="utilsCameraSelect"
+                    class="block text-sm font-medium text-[#f9c845] mb-2"
+                    >Camera</label
+                >
+                <select
+                    id="utilsCameraSelect"
+                    class="w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
+                >
+                    <option value="">Loading cameras...</option>
+                </select>
+                <p id="utilsCameraMeta" class="text-xs text-[#ac8a2f] mt-2"></p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <label class="text-sm text-[#f9c845]"
+                    >Horizontal FOV
+                    <input
+                        id="utils-horizontal-fov"
+                        type="number"
+                        step="0.01"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Vertical FOV
+                    <input
+                        id="utils-vertical-fov"
+                        type="number"
+                        step="0.01"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Pitch
+                    <input
+                        id="utils-pitch"
+                        type="number"
+                        step="0.01"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Yaw
+                    <input
+                        id="utils-yaw"
+                        type="number"
+                        step="0.01"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Roll
+                    <input
+                        id="utils-roll"
+                        type="number"
+                        step="0.01"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >X Offset
+                    <input
+                        id="utils-x-offset"
+                        type="number"
+                        step="0.001"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Y Offset
+                    <input
+                        id="utils-y-offset"
+                        type="number"
+                        step="0.001"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+                <label class="text-sm text-[#f9c845]"
+                    >Z Offset
+                    <input
+                        id="utils-z-offset"
+                        type="number"
+                        step="0.001"
+                        class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2"
+                    />
+                </label>
+            </div>
+
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold text-[#f9c845] mb-2">
+                    Camera Position Preview
+                </h3>
+                <p class="text-sm text-[#ac8a2f] mb-3">
+                    Relative to robot chassis. Front is labeled on the model.
+                </p>
+                <div
+                    id="utilsCameraPoseViz"
+                    class="w-full h-[240px] bg-[#232323] border border-[#414141] rounded-md overflow-hidden"
+                ></div>
+            </div>
+
+            <div class="flex flex-wrap gap-3 mb-8">
                 <button
-                    id="utilsUploadIntrinsicsBtn"
+                    id="utilsSaveExtrinsicsBtn"
                     type="button"
                     class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
                 >
-                    Upload Intrinsics
+                    Save Extrinsics
                 </button>
                 <button
-                    id="utilsDeleteIntrinsicsBtn"
+                    id="utilsRefreshConfigBtn"
                     type="button"
-                    class="px-4 py-2 bg-[#232323] text-red-300 font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors"
+                    class="px-4 py-2 bg-[#232323] text-white font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
                 >
-                    Delete Current Intrinsics
+                    Refresh
                 </button>
+            </div>
+
+            <div class="border-t border-[#414141] pt-5">
+                <h3 class="text-lg font-semibold text-[#f9c845] mb-2">
+                    Intrinsics File Manager
+                </h3>
+                <p id="utilsIntrinsicsStatus" class="text-sm text-[#ac8a2f] mb-3">
+                    No camera selected.
+                </p>
+
+                <div
+                    id="utilsIntrinsicsDropzone"
+                    class="mb-4 border-2 border-dashed border-[#414141] rounded-md p-5 text-center text-[#ac8a2f]"
+                >
+                    Drag and drop an intrinsics JSON file here, or use Upload.
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                    <input
+                        id="utilsIntrinsicsFileInput"
+                        type="file"
+                        accept=".json,application/json"
+                        class="hidden"
+                    />
+                    <button
+                        id="utilsUploadIntrinsicsBtn"
+                        type="button"
+                        class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                    >
+                        Upload Intrinsics
+                    </button>
+                    <button
+                        id="utilsDeleteIntrinsicsBtn"
+                        type="button"
+                        class="px-4 py-2 bg-[#232323] text-red-300 font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors"
+                    >
+                        Delete Current Intrinsics
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="utilsSubtabCustomOps"
+        class="utils-subtab-panel hidden flex-1 min-h-0 overflow-hidden"
+    >
+        <div class="h-full min-h-0 bg-transparent text-white flex-1">
+            <div class="flex h-full min-h-0 gap-4 p-0">
+                <div
+                    class="w-72 bg-[#1f1f1f] flex flex-col rounded-[15px] min-h-0"
+                    style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
+                >
+                    <div
+                        class="p-4 border-b border-[#414141] rounded-[15px] bg-[#1E1E1E]"
+                        style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);"
+                    >
+                        <h2 class="text-2xl font-bold text-[#f9c845]">Custom Ops</h2>
+                        <p class="text-[#ac8a2f] mt-1 text-sm">Secondary operations</p>
+                    </div>
+
+                    <div class="p-3 border-b border-[#414141] flex flex-col gap-2">
+                        <input
+                            id="customOpsSearch"
+                            type="text"
+                            placeholder="Search operations..."
+                            class="w-full px-3 py-1.5 bg-[#2a2a2a] text-white text-sm rounded-md border border-[#414141] focus:outline-none focus:border-[#f9c845] placeholder-[#666]"
+                        />
+                        <button
+                            id="customOpsNewBtn"
+                            class="w-full px-3 py-1.5 bg-[#232323] text-[#f9c845] text-sm font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                        >
+                            + New Operation
+                        </button>
+                    </div>
+
+                    <div
+                        id="customOpsList"
+                        class="flex-1 overflow-y-auto p-2 dark:[color-scheme:dark]"
+                    >
+                        <div class="text-[#666] text-sm p-2">Loading...</div>
+                    </div>
+                </div>
+
+                <div
+                    class="flex-1 flex flex-col bg-[#1f1f1f] rounded-[15px] min-h-0 relative"
+                    style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4);"
+                >
+                    <div
+                        id="customOpsRestartBanner"
+                        class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 bg-red-900/90 border border-red-500/50 rounded-lg shadow-lg"
+                    >
+                        <svg class="w-5 h-5 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z">
+                            </path>
+                        </svg>
+                        <span class="text-red-100 text-sm font-medium">Restart Required</span>
+                        <button
+                            id="customOpsRestartBtn"
+                            class="ml-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+                        >
+                            Restart
+                        </button>
+                    </div>
+
+                    <div
+                        id="customOpsTabBar"
+                        class="flex items-center gap-1 px-3 pt-3 pb-0 bg-[#1E1E1E] border-b border-[#414141] rounded-t-[15px] overflow-x-auto min-h-[44px]"
+                    >
+                        <span id="customOpsTabBarEmpty" class="text-[#666] text-sm px-2">No files open</span>
+                    </div>
+
+                    <div
+                        id="customOpsToolbar"
+                        class="hidden flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border-b border-[#333]"
+                    >
+                        <span id="customOpsCurrentFile" class="text-[#ac8a2f] text-sm flex-1 truncate"></span>
+                        <button
+                            id="customOpsSaveBtn"
+                            class="px-3 py-1 bg-[#f9c845] text-black text-xs font-semibold rounded-md hover:bg-[#e6b73c] transition-colors"
+                            title="Save (Ctrl+S / Cmd+S)"
+                        >
+                            Save
+                        </button>
+                    </div>
+
+                    <div id="customOpsEditorMount" class="flex-1 overflow-hidden min-h-0 relative">
+                        <div
+                            id="customOpsEditorPlaceholder"
+                            class="absolute inset-0 flex items-center justify-center"
+                        >
+                            <div class="text-center">
+                                <p class="text-[#ac8a2f] text-lg">Select an operation to start editing</p>
+                                <p class="text-[#666] text-sm mt-2">Use the panel on the left to open files</p>
+                            </div>
+                        </div>
+                        <div id="customOpsEditorContainer" class="absolute inset-0 hidden"></div>
+                    </div>
+
+                    <div
+                        class="px-4 py-1.5 bg-[#1a1a1a] border-t border-[#333] rounded-b-[15px] flex items-center gap-4"
+                    >
+                        <span id="customOpsLintStatus" class="text-[#666] text-xs">No file open</span>
+                        <span id="customOpsSaveStatus" class="text-[#666] text-xs ml-auto"></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

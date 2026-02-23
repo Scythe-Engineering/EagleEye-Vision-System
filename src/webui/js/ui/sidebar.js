@@ -7,11 +7,7 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 import { refreshLogMessages } from "../settings/terminalHandler.js";
-import {
-    initCameraConfigUtils,
-    refreshCameraConfigUtils,
-} from "../utils/cameraConfigUtils.js";
-import { initCustomOpsEditor } from "../custom-ops/index.js";
+import { initUtilsSubtabs } from "../utils/utilsSubtabs.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -20,7 +16,6 @@ const VIEWS = {
     PIPELINE: "view-pipeline",
     SYSTEM: "view-system",
     UTILS: "view-utils",
-    CUSTOM_OPS: "view-custom-ops",
 };
 
 const FIELD_ASSETS = {
@@ -101,12 +96,7 @@ class ViewManager {
                 break;
             case VIEWS.UTILS:
                 pauseCameraFeeds();
-                initCameraConfigUtils();
-                refreshCameraConfigUtils();
-                break;
-            case VIEWS.CUSTOM_OPS:
-                pauseCameraFeeds();
-                initCustomOpsEditor();
+                initUtilsSubtabs();
                 break;
             default:
                 pauseCameraFeeds();
@@ -123,7 +113,11 @@ class URLManager {
 
     getInitialTab() {
         const url = new URL(globalThis.location.href);
-        return url.searchParams.get("tab");
+        const tab = url.searchParams.get("tab");
+        if (tab === "view-custom-ops") {
+            return VIEWS.UTILS;
+        }
+        return tab;
     }
 }
 
