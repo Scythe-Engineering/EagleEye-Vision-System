@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@theme {
+    --color-brand-primary: #f9c845;
+    --color-brand-muted: #ac8a2f;
+    --color-surface-100: #1f1f1f;
+    --color-surface-200: #2a2a2a;
+    --color-surface-300: #232323;
+    --color-surface-panel: #1a1a1a;
+    --color-border-default: #414141;
+    --color-text-muted: #bdbdbd;
+    --color-text-subtle: #888;
+    --color-text-dim: #666;
+}
+
 @import './css/sidebar.css';
 @import './css/camera.css';
 @import './css/terminal.css';

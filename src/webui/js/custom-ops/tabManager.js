@@ -157,12 +157,12 @@ export class TabManager {
             tabEl.className = [
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-xs font-medium cursor-pointer select-none transition-colors shrink-0",
                 isActive
-                    ? "bg-[#1f1f1f] text-[#f9c845] border border-b-0 border-[#414141]"
-                    : "bg-[#2a2a2a] text-[#888] hover:text-[#ccc]",
+                    ? "bg-surface-100 text-brand-primary border border-b-0 border-border-default"
+                    : "bg-surface-200 text-text-subtle hover:text-white",
             ].join(" ");
 
             const dirtyDot = document.createElement("span");
-            dirtyDot.className = `dirty-dot w-2 h-2 rounded-full bg-[#f9c845]${tab.isDirty ? "" : " hidden"}`;
+            dirtyDot.className = `dirty-dot w-2 h-2 rounded-full bg-brand-primary${tab.isDirty ? "" : " hidden"}`;
 
             const labelSpan = document.createElement("span");
             labelSpan.className = "max-w-[160px] truncate";
@@ -170,7 +170,7 @@ export class TabManager {
             labelSpan.textContent = label;
 
             const closeBtn = document.createElement("button");
-            closeBtn.className = "close-btn ml-1 text-[#666] hover:text-[#f9c845]";
+            closeBtn.className = "close-btn ml-1 text-text-dim hover:text-brand-primary";
             closeBtn.title = "Close";
             closeBtn.textContent = "×";
 

@@ -27,11 +27,9 @@ export class CustomOpsController {
         const editorContainer = document.getElementById("customOpsEditorContainer");
         const editorPlaceholder = document.getElementById("customOpsEditorPlaceholder");
         const tabBarEl = document.getElementById("customOpsTabBar");
-        const toolbar = document.getElementById("customOpsToolbar");
         const saveBtn = document.getElementById("customOpsSaveBtn");
         const lintStatus = document.getElementById("customOpsLintStatus");
         const saveStatus = document.getElementById("customOpsSaveStatus");
-        const currentFileLabel = document.getElementById("customOpsCurrentFile");
         const restartBanner = document.getElementById("customOpsRestartBanner");
         const restartBtn = document.getElementById("customOpsRestartBtn");
         const listEl = document.getElementById("customOpsList");
@@ -49,21 +47,21 @@ export class CustomOpsController {
             onSelect: (tab) => {
                 editorContainer.classList.remove("hidden");
                 editorPlaceholder.classList.add("hidden");
-                toolbar.classList.remove("hidden");
+                saveBtn.classList.remove("hidden");
+                saveStatus.classList.remove("hidden");
                 this._editor.setLanguage(tab.fileType === "config" ? "json" : "python");
                 this._editor.setContent(tab.content);
                 this._editor.setDiagnostics(tab.diagnostics);
-                currentFileLabel.textContent = `${tab.operationName} — ${tab.fileType === "config" ? "config_def.json" : tab.operationName + ".py"}`;
                 this._updateLintStatus(tab.diagnostics);
             },
             onClose: (closedId, newActiveId) => {
                 if (!newActiveId) {
                     editorContainer.classList.add("hidden");
                     editorPlaceholder.classList.remove("hidden");
-                    toolbar.classList.add("hidden");
-                    currentFileLabel.textContent = "";
-                    lintStatus.textContent = "No file open";
+                    saveBtn.classList.add("hidden");
+                    saveStatus.classList.add("hidden");
                     saveStatus.textContent = "";
+                    lintStatus.textContent = "No file open";
                 }
             },
         });

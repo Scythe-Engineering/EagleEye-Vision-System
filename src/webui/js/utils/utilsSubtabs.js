@@ -9,9 +9,6 @@ const SUBTABS = {
     CUSTOM_OPS: "custom-ops",
 };
 
-const ACTIVE_BUTTON_CLASSES = ["bg-[#2a2a2a]", "text-[#f9c845]", "border-[#f9c845]"];
-const INACTIVE_BUTTON_CLASSES = ["bg-[#1f1f1f]", "text-[#bdbdbd]", "border-[#414141]"];
-
 let initialized = false;
 let activeSubtab = SUBTABS.CAMERA_CONFIG;
 
@@ -41,8 +38,7 @@ function getPanel(subtabId) {
 }
 
 function applyButtonState(button, isActive) {
-    button.classList.remove(...ACTIVE_BUTTON_CLASSES, ...INACTIVE_BUTTON_CLASSES);
-    button.classList.add(...(isActive ? ACTIVE_BUTTON_CLASSES : INACTIVE_BUTTON_CLASSES));
+    button.setAttribute("data-active", isActive ? "true" : "false");
 }
 
 function refreshActiveSubtabContent() {
