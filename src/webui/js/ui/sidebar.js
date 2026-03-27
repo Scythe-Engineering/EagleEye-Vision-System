@@ -7,10 +7,7 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 import { refreshLogMessages } from "../settings/terminalHandler.js";
-import {
-    initCameraConfigUtils,
-    refreshCameraConfigUtils,
-} from "../utils/cameraConfigUtils.js";
+import { initUtilsSubtabs } from "../utils/utilsSubtabs.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -99,8 +96,7 @@ class ViewManager {
                 break;
             case VIEWS.UTILS:
                 pauseCameraFeeds();
-                initCameraConfigUtils();
-                refreshCameraConfigUtils();
+                initUtilsSubtabs();
                 break;
             default:
                 pauseCameraFeeds();
@@ -117,7 +113,11 @@ class URLManager {
 
     getInitialTab() {
         const url = new URL(globalThis.location.href);
-        return url.searchParams.get("tab");
+        const tab = url.searchParams.get("tab");
+        if (tab === "view-custom-ops") {
+            return VIEWS.UTILS;
+        }
+        return tab;
     }
 }
 
