@@ -1,3 +1,5 @@
+import { buildBackendUrl } from "../config.js";
+
 let logsLoaded = false;
 
 export function initializeTerminalHandlers() {
@@ -65,7 +67,7 @@ function sendTerminalCommand() {
             appendToTerminal(terminalOutput, command, "command");
             terminalInput.value = "";
 
-            fetch("http://localhost:5001/terminal/execute", {
+            fetch(buildBackendUrl("/terminal/execute"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -119,7 +121,7 @@ async function loadLogMessages() {
     if (!logsOutput) return;
 
     try {
-        const response = await fetch("http://localhost:5001/get-log-messages");
+        const response = await fetch(buildBackendUrl("/get-log-messages"));
         const data = await response.json();
 
         if (data.messages && Array.isArray(data.messages)) {
@@ -214,7 +216,7 @@ export function refreshLogMessages() {
 }
 
 function downloadLogFile() {
-    fetch("http://localhost:5001/download-log-file")
+    fetch(buildBackendUrl("/download-log-file"))
         .then((response) => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);

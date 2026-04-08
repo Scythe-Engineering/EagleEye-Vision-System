@@ -42,11 +42,7 @@ no_image = cv2.imdecode(np.frombuffer(no_image_bytes, dtype=np.uint8), cv2.IMREA
 success, _noimg_jpeg = cv2.imencode(".jpg", no_image)
 no_image_jpeg_bytes: bytes = _noimg_jpeg.tobytes() if success else b""
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5001",
-]
+CORS_ALLOWED_ORIGINS = "*"
 PIPELINE_NOT_FOUND_MESSAGE = "Pipeline not found"
 TEXT_PLAIN_MIMETYPE = "text/plain"
 VISUALIZATION_STREAM_FPS = 12
@@ -127,7 +123,6 @@ class EagleEyeInterface:
         CORS(
             self.app,
             resources={r"/*": {"origins": CORS_ALLOWED_ORIGINS}},
-            supports_credentials=True,
         )
 
         self.socketio = SocketIO(
