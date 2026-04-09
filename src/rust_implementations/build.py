@@ -20,6 +20,7 @@ import hashlib
 import json
 import time
 import os
+import shutil
 
 
 # ANSI color codes for colored console output
@@ -43,10 +44,36 @@ class RustModuleBuilder:
         self.logger = logger
 
     def _get_clean_env(self) -> dict:
-        """Get environment with CONDA_PREFIX unset to avoid maturin conflicts."""
+        """Get environment with a stable PATH for rustup-managed toolchains."""
         env = os.environ.copy()
         env.pop("CONDA_PREFIX", None)
+
+        path_entries: list[str] = []
+        for candidate in self._get_additional_bin_dirs():
+            path_entries.append(str(candidate))
+
+        current_path = env.get("PATH", "")
+        if current_path:
+            path_entries.extend(
+                entry for entry in current_path.split(os.pathsep) if entry
+            )
+
+        if path_entries:
+            env["PATH"] = os.pathsep.join(dict.fromkeys(path_entries))
         return env
+
+    def _get_additional_bin_dirs(self) -> list[Path]:
+        """Return user-local bin directories that commonly hold Rust tools."""
+        home = Path.home()
+        candidate_dirs = [
+            home / ".cargo" / "bin",
+            home / ".local" / "bin",
+        ]
+        return [path for path in candidate_dirs if path.exists()]
+
+    def _find_executable(self, executable: str, env: dict) -> str | None:
+        """Resolve an executable against the builder's normalized PATH."""
+        return shutil.which(executable, path=env.get("PATH"))
 
     def _log(self, message: str) -> None:
         """Log a message using the logger if available, otherwise print."""
@@ -138,7 +165,7 @@ class RustModuleBuilder:
             return False
 
         result = subprocess.run(
-            ["maturin", "develop"],
+            ["uv", "run", "maturin", "develop"],
             cwd=module_dir,
             capture_output=True,
             text=True,
@@ -233,7 +260,7 @@ class RustModuleBuilder:
                 return False
 
             result = subprocess.run(
-                ["maturin", "develop"],
+                ["uv", "run", "maturin", "develop"],
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
@@ -264,14 +291,44 @@ class RustModuleBuilder:
         """Check if required build dependencies are available."""
         try:
             env = self._get_clean_env()
-            # Check cargo
-            subprocess.run(["cargo", "--version"], capture_output=True, check=True, env=env)
+            cargo_path = self._find_executable("cargo", env)
+            if cargo_path is None:
+                self._log(
+                    f"{Colors.RED}Error: Rust is required for building, but `cargo` was not found on PATH.{Colors.RESET}"
+                )
+                self._log(
+                    f"{Colors.YELLOW}Checked PATH: {env.get('PATH', '')}{Colors.RESET}"
+                )
+                self._log(
+                    f"{Colors.RED}Install Rust from https://rustup.rs/ and ensure ~/.cargo/bin is available to the backend process.{Colors.RESET}"
+                )
+                return False
 
-            # Check maturin
-            result = subprocess.run(["maturin", "--version"], capture_output=True, env=env)
+            subprocess.run(
+                [cargo_path, "--version"],
+                capture_output=True,
+                check=True,
+                env=env,
+            )
+
+            result = subprocess.run(
+                ["uv", "run", "maturin", "--version"],
+                cwd=self.root_dir.parent,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
             if result.returncode != 0:
-                self._log(f"{Colors.YELLOW}Installing maturin...{Colors.RESET}")
-                subprocess.run(["uv", "pip", "install", "maturin"], check=True, env=env)
+                self._log(
+                    f"{Colors.RED}Error: maturin is required for building.{Colors.RESET}"
+                )
+                if result.stderr:
+                    self._log(f"{Colors.RED}maturin error:{Colors.RESET}")
+                    self._log(result.stderr)
+                self._log(
+                    f"{Colors.RED}Run `uv sync` to install project build dependencies.{Colors.RESET}"
+                )
+                return False
 
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
