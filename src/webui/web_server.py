@@ -15,6 +15,7 @@ import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
+from werkzeug.serving import make_server
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
@@ -50,6 +51,8 @@ PROFILING_PUBLISH_INTERVAL_SECONDS = 0.3
 PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL = 10
 PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS = 1.0
 SSE_SERIALIZATION_WARN_INTERVAL_SECONDS = 5.0
+WEB_SERVER_HOST = "0.0.0.0"
+WEB_SERVER_PORT = 5001
 
 
 class EagleEyeInterface:
@@ -129,6 +132,8 @@ class EagleEyeInterface:
             self.app,
             cors_allowed_origins=CORS_ALLOWED_ORIGINS,
         )
+        self.app_thread: Thread | None = None
+        self._http_server = None
 
         # Disable Werkzeug access logging (HTTP request logs)
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
@@ -159,21 +164,7 @@ class EagleEyeInterface:
         if dev_mode:
             self.run()
         else:
-            # Run Flask with SocketIO for WebSocket support in production
-            self.app_thread = Thread(
-                target=self.socketio.run,
-                args=(self.app,),
-                kwargs={
-                    "host": "0.0.0.0",
-                    "port": 5001,
-                    "debug": False,
-                },
-                daemon=True,
-            )
-            time.sleep(
-                5
-            )  # might prevent an error, idk bruh, whent away when I added this
-            self.app_thread.start()
+            self._start_background_server()
 
         # Start heartbeat publisher thread for connection tracking
         self._heartbeat_interval = 5.0
@@ -715,16 +706,56 @@ class EagleEyeInterface:
 
     def run(self) -> None:
         """
-        Run the Flask application with SocketIO.
+        Run the development Flask application with SocketIO.
         """
         self.socketio.run(
             self.app,
-            host="0.0.0.0",
-            port=5001,
+            host=WEB_SERVER_HOST,
+            port=WEB_SERVER_PORT,
             debug=False,
             allow_unsafe_werkzeug=True,
             extra_files=["./static/bundle.js", "./style.css", "./index.html"],
         )
+
+    def _start_background_server(self) -> None:
+        """Start the WebUI server in a background thread."""
+        if self._requires_threaded_wsgi_fallback():
+            self.log(
+                "Starting WebUI with threaded WSGI fallback because no "
+                "production Socket.IO async backend is installed. "
+                "Install gevent or eventlet to enable production websocket support."
+            )
+            self.app_thread = Thread(
+                target=self._serve_threaded_wsgi,
+                daemon=True,
+            )
+        else:
+            self.app_thread = Thread(
+                target=self.socketio.run,
+                args=(self.app,),
+                kwargs={
+                    "host": WEB_SERVER_HOST,
+                    "port": WEB_SERVER_PORT,
+                    "debug": False,
+                },
+                daemon=True,
+            )
+
+        self.app_thread.start()
+
+    def _requires_threaded_wsgi_fallback(self) -> bool:
+        """Return whether production startup should avoid socketio.run()."""
+        return getattr(self.socketio, "async_mode", "threading") == "threading"
+
+    def _serve_threaded_wsgi(self) -> None:
+        """Serve the wrapped Flask app with a threaded WSGI server."""
+        self._http_server = make_server(
+            WEB_SERVER_HOST,
+            WEB_SERVER_PORT,
+            self.app,
+            threaded=True,
+        )
+        self._http_server.serve_forever()
 
     def update_camera_frame(self, camera_name: str, frame: np.ndarray) -> None:
         """
