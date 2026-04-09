@@ -27,6 +27,7 @@ from src.utils.camera_utils.camera_config_manager import (
 if TYPE_CHECKING:
     from src.config.utils.pipeline import Pipeline
 from src.webui.web_server_utils.serve_static_files import (
+    STATIC_DIR,
     serve_css,
     serve_index,
     serve_js,
@@ -192,7 +193,7 @@ class EagleEyeInterface:
         self.app.add_url_rule(
             "/background.png",
             "background",
-            lambda: send_from_directory("./static", "background.png"),
+            lambda: send_from_directory(str(STATIC_DIR), "background.png"),
         )
         self.app.add_url_rule(
             "/favicon.ico",
