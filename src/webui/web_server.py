@@ -120,7 +120,7 @@ class EagleEyeInterface:
 
         self.app = Flask(
             __name__,
-            static_folder=current_path,
+            static_folder=str(STATIC_DIR),
             static_url_path="",
         )
         self.app.json.sort_keys = False
