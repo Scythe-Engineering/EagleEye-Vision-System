@@ -1,4 +1,5 @@
 import faulthandler
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -6,6 +7,13 @@ from time import sleep
 from typing import Dict
 
 faulthandler.enable()
+
+from src.utils.colors import Colors  # noqa: E402
+from src.utils.logging.logger import Logger  # noqa: E402
+from src.startup.install_check import StartupInstallChecker  # noqa: E402
+
+logger = Logger()
+StartupInstallChecker(logger=logger).ensure_startup_requirements()
 
 from src.config.utils.generate_all_pipelines import generate_all_pipelines  # noqa: E402
 from src.config.utils.pipeline import Pipeline  # noqa: E402
@@ -16,18 +24,14 @@ from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
 from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
     CameraConfigRegistry,
 )
-from src.utils.colors import Colors  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
-from src.utils.logging.logger import Logger  # noqa: E402
 from src.webui.web_server import EagleEyeInterface  # noqa: E402
 from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
 from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
-import json  # noqa: E402
 
 # Bootstrap Rust modules (removed during uv sync)
-logger = Logger()
 logger.log(
     f"{Colors.CYAN}Building Rust implementations (long first time build)...{Colors.RESET}"
 )
