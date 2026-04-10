@@ -85,3 +85,16 @@ def test_ensure_uv_environment_runs_sync_only_when_imports_missing(
 
     assert checker._ensure_uv_environment() is True
     assert calls == [["uv", "sync"]]
+
+
+def test_repo_venv_interpreter_detection_accepts_unresolved_venv_python(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _make_checker(tmp_path)
+    checker.venv_python.parent.mkdir(parents=True, exist_ok=True)
+    checker.venv_python.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("src.startup.install_check.sys.prefix", str(checker.venv_dir))
+
+    assert checker._is_repo_venv_interpreter(checker.venv_python) is True

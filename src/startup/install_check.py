@@ -80,7 +80,7 @@ class StartupInstallChecker:
 
         self._log(f"{Colors.CYAN}uv executable:{Colors.RESET} {uv_path}")
 
-        current_python = Path(sys.executable).resolve()
+        current_python = Path(sys.executable)
         if not self.venv_python.exists() or not self._imports_available(current_python):
             reason = "current Python environment is missing required packages"
             if not self.venv_python.exists():
@@ -115,7 +115,9 @@ class StartupInstallChecker:
                 f"from {current_python}."
             )
 
-        if self.venv_python.exists() and current_python != self.venv_python.resolve():
+        if self.venv_python.exists() and not self._is_repo_venv_interpreter(
+            current_python
+        ):
             self._log(
                 f"{Colors.YELLOW}Backend is not using the repo virtualenv. "
                 f"current_python={current_python} expected_python={self.venv_python}{Colors.RESET}"
@@ -194,6 +196,34 @@ class StartupInstallChecker:
             text=True,
         )
         return result.returncode == 0
+
+    def _is_repo_venv_interpreter(self, python_executable: Path) -> bool:
+        """Return whether the executable belongs to this repo's .venv."""
+        try:
+            executable = python_executable.resolve()
+        except FileNotFoundError:
+            executable = python_executable
+
+        venv_root = self.venv_dir.resolve() if self.venv_dir.exists() else self.venv_dir
+
+        # Prefer the interpreter path actually used to launch the process.
+        if python_executable == self.venv_python:
+            return True
+
+        # sys.prefix points at the active virtualenv even when sys.executable resolves
+        # through the symlink to the base interpreter binary.
+        prefix_path = Path(sys.prefix)
+        try:
+            if prefix_path.resolve() == venv_root:
+                return True
+        except FileNotFoundError:
+            if prefix_path == venv_root:
+                return True
+
+        try:
+            return executable.is_relative_to(venv_root)
+        except ValueError:
+            return False
 
     def _npm_install_ready(self) -> bool:
         return (
