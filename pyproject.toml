@@ -26,7 +26,6 @@ dependencies = [
   "flask",
   "flask-cors",
   "flask-socketio",
-  "gevent",
   "line_profiler",
   "onnxruntime",
   "linuxpy",

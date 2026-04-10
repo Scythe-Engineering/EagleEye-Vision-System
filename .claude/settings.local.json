@@ -11,7 +11,9 @@
       "Bash(python -m py_compile:*)",
       "mcp__secure-api__init_knowledge",
       "Bash(python -m pytest:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(mkdir -p /Users/darkeden/EagleEye-Vision-System/src/webui/public)",
+      "Bash(cp /Users/darkeden/EagleEye-Vision-System/src/webui/assets/favicon.ico /Users/darkeden/EagleEye-Vision-System/src/webui/public/favicon.ico)"
     ]
   },
   "enableAllProjectMcpServers": true,

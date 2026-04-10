@@ -15,6 +15,7 @@ import numpy as np
 from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO
+from werkzeug.exceptions import HTTPException
 from werkzeug.serving import make_server
 
 from src.utils.colors import Colors
@@ -132,12 +133,19 @@ class EagleEyeInterface:
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins=CORS_ALLOWED_ORIGINS,
+            async_mode="threading",
         )
         self.app_thread: Thread | None = None
         self._http_server = None
 
         # Disable Werkzeug access logging (HTTP request logs)
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+        class _SuppressHandshakeErrors(logging.Filter):
+            def filter(self, record: logging.LogRecord) -> bool:
+                return "read error in handshake" not in record.getMessage()
+
+        logging.getLogger("werkzeug").addFilter(_SuppressHandshakeErrors())
         # Simplified single-client SSE: one queue and a lock to guard it.
         self._sse_queue: queue.Queue | None = None
         self._sse_queue_lock = threading.Lock()
@@ -178,7 +186,9 @@ class EagleEyeInterface:
         Thread(target=self._system_status_loop, daemon=True).start()
 
         @self.app.errorhandler(Exception)
-        def _log_and_raise(_):
+        def _log_and_raise(e):
+            if isinstance(e, HTTPException):
+                return e
             self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
 
@@ -194,13 +204,6 @@ class EagleEyeInterface:
             "/background.png",
             "background",
             lambda: send_from_directory(str(STATIC_DIR), "background.png"),
-        )
-        self.app.add_url_rule(
-            "/favicon.ico",
-            "favicon",
-            lambda: send_from_directory(
-                os.path.join(current_path, "assets"), "favicon.ico"
-            ),
         )
         self.app.add_url_rule(
             "/get-available-cameras",
