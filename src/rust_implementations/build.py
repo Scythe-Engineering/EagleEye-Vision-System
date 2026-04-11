@@ -449,7 +449,7 @@ def main(ran_directly=False, logger=None):
         "--list", action="store_true", help="List all available modules"
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args() if ran_directly else parser.parse_args([])
 
     root_dir = Path(__file__).parent
     builder = RustModuleBuilder(root_dir, logger=logger)

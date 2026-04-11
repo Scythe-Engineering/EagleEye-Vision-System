@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -122,17 +122,18 @@ class CameraThreadManager:
         Register system and video file cameras with the manager.
         """
         self.logger.log(f"{Colors.CYAN}Registering system cameras...{Colors.RESET}")
-        self.known_cameras = add_system_cameras(
+        system_cameras = add_system_cameras(
             self.web_interface,
             self,
             logger=self.logger,
         )
 
-        self.known_cameras = add_video_file_cameras(
+        video_file_cameras = add_video_file_cameras(
             self.web_interface,
             self,
             logger=self.logger,
         )
+        self.known_cameras = system_cameras + video_file_cameras
 
     def camera_feed_worker(self, worker: CameraWorker) -> None:
         """

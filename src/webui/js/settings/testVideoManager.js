@@ -1,0 +1,412 @@
+import { BACKEND_BASE_URL } from "../config.js";
+import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
+
+const OVERLAY_ID = "testVideoManagerOverlay";
+const MODAL_ID = "testVideoManagerModal";
+
+let videos = [];
+let restartRequired = false;
+let initialized = false;
+
+function createElement(tag, attrs = {}, children = []) {
+    const el = document.createElement(tag);
+    Object.entries(attrs).forEach(([key, value]) => {
+        if (key === "className") {
+            el.className = value;
+        } else if (key === "text") {
+            el.textContent = value;
+        } else if (key === "html") {
+            el.innerHTML = value;
+        } else if (key.startsWith("on") && typeof value === "function") {
+            el.addEventListener(key.substring(2).toLowerCase(), value);
+        } else if (value !== undefined && value !== null) {
+            el.setAttribute(key, String(value));
+        }
+    });
+    children.forEach((child) => el.appendChild(child));
+    return el;
+}
+
+function getOverlayElements() {
+    let overlay = document.getElementById(OVERLAY_ID);
+    let modal = document.getElementById(MODAL_ID);
+
+    if (!overlay) {
+        overlay = createElement("div", {
+            id: OVERLAY_ID,
+            className:
+                "fixed inset-0 z-50 hidden flex items-center justify-center",
+            style: "background-color: rgba(0, 0, 0, 0.25); backdrop-filter: blur(6px);",
+        });
+        document.body.appendChild(overlay);
+    }
+
+    if (!modal) {
+        modal = createElement("div", {
+            id: MODAL_ID,
+            className:
+                "bg-[#1a1a1a] rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
+        });
+        overlay.appendChild(modal);
+    }
+
+    return { overlay, modal };
+}
+
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return "0 B";
+    }
+    const unitSize = 1024;
+    const units = ["B", "KB", "MB", "GB"];
+    const unitIndex = Math.min(
+        Math.floor(Math.log(bytes) / Math.log(unitSize)),
+        units.length - 1,
+    );
+    return `${Math.round((bytes / Math.pow(unitSize, unitIndex)) * 100) / 100} ${units[unitIndex]}`;
+}
+
+function formatDate(timestamp) {
+    if (!Number.isFinite(timestamp)) {
+        return "Unknown";
+    }
+    return new Date(timestamp * 1000).toLocaleString();
+}
+
+async function fetchJson(path, options = {}) {
+    const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (!response.ok) {
+        const error = new Error(payload.error || `Request failed: ${response.status}`);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+    return payload;
+}
+
+async function markRestartRequired() {
+    restartRequired = true;
+    render();
+
+    try {
+        await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ required: true }),
+        });
+    } catch (error) {
+        console.warn("Failed to mark backend restart required:", error);
+        showWarning("Restart is required, but the backend flag was not updated.");
+    }
+}
+
+async function restartBackend(button = null) {
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Restarting...";
+    }
+
+    try {
+        await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
+            method: "POST",
+        });
+    } catch (error) {
+        console.warn("Restart request failed or connection closed:", error);
+    } finally {
+        setTimeout(() => {
+            globalThis.location.reload();
+        }, 1000);
+    }
+}
+
+async function loadVideos() {
+    try {
+        const payload = await fetchJson("/test-videos");
+        videos = Array.isArray(payload.videos) ? payload.videos : [];
+        render();
+    } catch (error) {
+        console.error("Failed to load test videos:", error);
+        showDanger(error.payload?.error || "Failed to load test videos");
+    }
+}
+
+async function uploadVideo(file, overwrite = false) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (overwrite) {
+        formData.append("overwrite", "true");
+    }
+
+    try {
+        await fetchJson("/test-videos", {
+            method: "POST",
+            body: formData,
+        });
+        showSuccess("Test video uploaded.");
+        await markRestartRequired();
+        await loadVideos();
+    } catch (error) {
+        if (error.status === 409 && error.payload?.requires_overwrite) {
+            const shouldOverwrite = globalThis.confirm(
+                `"${error.payload.filename}" already exists. Replace it?`,
+            );
+            if (shouldOverwrite) {
+                await uploadVideo(file, true);
+            }
+            return;
+        }
+
+        console.error("Failed to upload test video:", error);
+        showDanger(error.payload?.error || "Failed to upload test video");
+    }
+}
+
+async function deleteVideo(filename, force = false) {
+    const forceQuery = force ? "?force=true" : "";
+
+    try {
+        await fetchJson(
+            `/test-videos/${encodeURIComponent(filename)}${forceQuery}`,
+            { method: "DELETE" },
+        );
+        showSuccess("Test video deleted.");
+        await markRestartRequired();
+        await loadVideos();
+    } catch (error) {
+        if (error.status === 409 && error.payload?.requires_force) {
+            const references = error.payload.pipeline_references || [];
+            const referenceText =
+                references.length > 0
+                    ? `\n\nReferenced by: ${references.join(", ")}`
+                    : "";
+            const shouldDelete = globalThis.confirm(
+                `"${filename}" is used by configured pipelines.${referenceText}\n\nDelete it anyway?`,
+            );
+            if (shouldDelete) {
+                await deleteVideo(filename, true);
+            }
+            return;
+        }
+
+        console.error("Failed to delete test video:", error);
+        showDanger(error.payload?.error || "Failed to delete test video");
+    }
+}
+
+function renderVideoRows(container) {
+    container.innerHTML = "";
+
+    if (videos.length === 0) {
+        container.appendChild(
+            createElement("div", {
+                className: "text-center text-[#ac8a2f] py-8",
+                text: "No test videos uploaded.",
+            }),
+        );
+        return;
+    }
+
+    videos.forEach((video) => {
+        const references = Array.isArray(video.pipeline_references)
+            ? video.pipeline_references
+            : [];
+        const referenceText =
+            references.length > 0
+                ? `Referenced by ${references.join(", ")}`
+                : "No pipeline references";
+
+        const fileInfo = createElement("div", { className: "flex-1 min-w-0" }, [
+            createElement("div", {
+                className: "text-white font-medium truncate",
+                text: video.filename,
+                title: video.filename,
+            }),
+            createElement("div", {
+                className: "text-xs text-[#ac8a2f] mt-1",
+                text: `bus_id: ${video.bus_id} | ${formatFileSize(video.size)} | ${formatDate(video.modified)}`,
+            }),
+            createElement("div", {
+                className:
+                    references.length > 0
+                        ? "text-xs text-yellow-300 mt-1"
+                        : "text-xs text-gray-400 mt-1",
+                text: referenceText,
+            }),
+        ]);
+
+        const deleteButton = createElement("button", {
+            type: "button",
+            className:
+                "px-3 py-1 bg-red-700 text-white rounded-md hover:bg-red-600 text-sm disabled:opacity-60",
+            text: "Delete",
+            onclick: () => {
+                const shouldDelete = globalThis.confirm(
+                    `Delete "${video.filename}"?`,
+                );
+                if (shouldDelete) {
+                    deleteVideo(video.filename);
+                }
+            },
+        });
+
+        const row = createElement(
+            "div",
+            {
+                className:
+                    "flex items-center justify-between gap-3 p-3 border-b border-[#414141] hover:bg-[#232323]",
+            },
+            [fileInfo, deleteButton],
+        );
+
+        container.appendChild(row);
+    });
+}
+
+function render() {
+    const { modal } = getOverlayElements();
+    modal.innerHTML = "";
+
+    const closeButton = createElement("button", {
+        type: "button",
+        className: "absolute top-4 right-4 text-[#ac8a2f] hover:text-white",
+        text: "x",
+        onclick: close,
+        style: "font-size: 1.5rem; line-height: 1;",
+    });
+
+    const header = createElement(
+        "div",
+        {
+            className: "p-6 border-b border-[#414141] relative",
+        },
+        [
+            createElement("h2", {
+                className: "text-xl font-bold text-[#f9c845]",
+                text: "Manage Test Videos",
+            }),
+            createElement("p", {
+                className: "text-sm text-gray-300 mt-2",
+                text: "Uploaded MP4 files become selectable camera sources after a backend restart.",
+            }),
+            closeButton,
+        ],
+    );
+
+    const bodyChildren = [];
+
+    if (restartRequired) {
+        bodyChildren.push(
+            createElement("div", {
+                className:
+                    "mb-4 p-3 rounded-md border border-yellow-500 bg-yellow-900 bg-opacity-40 text-yellow-100 text-sm",
+                text: "Backend restart required before test video changes appear as camera sources.",
+            }),
+        );
+    }
+
+    const fileInput = createElement("input", {
+        type: "file",
+        accept: ".mp4,video/mp4",
+        className:
+            "w-full text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-[#f9c845] file:text-[#232323] hover:file:bg-[#d4a83a]",
+    });
+    fileInput.addEventListener("change", (event) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            uploadVideo(file);
+            event.target.value = "";
+        }
+    });
+
+    bodyChildren.push(fileInput);
+
+    const listContainer = createElement("div", {
+        id: "testVideoManagerList",
+        className:
+            "mt-6 border border-[#414141] rounded-lg bg-[#1f1f1f] max-h-96 overflow-y-auto",
+    });
+    bodyChildren.push(listContainer);
+
+    const body = createElement(
+        "div",
+        {
+            className: "p-6 flex-1 overflow-y-auto",
+        },
+        bodyChildren,
+    );
+
+    const restartButton = createElement("button", {
+        type: "button",
+        className:
+            "px-4 py-2 bg-red-900 text-white rounded-md border border-red-700 hover:bg-red-800 disabled:opacity-60",
+        text: "Restart Backend",
+        onclick: (event) => restartBackend(event.currentTarget),
+    });
+
+    const footer = createElement(
+        "div",
+        {
+            className: "p-6 border-t border-[#414141] flex justify-end gap-3",
+        },
+        [
+            createElement("button", {
+                type: "button",
+                className:
+                    "px-4 py-2 bg-[#414141] text-white rounded-md hover:bg-[#515151]",
+                text: "Close",
+                onclick: close,
+            }),
+            restartButton,
+        ],
+    );
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    modal.appendChild(footer);
+
+    renderVideoRows(listContainer);
+}
+
+function open() {
+    const { overlay } = getOverlayElements();
+    render();
+    overlay.classList.remove("hidden");
+    loadVideos();
+}
+
+function close() {
+    const { overlay } = getOverlayElements();
+    overlay.classList.add("hidden");
+}
+
+export function initializeTestVideoManager() {
+    if (initialized) {
+        return;
+    }
+    initialized = true;
+
+    const { overlay } = getOverlayElements();
+    overlay.addEventListener("click", (event) => {
+        if (event.target.id === OVERLAY_ID) {
+            close();
+        }
+    });
+
+    const manageButton = document.getElementById("manageTestVideosBtn");
+    if (manageButton) {
+        manageButton.addEventListener("click", open);
+    }
+
+    globalThis.TestVideoManager = {
+        open,
+        close,
+        loadVideos,
+    };
+    globalThis.restartBackend = () => restartBackend();
+}

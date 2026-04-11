@@ -3,6 +3,7 @@ import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
+import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
@@ -90,6 +91,7 @@ window.onload = async () => {
     setupSidebar();
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
+    initializeTestVideoManager();
     saveSettings();
 
     const systemStatusModule = createSystemStatusModule();
