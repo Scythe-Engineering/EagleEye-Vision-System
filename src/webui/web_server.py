@@ -294,7 +294,7 @@ class EagleEyeInterface:
         )
         self.app.add_url_rule(
             "/src/webui/assets/apriltags/<path:filename>",
-            "apriltags_png",
+            "apriltags_assets",
             lambda filename: send_from_directory(
                 os.path.join(current_path, "assets", "apriltags"), filename
             ),

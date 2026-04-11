@@ -799,7 +799,7 @@ export async function init3DView(modelUrl) {
         globalThis.__eev_shadowToggleAttached = true;
     }
 
-    // Add AprilTag PNGs as planes at fiducial transforms
+    // Add AprilTag images as planes at fiducial transforms
     loadingTracker.start("apriltags", "AprilTags");
     fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
         .then((response) => response.json())
@@ -832,10 +832,10 @@ export async function init3DView(modelUrl) {
             };
             for (const fiducial of fiducials) {
                 const tagId = fiducial.id;
-                const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
-                const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
+                const tagImageName = `tag36_11_${String(tagId).padStart(5, "0")}.webp`;
+                const tagImagePath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${tagImageName}`;
                 textureLoader.load(
-                    pngPath,
+                    tagImagePath,
                     (texture) => {
                         if (loadToken !== currentLoadToken) {
                             finishTag();
