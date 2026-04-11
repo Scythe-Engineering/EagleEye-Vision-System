@@ -69,7 +69,7 @@ Handles 3D model compression and decompression for web delivery.
 - `GET /` - Main web interface
 - `GET /script.js` - Main JavaScript bundle
 - `GET /main.css` - Main CSS stylesheet
-- `GET /background.png` - Background image
+- `GET /background.webp` - Background image
 - `GET /favicon.ico` - Favicon
 - `GET /frc2025r2.json` - FRC 2025 AprilTag configuration
 - `GET /src/webui/assets/apriltags/<filename>` - AprilTag images

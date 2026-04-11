@@ -291,7 +291,7 @@ log_*.txt
 general_conf.json
 
 src/webui/static/*
-!src/webui/static/background.png
+!src/webui/static/background.webp
 /plans
 
 files/*

@@ -290,7 +290,7 @@ Compiled and optimized static files for production.
     - Minified and optimized
     - Critical CSS inlined
 
-- **`background.png`**: Background image (2.6MB)
+- **`background.webp`**: Background image (53KB)
     - Application background
     - Optimized for web delivery
 

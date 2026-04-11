@@ -28,10 +28,10 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Response**: CSS file with all styling
 - **Use**: Application styling and layout
 
-#### `GET /background.png`
+#### `GET /background.webp`
 
 - **Purpose**: Serves the application background image
-- **Response**: PNG image file
+- **Response**: WebP image file
 - **Use**: Visual background for the application
 
 #### `GET /favicon.ico`

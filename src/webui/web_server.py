@@ -216,9 +216,9 @@ class EagleEyeInterface:
         self.app.add_url_rule("/style.css", "style", lambda: serve_css())
 
         self.app.add_url_rule(
-            "/background.png",
+            "/background.webp",
             "background",
-            lambda: send_from_directory(str(STATIC_DIR), "background.png"),
+            lambda: send_from_directory(str(STATIC_DIR), "background.webp"),
         )
         self.app.add_url_rule(
             "/assets/<path:filename>",

@@ -48,11 +48,11 @@ Currently, the API does not require authentication. All endpoints are publicly a
 **Response:** CSS file  
 **Content-Type:** `text/css`
 
-#### GET `/background.png`
+#### GET `/background.webp`
 
 **Description:** Serves the background image from static directory  
-**Response:** PNG image file  
-**Content-Type:** `image/png`
+**Response:** WebP image file  
+**Content-Type:** `image/webp`
 
 #### GET `/favicon.ico`
 

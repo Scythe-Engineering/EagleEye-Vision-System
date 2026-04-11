@@ -13,7 +13,7 @@ assets/
 ├── settings.svg               # Settings icon
 ├── favicon.ico                # Browser favicon
 ├── no_image.png               # Placeholder image
-└── background.png             # Application background
+└── background.webp            # Application background
 ```
 
 ## 3D Models (Robots)
@@ -130,7 +130,7 @@ Contains 3D models and assets for the 2025 FRC game field.
   - Used when camera feeds are unavailable
   - Consistent with application color scheme
 
-- **`background.png`** (2.6MB) - Application background
+- **`background.webp`** (53KB) - Application background
   - Subtle texture/pattern for visual interest
   - Optimized for web delivery
 
