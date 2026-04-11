@@ -25,11 +25,10 @@ class _FakeThread:
         self.started = True
 
 
-def test_background_server_uses_wsgi_fallback_for_threading_socketio(
+def test_background_server_uses_threaded_wsgi(
     monkeypatch,
 ) -> None:
     interface = EagleEyeInterface.__new__(EagleEyeInterface)
-    interface.socketio = type("SocketStub", (), {"async_mode": "threading"})()
     interface._serve_threaded_wsgi = lambda: None
     interface.log = lambda *_args, **_kwargs: None
 
@@ -39,37 +38,6 @@ def test_background_server_uses_wsgi_fallback_for_threading_socketio(
 
     assert isinstance(interface.app_thread, _FakeThread)
     assert interface.app_thread.target == interface._serve_threaded_wsgi
-    assert interface.app_thread.daemon is True
-    assert interface.app_thread.started is True
-
-
-def test_background_server_uses_socketio_run_when_async_backend_available(
-    monkeypatch,
-) -> None:
-    def _fake_run(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    interface = EagleEyeInterface.__new__(EagleEyeInterface)
-    interface.app = object()
-    interface.socketio = type(
-        "SocketStub",
-        (),
-        {"async_mode": "gevent", "run": _fake_run},
-    )()
-    interface.log = lambda *_args, **_kwargs: None
-
-    monkeypatch.setattr("src.webui.web_server.Thread", _FakeThread)
-
-    EagleEyeInterface._start_background_server(interface)
-
-    assert isinstance(interface.app_thread, _FakeThread)
-    assert interface.app_thread.target == interface.socketio.run
-    assert interface.app_thread.args == (interface.app,)
-    assert interface.app_thread.kwargs == {
-        "host": WEB_SERVER_HOST,
-        "port": WEB_SERVER_PORT,
-        "debug": False,
-    }
     assert interface.app_thread.daemon is True
     assert interface.app_thread.started is True
 

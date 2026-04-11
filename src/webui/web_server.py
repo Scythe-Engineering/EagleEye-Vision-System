@@ -206,6 +206,13 @@ class EagleEyeInterface:
             lambda: send_from_directory(str(STATIC_DIR), "background.png"),
         )
         self.app.add_url_rule(
+            "/assets/<path:filename>",
+            "webui_assets",
+            lambda filename: send_from_directory(
+                os.path.join(current_path, "assets"), filename
+            ),
+        )
+        self.app.add_url_rule(
             "/get-available-cameras",
             "get_available_cameras",
             self.get_available_cameras,
@@ -723,33 +730,12 @@ class EagleEyeInterface:
 
     def _start_background_server(self) -> None:
         """Start the WebUI server in a background thread."""
-        if self._requires_threaded_wsgi_fallback():
-            self.log(
-                "Starting WebUI with threaded WSGI fallback because no "
-                "production Socket.IO async backend is installed. "
-                "Install gevent or eventlet to enable production websocket support."
-            )
-            self.app_thread = Thread(
-                target=self._serve_threaded_wsgi,
-                daemon=True,
-            )
-        else:
-            self.app_thread = Thread(
-                target=self.socketio.run,
-                args=(self.app,),
-                kwargs={
-                    "host": WEB_SERVER_HOST,
-                    "port": WEB_SERVER_PORT,
-                    "debug": False,
-                },
-                daemon=True,
-            )
+        self.app_thread = Thread(
+            target=self._serve_threaded_wsgi,
+            daemon=True,
+        )
 
         self.app_thread.start()
-
-    def _requires_threaded_wsgi_fallback(self) -> bool:
-        """Return whether production startup should avoid socketio.run()."""
-        return getattr(self.socketio, "async_mode", "threading") == "threading"
 
     def _serve_threaded_wsgi(self) -> None:
         """Serve the wrapped Flask app with a threaded WSGI server."""
