@@ -41,6 +41,10 @@ let robotAxes = null;
 let animationStarted = false;
 let detectedObjectsGroup = null;
 let pendingDetectedObjects = null;
+let currentLoadToken = 0;
+let gamePieces = [];
+let currentRobotLoader = null;
+let robotFileSelectListenerAttached = false;
 
 let maxFPS = 30;
 let interval = 1 / maxFPS;
@@ -71,6 +75,63 @@ function buildBackendAssetUrl(assetPath) {
         return `${BACKEND_BASE_URL}${normalizedPath}`;
     }
     return assetPath;
+}
+
+function getLoadingElements() {
+    return {
+        overlay: document.getElementById("threeDLoadingOverlay"),
+        status: document.getElementById("threeDLoadingStatus"),
+    };
+}
+
+function createLoadingTracker(token) {
+    const pendingTasks = new Map();
+    let failedCount = 0;
+
+    function update() {
+        if (token !== currentLoadToken) {
+            return;
+        }
+
+        const { overlay, status } = getLoadingElements();
+        if (!overlay || !status) {
+            return;
+        }
+
+        if (pendingTasks.size === 0) {
+            status.textContent =
+                failedCount > 0
+                    ? "Loaded with missing assets. Check the browser console."
+                    : "Ready.";
+            overlay.classList.add("hidden");
+            overlay.setAttribute("aria-busy", "false");
+            return;
+        }
+
+        const taskList = Array.from(pendingTasks.values()).join(", ");
+        status.textContent = `Loading ${taskList}...`;
+        overlay.classList.remove("hidden");
+        overlay.setAttribute("aria-busy", "true");
+    }
+
+    function start(key, label) {
+        pendingTasks.set(key, label);
+        update();
+    }
+
+    function finish(key) {
+        pendingTasks.delete(key);
+        update();
+    }
+
+    function fail(key, errorMessage) {
+        failedCount += 1;
+        pendingTasks.delete(key);
+        console.error(errorMessage);
+        update();
+    }
+
+    return { start, finish, fail };
 }
 
 function updateStats() {
@@ -356,6 +417,11 @@ export function updateDetectedObjects(detections) {
 }
 
 export async function init3DView(modelUrl) {
+    const loadToken = currentLoadToken + 1;
+    currentLoadToken = loadToken;
+    const loadingTracker = createLoadingTracker(loadToken);
+    loadingTracker.start("setup", "3D controls");
+
     const container = document.getElementById("view-3d");
     statsDisplay = document.getElementById("statsDisplay");
     statsDisplay.style.position = "absolute";
@@ -368,6 +434,7 @@ export async function init3DView(modelUrl) {
     const scale = 40;
 
     await populateRobotDropdown();
+    loadingTracker.finish("setup");
 
     // Clear and destroy existing scene if it exists
     if (scene) {
@@ -439,7 +506,16 @@ export async function init3DView(modelUrl) {
     scene.background = new Color(0x222222);
 
     function loadRobot(robotFile) {
+        if (loadToken !== currentLoadToken) {
+            return;
+        }
+        if (!robotFile) {
+            loadingTracker.finish("robot");
+            return;
+        }
+
         console.log("Loading robot:", robotFile);
+        loadingTracker.start("robot", "robot model");
         try {
             if (robotObject) {
                 scene.remove(robotObject);
@@ -451,6 +527,9 @@ export async function init3DView(modelUrl) {
             robotLoader.load(
                 `${BACKEND_BASE_URL}/get-robot-file/${robotFile}`,
                 (gltf) => {
+                    if (loadToken !== currentLoadToken) {
+                        return;
+                    }
                     robotObject = gltf.scene;
                     robotObject.scale.set(1000, 1000, 1000);
 
@@ -477,23 +556,37 @@ export async function init3DView(modelUrl) {
                     });
 
                     scene.add(robotObject);
+                    console.log("Loaded robot:", robotFile);
+                    loadingTracker.finish("robot");
+                },
+                undefined,
+                (error) => {
+                    loadingTracker.fail(
+                        "robot",
+                        `Error loading robot ${robotFile}: ${error}`,
+                    );
                 },
             );
         } catch (error) {
-            console.error("Error loading robot:", error);
+            loadingTracker.fail("robot", `Error loading robot: ${error}`);
         }
-        console.log("Loaded robot:", robotFile);
     }
 
     const robotFileSelect = document.getElementById("robotFileSelect");
     let selectedRobotFile = robotFileSelect.value;
 
+    currentRobotLoader = loadRobot;
     loadRobot(selectedRobotFile);
 
-    robotFileSelect.addEventListener("change", () => {
-        selectedRobotFile = robotFileSelect.value;
-        loadRobot(selectedRobotFile);
-    });
+    if (!robotFileSelectListenerAttached) {
+        robotFileSelect.addEventListener("change", () => {
+            selectedRobotFile = robotFileSelect.value;
+            if (currentRobotLoader) {
+                currentRobotLoader(selectedRobotFile);
+            }
+        });
+        robotFileSelectListenerAttached = true;
+    }
 
     camera = new PerspectiveCamera(
         75,
@@ -546,9 +639,13 @@ export async function init3DView(modelUrl) {
 
     const fieldLoader = new GLTFLoader();
     fieldLoader.setDRACOLoader(dracoLoader);
+    loadingTracker.start("field", "field model");
     fieldLoader.load(
         resolvedModelUrl,
         (gltf) => {
+            if (loadToken !== currentLoadToken) {
+                return;
+            }
             const model = gltf.scene;
 
             model.rotation.x = Math.PI / 2;
@@ -568,11 +665,13 @@ export async function init3DView(modelUrl) {
             renderer.shadowMap.needsUpdate = true;
 
             startAnimationLoop();
+            loadingTracker.finish("field");
         },
         undefined,
         (error) => {
             console.error("Error loading the model:", error);
             startAnimationLoop();
+            loadingTracker.fail("field", `Error loading field model: ${error}`);
         },
     );
 
@@ -582,13 +681,17 @@ export async function init3DView(modelUrl) {
         resolvedModelUrl.split("/").pop().slice(0, 7) +
         "-GP.glb";
 
-    const gamePieces = [];
+    gamePieces = [];
 
     const gpLoader = new GLTFLoader();
     gpLoader.setDRACOLoader(dracoLoader);
+    loadingTracker.start("gamePieces", "game pieces");
     gpLoader.load(
         gamePiecePath,
         (gltf) => {
+            if (loadToken !== currentLoadToken) {
+                return;
+            }
             const model = gltf.scene;
 
             model.rotation.x = Math.PI / 2;
@@ -603,10 +706,14 @@ export async function init3DView(modelUrl) {
                 }
             });
             scene.add(model);
+            loadingTracker.finish("gamePieces");
         },
         undefined,
         (error) => {
-            console.error("Error loading the model:", error);
+            loadingTracker.fail(
+                "gamePieces",
+                `Error loading game pieces: ${error}`,
+            );
         },
     );
 
@@ -693,72 +800,122 @@ export async function init3DView(modelUrl) {
     }
 
     // Add AprilTag PNGs as planes at fiducial transforms
+    loadingTracker.start("apriltags", "AprilTags");
     fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
         .then((response) => response.json())
         .then((json) => {
+            if (loadToken !== currentLoadToken) {
+                return;
+            }
             const textureLoader = new TextureLoader();
-            for (const fiducial of json.fiducials) {
+            const fiducials = Array.isArray(json.fiducials)
+                ? json.fiducials
+                : [];
+            if (fiducials.length === 0) {
+                loadingTracker.finish("apriltags");
+                return;
+            }
+            let remainingTags = fiducials.length;
+            let aprilTagLoadFailed = false;
+            const finishTag = () => {
+                remainingTags -= 1;
+                if (remainingTags === 0) {
+                    if (aprilTagLoadFailed) {
+                        loadingTracker.fail(
+                            "apriltags",
+                            "One or more AprilTag images failed to load.",
+                        );
+                    } else {
+                        loadingTracker.finish("apriltags");
+                    }
+                }
+            };
+            for (const fiducial of fiducials) {
                 const tagId = fiducial.id;
                 const pngName = `tag36_11_${String(tagId).padStart(5, "0")}.png`;
                 const pngPath = `${BACKEND_BASE_URL}/src/webui/assets/apriltags/${pngName}`;
-                textureLoader.load(pngPath, (texture) => {
-                    // Configure texture for crisp pixel art
-                    texture.magFilter = NearestFilter;
-                    texture.minFilter = NearestFilter;
-                    texture.generateMipmaps = false;
+                textureLoader.load(
+                    pngPath,
+                    (texture) => {
+                        if (loadToken !== currentLoadToken) {
+                            finishTag();
+                            return;
+                        }
+                        // Configure texture for crisp pixel art
+                        texture.magFilter = NearestFilter;
+                        texture.minFilter = NearestFilter;
+                        texture.generateMipmaps = false;
 
-                    const planeGeometry = new PlaneGeometry(
-                        fiducial.size,
-                        fiducial.size,
-                    );
-                    const planeMaterial = new MeshStandardMaterial({
-                        map: texture,
-                    });
-                    const plane = new Mesh(planeGeometry, planeMaterial);
-                    // Apply 4x4 transform from JSON
-                    const t = fiducial.transform;
-                    // Three.js uses column-major, so set matrix directly
-                    const matrix = new Matrix4();
-                    matrix.set(
-                        t[0],
-                        t[1],
-                        t[2],
-                        t[3] * 1000,
-                        t[4],
-                        t[5],
-                        t[6],
-                        t[7] * 1000,
-                        t[8],
-                        t[9],
-                        t[10],
-                        t[11] * 1000,
-                        t[12],
-                        t[13],
-                        t[14],
-                        t[15],
-                    );
+                        const planeGeometry = new PlaneGeometry(
+                            fiducial.size,
+                            fiducial.size,
+                        );
+                        const planeMaterial = new MeshStandardMaterial({
+                            map: texture,
+                        });
+                        const plane = new Mesh(planeGeometry, planeMaterial);
+                        // Apply 4x4 transform from JSON
+                        const t = fiducial.transform;
+                        // Three.js uses column-major, so set matrix directly
+                        const matrix = new Matrix4();
+                        matrix.set(
+                            t[0],
+                            t[1],
+                            t[2],
+                            t[3] * 1000,
+                            t[4],
+                            t[5],
+                            t[6],
+                            t[7] * 1000,
+                            t[8],
+                            t[9],
+                            t[10],
+                            t[11] * 1000,
+                            t[12],
+                            t[13],
+                            t[14],
+                            t[15],
+                        );
 
-                    const rotationYMatrix = new Matrix4();
-                    rotationYMatrix.makeRotationY(Math.PI / 2);
-                    const rotationXMatrix = new Matrix4();
-                    rotationXMatrix.makeRotationX(-Math.PI / 2);
-                    matrix.premultiply(rotationXMatrix);
-                    matrix.multiply(rotationYMatrix);
+                        const rotationYMatrix = new Matrix4();
+                        rotationYMatrix.makeRotationY(Math.PI / 2);
+                        const rotationXMatrix = new Matrix4();
+                        rotationXMatrix.makeRotationX(-Math.PI / 2);
+                        matrix.premultiply(rotationXMatrix);
+                        matrix.multiply(rotationYMatrix);
 
-                    plane.applyMatrix4(matrix);
+                        plane.applyMatrix4(matrix);
 
-                    // Move plane 1 unit along its world normal
-                    const normal = new Vector3();
-                    matrix.extractBasis(new Vector3(), new Vector3(), normal);
-                    normal.normalize();
-                    plane.position.add(normal);
+                        // Move plane 1 unit along its world normal
+                        const normal = new Vector3();
+                        matrix.extractBasis(
+                            new Vector3(),
+                            new Vector3(),
+                            normal,
+                        );
+                        normal.normalize();
+                        plane.position.add(normal);
 
-                    plane.castShadow = false;
-                    plane.receiveShadow = false;
-                    plane.excludeFromShadowToggle = true;
-                    scene.add(plane);
-                });
+                        plane.castShadow = false;
+                        plane.receiveShadow = false;
+                        plane.excludeFromShadowToggle = true;
+                        scene.add(plane);
+                        finishTag();
+                    },
+                    undefined,
+                    (error) => {
+                        aprilTagLoadFailed = true;
+                        console.error(`Error loading AprilTag ${tagId}:`, error);
+                        finishTag();
+                    },
+                );
             }
+        })
+        .catch((error) => {
+            loadingTracker.fail(
+                "apriltags",
+                `Error loading AprilTag field data: ${error}`,
+            );
         });
 }
 

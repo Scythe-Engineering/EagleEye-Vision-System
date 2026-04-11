@@ -65,6 +65,24 @@
     </div>    
 
     <div
+        id="threeDLoadingOverlay"
+        class="absolute inset-0 z-20 flex items-center justify-center bg-[rgba(20,20,20,0.82)] text-[#f9c84a] hidden"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+    >
+        <div class="three-d-loading-panel">
+            <div class="three-d-loading-spinner" aria-hidden="true"></div>
+            <div class="three-d-loading-text">
+                <div class="font-bold">Loading 3D view</div>
+                <div id="threeDLoadingStatus" class="text-sm text-[#f3f3f3]">
+                    Preparing assets...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div
         id="statsDisplay"
         class="[text-shadow:rgb(0,0,0)_1px_1px_2px] [font-family:Arial,sans-serif] font-bold"
     ></div>

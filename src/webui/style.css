@@ -114,3 +114,35 @@
     max-width: 960px;
     width: min(960px, 100%);
 }
+
+.three-d-loading-panel {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    max-width: min(26rem, calc(100% - 2rem));
+    padding: 1rem 1.15rem;
+    background: rgba(30, 30, 30, 0.95);
+    border: 2px solid #414141;
+    border-radius: 8px;
+    box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.three-d-loading-spinner {
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    border: 3px solid rgba(249, 200, 74, 0.25);
+    border-top-color: #f9c84a;
+    border-radius: 50%;
+    animation: three-d-loading-spin 0.85s linear infinite;
+}
+
+.three-d-loading-text {
+    min-width: 0;
+}
+
+@keyframes three-d-loading-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
