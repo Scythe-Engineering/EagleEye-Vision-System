@@ -52,6 +52,27 @@ const detectionCylinderHeight = 400;
 const detectionLabelOffset = 250;
 const detectionScaleFactor = 1000;
 
+function isAbsoluteUrl(url) {
+    return (
+        /^[a-z][a-z\d+\-.]*:\/\//i.test(url) ||
+        url.startsWith("data:") ||
+        url.startsWith("blob:")
+    );
+}
+
+function buildBackendAssetUrl(assetPath) {
+    if (isAbsoluteUrl(assetPath)) {
+        return assetPath;
+    }
+    const normalizedPath = assetPath.startsWith("./")
+        ? assetPath.slice(1)
+        : assetPath;
+    if (normalizedPath.startsWith("/assets/")) {
+        return `${BACKEND_BASE_URL}${normalizedPath}`;
+    }
+    return assetPath;
+}
+
 function updateStats() {
     const currentTime = performance.now();
     frameCount++;
@@ -412,7 +433,8 @@ export async function init3DView(modelUrl) {
     }
 
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/`);
+    dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/gltf/`);
+    const resolvedModelUrl = buildBackendAssetUrl(modelUrl);
 
     scene.background = new Color(0x222222);
 
@@ -523,8 +545,9 @@ export async function init3DView(modelUrl) {
     scene.add(directionalLight);
 
     const fieldLoader = new GLTFLoader();
+    fieldLoader.setDRACOLoader(dracoLoader);
     fieldLoader.load(
-        modelUrl,
+        resolvedModelUrl,
         (gltf) => {
             const model = gltf.scene;
 
@@ -554,14 +577,15 @@ export async function init3DView(modelUrl) {
     );
 
     const gamePiecePath =
-        modelUrl.split("/").slice(0, -2).join("/") +
+        resolvedModelUrl.split("/").slice(0, -2).join("/") +
         "/game_pieces/" +
-        modelUrl.split("/").pop().slice(0, 7) +
+        resolvedModelUrl.split("/").pop().slice(0, 7) +
         "-GP.glb";
 
     const gamePieces = [];
 
     const gpLoader = new GLTFLoader();
+    gpLoader.setDRACOLoader(dracoLoader);
     gpLoader.load(
         gamePiecePath,
         (gltf) => {

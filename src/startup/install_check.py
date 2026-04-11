@@ -8,6 +8,7 @@ from typing import Protocol
 
 from src.rust_implementations.build import RustModuleBuilder
 from src.utils.colors import Colors
+from src.webui.web_server_utils.draco_asset_cache import default_gltf_transform_bin
 
 
 class _LoggerLike(Protocol):
@@ -37,6 +38,7 @@ class StartupInstallChecker:
         self.package_json = self.repo_root / "package.json"
         self.node_modules_dir = self.repo_root / "node_modules"
         self.vite_bin = self.node_modules_dir / ".bin" / "vite"
+        self.gltf_transform_bin = default_gltf_transform_bin(self.repo_root)
         self.webui_dir = self.repo_root / "src" / "webui"
         self.static_dir = self.webui_dir / "static"
         self.rust_builder = RustModuleBuilder(
@@ -229,7 +231,11 @@ class StartupInstallChecker:
         return (
             self.node_modules_dir.is_dir()
             and self.vite_bin.exists()
+            and self.gltf_transform_bin.exists()
             and (self.node_modules_dir / "three" / "package.json").is_file()
+            and (
+                self.node_modules_dir / "@gltf-transform" / "cli" / "package.json"
+            ).is_file()
         )
 
     def _missing_webui_assets(self) -> list[str]:

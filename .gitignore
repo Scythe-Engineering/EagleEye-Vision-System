@@ -144,6 +144,7 @@ db.sqlite3-journal
 # Flask stuff:
 instance/
 .webassets-cache
+src/webui/generated_assets/
 
 # Scrapy stuff:
 .scrapy
@@ -297,3 +298,4 @@ files/*
 !files/apriltag_map_path
 
 uv.lock
+package-lock.json

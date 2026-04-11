@@ -61,6 +61,26 @@ def test_webui_build_not_required_when_assets_are_present_and_newer(
     assert checker._webui_build_required() is False
 
 
+def test_npm_install_ready_requires_gltf_transform_cli(tmp_path: Path) -> None:
+    checker = _make_checker(tmp_path)
+    checker.vite_bin.parent.mkdir(parents=True)
+    checker.vite_bin.write_text("", encoding="utf-8")
+    (checker.node_modules_dir / "three").mkdir()
+    (checker.node_modules_dir / "three" / "package.json").write_text(
+        "{}", encoding="utf-8"
+    )
+
+    assert checker._npm_install_ready() is False
+
+    checker.gltf_transform_bin.write_text("", encoding="utf-8")
+    (checker.node_modules_dir / "@gltf-transform" / "cli").mkdir(parents=True)
+    (
+        checker.node_modules_dir / "@gltf-transform" / "cli" / "package.json"
+    ).write_text("{}", encoding="utf-8")
+
+    assert checker._npm_install_ready() is True
+
+
 def test_ensure_uv_environment_runs_sync_only_when_imports_missing(
     tmp_path: Path,
     monkeypatch,

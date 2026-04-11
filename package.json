@@ -15,6 +15,7 @@
   "private": true,
   "dependencies": {
     "@babel/core": "^7.26.10",
+    "@gltf-transform/cli": "^4.3.0",
     "@tailwindcss/vite": "^4.1.7",
     "babel-loader": "^10.0.0",
     "prettier": "^3.5.3",

@@ -33,6 +33,10 @@ from src.webui.web_server_utils.serve_static_files import (
     serve_index,
     serve_js,
 )
+from src.webui.web_server_utils.draco_asset_cache import (
+    DracoAssetCache,
+    default_gltf_transform_bin,
+)
 from src.main_operations.definitions.base.base_class import OperationInstance
 
 current_path = os.path.dirname(__file__)
@@ -135,6 +139,15 @@ class EagleEyeInterface:
             cors_allowed_origins=CORS_ALLOWED_ORIGINS,
             async_mode="threading",
         )
+        repo_root = Path(current_path).parents[1]
+        self.draco_asset_cache = DracoAssetCache(
+            assets_dir=Path(current_path) / "assets",
+            cache_dir=Path(current_path) / "generated_assets" / "draco",
+            gltf_transform_bin=default_gltf_transform_bin(repo_root),
+            logger=self.log,
+        )
+        self.draco_asset_cache.prepare_all()
+
         self.app_thread: Thread | None = None
         self._http_server = None
 
@@ -208,9 +221,7 @@ class EagleEyeInterface:
         self.app.add_url_rule(
             "/assets/<path:filename>",
             "webui_assets",
-            lambda filename: send_from_directory(
-                os.path.join(current_path, "assets"), filename
-            ),
+            self.serve_webui_asset,
         )
         self.app.add_url_rule(
             "/get-available-cameras",
@@ -277,9 +288,7 @@ class EagleEyeInterface:
         self.app.add_url_rule(
             "/get-robot-file/<path:filename>",
             "get_robot_file",
-            lambda filename: send_from_directory(
-                os.path.join(current_path, "assets", "robots"), filename
-            ),
+            self.serve_robot_file,
         )
         self.app.add_url_rule(
             "/draco/<path:filename>",
@@ -447,6 +456,28 @@ class EagleEyeInterface:
                     "Access-Control-Allow-Headers": "Cache-Control",
                 },
             ),
+        )
+
+    def serve_webui_asset(self, filename: str):
+        """Serve WebUI assets, preferring cached Draco-compressed GLB files."""
+        cached_or_source_path = self.draco_asset_cache.resolve_asset(filename)
+        if cached_or_source_path is not None:
+            return send_from_directory(
+                str(cached_or_source_path.parent), cached_or_source_path.name
+            )
+        return send_from_directory(os.path.join(current_path, "assets"), filename)
+
+    def serve_robot_file(self, filename: str):
+        """Serve robot GLB files, preferring cached Draco-compressed copies."""
+        cached_or_source_path = self.draco_asset_cache.resolve_asset(
+            Path("robots") / filename
+        )
+        if cached_or_source_path is not None:
+            return send_from_directory(
+                str(cached_or_source_path.parent), cached_or_source_path.name
+            )
+        return send_from_directory(
+            os.path.join(current_path, "assets", "robots"), filename
         )
 
     def shutdown(self) -> tuple[dict, int]:
