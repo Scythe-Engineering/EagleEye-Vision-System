@@ -16,6 +16,9 @@ import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { showDanger, showWarning } from "../ui/notificationSystem.js";
+import { registerSettingsPopup } from "./settingsPopup.js";
+
+registerSettingsPopup();
 
 function handleDragStartWithLogging(
     event,
@@ -1215,71 +1218,17 @@ function openOperationSettings(opOrItem) {
         }
     };
 
-    const loadFileManager = () => {
-        if (globalThis.FileManagerPopup) {
-            return Promise.resolve();
-        }
-
-        const fileManagerUrl = "../../js/pipeline/fileManager.js";
-        const fileManagerAlready = document.querySelector(
-            `script[src="${fileManagerUrl}"]`,
-        );
-        if (fileManagerAlready) {
-            return Promise.resolve();
-        }
-
-        return new Promise((resolve, reject) => {
-            const s = document.createElement("script");
-            s.type = "module";
-            s.src = fileManagerUrl;
-            s.onload = () => {
-                if (!globalThis.FileManagerPopup) {
-                    console.warn(
-                        "FileManagerPopup loaded but did not register on globalThis",
-                    );
-                }
-                resolve();
-            };
-            s.onerror = () => {
-                console.error(
-                    "Failed to load file manager script at",
-                    fileManagerUrl,
-                );
-                reject(new Error("Failed to load file manager"));
-            };
-            document.head.appendChild(s);
-        });
-    };
+    if (!globalThis.FileManagerPopup) {
+        console.error("FileManagerPopup not available");
+        return;
+    }
 
     if (globalThis.SettingsPopup) {
-        void loadFileManager().then(doOpen).catch(console.error);
+        doOpen();
         return;
     }
 
-    const scriptUrl = "../../js/pipeline/settingsPopup.js";
-    const already = document.querySelector(`script[src="${scriptUrl}"]`);
-    if (already) {
-        already.addEventListener("load", () => {
-            void loadFileManager().then(doOpen).catch(console.error);
-        });
-        return;
-    }
-
-    const s = document.createElement("script");
-    s.type = "module";
-    s.src = scriptUrl;
-    s.onload = () => {
-        if (!globalThis.SettingsPopup) {
-            console.warn(
-                "SettingsPopup loaded but did not register on globalThis",
-            );
-            return;
-        }
-        void loadFileManager().then(doOpen).catch(console.error);
-    };
-    s.onerror = () =>
-        console.error("Failed to load settings popup script at", scriptUrl);
-    document.head.appendChild(s);
+    console.error("SettingsPopup not available");
 }
 
 function updateRunButton() {

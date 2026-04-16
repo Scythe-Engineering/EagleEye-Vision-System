@@ -183,6 +183,7 @@ class EagleEyeInterface:
         self.frame_locks = {}
         self.frame_list_structure_lock = threading.Lock()
 
+        self._register_error_handlers()
         self._register_routes()
 
         if dev_mode:
@@ -200,12 +201,32 @@ class EagleEyeInterface:
         # Start system status monitoring thread for resource updates
         Thread(target=self._system_status_loop, daemon=True).start()
 
+    def _register_error_handlers(self) -> None:
+        """Register request error logging without changing Flask responses."""
+
+        @self.app.after_request
+        def _log_error_response(response: Response) -> Response:
+            if response.status_code >= 400:
+                self._log_serving_error(response)
+            return response
+
         @self.app.errorhandler(Exception)
-        def _log_and_raise(e):
+        def _log_and_raise(e: Exception):
             if isinstance(e, HTTPException):
                 return e
             self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
+
+    def _log_serving_error(self, response: Response) -> None:
+        """Log failed HTTP responses with enough context to find frontend misses."""
+        endpoint = request.endpoint or "<unmatched>"
+        referrer = request.referrer or "-"
+        remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr or "-")
+        self.log(
+            "Serving error: "
+            f"{response.status} for {request.method} {request.full_path.rstrip('?')} "
+            f"endpoint={endpoint} remote_addr={remote_addr} referrer={referrer}"
+        )
 
     def _register_routes(self) -> None:
         """

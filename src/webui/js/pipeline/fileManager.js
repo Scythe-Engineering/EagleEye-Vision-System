@@ -1,6 +1,10 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
-(function () {
+export function registerFileManagerPopup() {
+    if (globalThis.FileManagerPopup) {
+        return globalThis.FileManagerPopup;
+    }
+
     const OVERLAY_ID = "fileManagerOverlay";
     const MODAL_ID = "fileManagerModal";
 
@@ -345,16 +349,20 @@ import { BACKEND_BASE_URL } from "../config.js";
         filesList = [];
     }
 
-    globalThis.FileManagerPopup = {
+    const popup = {
         init,
         open,
         close,
     };
+    globalThis.FileManagerPopup = popup;
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", init);
     } else {
         init();
     }
-})();
 
+    return popup;
+}
+
+registerFileManagerPopup();

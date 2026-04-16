@@ -1,6 +1,13 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { registerFileManagerPopup } from "./fileManager.js";
 
-(function () {
+export function registerSettingsPopup() {
+    registerFileManagerPopup();
+
+    if (globalThis.SettingsPopup) {
+        return globalThis.SettingsPopup;
+    }
+
     const OVERLAY_ID = "operationSettingsOverlay";
     const MODAL_ID = "operationSettingsModal";
     // Visualization state
@@ -1819,11 +1826,12 @@ import { BACKEND_BASE_URL } from "../config.js";
             });
     }
 
-    globalThis.SettingsPopup = {
+    const popup = {
         init,
         open,
         close,
     };
+    globalThis.SettingsPopup = popup;
 
     // Auto-init when DOM is ready
     if (document.readyState === "loading") {
@@ -1831,4 +1839,8 @@ import { BACKEND_BASE_URL } from "../config.js";
     } else {
         init();
     }
-})();
+
+    return popup;
+}
+
+registerSettingsPopup();
