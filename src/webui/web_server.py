@@ -61,6 +61,16 @@ SSE_SERIALIZATION_WARN_INTERVAL_SECONDS = 5.0
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 5001
 TEST_VIDEO_EXTENSION = ".mp4"
+GENERAL_CONF_PATH = Path(src_path) / "general_conf.json"
+VIEW_STREAM_DOWNSCALE_KEY = "view_stream_downscale"
+DEFAULT_VIEW_STREAM_DOWNSCALE = 0.5
+MIN_VIEW_STREAM_DOWNSCALE = 0.1
+MAX_VIEW_STREAM_DOWNSCALE = 1.0
+VIEW_STREAM_JPEG_QUALITY = 70
+DEFAULT_GENERAL_CONF: dict[str, Any] = {
+    "network_table_address": "0.0.0.0",
+    VIEW_STREAM_DOWNSCALE_KEY: DEFAULT_VIEW_STREAM_DOWNSCALE,
+}
 
 
 class EagleEyeInterface:
@@ -122,8 +132,11 @@ class EagleEyeInterface:
 
         self.restart_required_for_config = False
         self.last_log_message_count = 0
+        self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
+        self._general_conf_lock = threading.Lock()
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
+        self._refresh_view_stream_settings()
 
         self.app = Flask(
             __name__,
@@ -1105,19 +1118,41 @@ class EagleEyeInterface:
                 frame = self.frame_list[camera_name]
 
             if frame is not None:
-                resized_frame = cv2.resize(
-                    frame,
-                    None,
-                    fx=0.5,
-                    fy=0.5,
-                    interpolation=cv2.INTER_AREA,
+                resized_frame = self._resize_view_stream_frame(frame)
+                success, encoded_frame = cv2.imencode(
+                    ".jpg",
+                    resized_frame,
+                    self._view_stream_jpeg_params(),
                 )
-                success, encoded_frame = cv2.imencode(".jpg", resized_frame)
                 frame = encoded_frame.tobytes() if success else no_image_jpeg_bytes
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
             time.sleep(max((1 / 120) - (time.time() - time_start), 0))
+
+    def _resize_view_stream_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Resize a frame for the Views tab stream only."""
+        with self._general_conf_lock:
+            downscale = self.view_stream_downscale
+
+        if downscale >= 1.0:
+            return frame
+
+        return cv2.resize(
+            frame,
+            None,
+            fx=downscale,
+            fy=downscale,
+            interpolation=cv2.INTER_AREA,
+        )
+
+    def _view_stream_jpeg_params(self) -> list[int]:
+        """Return JPEG encoding params for compressed Views tab streams."""
+        params = [int(cv2.IMWRITE_JPEG_QUALITY), VIEW_STREAM_JPEG_QUALITY]
+        optimize_flag = getattr(cv2, "IMWRITE_JPEG_OPTIMIZE", None)
+        if optimize_flag is not None:
+            params.extend([int(optimize_flag), 1])
+        return params
 
     def _frame_generator_no_image(self) -> Generator[bytes, Any, Any]:
         """
@@ -2460,13 +2495,57 @@ class EagleEyeInterface:
             )
             return {"error": str(e)}, 500
 
+    def _read_general_conf(self) -> dict[str, Any]:
+        """Read general config with defaults for missing optional settings."""
+        if not GENERAL_CONF_PATH.exists():
+            return DEFAULT_GENERAL_CONF.copy()
+
+        with GENERAL_CONF_PATH.open("r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        if not isinstance(config, dict):
+            raise ValueError("General configuration must be a JSON object")
+
+        return {**DEFAULT_GENERAL_CONF, **config}
+
+    def _parse_view_stream_downscale(self, value: Any) -> float:
+        """Validate the view stream downscale setting."""
+        try:
+            downscale = float(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError("View stream downscale must be a number") from error
+
+        if not MIN_VIEW_STREAM_DOWNSCALE <= downscale <= MAX_VIEW_STREAM_DOWNSCALE:
+            raise ValueError(
+                "View stream downscale must be between "
+                f"{MIN_VIEW_STREAM_DOWNSCALE} and {MAX_VIEW_STREAM_DOWNSCALE}"
+            )
+
+        return downscale
+
+    def _refresh_view_stream_settings(self) -> None:
+        """Load view stream settings from the general configuration file."""
+        try:
+            general_conf = self._read_general_conf()
+            downscale = self._parse_view_stream_downscale(
+                general_conf.get(
+                    VIEW_STREAM_DOWNSCALE_KEY,
+                    DEFAULT_VIEW_STREAM_DOWNSCALE,
+                )
+            )
+        except Exception as error:
+            self.log(f"Failed loading view stream settings, using defaults: {error}")
+            downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
+
+        with self._general_conf_lock:
+            self.view_stream_downscale = downscale
+
     def get_general_conf(self) -> tuple[dict, int]:
         """
         Get the general configuration.
         """
         try:
-            with open("general_conf.json", "r") as f:
-                return json.load(f), 200
+            return self._read_general_conf(), 200
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -2475,9 +2554,28 @@ class EagleEyeInterface:
         Save the general configuration.
         """
         try:
-            with open("general_conf.json", "w") as f:
-                json.dump(request.get_json(), f)
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return {"error": "Expected JSON object payload"}, 400
+
+            config = {**self._read_general_conf(), **payload}
+            config[VIEW_STREAM_DOWNSCALE_KEY] = self._parse_view_stream_downscale(
+                config.get(
+                    VIEW_STREAM_DOWNSCALE_KEY,
+                    DEFAULT_VIEW_STREAM_DOWNSCALE,
+                )
+            )
+
+            with GENERAL_CONF_PATH.open("w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4)
+                f.write("\n")
+
+            with self._general_conf_lock:
+                self.view_stream_downscale = config[VIEW_STREAM_DOWNSCALE_KEY]
+
             return {"message": "General configuration saved successfully"}, 200
+        except ValueError as e:
+            return {"error": str(e)}, 400
         except Exception as e:
             self.logger.log(
                 f"{Colors.RED}Error saving general configuration: {e}{Colors.RESET}"

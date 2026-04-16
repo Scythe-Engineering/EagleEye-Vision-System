@@ -27,7 +27,7 @@ from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
 from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
-from src.webui.web_server import EagleEyeInterface  # noqa: E402
+from src.webui.web_server import DEFAULT_GENERAL_CONF, EagleEyeInterface  # noqa: E402
 from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
 from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
 
@@ -55,12 +55,14 @@ current_dir = Path(__file__).parent
 SCHEMA_MANIFEST_KEY = "schema_manifest"
 
 # Ensure general config file exists for NetworkTables initialization
-if not os.path.exists("src/general_conf.json"):
+general_conf_path = "src/general_conf.json"
+if not os.path.exists(general_conf_path):
     # make empty json file with 0.0.0.0 as the address
-    with open("src/general_conf.json", "w") as f:
-        json.dump({"network_table_address": "0.0.0.0"}, f)
+    with open(general_conf_path, "w") as f:
+        json.dump(DEFAULT_GENERAL_CONF, f)
 
-general_conf = json.load(open("src/general_conf.json"))
+with open(general_conf_path) as f:
+    general_conf = {**DEFAULT_GENERAL_CONF, **json.load(f)}
 
 
 class MainBackend:

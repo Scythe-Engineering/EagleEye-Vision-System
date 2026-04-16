@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import threading
 from typing import Any
 
-from src.webui.web_server import EagleEyeInterface, WEB_SERVER_HOST, WEB_SERVER_PORT
+from src.webui.web_server import (
+    DEFAULT_VIEW_STREAM_DOWNSCALE,
+    EagleEyeInterface,
+    VIEW_STREAM_DOWNSCALE_KEY,
+    WEB_SERVER_HOST,
+    WEB_SERVER_PORT,
+)
 from src.webui.web_server_utils.serve_static_files import STATIC_DIR
 
 
@@ -179,3 +187,86 @@ def test_unmatched_routes_are_logged_as_serving_errors(monkeypatch) -> None:
         "Serving error: 404 NOT FOUND for GET /missing-asset.js "
         "endpoint=<unmatched> remote_addr=127.0.0.1 referrer=-"
     ]
+
+
+def test_general_conf_adds_default_view_stream_downscale(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    general_conf_path = tmp_path / "general_conf.json"
+    general_conf_path.write_text(
+        json.dumps({"network_table_address": "10.0.0.62"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.webui.web_server.GENERAL_CONF_PATH", general_conf_path)
+
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+
+    config = EagleEyeInterface._read_general_conf(interface)
+
+    assert config["network_table_address"] == "10.0.0.62"
+    assert config[VIEW_STREAM_DOWNSCALE_KEY] == DEFAULT_VIEW_STREAM_DOWNSCALE
+
+
+def test_save_general_conf_updates_view_stream_downscale(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    general_conf_path = tmp_path / "general_conf.json"
+    general_conf_path.write_text(
+        json.dumps({"network_table_address": "10.0.0.62"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.webui.web_server.GENERAL_CONF_PATH", general_conf_path)
+
+    class _FakeJsonRequest:
+        def get_json(self, silent: bool = False) -> dict[str, Any]:
+            return {
+                "network_table_address": "10.0.0.2",
+                VIEW_STREAM_DOWNSCALE_KEY: 0.35,
+            }
+
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface._general_conf_lock = threading.Lock()
+    interface.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
+
+    monkeypatch.setattr("src.webui.web_server.request", _FakeJsonRequest())
+
+    response, status_code = EagleEyeInterface.save_general_conf(interface)
+
+    saved_config = json.loads(general_conf_path.read_text(encoding="utf-8"))
+    assert status_code == 200
+    assert response == {"message": "General configuration saved successfully"}
+    assert saved_config["network_table_address"] == "10.0.0.2"
+    assert saved_config[VIEW_STREAM_DOWNSCALE_KEY] == 0.35
+    assert interface.view_stream_downscale == 0.35
+
+
+def test_save_general_conf_rejects_invalid_view_stream_downscale(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    general_conf_path = tmp_path / "general_conf.json"
+    general_conf_path.write_text(
+        json.dumps({"network_table_address": "10.0.0.62"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.webui.web_server.GENERAL_CONF_PATH", general_conf_path)
+
+    class _FakeJsonRequest:
+        def get_json(self, silent: bool = False) -> dict[str, Any]:
+            return {VIEW_STREAM_DOWNSCALE_KEY: 1.5}
+
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface._general_conf_lock = threading.Lock()
+    interface.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
+
+    monkeypatch.setattr("src.webui.web_server.request", _FakeJsonRequest())
+
+    response, status_code = EagleEyeInterface.save_general_conf(interface)
+
+    saved_config = json.loads(general_conf_path.read_text(encoding="utf-8"))
+    assert status_code == 400
+    assert response == {"error": "View stream downscale must be between 0.1 and 1.0"}
+    assert VIEW_STREAM_DOWNSCALE_KEY not in saved_config
+    assert interface.view_stream_downscale == DEFAULT_VIEW_STREAM_DOWNSCALE
