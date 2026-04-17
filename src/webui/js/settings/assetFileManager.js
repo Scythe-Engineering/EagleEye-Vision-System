@@ -1,10 +1,12 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { populateFieldDropdown } from "../dropdown/fieldDropdown.js";
 import { populateRobotDropdown } from "../dropdown/robotDropdown.js";
+import { apply3DAssetScale } from "../init3DView.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
 
 const OVERLAY_ID = "assetFileManagerOverlay";
 const MODAL_ID = "assetFileManagerModal";
+const SCALE_POPUP_ID = "assetScalePopup";
 const ASSET_TYPES = {
     robot: {
         label: "Robot Files",
@@ -92,12 +94,31 @@ function formatDate(timestamp) {
     return new Date(timestamp * 1000).toLocaleString();
 }
 
+function normalizeScale(scale) {
+    const numericScale = Number.parseFloat(scale);
+    return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
+}
+
+function formatScale(scale) {
+    return normalizeScale(scale).toLocaleString(undefined, {
+        maximumFractionDigits: 6,
+    });
+}
+
 function getCurrentFieldYear() {
     const yearSelect = document.getElementById("yearSelect");
     if (yearSelect && yearSelect.selectedIndex > 0) {
         return yearSelect.value;
     }
     return "";
+}
+
+function scaleEndpoint(file) {
+    if (activeType === "robot") {
+        return `${ASSET_TYPES.robot.endpoint}/${encodeURIComponent(file.filename)}/scale`;
+    }
+
+    return `${ASSET_TYPES.field.endpoint}/${encodeURIComponent(file.year)}/${encodeURIComponent(file.filename)}/scale`;
 }
 
 function is3DViewActive() {
@@ -263,6 +284,161 @@ async function deleteAsset(file) {
     }
 }
 
+async function saveAssetScale(file, scale) {
+    try {
+        const payload = await fetchJson(scaleEndpoint(file), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ scale }),
+        });
+        const savedScale = normalizeScale(payload.file?.scale ?? scale);
+        showSuccess(
+            `${activeType === "robot" ? "Robot" : "Field"} scale saved.`,
+        );
+        apply3DAssetScale(
+            activeType,
+            {
+                year: file.year,
+                filename: file.filename,
+            },
+            savedScale,
+        );
+        await loadAssets();
+        await refresh3DAssetDropdowns(file.filename);
+        return true;
+    } catch (error) {
+        console.error("Failed to save 3D asset scale:", error);
+        showDanger(error.payload?.error || "Failed to save 3D asset scale");
+        return false;
+    }
+}
+
+function openScalePopup(file) {
+    const existingPopup = document.getElementById(SCALE_POPUP_ID);
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+
+    const popup = createElement("div", {
+        id: SCALE_POPUP_ID,
+        className: "fixed inset-0 z-[60] flex items-center justify-center px-4",
+        style: "background-color: rgba(0, 0, 0, 0.35); backdrop-filter: blur(6px);",
+    });
+    popup.addEventListener("click", (event) => {
+        if (event.target.id === SCALE_POPUP_ID) {
+            popup.remove();
+        }
+    });
+
+    const closeButton = createElement("button", {
+        type: "button",
+        className: "absolute top-4 right-4 text-[#ac8a2f] hover:text-white",
+        text: "x",
+        onclick: () => popup.remove(),
+        style: "font-size: 1.5rem; line-height: 1;",
+    });
+
+    const input = createElement("input", {
+        id: "assetScale",
+        name: "scale",
+        type: "number",
+        step: "any",
+        value: formatScale(file.scale),
+        className:
+            "bg-[#2a2a2a] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:border-[#f9c845]",
+    });
+
+    const form = createElement(
+        "form",
+        {
+            className:
+                "bg-[#1a1a1a] rounded-lg shadow-xl max-w-2xl w-full border border-[#414141]",
+            onsubmit: async (event) => {
+                event.preventDefault();
+                try {
+                    const scale = Number.parseFloat(input.value);
+                    if (!Number.isFinite(scale) || scale <= 0) {
+                        throw new Error("Scale must be a positive number.");
+                    }
+                    const saved = await saveAssetScale(file, scale);
+                    if (saved) {
+                        popup.remove();
+                    }
+                } catch (error) {
+                    showDanger(error.message || "Invalid scale value.");
+                }
+            },
+        },
+        [
+            createElement(
+                "div",
+                {
+                    className: "p-6 border-b border-[#414141] relative",
+                },
+                [
+                    createElement("h3", {
+                        className: "text-xl font-bold text-[#f9c845]",
+                        text: `Scale ${file.filename}`,
+                    }),
+                    createElement("p", {
+                        className: "text-sm text-gray-300 mt-2",
+                        text: "Enter a positive scale factor.",
+                    }),
+                    closeButton,
+                ],
+            ),
+            createElement(
+                "div",
+                {
+                    className: "p-6 flex flex-col gap-5",
+                },
+                [
+                    createElement(
+                        "label",
+                        {
+                            className:
+                                "flex flex-col gap-2 text-sm text-[#f9c845] font-medium",
+                        },
+                        [
+                            createElement("span", { text: "Scale factor" }),
+                            input,
+                        ],
+                    ),
+                ],
+            ),
+            createElement(
+                "div",
+                {
+                    className:
+                        "p-6 border-t border-[#414141] flex justify-end gap-3",
+                },
+                [
+                    createElement("button", {
+                        type: "button",
+                        className:
+                            "px-4 py-2 bg-[#414141] text-white rounded-md hover:bg-[#515151]",
+                        text: "Cancel",
+                        onclick: () => popup.remove(),
+                    }),
+                    createElement("button", {
+                        type: "submit",
+                        className:
+                            "px-4 py-2 rounded-md bg-[#f9c845] text-[#232323] font-semibold hover:bg-[#d4a83a]",
+                        text: "Save",
+                    }),
+                ],
+            ),
+        ],
+    );
+
+    popup.appendChild(form);
+    document.body.appendChild(popup);
+    input.focus();
+    input.select();
+}
+
 function renderTabs() {
     return createElement(
         "div",
@@ -403,6 +579,7 @@ function renderFileRows(container) {
             activeType === "field"
                 ? `${file.year} | ${formatFileSize(file.size)} | ${formatDate(file.modified)}`
                 : `${formatFileSize(file.size)} | ${formatDate(file.modified)}`;
+        const scaleText = `Scale: ${formatScale(file.scale)}`;
         const apriltagMapText =
             activeType === "field"
                 ? `AprilTag map: ${file.apriltag_map?.filename || "none"}`
@@ -418,6 +595,10 @@ function renderFileRows(container) {
                 className: "text-xs text-[#ac8a2f] mt-1",
                 text: detailText,
             }),
+            createElement("div", {
+                className: "text-xs text-gray-300 mt-1",
+                text: scaleText,
+            }),
             ...(activeType === "field"
                 ? [
                       createElement("div", {
@@ -429,6 +610,25 @@ function renderFileRows(container) {
                   ]
                 : []),
         ]);
+
+        const settingsButton = createElement(
+            "button",
+            {
+                type: "button",
+                className:
+                    "p-2 bg-[#2a2a2a] border border-[#414141] text-white rounded-md hover:border-[#f9c845] hover:bg-[#3a3a3a]",
+                title: "Change scale",
+                onclick: () => openScalePopup(file),
+            },
+            [
+                createElement("img", {
+                    src: "./assets/settings.svg",
+                    alt: "Scale settings",
+                    className: "w-4 h-4",
+                    style: "filter: grayscale(100%);",
+                }),
+            ],
+        );
 
         const deleteButton = createElement("button", {
             type: "button",
@@ -452,7 +652,7 @@ function renderFileRows(container) {
                     className:
                         "flex items-center justify-between gap-3 p-3 border-b border-[#414141] hover:bg-[#232323]",
                 },
-                [fileInfo, deleteButton],
+                [fileInfo, settingsButton, deleteButton],
             ),
         );
     });

@@ -5,6 +5,7 @@ function createFieldRecord(year, filename) {
     return {
         year,
         filename,
+        scale: 1,
         url: `/assets/fields/${year}/field_files/${filename}`,
         game_piece_urls: [
             `/assets/fields/${year}/game_pieces/FE-${year}-GP.glb`,
@@ -22,6 +23,11 @@ const FALLBACK_FIELD_RECORDS = {
 let latestFieldRecords = FALLBACK_FIELD_RECORDS;
 let listenersAttached = false;
 
+function normalizeScale(scale) {
+    const numericScale = Number.parseFloat(scale);
+    return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
+}
+
 function recordsToFilenameMap(recordsByYear) {
     return Object.fromEntries(
         Object.entries(recordsByYear).map(([year, records]) => [
@@ -38,6 +44,7 @@ function normalizeFieldRecord(record) {
 
     return {
         ...record,
+        scale: normalizeScale(record.scale),
         url:
             record.url ||
             `/assets/fields/${record.year}/field_files/${record.filename}`,
@@ -107,6 +114,9 @@ export function getSelectedFieldModel() {
             url: fieldRecord.url,
             gamePieceUrls: fieldRecord.game_piece_urls,
             aprilTagMapUrl: fieldRecord.apriltag_map_url,
+            fieldScale: fieldRecord.scale,
+            fieldYear: fieldRecord.year,
+            fieldFilename: fieldRecord.filename,
         };
     }
 
@@ -114,6 +124,9 @@ export function getSelectedFieldModel() {
         url: fieldModelUrl(yearSelect.value, fileSelect.value),
         gamePieceUrls: undefined,
         aprilTagMapUrl: undefined,
+        fieldScale: 1,
+        fieldYear: yearSelect.value,
+        fieldFilename: fileSelect.value,
     };
 }
 
@@ -140,6 +153,9 @@ function loadSelectedField(yearSelect, fileSelect) {
     init3DView(fieldModel.url, {
         gamePieceUrls: fieldModel.gamePieceUrls,
         aprilTagMapUrl: fieldModel.aprilTagMapUrl,
+        fieldScale: fieldModel.fieldScale,
+        fieldYear: fieldModel.fieldYear,
+        fieldFilename: fieldModel.fieldFilename,
     });
 }
 

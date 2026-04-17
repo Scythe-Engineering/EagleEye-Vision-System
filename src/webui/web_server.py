@@ -62,11 +62,14 @@ WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 5001
 TEST_VIDEO_EXTENSION = ".mp4"
 MODEL_ASSET_EXTENSION = ".glb"
+MODEL_ASSET_METADATA_SUFFIX = ".metadata.json"
 ROBOT_ASSET_DIR_NAME = "robots"
 FIELD_ASSET_DIR_NAME = "fields"
 FIELD_FILE_DIR_NAME = "field_files"
 FIELD_APRILTAG_MAP_DIR_NAME = "apriltag_maps"
 APRILTAG_MAP_EXTENSIONS = {".fmap", ".json"}
+ASSET_SCALE_KEY = "scale"
+DEFAULT_ASSET_SCALE = 1.0
 GENERAL_CONF_PATH = Path(src_path) / "general_conf.json"
 VIEW_STREAM_DOWNSCALE_KEY = "view_stream_downscale"
 DEFAULT_VIEW_STREAM_DOWNSCALE = 0.5
@@ -358,6 +361,12 @@ class EagleEyeInterface:
             methods=["POST"],
         )
         self.app.add_url_rule(
+            "/robot-files/<path:filename>/scale",
+            "save_robot_file_scale",
+            self.save_robot_file_scale,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
             "/robot-files/<path:filename>",
             "delete_robot_file",
             self.delete_robot_file,
@@ -373,6 +382,12 @@ class EagleEyeInterface:
             "/field-files",
             "upload_field_file",
             self.upload_field_file,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/field-files/<string:year>/<path:filename>/scale",
+            "save_field_file_scale",
+            self.save_field_file_scale,
             methods=["POST"],
         )
         self.app.add_url_rule(
@@ -1619,6 +1634,86 @@ class EagleEyeInterface:
             "modified": file_stat.st_mtime,
         }
 
+    def _asset_metadata_path(self, file_path: Path) -> Path:
+        """Return the sidecar metadata path for a model asset."""
+        return file_path.with_name(f"{file_path.name}{MODEL_ASSET_METADATA_SUFFIX}")
+
+    def _read_asset_metadata(self, file_path: Path) -> dict[str, Any]:
+        """Read optional model metadata from the asset sidecar file."""
+        metadata_path = self._asset_metadata_path(file_path)
+        if not metadata_path.is_file():
+            return {}
+
+        try:
+            with metadata_path.open("r", encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+        except (OSError, json.JSONDecodeError) as exc:
+            self.log(f"Warning: Could not read asset metadata {metadata_path}: {exc}")
+            return {}
+
+        return metadata if isinstance(metadata, dict) else {}
+
+    def _write_asset_metadata(
+        self, file_path: Path, metadata: dict[str, Any]
+    ) -> None:
+        """Write model metadata beside the GLB asset."""
+        metadata_path = self._asset_metadata_path(file_path)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        with metadata_path.open("w", encoding="utf-8") as metadata_file:
+            json.dump(metadata, metadata_file, indent=2, sort_keys=True)
+            metadata_file.write("\n")
+
+    def _delete_asset_metadata(self, file_path: Path) -> None:
+        """Delete optional sidecar metadata for a removed model asset."""
+        metadata_path = self._asset_metadata_path(file_path)
+        if metadata_path.is_file():
+            metadata_path.unlink()
+
+    def _asset_scale(self, file_path: Path) -> float:
+        """Return the saved positive scale factor for a model asset."""
+        raw_scale = self._read_asset_metadata(file_path).get(ASSET_SCALE_KEY)
+        try:
+            scale = float(raw_scale)
+        except (TypeError, ValueError):
+            return DEFAULT_ASSET_SCALE
+
+        if not np.isfinite(scale) or scale <= 0:
+            return DEFAULT_ASSET_SCALE
+
+        return scale
+
+    def _save_asset_scale(self, file_path: Path, scale: float) -> None:
+        """Persist a positive scale factor for a model asset."""
+        metadata = self._read_asset_metadata(file_path)
+        metadata[ASSET_SCALE_KEY] = scale
+        self._write_asset_metadata(file_path, metadata)
+
+    def _asset_scale_from_request(self) -> float:
+        """Parse and validate an asset scale value from JSON or form data."""
+        payload: dict[str, Any] = {}
+        get_json = getattr(request, "get_json", None)
+        if callable(get_json):
+            json_payload = get_json(silent=True)
+            if isinstance(json_payload, dict):
+                payload = json_payload
+
+        raw_scale = payload.get(ASSET_SCALE_KEY, request.form.get(ASSET_SCALE_KEY))
+        try:
+            scale = float(raw_scale)
+        except (TypeError, ValueError):
+            raise ValueError("Scale must be a number") from None
+
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError("Scale must be a positive number")
+
+        return scale
+
+    def _robot_file_detail(self, file_path: Path) -> dict[str, Any]:
+        """Return robot GLB metadata including saved scale."""
+        detail = self._asset_file_details(file_path)
+        detail[ASSET_SCALE_KEY] = self._asset_scale(file_path)
+        return detail
+
     def _webui_asset_url(self, relative_path: Path) -> str:
         """Return the frontend URL for an asset path relative to assets/."""
         return f"/assets/{relative_path.as_posix()}"
@@ -1693,6 +1788,7 @@ class EagleEyeInterface:
         detail["path"] = f"{year}/{FIELD_FILE_DIR_NAME}/{file_path.name}"
         detail["asset_path"] = relative_path.as_posix()
         detail["url"] = self._webui_asset_url(relative_path)
+        detail[ASSET_SCALE_KEY] = self._asset_scale(file_path)
         detail["game_pieces"] = game_pieces
         detail["game_piece_urls"] = [game_piece["url"] for game_piece in game_pieces]
         apriltag_map = self._field_apriltag_map_detail(file_path.name, year)
@@ -1752,7 +1848,7 @@ class EagleEyeInterface:
         try:
             robot_dir = self._robot_assets_dir()
             files = [
-                self._asset_file_details(file_path)
+                self._robot_file_detail(file_path)
                 for file_path in robot_dir.iterdir()
                 if (
                     file_path.is_file()
@@ -1797,12 +1893,43 @@ class EagleEyeInterface:
 
             return {
                 "success": True,
-                "file": self._asset_file_details(destination),
+                "file": self._robot_file_detail(destination),
             }, 200
         except ValueError as e:
             return {"error": str(e)}, 400
         except Exception as e:
             self.log(f"Error uploading robot file: {e}")
+            return {"error": str(e)}, 500
+
+    def save_robot_file_scale(self, filename: str) -> tuple[dict, int]:
+        """
+        Save the 3D viewer scale factor for a robot GLB file.
+
+        Args:
+            filename: Robot model filename.
+
+        Returns:
+            Tuple of response dict and status code.
+        """
+        try:
+            safe_filename = self._sanitize_asset_filename(filename)
+            file_path = self._robot_assets_dir() / safe_filename
+
+            if not file_path.is_file():
+                return {"error": "File not found"}, 404
+
+            scale = self._asset_scale_from_request()
+            self._save_asset_scale(file_path, scale)
+            self.log(f"Saved robot file scale {scale} for {safe_filename}")
+
+            return {
+                "success": True,
+                "file": self._robot_file_detail(file_path),
+            }, 200
+        except ValueError as e:
+            return {"error": str(e)}, 400
+        except Exception as e:
+            self.log(f"Error saving robot file scale: {e}")
             return {"error": str(e)}, 500
 
     def delete_robot_file(self, filename: str) -> tuple[dict, int]:
@@ -1826,6 +1953,7 @@ class EagleEyeInterface:
                 return {"error": "Path is not a file"}, 400
 
             file_path.unlink()
+            self._delete_asset_metadata(file_path)
             self.log(f"Deleted robot file {safe_filename}")
 
             return {"success": True}, 200
@@ -1923,6 +2051,41 @@ class EagleEyeInterface:
             self.log(f"Error uploading field file: {e}")
             return {"error": str(e)}, 500
 
+    def save_field_file_scale(self, year: str, filename: str) -> tuple[dict, int]:
+        """
+        Save the 3D viewer scale factor for a field GLB file.
+
+        Args:
+            year: Field game year/directory name.
+            filename: Field model filename.
+
+        Returns:
+            Tuple of response dict and status code.
+        """
+        try:
+            safe_year = self._sanitize_field_year(year)
+            safe_filename = self._sanitize_asset_filename(filename)
+            file_path = self._field_file_assets_dir(safe_year) / safe_filename
+
+            if not file_path.is_file():
+                return {"error": "File not found"}, 404
+
+            scale = self._asset_scale_from_request()
+            self._save_asset_scale(file_path, scale)
+            self.log(
+                f"Saved field file scale {scale} for {safe_year}/{safe_filename}"
+            )
+
+            return {
+                "success": True,
+                "file": self._field_file_detail(file_path, safe_year),
+            }, 200
+        except ValueError as e:
+            return {"error": str(e)}, 400
+        except Exception as e:
+            self.log(f"Error saving field file scale: {e}")
+            return {"error": str(e)}, 500
+
     def delete_field_file(self, year: str, filename: str) -> tuple[dict, int]:
         """
         Delete a field GLB file.
@@ -1946,6 +2109,7 @@ class EagleEyeInterface:
                 return {"error": "Path is not a file"}, 400
 
             file_path.unlink()
+            self._delete_asset_metadata(file_path)
             for extension in APRILTAG_MAP_EXTENSIONS:
                 map_path = (
                     self._field_apriltag_map_assets_dir(safe_year)

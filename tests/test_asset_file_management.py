@@ -23,9 +23,14 @@ class _FakeRequest:
         self,
         files: dict[str, Any] | None = None,
         form: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
     ) -> None:
         self.files = files or {}
         self.form = form or {}
+        self.json_data = json_data
+
+    def get_json(self, silent: bool = False) -> dict[str, Any] | None:
+        return self.json_data
 
 
 class _FakeDracoCache:
@@ -70,6 +75,7 @@ def test_robot_files_are_listed_uploaded_and_draco_prepared(
     assert status == 200
     assert payload["robots"] == ["Practice.glb"]
     assert payload["file_details"][0]["filename"] == "Practice.glb"
+    assert payload["file_details"][0]["scale"] == 1.0
 
     monkeypatch.setattr(
         web_server,
@@ -80,10 +86,50 @@ def test_robot_files_are_listed_uploaded_and_draco_prepared(
 
     assert status == 200
     assert payload["file"]["filename"] == "New_Bot.glb"
+    assert payload["file"]["scale"] == 1.0
     assert (robot_dir / "New_Bot.glb").read_bytes() == b"new"
     assert interface.draco_asset_cache.resolved_paths == [
         Path("robots") / "New_Bot.glb"
     ]
+
+
+def test_robot_file_scale_is_saved_to_metadata(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    webui_dir = _setup_webui_assets(tmp_path, monkeypatch)
+    robot_dir = webui_dir / "assets" / "robots"
+    robot_path = robot_dir / "Practice.glb"
+    robot_path.write_bytes(b"robot")
+    interface = _interface()
+
+    monkeypatch.setattr(
+        web_server,
+        "request",
+        _FakeRequest(json_data={"scale": 0.25}),
+    )
+    payload, status = interface.save_robot_file_scale("Practice.glb")
+
+    assert status == 200
+    assert payload["file"]["scale"] == 0.25
+    assert (
+        robot_dir / "Practice.glb.metadata.json"
+    ).read_text(encoding="utf-8") == '{\n  "scale": 0.25\n}\n'
+
+    payload, status = interface.get_robot_files()
+
+    assert status == 200
+    assert payload["file_details"][0]["scale"] == 0.25
+
+    monkeypatch.setattr(
+        web_server,
+        "request",
+        _FakeRequest(json_data={"scale": 0}),
+    )
+    payload, status = interface.save_robot_file_scale("Practice.glb")
+
+    assert status == 400
+    assert payload["error"] == "Scale must be a positive number"
 
 
 def test_robot_upload_requires_explicit_overwrite(
@@ -141,6 +187,7 @@ def test_field_files_are_grouped_uploaded_and_deleted(
     assert field_detail["path"] == "2025/field_files/Field.glb"
     assert field_detail["asset_path"] == "fields/2025/field_files/Field.glb"
     assert field_detail["url"] == "/assets/fields/2025/field_files/Field.glb"
+    assert field_detail["scale"] == 1.0
     assert field_detail["game_piece_urls"] == [
         "/assets/fields/2025/game_pieces/Piece.glb"
     ]
@@ -162,6 +209,7 @@ def test_field_files_are_grouped_uploaded_and_deleted(
     assert status == 200
     assert payload["file"]["path"] == "2026/field_files/Custom_Field.glb"
     assert payload["file"]["url"] == "/assets/fields/2026/field_files/Custom_Field.glb"
+    assert payload["file"]["scale"] == 1.0
     assert payload["file"]["game_piece_urls"] == []
     assert (
         payload["file"]["apriltag_map_url"]
@@ -183,6 +231,42 @@ def test_field_files_are_grouped_uploaded_and_deleted(
     assert status == 200
     assert payload == {"success": True}
     assert not field_path.exists()
+
+
+def test_field_file_scale_is_saved_and_deleted_with_asset(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    webui_dir = _setup_webui_assets(tmp_path, monkeypatch)
+    field_dir = webui_dir / "assets" / "fields" / "2025" / "field_files"
+    field_path = field_dir / "Field.glb"
+    field_path.write_bytes(b"field")
+    interface = _interface()
+
+    monkeypatch.setattr(
+        web_server,
+        "request",
+        _FakeRequest(form={"scale": "2.5"}),
+    )
+    payload, status = interface.save_field_file_scale("2025", "Field.glb")
+
+    assert status == 200
+    assert payload["file"]["scale"] == 2.5
+    metadata_path = field_dir / "Field.glb.metadata.json"
+    assert metadata_path.exists()
+
+    payload, status = interface.get_field_files()
+
+    assert status == 200
+    assert payload["file_details"][0]["scale"] == 2.5
+
+    monkeypatch.setattr(web_server, "request", _FakeRequest())
+    payload, status = interface.delete_field_file("2025", "Field.glb")
+
+    assert status == 200
+    assert payload == {"success": True}
+    assert not field_path.exists()
+    assert not metadata_path.exists()
 
 
 def test_asset_upload_rejects_invalid_names(

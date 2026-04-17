@@ -13,7 +13,9 @@
       "Bash(python -m pytest:*)",
       "Bash(uv run pytest:*)",
       "Bash(mkdir -p /Users/darkeden/EagleEye-Vision-System/src/webui/public)",
-      "Bash(cp /Users/darkeden/EagleEye-Vision-System/src/webui/assets/favicon.ico /Users/darkeden/EagleEye-Vision-System/src/webui/public/favicon.ico)"
+      "Bash(cp /Users/darkeden/EagleEye-Vision-System/src/webui/assets/favicon.ico /Users/darkeden/EagleEye-Vision-System/src/webui/public/favicon.ico)",
+      "Bash(awk '/^    def get_available_operations/,/^    def _operation_has_visualization/' /Users/darkeden/EagleEye-Vision-System/src/webui/web_server.py)",
+      "Bash(awk '/^    def _normalize_dynamic_group_config/,/^    def _reorder_operation_params/' /Users/darkeden/EagleEye-Vision-System/src/webui/web_server.py)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -83,6 +83,9 @@ class ViewManager {
                         {
                             gamePieceUrls: fieldModel?.gamePieceUrls,
                             aprilTagMapUrl: fieldModel?.aprilTagMapUrl,
+                            fieldScale: fieldModel?.fieldScale,
+                            fieldYear: fieldModel?.fieldYear,
+                            fieldFilename: fieldModel?.fieldFilename,
                         },
                     );
                 }

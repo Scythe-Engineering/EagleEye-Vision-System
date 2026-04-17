@@ -37,19 +37,32 @@ let statsDisplay;
 let frameCount = 0;
 let lastTime = performance.now();
 let robotObject = null;
+let fieldObject = null;
 let robotAxes = null;
 let animationStarted = false;
 let detectedObjectsGroup = null;
 let pendingDetectedObjects = null;
 let currentLoadToken = 0;
 let gamePieces = [];
+let gamePieceObjects = [];
 let currentRobotLoader = null;
 let robotFileSelectListenerAttached = false;
+let currentRobotFile = null;
+let currentRobotScaleFactor = 1;
+let lastRobotTransformMatrix = null;
+let currentFieldScaleFactor = 1;
+let currentFieldYear = null;
+let currentFieldFilename = null;
 
 let maxFPS = 30;
 let interval = 1 / maxFPS;
 
-const robotScaleMatrix = new Matrix4().makeScale(1000, 1000, 1000);
+const robotBaseScale = 1000;
+const robotScaleMatrix = new Matrix4().makeScale(
+    robotBaseScale,
+    robotBaseScale,
+    robotBaseScale,
+);
 const robotFinalMatrix = new Matrix4();
 const detectionCylinderRadius = 150;
 const detectionCylinderHeight = 400;
@@ -78,6 +91,81 @@ function buildBackendAssetUrl(assetPath) {
         return `${BACKEND_BASE_URL}${normalizedPath}`;
     }
     return assetPath;
+}
+
+function normalizeAssetScale(scale) {
+    const numericScale = Number.parseFloat(scale);
+    return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
+}
+
+function updateRobotScaleMatrix() {
+    const scale = robotBaseScale * currentRobotScaleFactor;
+    robotScaleMatrix.makeScale(scale, scale, scale);
+}
+
+function refreshRobotMatrix() {
+    if (!robotObject) {
+        return;
+    }
+
+    if (lastRobotTransformMatrix) {
+        robotFinalMatrix.multiplyMatrices(
+            lastRobotTransformMatrix,
+            robotScaleMatrix,
+        );
+        robotObject.matrixAutoUpdate = false;
+        robotObject.matrix.copy(robotFinalMatrix);
+        robotObject.matrixWorldNeedsUpdate = true;
+        return;
+    }
+
+    const scale = robotBaseScale * currentRobotScaleFactor;
+    robotObject.matrixAutoUpdate = true;
+    robotObject.scale.set(scale, scale, scale);
+}
+
+function applyRobotScaleFactor(scale) {
+    currentRobotScaleFactor = normalizeAssetScale(scale);
+    updateRobotScaleMatrix();
+    refreshRobotMatrix();
+}
+
+function applyFieldScaleFactor(scale) {
+    currentFieldScaleFactor = normalizeAssetScale(scale);
+    if (fieldObject) {
+        fieldObject.scale.set(
+            currentFieldScaleFactor,
+            currentFieldScaleFactor,
+            currentFieldScaleFactor,
+        );
+    }
+
+    for (const gamePieceObject of gamePieceObjects) {
+        gamePieceObject.scale.set(
+            currentFieldScaleFactor,
+            currentFieldScaleFactor,
+            currentFieldScaleFactor,
+        );
+    }
+
+    if (renderer?.shadowMap) {
+        renderer.shadowMap.needsUpdate = true;
+    }
+}
+
+export function apply3DAssetScale(assetType, asset, scale) {
+    if (assetType === "robot" && asset?.filename === currentRobotFile) {
+        applyRobotScaleFactor(scale);
+        return;
+    }
+
+    if (
+        assetType === "field" &&
+        asset?.year === currentFieldYear &&
+        asset?.filename === currentFieldFilename
+    ) {
+        applyFieldScaleFactor(scale);
+    }
 }
 
 function getLoadingElements() {
@@ -435,6 +523,9 @@ export async function init3DView(modelUrl, options = {}) {
     statsDisplay.style.zIndex = "10";
 
     const scale = 40;
+    currentFieldScaleFactor = normalizeAssetScale(options.fieldScale);
+    currentFieldYear = options.fieldYear || null;
+    currentFieldFilename = options.fieldFilename || null;
 
     await populateRobotDropdown();
     loadingTracker.finish("setup");
@@ -472,7 +563,10 @@ export async function init3DView(modelUrl, options = {}) {
         // Clear the scene
         scene.clear();
         scene = null;
+        fieldObject = null;
         detectedObjectsGroup = null;
+        gamePieceObjects = [];
+        gamePieces = [];
 
         // Dispose and cleanup existing WebGLRenderer to prevent context leaks
         if (renderer) {
@@ -508,7 +602,14 @@ export async function init3DView(modelUrl, options = {}) {
 
     scene.background = new Color(0x222222);
 
-    function loadRobot(robotFile) {
+    function selectedRobotScale() {
+        const selectedOption = robotFileSelect.selectedOptions?.[0];
+        return normalizeAssetScale(
+            selectedOption?.dataset.scale || robotFileSelect.value,
+        );
+    }
+
+    function loadRobot(robotFile, scaleFactor = selectedRobotScale()) {
         if (loadToken !== currentLoadToken) {
             return;
         }
@@ -517,6 +618,9 @@ export async function init3DView(modelUrl, options = {}) {
             return;
         }
 
+        currentRobotFile = robotFile;
+        lastRobotTransformMatrix = null;
+        applyRobotScaleFactor(scaleFactor);
         console.log("Loading robot:", robotFile);
         loadingTracker.start("robot", "robot model");
         try {
@@ -534,7 +638,11 @@ export async function init3DView(modelUrl, options = {}) {
                         return;
                     }
                     robotObject = gltf.scene;
-                    robotObject.scale.set(1000, 1000, 1000);
+                    robotObject.scale.set(
+                        robotBaseScale * currentRobotScaleFactor,
+                        robotBaseScale * currentRobotScaleFactor,
+                        robotBaseScale * currentRobotScaleFactor,
+                    );
 
                     robotObject.traverse((child) => {
                         if (child.isMesh) {
@@ -585,7 +693,7 @@ export async function init3DView(modelUrl, options = {}) {
         robotFileSelect.addEventListener("change", () => {
             selectedRobotFile = robotFileSelect.value;
             if (currentRobotLoader) {
-                currentRobotLoader(selectedRobotFile);
+                currentRobotLoader(selectedRobotFile, selectedRobotScale());
             }
         });
         robotFileSelectListenerAttached = true;
@@ -650,8 +758,14 @@ export async function init3DView(modelUrl, options = {}) {
                 return;
             }
             const model = gltf.scene;
+            fieldObject = model;
 
             model.rotation.x = Math.PI / 2;
+            model.scale.set(
+                currentFieldScaleFactor,
+                currentFieldScaleFactor,
+                currentFieldScaleFactor,
+            );
 
             model.traverse((child) => {
                 if (child.isMesh) {
@@ -679,6 +793,7 @@ export async function init3DView(modelUrl, options = {}) {
     );
 
     gamePieces = [];
+    gamePieceObjects = [];
     const gamePieceUrls = Array.isArray(options.gamePieceUrls)
         ? options.gamePieceUrls
         : [
@@ -713,6 +828,12 @@ export async function init3DView(modelUrl, options = {}) {
                     const model = gltf.scene;
 
                     model.rotation.x = Math.PI / 2;
+                    gamePieceObjects.push(model);
+                    model.scale.set(
+                        currentFieldScaleFactor,
+                        currentFieldScaleFactor,
+                        currentFieldScaleFactor,
+                    );
 
                     model.traverse((child) => {
                         if (child.isMesh) {
@@ -946,11 +1067,8 @@ export async function init3DView(modelUrl, options = {}) {
 
 export function updateRobotTransform(transformMatrix) {
     if (robotObject) {
-        robotFinalMatrix.multiplyMatrices(transformMatrix, robotScaleMatrix);
-
-        robotObject.matrixAutoUpdate = false;
-        robotObject.matrix.copy(robotFinalMatrix);
-        robotObject.matrixWorldNeedsUpdate = true;
+        lastRobotTransformMatrix = transformMatrix.clone();
+        refreshRobotMatrix();
     } else {
         console.warn("Robot not initialized yet");
     }
