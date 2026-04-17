@@ -11,22 +11,22 @@ The `GroundPlaneIntersection` operation is a secondary pipeline operation that c
 The operation implements a pinhole camera model for accurate projection:
 
 1. **Bounding Box Extraction**: Extracts 2D bounding boxes from detection dictionaries
-2. **Coordinate Normalization**: Converts pixel coordinates to normalized image coordinates
-3. **Angle Calculation**: Computes horizontal and vertical viewing angles
+2. **Intrinsics Lookup**: Loads the selected camera's intrinsics from the camera config registry
+3. **Ray Calculation**: Converts normalized image coordinates into camera rays using `camera_matrix`
 4. **Ground Projection**: Projects rays onto the ground plane to obtain 3D positions
 
 ### Camera Parameter Integration
 
-- **Camera Height**: Height of camera above ground plane (meters)
-- **Camera Pitch**: Pitch angle of camera (radians, positive = looking down)
-- **Field of View**: Horizontal and vertical FOV (degrees)
+- **Camera Height**: Uses the selected camera extrinsics `z_offset` value (meters)
+- **Camera Pitch**: Uses the selected camera extrinsics `pitch` value (degrees, converted to radians)
+- **Camera Intrinsics**: Selected camera bus ID resolves `camera_matrix` and image size
 
 ## Key Features
 
 ### Accurate 3D Position Estimation
 
 - **Pinhole Model**: Uses accurate trigonometric calculations instead of linear scaling
-- **Camera Pitch Compensation**: Accounts for camera tilt in calculations
+- **Camera Extrinsics Integration**: Reads pitch and height from the camera config editor
 - **Ground Plane Projection**: Projects intersection points onto z=0 plane
 
 ### Robust Processing
@@ -45,34 +45,32 @@ The operation implements a pinhole camera model for accurate projection:
 
 ### Required Parameters
 
-- **camera_height**: Height of camera above ground plane in meters (default: 1.0)
-- **camera_pitch**: Pitch angle of camera in radians (default: 0.0)
-- **fov_horizontal**: Horizontal field of view in degrees (default: 60.0)
-- **fov_vertical**: Vertical field of view in degrees (default: 45.0)
+- **camera_bus_id**: Camera USB bus ID used to resolve intrinsics
 
 ### Optional Parameters
 
 - **pipeline**: Injected pipeline reference for accessing camera information
+- **camera_config_registry**: Injected registry for resolving camera intrinsics and extrinsics
 
 ### Constructor
 
 ```python
 def __init__(
     self,
+    camera_bus_id: str | None = None,
     camera_height: float = 1.0,
     camera_pitch: float = 0.0,
-    fov_horizontal: float = 60.0,
-    fov_vertical: float = 45.0,
     pipeline: Any = None,
+    camera_config_registry: CameraConfigRegistry | None = None,
 ) -> None:
     """Initialize ground plane intersection operation.
 
     Args:
-        camera_height: Height of camera above ground plane in meters
-        camera_pitch: Pitch angle of camera in radians (positive = looking down)
-        fov_horizontal: Horizontal field of view in degrees
-        fov_vertical: Vertical field of view in degrees
+        camera_bus_id: Camera bus ID used to resolve intrinsics.
+        camera_height: Legacy fallback height used when extrinsics are unavailable.
+        camera_pitch: Legacy fallback pitch used when extrinsics are unavailable.
         pipeline: Injected pipeline reference for accessing camera information
+        camera_config_registry: Injected shared camera config registry.
     """
 ```
 
@@ -81,11 +79,13 @@ def __init__(
 ### Processing Flow
 
 1. **Input Validation**: Check if detection is a dictionary with valid bounding box
-2. **Coordinate Extraction**: Extract x_center and y_bottom from bounding box
-3. **Angle Computation**: Calculate horizontal and vertical viewing angles
-4. **Distance Calculation**: Compute distance using camera height and vertical angle
-5. **3D Position**: Calculate x, y, z coordinates on ground plane
-6. **Output Enrichment**: Add `position_3d` field to detection dictionary
+2. **Intrinsics Lookup**: Load camera matrix and image size for the selected camera
+3. **Extrinsics Lookup**: Load `z_offset` and `pitch` for the selected camera
+4. **Coordinate Extraction**: Extract x_center and y_bottom from bounding box
+5. **Ray Projection**: Convert normalized image coordinates into pinhole camera rays
+6. **Distance Calculation**: Compute distance using camera height and vertical angle
+7. **3D Position**: Calculate x, y, z coordinates on ground plane
+8. **Output Enrichment**: Add `position_3d` field to detection dictionary
 
 ### Processing Steps
 
@@ -99,18 +99,20 @@ For each detection:
   - Calculate y_bottom = max(y1, y2)
        |
        v
-Normalize coordinates to [-1, 1] range
+Convert normalized coordinates to pixel coordinates
        |
        v
-Compute angles using pinhole model:
-  - horizontal_angle_rad = atan(x_norm * tan(hfov/2))
-  - vertical_angle_rad = atan(y_norm * tan(vfov/2)) + camera_pitch
+Compute angles using selected camera intrinsics:
+  - x_ray = (x_pixel - cx) / fx
+  - y_ray = (y_pixel - cy) / fy
+  - horizontal_angle_rad = atan(x_ray)
+  - vertical_angle_rad = atan(y_ray) + radians(extrinsics.pitch)
        |
        v
 Check minimum vertical angle (3°)
        |
        v
-Calculate distance = camera_height / tan(vertical_angle)
+Calculate distance = extrinsics.z_offset / tan(vertical_angle)
        |
        v
 Compute 3D position:
@@ -130,10 +132,7 @@ Output: List[Dict[str, Any]] with position_3d field
 {
     "action_name": "ground_plane_intersection",
     "action_params": {
-        "camera_height": 0.5,
-        "camera_pitch": 0.26,
-        "fov_horizontal": 70.0,
-        "fov_vertical": 50.0
+        "camera_bus_id": "0"
     }
 }
 ```
@@ -152,10 +151,7 @@ Output: List[Dict[str, Any]] with position_3d field
       "type": "secondary",
       "name": "ground_plane_intersection",
       "config": {
-        "camera_height": 0.5,
-        "camera_pitch": 0.26,
-        "fov_horizontal": 70.0,
-        "fov_vertical": 50.0
+        "camera_bus_id": "0"
       }
     }
   ]
@@ -167,8 +163,7 @@ Output: List[Dict[str, Any]] with position_3d field
 ```python
 # Update camera parameters during runtime
 ground_plane_op.update_config({
-    "camera_height": 0.6,
-    "camera_pitch": 0.30
+    "camera_bus_id": "1"
 })
 ```
 
@@ -219,22 +214,24 @@ src/secondary_operations/
 **Horizontal Angle:**
 
 ```
-horizontal_angle_rad = atan(x_norm_centered * tan(hfov_rad / 2.0))
-where x_norm_centered = 2.0 * (x_center - 0.5) clipped to [-1, 1]
+x_pixel = clip(x_center, 0.0, 1.0) * image_width
+x_ray = (x_pixel - cx) / fx
+horizontal_angle_rad = atan(x_ray)
 ```
 
 **Vertical Angle:**
 
 ```
-vertical_angle_from_optical_rad = atan(y_norm_centered * tan(vfov_rad / 2.0))
-total_vertical_angle_rad = vertical_angle_from_optical_rad + camera_pitch
-where y_norm_centered = 2.0 * (y_bottom - 0.5) clipped to [-1, 1]
+y_pixel = clip(y_bottom, 0.0, 1.0) * image_height
+y_ray = (y_pixel - cy) / fy
+vertical_angle_from_optical_rad = atan(y_ray)
+total_vertical_angle_rad = vertical_angle_from_optical_rad + radians(extrinsics.pitch)
 ```
 
 **Distance Calculation:**
 
 ```
-distance = camera_height / tan(total_vertical_angle_rad)
+distance = extrinsics.z_offset / tan(total_vertical_angle_rad)
 ```
 
 **3D Position:**
@@ -263,7 +260,7 @@ z_position = 0.0
 
 ### Operation Requirements
 
-- **Camera Calibration**: Requires accurate camera height, pitch, and FOV values
+- **Camera Calibration**: Requires accurate camera intrinsics and extrinsics editor values
 - **Undistorted Input**: Assumes input detections are from undistorted images
 - **Ground Plane**: Assumes flat ground plane at z=0
 
@@ -275,9 +272,9 @@ z_position = 0.0
 
 ### Calibration Guidelines
 
-1. **Camera Height**: Measure from camera optical center to ground
-2. **Camera Pitch**: Positive when camera tilts downward
-3. **Field of View**: Use camera specification or calibration data
+1. **Camera Height**: Set `Z Offset` to the camera optical center height above ground
+2. **Camera Pitch**: Set `Pitch` in the camera extrinsics editor
+3. **Intrinsics**: Upload the camera calibration JSON for the selected bus ID
 4. **Testing**: Validate with known distance measurements
 
 ## Error Handling

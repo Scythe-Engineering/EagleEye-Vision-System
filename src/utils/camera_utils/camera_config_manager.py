@@ -13,8 +13,6 @@ class CameraExtrinsics:
     """Camera extrinsic parameters.
 
     Attributes:
-        horizontal_fov: Horizontal field of view in degrees.
-        vertical_fov: Vertical field of view in degrees.
         pitch: Camera pitch angle in degrees.
         yaw: Camera yaw angle in degrees.
         roll: Camera roll angle in degrees.
@@ -23,8 +21,6 @@ class CameraExtrinsics:
         z_offset: Z position offset in meters.
     """
 
-    horizontal_fov: float = 0.0
-    vertical_fov: float = 0.0
     pitch: float = 0.0
     yaw: float = 0.0
     roll: float = 0.0
@@ -39,8 +35,6 @@ class CameraExtrinsics:
             dict: Dictionary representation of extrinsics.
         """
         return {
-            "horizontal_fov": self.horizontal_fov,
-            "vertical_fov": self.vertical_fov,
             "pitch": self.pitch,
             "yaw": self.yaw,
             "roll": self.roll,
@@ -60,8 +54,6 @@ class CameraExtrinsics:
             CameraExtrinsics: New extrinsics instance.
         """
         return cls(
-            horizontal_fov=data.get("horizontal_fov", 0.0),
-            vertical_fov=data.get("vertical_fov", 0.0),
             pitch=data.get("pitch", 0.0),
             yaw=data.get("yaw", 0.0),
             roll=data.get("roll", 0.0),
@@ -148,22 +140,6 @@ class CameraConfig:
         setattr(self._extrinsics, field_name, value)
         self.save_and_reload_extrinsics()
 
-    def get_horizontal_fov(self) -> float:
-        """Get horizontal field of view.
-
-        Returns:
-            float: Horizontal FOV in degrees.
-        """
-        return self._extrinsics.horizontal_fov
-
-    def get_vertical_fov(self) -> float:
-        """Get vertical field of view.
-
-        Returns:
-            float: Vertical FOV in degrees.
-        """
-        return self._extrinsics.vertical_fov
-
     def get_pitch(self) -> float:
         """Get camera pitch angle.
 
@@ -211,22 +187,6 @@ class CameraConfig:
             float: Z offset in meters.
         """
         return self._extrinsics.z_offset
-
-    def set_horizontal_fov(self, value: float) -> None:
-        """Set horizontal field of view.
-
-        Args:
-            value: Horizontal FOV in degrees.
-        """
-        self._set_and_sync_extrinsics_field("horizontal_fov", value)
-
-    def set_vertical_fov(self, value: float) -> None:
-        """Set vertical field of view.
-
-        Args:
-            value: Vertical FOV in degrees.
-        """
-        self._set_and_sync_extrinsics_field("vertical_fov", value)
 
     def set_pitch(self, value: float) -> None:
         """Set camera pitch angle.
@@ -281,8 +241,7 @@ class CameraConfig:
 
         Args:
             json_data: Dictionary or JSON string containing extrinsic parameters.
-                Expected keys: horizontal_fov, vertical_fov, pitch, yaw, roll,
-                x_offset, y_offset, z_offset.
+                Expected keys: pitch, yaw, roll, x_offset, y_offset, z_offset.
 
         Raises:
             ValueError: If json_data is a string and cannot be parsed.

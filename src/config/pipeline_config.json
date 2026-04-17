@@ -1,1 +1,27 @@
-{}
+{
+    "test": [
+        {
+            "action_name": "device_input.py",
+            "action_params": {
+                "bus_id": "1",
+                "frame_rotation": 0
+            },
+            "position": {
+                "x": 100,
+                "y": 100
+            },
+            "uuid": "op-mo1wkkfr-10tn",
+            "connections": []
+        },
+        {
+            "action_name": "temporal_acceleration_preprocessor_rust.py",
+            "action_params": {},
+            "position": {
+                "x": 140,
+                "y": -100
+            },
+            "uuid": "op-mo1xq325-4bk9",
+            "connections": []
+        }
+    ]
+}
