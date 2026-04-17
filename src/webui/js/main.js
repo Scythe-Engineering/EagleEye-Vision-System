@@ -88,7 +88,7 @@ const convertDataToFieldSpace = (data) => {
 };
 
 window.onload = async () => {
-    populateFieldDropdown();
+    await populateFieldDropdown();
     setupSidebar();
     setupCameraFeedHandlers();
     initializeTerminalHandlers();

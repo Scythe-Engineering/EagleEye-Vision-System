@@ -150,7 +150,9 @@ function renderFieldDropdowns(
     selectedFile,
 ) {
     const latestFields = recordsToFilenameMap(latestFieldRecords);
-    const years = Object.keys(latestFields).sort();
+    const years = Object.keys(latestFields).sort(
+        (a, b) => Number.parseInt(b, 10) - Number.parseInt(a, 10),
+    );
     const nextYear =
         selectedYear && latestFields[selectedYear]
             ? selectedYear
