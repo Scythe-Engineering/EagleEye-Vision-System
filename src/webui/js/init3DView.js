@@ -15,6 +15,7 @@ import {
     TextureLoader,
     CanvasTexture,
     Matrix4,
+    Box3,
     NearestFilter,
     Vector3,
     BufferGeometry,
@@ -64,6 +65,7 @@ const robotScaleMatrix = new Matrix4().makeScale(
     robotBaseScale,
 );
 const robotFinalMatrix = new Matrix4();
+const robotVerticalOffsetMatrix = new Matrix4();
 const detectionCylinderRadius = 150;
 const detectionCylinderHeight = 400;
 const detectionLabelOffset = 250;
@@ -109,10 +111,9 @@ function refreshRobotMatrix() {
     }
 
     if (lastRobotTransformMatrix) {
-        robotFinalMatrix.multiplyMatrices(
-            lastRobotTransformMatrix,
-            robotScaleMatrix,
-        );
+        robotFinalMatrix
+            .multiplyMatrices(lastRobotTransformMatrix, robotScaleMatrix)
+            .multiply(robotVerticalOffsetMatrix);
         robotObject.matrixAutoUpdate = false;
         robotObject.matrix.copy(robotFinalMatrix);
         robotObject.matrixWorldNeedsUpdate = true;
@@ -620,6 +621,7 @@ export async function init3DView(modelUrl, options = {}) {
 
         currentRobotFile = robotFile;
         lastRobotTransformMatrix = null;
+        robotVerticalOffsetMatrix.identity();
         applyRobotScaleFactor(scaleFactor);
         console.log("Loading robot:", robotFile);
         loadingTracker.start("robot", "robot model");
@@ -638,6 +640,10 @@ export async function init3DView(modelUrl, options = {}) {
                         return;
                     }
                     robotObject = gltf.scene;
+
+                    const bbox = new Box3().setFromObject(robotObject);
+                    robotVerticalOffsetMatrix.makeTranslation(0, -bbox.min.y, 0);
+
                     robotObject.scale.set(
                         robotBaseScale * currentRobotScaleFactor,
                         robotBaseScale * currentRobotScaleFactor,
