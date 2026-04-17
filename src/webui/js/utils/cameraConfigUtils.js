@@ -4,8 +4,6 @@ import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
 const EXTRINSICS_KEYS = [
-    "horizontal_fov",
-    "vertical_fov",
     "pitch",
     "yaw",
     "roll",
@@ -15,8 +13,6 @@ const EXTRINSICS_KEYS = [
 ];
 
 const INPUT_ID_BY_KEY = {
-    horizontal_fov: "utils-horizontal-fov",
-    vertical_fov: "utils-vertical-fov",
     pitch: "utils-pitch",
     yaw: "utils-yaw",
     roll: "utils-roll",

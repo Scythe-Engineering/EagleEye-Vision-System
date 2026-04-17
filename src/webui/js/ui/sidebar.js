@@ -11,6 +11,7 @@ import {
     initCameraConfigUtils,
     refreshCameraConfigUtils,
 } from "../utils/cameraConfigUtils.js";
+import { getSelectedFieldModel } from "../dropdown/fieldDropdown.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -75,7 +76,16 @@ class ViewManager {
     handleViewSpecificBehavior(viewId) {
         switch (viewId) {
             case VIEWS.THREE_D:
-                init3DView(FIELD_ASSETS.FIELD_2025_DEFAULT);
+                {
+                    const fieldModel = getSelectedFieldModel();
+                    init3DView(
+                        fieldModel?.url || FIELD_ASSETS.FIELD_2025_DEFAULT,
+                        {
+                            gamePieceUrls: fieldModel?.gamePieceUrls,
+                            aprilTagMapUrl: fieldModel?.aprilTagMapUrl,
+                        },
+                    );
+                }
                 pauseCameraFeeds();
                 break;
             case VIEWS.CAMERA:

@@ -4,6 +4,7 @@ import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
+import { initializeAssetFileManager } from "./settings/assetFileManager.js";
 import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
@@ -92,6 +93,7 @@ window.onload = async () => {
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
     initializeTestVideoManager();
+    initializeAssetFileManager();
     saveSettings();
 
     const systemStatusModule = createSystemStatusModule();

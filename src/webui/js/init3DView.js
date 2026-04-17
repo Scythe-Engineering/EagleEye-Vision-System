@@ -74,6 +74,9 @@ function buildBackendAssetUrl(assetPath) {
     if (normalizedPath.startsWith("/assets/")) {
         return `${BACKEND_BASE_URL}${normalizedPath}`;
     }
+    if (normalizedPath.startsWith("/")) {
+        return `${BACKEND_BASE_URL}${normalizedPath}`;
+    }
     return assetPath;
 }
 
@@ -416,7 +419,7 @@ export function updateDetectedObjects(detections) {
     renderDetectedObjects(detections);
 }
 
-export async function init3DView(modelUrl) {
+export async function init3DView(modelUrl, options = {}) {
     const loadToken = currentLoadToken + 1;
     currentLoadToken = loadToken;
     const loadingTracker = createLoadingTracker(loadToken);
@@ -675,47 +678,64 @@ export async function init3DView(modelUrl) {
         },
     );
 
-    const gamePiecePath =
-        resolvedModelUrl.split("/").slice(0, -2).join("/") +
-        "/game_pieces/" +
-        resolvedModelUrl.split("/").pop().slice(0, 7) +
-        "-GP.glb";
-
     gamePieces = [];
+    const gamePieceUrls = Array.isArray(options.gamePieceUrls)
+        ? options.gamePieceUrls
+        : [
+              resolvedModelUrl.split("/").slice(0, -2).join("/") +
+                  "/game_pieces/" +
+                  resolvedModelUrl.split("/").pop().slice(0, 7) +
+                  "-GP.glb",
+          ];
 
-    const gpLoader = new GLTFLoader();
-    gpLoader.setDRACOLoader(dracoLoader);
-    loadingTracker.start("gamePieces", "game pieces");
-    gpLoader.load(
-        gamePiecePath,
-        (gltf) => {
-            if (loadToken !== currentLoadToken) {
-                return;
+    if (gamePieceUrls.length > 0) {
+        const gpLoader = new GLTFLoader();
+        gpLoader.setDRACOLoader(dracoLoader);
+        let pendingGamePieces = gamePieceUrls.length;
+
+        loadingTracker.start("gamePieces", "game pieces");
+
+        function finishGamePieceLoad() {
+            pendingGamePieces -= 1;
+            if (pendingGamePieces === 0) {
+                loadingTracker.finish("gamePieces");
             }
-            const model = gltf.scene;
+        }
 
-            model.rotation.x = Math.PI / 2;
+        gamePieceUrls.forEach((gamePieceUrl) => {
+            const resolvedGamePieceUrl = buildBackendAssetUrl(gamePieceUrl);
+            gpLoader.load(
+                resolvedGamePieceUrl,
+                (gltf) => {
+                    if (loadToken !== currentLoadToken) {
+                        return;
+                    }
+                    const model = gltf.scene;
 
-            model.traverse((child) => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                    child.geometry.computeVertexNormals();
-                    child.visible = gamePiecesVisible;
-                    gamePieces.push(child);
-                }
-            });
-            scene.add(model);
-            loadingTracker.finish("gamePieces");
-        },
-        undefined,
-        (error) => {
-            loadingTracker.fail(
-                "gamePieces",
-                `Error loading game pieces: ${error}`,
+                    model.rotation.x = Math.PI / 2;
+
+                    model.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            child.geometry.computeVertexNormals();
+                            child.visible = gamePiecesVisible;
+                            gamePieces.push(child);
+                        }
+                    });
+                    scene.add(model);
+                    finishGamePieceLoad();
+                },
+                undefined,
+                (error) => {
+                    console.error(
+                        `Error loading game piece ${resolvedGamePieceUrl}: ${error}`,
+                    );
+                    finishGamePieceLoad();
+                },
             );
-        },
-    );
+        });
+    }
 
     if (!globalThis.__eev_gamePiecesToggleAttached) {
         document
@@ -799,9 +819,11 @@ export async function init3DView(modelUrl) {
         globalThis.__eev_shadowToggleAttached = true;
     }
 
+    const aprilTagMapUrl = options.aprilTagMapUrl || "/frc2025r2.json";
+
     // Add AprilTag images as planes at fiducial transforms
     loadingTracker.start("apriltags", "AprilTags");
-    fetch(`${BACKEND_BASE_URL}/frc2025r2.json`)
+    fetch(buildBackendAssetUrl(aprilTagMapUrl))
         .then((response) => response.json())
         .then((json) => {
             if (loadToken !== currentLoadToken) {
@@ -905,7 +927,10 @@ export async function init3DView(modelUrl) {
                     undefined,
                     (error) => {
                         aprilTagLoadFailed = true;
-                        console.error(`Error loading AprilTag ${tagId}:`, error);
+                        console.error(
+                            `Error loading AprilTag ${tagId}:`,
+                            error,
+                        );
                         finishTag();
                     },
                 );

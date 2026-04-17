@@ -1,7 +1,10 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
-export async function populateRobotDropdown() {
+export async function populateRobotDropdown(selectedRobotFile = null) {
     const robotFileSelect = document.getElementById("robotFileSelect");
+    if (!robotFileSelect) {
+        return;
+    }
 
     async function fetchAvailableRobots() {
         try {
@@ -21,7 +24,8 @@ export async function populateRobotDropdown() {
 
         // Save the currently selected value before clearing
         const previouslySelectedValue =
-            robotFileSelect.selectedIndex > 0 ? robotFileSelect.value : null;
+            selectedRobotFile ||
+            (robotFileSelect.selectedIndex > 0 ? robotFileSelect.value : null);
 
         robotFileSelect.innerHTML =
             "<option disabled selected>Select Robot File</option>";
