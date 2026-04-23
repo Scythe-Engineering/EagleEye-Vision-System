@@ -1,6 +1,22 @@
 const activeNotifications = [];
 const MAX_VISIBLE_NOTIFICATIONS = 4;
 const STACK_OFFSET = 8;
+const NOTIFICATION_AUTO_DISMISS_MS = {
+    success: 3000,
+    warning: 10000,
+    danger: 10000,
+};
+
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const notificationDismissTimeouts = new Map();
+
+function clearNotificationDismissTimeout(notificationId) {
+    const timeoutId = notificationDismissTimeouts.get(notificationId);
+    if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+        notificationDismissTimeouts.delete(notificationId);
+    }
+}
 
 function getNotificationContainer() {
     return document.getElementById("notification-container");
@@ -68,6 +84,7 @@ function updateNotificationPositions() {
 }
 
 function removeNotification(notificationId) {
+    clearNotificationDismissTimeout(notificationId);
     const index = activeNotifications.indexOf(notificationId);
     if (index > -1) {
         activeNotifications.splice(index, 1);
@@ -212,6 +229,12 @@ function showNotification(type, message) {
         notificationElement.classList.remove("notification-enter");
         updateNotificationPositions();
     });
+
+    const dismissMs = NOTIFICATION_AUTO_DISMISS_MS[type] ?? 3000;
+    const dismissId = setTimeout(() => {
+        removeNotification(notificationId);
+    }, dismissMs);
+    notificationDismissTimeouts.set(notificationId, dismissId);
     
     updateClearAllButtonVisibility();
 }
