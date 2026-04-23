@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EagleEyeInterface is a Flask-based web server with SocketIO support that provides camera feed streaming, settings management, and real-time robot position tracking for FIRST robotics applications.
+The EagleEyeInterface is a Flask-based web server that uses Flask-SocketIO for the server process and exposes **Server-Sent Events (SSE)** at `/sse/stream` for the shipped WebUI (heartbeats, robot pose, logs, detections, profiling). Socket.IO remains available for optional clients (for example profiling when a Socket.IO client is attached); the bundled app does not require the browser Socket.IO client for normal operation.
 
 **Base URL:** `http://localhost:5001`
 
@@ -36,15 +36,15 @@ Currently, the API does not require authentication. All endpoints are publicly a
 **Response:** HTML page  
 **Content-Type:** `text/html`
 
-#### GET `/script.js`
+#### GET `/js/main.js`
 
-**Description:** Serves the main JavaScript bundle  
+**Description:** Serves the main JavaScript bundle (Vite build output file `bundle.js` under `src/webui/static/`, exposed at this URL for stable HTML references)  
 **Response:** JavaScript file  
 **Content-Type:** `application/javascript`
 
-#### GET `/main.css`
+#### GET `/style.css`
 
-**Description:** Serves the main CSS stylesheet  
+**Description:** Serves the main CSS stylesheet (built artifact `main.css` in `src/webui/static/`, registered under `/style.css`)  
 **Response:** CSS file  
 **Content-Type:** `text/css`
 
@@ -77,31 +77,32 @@ Currently, the API does not require authentication. All endpoints are publicly a
 
 ### Settings Management
 
-#### GET `/get-settings`
+#### GET `/get-general-conf`
 
-**Description:** Retrieves current application settings from the Constants object  
+**Description:** Reads `src/general_conf.json` merged with defaults (`network_table_address`, `view_stream_downscale`)  
 **Response:**
 
 ```json
 {
-    "setting_name": "value",
-    "another_setting": "value"
+    "network_table_address": "0.0.0.0",
+    "view_stream_downscale": 0.5
 }
 ```
 
 **Status Codes:**
 
 - `200`: Success
+- `500`: Failed to read configuration
 
-#### POST `/save-settings`
+#### POST `/save-general-conf`
 
-**Description:** Updates application settings in the Constants object  
-**Request Body:**
+**Description:** Merges a JSON object into the general configuration file and reapplies validated fields (for example stream downscale)  
+**Request Body:** Partial object; omitted keys keep previous values after merge with defaults.
 
 ```json
 {
-    "setting_name": "new_value",
-    "another_setting": "new_value"
+    "network_table_address": "10.0.0.2",
+    "view_stream_downscale": 0.75
 }
 ```
 
@@ -109,14 +110,15 @@ Currently, the API does not require authentication. All endpoints are publicly a
 
 ```json
 {
-    "message": "Settings updated successfully"
+    "message": "General configuration saved successfully"
 }
 ```
 
 **Status Codes:**
 
-- `200`: Settings updated successfully
-- `500`: Failed to update settings
+- `200`: Configuration saved
+- `400`: Invalid JSON or validation error (for example `view_stream_downscale` out of range)
+- `500`: Failed to persist configuration
 
 ### Camera Management
 
@@ -432,9 +434,13 @@ Or if not found:
 **Content-Type:** `text/event-stream`
 **Events:**
 
-- `heartbeat`: Server heartbeat with timestamp
-- `update_robot_transform`: Robot position updates
+- `heartbeat`: Server heartbeat
+- `update_robot_transform`: Robot position updates (JSON payload)
+- `update_camera_pose`: Per-camera pose updates (JSON payload)
 - `update_detected_objects`: Object detection results
+- `log_update`: Log viewer updates
+- `profiling_update`: Pipeline profiling payloads
+- `pipeline_operation_errors`: Operation error summaries for the pipeline editor
 
 **Status Codes:**
 
@@ -490,9 +496,9 @@ Where:
 }
 ```
 
-### Settings Object
+### General configuration object
 
-The structure depends on the Constants class configuration. Retrieved via `get_config()` method.
+Stored in `src/general_conf.json` and exposed via `/get-general-conf` / `/save-general-conf`. Keys include `network_table_address` (string) and `view_stream_downscale` (number between 0.1 and 1.0).
 
 ### Robot List
 
@@ -564,39 +570,36 @@ All errors are logged using the configured logging function (defaults to `print`
 
 ### JavaScript Client Examples
 
-#### Connecting to WebSocket
+#### Subscribing to realtime updates (SSE)
 
 ```javascript
-const socket = io("http://localhost:5001");
+const es = new EventSource("http://localhost:5001/sse/stream");
 
-socket.on("connect", () => {
-    console.log("Connected to server");
-});
-
-socket.on("update_robot_transform", (data) => {
+es.addEventListener("update_robot_transform", (e) => {
+    const data = JSON.parse(e.data);
     console.log("Robot transform updated:", data.transform_matrix);
 });
 ```
 
-#### Fetching Settings
+#### Fetching general configuration
 
 ```javascript
-fetch("/get-settings")
+fetch("http://localhost:5001/get-general-conf")
     .then((response) => response.json())
     .then((settings) => {
-        console.log("Current settings:", settings);
+        console.log("Current general configuration:", settings);
     });
 ```
 
-#### Updating Settings
+#### Saving general configuration
 
 ```javascript
 const newSettings = {
-    camera_resolution: "1920x1080",
-    detection_threshold: 0.8,
+    network_table_address: "10.0.0.2",
+    view_stream_downscale: 0.75,
 };
 
-fetch("/save-settings", {
+fetch("http://localhost:5001/save-general-conf", {
     method: "POST",
     headers: {
         "Content-Type": "application/json",
@@ -605,7 +608,7 @@ fetch("/save-settings", {
 })
     .then((response) => response.json())
     .then((result) => {
-        console.log("Settings update result:", result.message);
+        console.log("Save result:", result.message);
     });
 ```
 
@@ -748,15 +751,15 @@ fetch(`/stop-visualize/${cameraName}/${pipelineName}`, {
 import requests
 import json
 
-# Get settings
-response = requests.get('http://localhost:5001/get-settings')
+# Get general configuration
+response = requests.get('http://localhost:5001/get-general-conf')
 settings = response.json()
-print(f"Current settings: {settings}")
+print(f"Current general configuration: {settings}")
 
-# Update settings
-new_settings = {"camera_resolution": "1920x1080"}
+# Update general configuration
+new_settings = {"network_table_address": "10.0.0.2", "view_stream_downscale": 0.75}
 response = requests.post(
-    'http://localhost:5001/save-settings',
+    'http://localhost:5001/save-general-conf',
     json=new_settings
 )
 print(f"Update result: {response.json()}")
@@ -892,13 +895,11 @@ interface = EagleEyeInterface(
 - **Fallback Frame Rate:** 30 FPS (for no_image when camera not found)
 - **Thread Safety:** All camera operations use locks
 
-### WebSocket Configuration
+### Realtime transport (SSE and Socket.IO)
 
-- **CORS:** Enabled for all origins (`*`)
-- **Ping Timeout:** 60 seconds
-- **Ping Interval:** 25 seconds
-- **Async Mode:** Threading
-- **Logging:** Disabled for both SocketIO and EngineIO
+- **SSE (`/sse/stream`):** Primary channel used by the bundled WebUI (`EventSource`). CORS headers allow browser connections from allowed origins.
+- **Flask-SocketIO:** Used by the server runtime; optional Socket.IO clients can still connect for events such as `profiling_update` when enabled.
+- **Typical Socket.IO tuning:** CORS `*`, ping timeout 60s, ping interval 25s, async mode threading, EngineIO/SocketIO logging disabled in server configuration.
 
 ## Internal Methods
 
@@ -911,7 +912,7 @@ interface = EagleEyeInterface(
 
 ### Robot Position Tracking
 
-- `update_robot_position(transformation_matrix: np.ndarray)`: Emits robot transform via WebSocket
+- `update_robot_position(transformation_matrix: np.ndarray)`: Emits robot transform to connected realtime clients (SSE stream and compatible Socket.IO subscribers)
 - Validates matrix is 4x4 before processing
 - Converts numpy array to list for JSON serialization
 

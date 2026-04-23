@@ -289,7 +289,7 @@ Specific styling for UI components.
 
 ### Bundle Files (`static/`)
 
-Compiled and optimized static files for production.
+Compiled and optimized static files for production. The Flask server maps them to stable URLs: `bundle.js` is served as **`/js/main.js`**, and `main.css` is served as **`/style.css`**.
 
 #### Files
 

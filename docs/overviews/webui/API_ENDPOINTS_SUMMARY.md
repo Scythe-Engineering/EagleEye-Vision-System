@@ -16,15 +16,15 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Response**: HTML page with the complete application
 - **Use**: Primary entry point for the web application
 
-#### `GET /script.js`
+#### `GET /js/main.js`
 
-- **Purpose**: Serves the main JavaScript bundle
+- **Purpose**: Serves the main JavaScript bundle (Vite output `bundle.js` in static assets)
 - **Response**: JavaScript file containing all frontend logic
 - **Use**: Client-side application code
 
-#### `GET /main.css`
+#### `GET /style.css`
 
-- **Purpose**: Serves the main CSS stylesheet
+- **Purpose**: Serves the main CSS stylesheet (built `main.css` in static assets)
 - **Response**: CSS file with all styling
 - **Use**: Application styling and layout
 

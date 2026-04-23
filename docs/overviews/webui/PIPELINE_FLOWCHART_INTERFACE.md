@@ -9,6 +9,7 @@ The Pipeline Flowchart Interface is a modern, visual pipeline creation and editi
 ### Visual Canvas
 - **Grid-based Layout**: 4000x4000px canvas with a subtle grid background for organized operation placement
 - **Scrollable Area**: Large workspace that allows for complex pipeline layouts beyond the initial viewport
+- **Minimap**: Small overview map (`flowchartMinimap.js`) synced with nodes, connections, and viewport for quick navigation
 - **Clean Interface**: Minimal UI with no zoom/pan controls, focusing on simplicity and ease of use
 
 ### Drag-and-Drop Operations
@@ -39,7 +40,7 @@ The Pipeline Flowchart Interface is a modern, visual pipeline creation and editi
 #### FlowchartRenderer (`rendering.js`)
 - **Purpose**: Orchestrates the rendering of the entire flowchart interface
 - **Key Responsibilities**:
-  - Initializes the canvas, connections manager, and drop zone handling
+  - Initializes the canvas, connections manager, minimap, and drop zone handling
   - Renders operation nodes at their specified positions
   - Manages node lifecycle (creation, updates, removal)
   - Handles drop events from the operations panel
@@ -161,7 +162,8 @@ src/webui/js/pipeline/
 ├── flowchartCanvas.js        # Core canvas management
 ├── flowchartNode.js          # Individual node components
 ├── flowchartConnections.js   # Connection line management (future)
-├── flowchartMinimap.js       # Minimap component (removed for simplicity)
+├── flowchartMinimap.js       # Minimap overview and viewport indicator
+├── interactiveGrid.js        # Grid snapping / interaction helpers used by the canvas
 ├── rendering.js              # Main flowchart renderer
 ├── pipelineCreator.js        # Pipeline state management
 ├── dragDrop.js               # Drag-and-drop utilities

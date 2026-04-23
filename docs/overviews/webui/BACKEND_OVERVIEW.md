@@ -67,16 +67,16 @@ Handles 3D model compression and decompression for web delivery.
 
 ### Static File Endpoints
 - `GET /` - Main web interface
-- `GET /script.js` - Main JavaScript bundle
-- `GET /main.css` - Main CSS stylesheet
+- `GET /js/main.js` - Main JavaScript bundle (serves Vite `bundle.js` from static output)
+- `GET /style.css` - Main CSS stylesheet (serves built `main.css` from static output)
 - `GET /background.webp` - Background image
 - `GET /favicon.ico` - Favicon
 - `GET /frc2025r2.json` - FRC 2025 AprilTag configuration
 - `GET /src/webui/assets/apriltags/<filename>` - AprilTag images
 
 ### Settings Endpoints
-- `GET /get-settings` - Retrieve current settings
-- `POST /save-settings` - Update application settings
+- `GET /get-general-conf` - Read `general_conf.json` merged with defaults
+- `POST /save-general-conf` - Merge JSON into general configuration (`network_table_address`, `view_stream_downscale`, etc.)
 
 ### Camera Endpoints
 - `GET /get-available-cameras` - List available cameras
@@ -87,16 +87,14 @@ Handles 3D model compression and decompression for web delivery.
 - `POST /restart-backend` - Trigger backend restart
 - `GET /get-pipeline-objects` - Retrieve pipeline configuration
 
-## SocketIO Events
+## Realtime updates
 
-### Client to Server
-- Connection establishment and management
-- Real-time communication setup
+### Server-Sent Events (`GET /sse/stream`)
+- **Primary WebUI channel:** `EventSource` in the browser for heartbeats, `update_robot_transform`, `update_camera_pose`, `update_detected_objects`, `log_update`, `profiling_update`, `pipeline_operation_errors`, and related payloads.
 
-### Server to Client
-- `update_robot_transform`: Robot position and orientation updates
-- Connection status updates
-- Error notifications
+### Socket.IO (optional)
+- Flask-SocketIO runs the server; some tooling may attach a Socket.IO client (for example `profiling_update` when `globalThis.socket` is present).
+- **Server to client examples:** `update_robot_transform`, connection lifecycle, errors (when using a Socket.IO client rather than SSE).
 
 ## Data Flow
 

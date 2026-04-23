@@ -4,13 +4,15 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, Any
+
+import ntcore
+
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
 from src.utils.colors import Colors
-from networktables import NetworkTable
 
 # Find project root by walking up from this file's directory until we find 'src'
 current_path = Path(__file__).resolve().parent
@@ -100,7 +102,7 @@ def _get_device_input_bus_ids(
 def generate_all_pipelines(
     web_interface: EagleEyeInterface,
     compute_pool: ComputePool,
-    network_table: NetworkTable,
+    network_table: ntcore.NetworkTable,
     camera_manager,
     camera_config_registry: CameraConfigRegistry,
     logger: Logger,
