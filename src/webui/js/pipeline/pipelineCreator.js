@@ -526,6 +526,17 @@ async function loadPipelineIntoBuilder(pipelineName) {
     }
 }
 
+/**
+ * Re-applies error highlights, thread badges, profiling UI, and camera copy after
+ * a local graph add/remove (no full `renderPipeline`).
+ */
+async function postFlowchartStructureRefresh() {
+    applyPipelineErrorHighlights();
+    await fetchAndUpdateThreadInfo();
+    applySelectedPipelineProfiling();
+    updatePipelineCameraNote();
+}
+
 async function renderCurrentPipeline() {
     if (!flowchartRenderer) {
         return;
@@ -533,12 +544,9 @@ async function renderCurrentPipeline() {
 
     const pipeline = getPipeline();
     const connections = pipelineStore.getConnectionsForRenderer();
-    const options = { connections };
+    const options = { connections, centerView: true };
     await flowchartRenderer.renderPipeline(pipeline, options);
-    applyPipelineErrorHighlights();
-    await fetchAndUpdateThreadInfo();
-    applySelectedPipelineProfiling();
-    updatePipelineCameraNote();
+    await postFlowchartStructureRefresh();
 }
 
 function extractMissingArgumentNames(message) {
@@ -954,7 +962,7 @@ async function removeFromPipeline(instanceId) {
         timestamp: new Date().toISOString(),
     });
 
-    await renderCurrentPipeline();
+    await postFlowchartStructureRefresh();
     autoSavePipeline();
 
     const deviceInputCountAfter = getDeviceInputNodes().length;
@@ -1524,12 +1532,14 @@ async function handleFlowchartPipelineChange(changeEvent) {
             return;
         }
 
-        await renderCurrentPipeline();
+        if (flowchartRenderer) {
+            await flowchartRenderer.addNodeFromStore(node.instanceId);
+        }
         autoSavePipeline();
-        updateRestartIndicator(true);
+        await updateRestartIndicator(true);
         pipelineStore.clearRestartRequired();
         hideAllThreadBadges();
-        updatePipelineCameraNote();
+        await postFlowchartStructureRefresh();
     }
 }
 

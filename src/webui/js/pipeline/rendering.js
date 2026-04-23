@@ -452,7 +452,14 @@ export class FlowchartRenderer {
 
         this.syncAllDynamicNodes();
 
-        // Update minimap with current nodes
+        this.refreshLayoutChrome();
+
+        if (options.centerView !== false) {
+            this.centerViewOnNodes();
+        }
+    }
+
+    refreshLayoutChrome() {
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map(
                 (node) => ({
@@ -467,14 +474,56 @@ export class FlowchartRenderer {
                 this.connections.getConnectionData(),
             );
         }
-
-        // Update grid with operation positions
         this.updateGridOperationPositions();
-
-        // Center view on all operations
-        this.centerViewOnNodes();
-
         this.callbacks.updateRunButton();
+    }
+
+    syncPipelineArrayFromStore() {
+        this.pipeline = pipelineStore.getNodesForRenderer();
+    }
+
+    /**
+     * Append a single new node and wire connections, without full teardown.
+     * Keeps pan/zoom. Centers the view only when the graph was previously empty.
+     */
+    async addNodeFromStore(instanceId) {
+        if (!instanceId) {
+            return;
+        }
+        const wasEmpty = this.nodes.size === 0;
+        this.syncPipelineArrayFromStore();
+        if (this.nodes.has(instanceId)) {
+            this.refreshLayoutChrome();
+            if (wasEmpty) {
+                this.centerViewOnNodes();
+            }
+            return;
+        }
+
+        const item = this.pipeline.find((p) => p.instanceId === instanceId);
+        if (!item) {
+            return;
+        }
+
+        if (!item.position) {
+            const index = this.pipeline.findIndex(
+                (p) => p.instanceId === item.instanceId,
+            );
+            item.position = this.calculateDefaultPosition(
+                index >= 0 ? index : 0,
+                this.pipeline.length,
+            );
+        }
+
+        await this.createNode(item);
+
+        this.restoreConnections(pipelineStore.getConnectionsForRenderer());
+        this.syncAllDynamicNodes();
+        this.updateCycleHighlights();
+        this.refreshLayoutChrome();
+        if (wasEmpty) {
+            this.centerViewOnNodes();
+        }
     }
 
     calculateDefaultPosition(index, total) {
@@ -1102,14 +1151,11 @@ export class FlowchartRenderer {
             node.destroy();
             this.nodes.delete(instanceId);
 
-            if (this.minimap) {
-                this.minimap.updateConnections(
-                    this.connections.getConnectionData(),
-                );
-            }
-
             // Trigger cycle detection after node removal
             this.updateCycleHighlights();
+
+            this.syncPipelineArrayFromStore();
+            this.refreshLayoutChrome();
         }
     }
 
