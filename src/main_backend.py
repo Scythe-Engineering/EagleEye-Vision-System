@@ -28,8 +28,7 @@ from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: 
 from src.utils.device_management_utils.cpu import CPU  # noqa: E402
 from src.utils.get_available_devices import get_available_devices  # noqa: E402
 from src.webui.web_server import DEFAULT_GENERAL_CONF, EagleEyeInterface  # noqa: E402
-from networktables import NetworkTables  # noqa: E402  # ty:ignore[unresolved-import]
-from src.utils.flatpack_schema.schema_manifest import generate_schema_manifest_bytes  # noqa: E402
+import ntcore  # noqa: E402
 
 # Bootstrap Rust modules (removed during uv sync)
 logger.log(
@@ -50,9 +49,7 @@ logger.log(
     f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}"
 )
 
-# Static configuration and NetworkTables schema keying
 current_dir = Path(__file__).parent
-SCHEMA_MANIFEST_KEY = "schema_manifest"
 
 # Ensure general config file exists for NetworkTables initialization
 general_conf_path = "src/general_conf.json"
@@ -75,11 +72,11 @@ class MainBackend:
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
 
-            # NetworkTables wiring and schema publication
-            NetworkTables.initialize(server=general_conf["network_table_address"])
-            self.network_table = NetworkTables.getTable("EagleEye")
-            schema_manifest_payload = generate_schema_manifest_bytes()
-            self.network_table.putRaw(SCHEMA_MANIFEST_KEY, schema_manifest_payload)
+            # NetworkTables wiring
+            _inst = ntcore.NetworkTableInstance.getDefault()
+            _inst.startClient4("EagleEye")
+            _inst.setServer(general_conf["network_table_address"])
+            self.network_table = _inst.getTable("EagleEye")
 
             # Web interface, camera manager, and known camera cache
             self.web_interface = EagleEyeInterface(

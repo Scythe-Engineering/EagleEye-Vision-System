@@ -146,6 +146,10 @@ instance/
 .webassets-cache
 src/webui/generated_assets/
 
+# Camera calibration data used only for local testing.
+src/utils/camera_utils/camera_calibrations/*
+!src/utils/camera_utils/camera_calibrations/.gitkeep
+
 # Scrapy stuff:
 .scrapy
 

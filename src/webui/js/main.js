@@ -5,16 +5,17 @@ import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
-import { updateRobotTransform, updateDetectedObjects } from "./init3DView.js";
+import {
+    updateRobotTransform,
+    updateDetectedObjects,
+    updateCameraPose,
+} from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
 import { createSystemStatusModule } from "./system/systemStatus.js";
+import { cameraPoseToFieldSpaceMatrix } from "./utils/fieldSpaceTransforms.js";
 import "../style.css";
-import { Matrix4 } from "three";
 
-const mmToM = 1000;
-
-// Function to get the currently active view ID
 function getCurrentViewId() {
     // First check URL parameter
     const url = new URL(globalThis.location.href);
@@ -60,32 +61,6 @@ async function refreshPipelineCreator() {
         console.warn("Pipeline creator refresh function not available");
     }
 }
-
-const convertDataToFieldSpace = (data) => {
-    const transform = data.transform_matrix;
-    const resultMatrix = new Matrix4();
-
-    resultMatrix.set(
-        transform[0][0],
-        transform[0][2],
-        transform[0][1],
-        (transform[0][3] - 8.774125) * mmToM,
-        transform[2][0],
-        transform[2][2],
-        transform[2][1],
-        transform[2][3] * mmToM,
-        -transform[1][0],
-        -transform[1][2],
-        -transform[1][1],
-        (-transform[1][3] + 4.025901) * mmToM,
-        transform[3][0],
-        transform[3][1],
-        transform[3][2],
-        transform[3][3],
-    );
-
-    return resultMatrix;
-};
 
 window.onload = async () => {
     await populateFieldDropdown();
@@ -179,8 +154,12 @@ window.onload = async () => {
                 );
 
                 if (isValid4x4Matrix) {
-                    const fieldSpaceTransform = convertDataToFieldSpace(data);
-                    updateRobotTransform(fieldSpaceTransform);
+                    const fieldSpaceTransform = cameraPoseToFieldSpaceMatrix(
+                        data.transform_matrix,
+                    );
+                    if (fieldSpaceTransform) {
+                        updateRobotTransform(fieldSpaceTransform);
+                    }
                 } else {
                     console.warn(
                         "Invalid transformation matrix format received:",
@@ -198,6 +177,36 @@ window.onload = async () => {
                 "Failed to parse SSE update_robot_transform event",
                 err,
             );
+        }
+    });
+
+    es.addEventListener("update_camera_pose", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            const fieldSpaceTransform = cameraPoseToFieldSpaceMatrix(
+                data?.transform_matrix,
+            );
+
+            if (
+                typeof data?.camera_bus_id === "string" &&
+                fieldSpaceTransform !== null
+            ) {
+                updateCameraPose({
+                    cameraBusId: data.camera_bus_id,
+                    cameraName:
+                        typeof data?.camera_name === "string"
+                            ? data.camera_name
+                            : data.camera_bus_id,
+                    transformMatrix: fieldSpaceTransform,
+                    timestampMs: Number.isFinite(data?.timestamp_ms)
+                        ? data.timestamp_ms
+                        : Date.now(),
+                });
+            } else {
+                console.warn("Invalid camera pose SSE payload received:", data);
+            }
+        } catch (err) {
+            console.warn("Failed to parse SSE update_camera_pose event", err);
         }
     });
 

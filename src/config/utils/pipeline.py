@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict
 
 import numpy as np
 from line_profiler import profile
-from networktables import NetworkTable
+import ntcore
 
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.config.utils.flow_manager import FlowManager
@@ -39,7 +39,7 @@ class Pipeline:
         pipeline_config: list[dict[str, Any]],
         web_interface: EagleEyeInterface,
         compute_pool: ComputePool,
-        network_table: NetworkTable,
+        network_table: ntcore.NetworkTable,
         logger: Logger,
         camera_manager: CameraThreadManager | None = None,
         camera_config_registry: CameraConfigRegistry | None = None,
@@ -612,7 +612,7 @@ class Pipeline:
         """
         command_topic = f"{NT_COMMAND_PREFIX}/{self.pipeline_name}/{NT_ACTIVE_COMMAND}"
         try:
-            active_value = bool(self.network_table.getBoolean(command_topic, True))
+            active_value = bool(self.network_table.getEntry(command_topic).getBoolean(True))
         except Exception:
             return True
 

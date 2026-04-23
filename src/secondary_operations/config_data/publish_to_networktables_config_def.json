@@ -17,6 +17,13 @@
             "required": true,
             "restart_for_change": false
         },
+        "schema": {
+            "type": "str",
+            "description": "WPILib struct type: 'auto' detects from value shape, 'pose3d' forces Pose3d, 'pose2d' projects to Pose2d",
+            "default": "auto",
+            "required": false,
+            "restart_for_change": false
+        },
         "data_path": {
             "type": "list",
             "description": "Optional path of keys or indices used to select a nested value from the pipeline data",

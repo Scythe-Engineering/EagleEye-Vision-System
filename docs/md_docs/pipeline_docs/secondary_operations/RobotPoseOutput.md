@@ -4,6 +4,10 @@
 
 The `RobotPoseOutput` operation is a secondary pipeline operation that transmits robot pose information to the EagleEye web interface for real-time visualization and monitoring. This operation provides essential pose data for 3D robot position tracking and field visualization in FRC robotics applications.
 
+This operation expects a robot pose. If your upstream localization operation
+produces camera pose, insert `camera_to_robot_pose` first so the frontend does
+not render the robot with camera tilt and offset baked into it.
+
 ## Architecture
 
 ### Pose Transmission System

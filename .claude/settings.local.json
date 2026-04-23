@@ -17,7 +17,8 @@
       "Bash(awk '/^    def get_available_operations/,/^    def _operation_has_visualization/' /Users/darkeden/EagleEye-Vision-System/src/webui/web_server.py)",
       "Bash(awk '/^    def _normalize_dynamic_group_config/,/^    def _reorder_operation_params/' /Users/darkeden/EagleEye-Vision-System/src/webui/web_server.py)",
       "Bash(python *)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(xargs basename *)"
     ]
   },
   "enableAllProjectMcpServers": true,

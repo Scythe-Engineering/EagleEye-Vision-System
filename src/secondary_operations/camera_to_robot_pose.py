@@ -67,16 +67,17 @@ class CameraToRobotPose(OperationInstance):
         camera_config = self.camera_config_registry.get_config(self.camera_bus_id)
         extrinsics = camera_config.extrinsics
 
+        # stuff in strange order because of coordinate system conversion for both frontend and wpilib/robot
         transform = euler_to_rotation_matrix(
-            pitch=float(extrinsics.pitch),
-            yaw=float(extrinsics.yaw),
+            pitch=float(-extrinsics.yaw),
+            yaw=float(-extrinsics.pitch),
             roll=float(extrinsics.roll),
         )
         transform[:3, 3] = np.array(
             [
-                float(extrinsics.x_offset),
                 float(extrinsics.y_offset),
-                float(extrinsics.z_offset),
+                float(-extrinsics.z_offset),
+                float(extrinsics.x_offset),
             ],
             dtype=float,
         )

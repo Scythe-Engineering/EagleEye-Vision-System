@@ -6,6 +6,8 @@ import json
 import threading
 from typing import Any
 
+import numpy as np
+
 from src.webui.web_server import (
     DEFAULT_VIEW_STREAM_DOWNSCALE,
     EagleEyeInterface,
@@ -270,3 +272,59 @@ def test_save_general_conf_rejects_invalid_view_stream_downscale(
     assert response == {"error": "View stream downscale must be between 0.1 and 1.0"}
     assert VIEW_STREAM_DOWNSCALE_KEY not in saved_config
     assert interface.view_stream_downscale == DEFAULT_VIEW_STREAM_DOWNSCALE
+
+
+def test_update_camera_pose_publishes_camera_pose_event() -> None:
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    published_events: list[tuple[str, dict[str, Any]]] = []
+    interface.available_cameras = {
+        "Front Camera": {"bus_id": "cam0", "name": "Front_Camera"}
+    }
+    interface._publish_event = (
+        lambda event_name, payload: published_events.append((event_name, payload))
+    )
+    interface.log = lambda *_args, **_kwargs: None
+
+    EagleEyeInterface.update_camera_pose(interface, "cam0", np.eye(4, dtype=float))
+
+    assert len(published_events) == 1
+    event_name, payload = published_events[0]
+    assert event_name == "update_camera_pose"
+    assert payload["camera_bus_id"] == "cam0"
+    assert payload["camera_name"] == "Front Camera"
+    assert payload["transform_matrix"] == np.eye(4, dtype=float).tolist()
+    assert isinstance(payload["timestamp_ms"], int)
+
+
+def test_update_camera_pose_falls_back_to_bus_id_when_name_missing() -> None:
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    published_events: list[tuple[str, dict[str, Any]]] = []
+    interface.available_cameras = {}
+    interface._publish_event = (
+        lambda event_name, payload: published_events.append((event_name, payload))
+    )
+    interface.log = lambda *_args, **_kwargs: None
+
+    EagleEyeInterface.update_camera_pose(interface, "cam1", np.eye(4, dtype=float))
+
+    assert len(published_events) == 1
+    assert published_events[0][1]["camera_name"] == "cam1"
+
+
+def test_update_camera_pose_skips_non_finite_values() -> None:
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    published_events: list[tuple[str, dict[str, Any]]] = []
+    messages: list[str] = []
+    interface.available_cameras = {}
+    interface._publish_event = (
+        lambda event_name, payload: published_events.append((event_name, payload))
+    )
+    interface.log = messages.append
+
+    invalid_pose = np.eye(4, dtype=float)
+    invalid_pose[0, 0] = np.nan
+
+    EagleEyeInterface.update_camera_pose(interface, "cam2", invalid_pose)
+
+    assert published_events == []
+    assert messages == ["Skipping publish of camera transform due to non-finite values"]

@@ -1,0 +1,20 @@
+{
+    "class_name": "CameraPoseOutput",
+    "description": "Publishes camera poses to the web interface for 3D visualization.",
+    "category": "proc",
+    "input_nodes": [
+        {
+            "name": "camera_pose",
+            "has_default": false
+        }
+    ],
+    "output_nodes": ["camera_pose"],
+    "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Stable camera bus ID used to key this camera in the 3D viewer.",
+            "required": true,
+            "restart_for_change": false
+        }
+    }
+}

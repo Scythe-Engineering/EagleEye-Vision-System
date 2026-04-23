@@ -1,13 +1,15 @@
+import math
 from typing import Any
 
-from networktables import NetworkTable
+import ntcore
+
 from src.main_operations.definitions.base.base_class import OperationInstance
 
 
 class GetNetworktablesValue(OperationInstance):
     def __init__(
         self,
-        network_table: NetworkTable,
+        network_table: ntcore.NetworkTable,
         network_table_key: str,
     ) -> None:
         """Read data from NetworkTable and output it to downstream operations.
@@ -28,7 +30,8 @@ class GetNetworktablesValue(OperationInstance):
         Returns:
             The value read from NetworkTable, or None if key not found.
         """
-        return self.network_table.getNumber(self.network_table_key, None)
+        val = self.network_table.getEntry(self.network_table_key).getDouble(float("nan"))
+        return None if math.isnan(val) else val
 
     def update_config(self, json_config: dict) -> None:
         """Update the configuration of the network tables updater.

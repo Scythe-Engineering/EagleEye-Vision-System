@@ -23,6 +23,7 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "robot_local_to_field_transform": dummy_data.dummy_robot_local_to_field_input,
         "publish_to_networktables": dummy_data.dummy_networktables_payload,
         "robot_pose_output": dummy_data.dummy_pose_matrix,
+        "camera_pose_output": dummy_data.dummy_pose_matrix,
         "detected_objects_output": dummy_data.dummy_detections_with_positions,
         "angle_to_objects": dummy_data.dummy_detections,
         "tag_filter": dummy_data.dummy_tag_filter_input,

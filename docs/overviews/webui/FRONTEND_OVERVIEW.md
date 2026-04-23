@@ -154,6 +154,28 @@ Three.js-based 3D rendering system (462 lines).
 - Scene initialization and rendering loop
 - Camera controls and viewport management
 
+#### Rotation Conventions
+
+The 3D view keeps the robot and camera markers aligned by applying the same
+shared transform chain in `init3DView.js`:
+
+```javascript
+matrix
+    .multiply(robotPitchRollSwap)
+    .multiply(visualOrientationMatrix)
+    .multiply(extraVisualRollMatrix)
+    .multiply(robotPitchRollSwapInverse);
+```
+
+- `robotPitchRollSwap`: switches the incoming pose into the robot/Three.js
+  visual basis
+- `visualOrientationMatrix`: the fixed `-90°` X rotation used by the scene
+- `extraVisualRollMatrix`: the additional `-90°` Z rotation
+
+Keep the basis swap separate from the roll corrections. In this coordinate
+setup, folding the extra roll into the X rotation makes it behave like a yaw
+instead of a roll.
+
 ## HTML Structure
 
 ### Main Template (`index.html`)

@@ -30,6 +30,7 @@ The divide between secondary and primary operations is complexity, secondary ope
     - `temporal_acceleration_preprocessor_rust.py` (definition class `TemporalAccelerationPreprocessorRustDefinition`)
 - `src/secondary_operations/` — Secondary post-processing steps such as:
     - `device_input.py` (class `DeviceInput`) - Pipeline entry point
+    - `camera_to_robot_pose.py` (class `CameraToRobotPose`)
     - `flatten_pose.py` (class `FlattenPose`)
     - `ground_plane_intersection.py` (class `GroundPlaneIntersection`)
     - `robot_pose_output.py` (class `RobotPoseOutput`)
@@ -85,10 +86,20 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
             }
         },
         {
+            "action_name": "camera_to_robot_pose.py",
+            "action_params": {
+                "camera_bus_id": "front_cam"
+            },
+            "position": {
+                "x": 1000,
+                "y": 160
+            }
+        },
+        {
             "action_name": "flatten_pose.py",
             "action_params": {},
             "position": {
-                "x": 1000,
+                "x": 1150,
                 "y": 160
             }
         },
@@ -96,7 +107,7 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
             "action_name": "robot_pose_output.py",
             "action_params": {},
             "position": {
-                "x": 1300,
+                "x": 1450,
                 "y": 180
             }
         }
@@ -146,6 +157,10 @@ pipelines = generate_all_pipelines(web_interface, compute_pool)
 1. The camera thread manager feeds frames to the appropriate pipeline via `Pipeline.run(frame)`.
 2. Each operation processes the frame and returns the output to the next operation.
 3. The final output could be a transformed frame, a pose matrix, or a domain-specific object, depending on your configuration.
+
+For localization pipelines that publish to the 3D frontend, insert
+`camera_to_robot_pose.py` after `pnp_camera_localization.py` so the frontend
+receives robot pose rather than raw camera pose.
 
 ## Debugging and timing
 

@@ -1,4 +1,4 @@
 {
-    "network_table_address": "10.0.0.62",
-    "view_stream_downscale": 0.5
+    "network_table_address": "localhost",
+    "view_stream_downscale": 0.1
 }

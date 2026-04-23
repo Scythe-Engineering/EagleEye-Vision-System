@@ -333,7 +333,7 @@ class SystemMonitorMixin:
 
     def update_robot_position(self, transformation_matrix: np.ndarray) -> None:
         """
-        Push the tracked robot's transformation matrix to the frontend via websocket.
+        Push the tracked robot's transformation matrix to the frontend via SSE.
 
         Args:
             transformation_matrix (np.ndarray): The new transformation matrix as a 4x4 numpy array.
@@ -352,6 +352,44 @@ class SystemMonitorMixin:
             )
         except Exception:
             self.log("Failed to publish update_robot_transform via SSE")
+
+    def update_camera_pose(
+        self, camera_bus_id: str, transformation_matrix: np.ndarray
+    ) -> None:
+        """Publish a camera pose update for 3D visualization via SSE.
+
+        Args:
+            camera_bus_id: Stable camera identifier used across pipelines and UI.
+            transformation_matrix: 4x4 camera pose transform in world space.
+        """
+        if transformation_matrix.shape != (4, 4):
+            raise ValueError("Transformation matrix must be a 4x4 numpy array.")
+
+        if not np.all(np.isfinite(transformation_matrix)):
+            self.log("Skipping publish of camera transform due to non-finite values")
+            return
+
+        resolved_camera_name: str | None = None
+        for camera_name, camera_info in self.available_cameras.items():
+            if not isinstance(camera_info, dict):
+                continue
+            if str(camera_info.get("bus_id") or "") != str(camera_bus_id):
+                continue
+            resolved_camera_name = str(camera_name)
+            break
+
+        try:
+            self._publish_event(
+                "update_camera_pose",
+                {
+                    "camera_bus_id": str(camera_bus_id),
+                    "camera_name": resolved_camera_name or str(camera_bus_id),
+                    "transform_matrix": transformation_matrix.tolist(),
+                    "timestamp_ms": int(time.time() * 1000),
+                },
+            )
+        except Exception:
+            self.log("Failed to publish update_camera_pose via SSE")
 
     def update_detected_objects(self, detections: list[dict[str, Any]]) -> None:
         """

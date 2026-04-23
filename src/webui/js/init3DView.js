@@ -3,6 +3,7 @@ import {
     PCFSoftShadowMap,
     WebGLRenderer,
     AmbientLight,
+    AxesHelper,
     DirectionalLight,
     PerspectiveCamera,
     Scene,
@@ -15,7 +16,6 @@ import {
     TextureLoader,
     CanvasTexture,
     Matrix4,
-    Box3,
     NearestFilter,
     Vector3,
     BufferGeometry,
@@ -30,6 +30,7 @@ import { OrbitControls } from "OrbitControls";
 import { DRACOLoader } from "DRACOLoader";
 import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
 import { BACKEND_BASE_URL } from "./config.js";
+import { position3DToFieldSpaceVector } from "./utils/fieldSpaceTransforms.js";
 
 let renderer, scene, camera, directionalLight;
 let shadowsEnabled = true;
@@ -42,7 +43,11 @@ let fieldObject = null;
 let robotAxes = null;
 let animationStarted = false;
 let detectedObjectsGroup = null;
+let cameraMarkersGroup = null;
 let pendingDetectedObjects = null;
+const pendingCameraPoses = new Map();
+const cameraMarkers = new Map();
+const cameraVisibility = new Map();
 let currentLoadToken = 0;
 let gamePieces = [];
 let gamePieceObjects = [];
@@ -65,11 +70,32 @@ const robotScaleMatrix = new Matrix4().makeScale(
     robotBaseScale,
 );
 const robotFinalMatrix = new Matrix4();
-const robotVerticalOffsetMatrix = new Matrix4();
+const robotPoseRotationMatrix = new Matrix4();
+const robotPoseTranslationMatrix = new Matrix4();
+const robotPosePosition = new Vector3();
+// The pose comes in robot-space, then gets converted into the Three.js visual
+// basis. Keep the basis swap separate from the visual roll steps:
+// - Y-axis swap: matches the robot object's axis convention
+// - X rotation: the original fixed visual tilt
+// - Z rotation: the extra 90° roll that would otherwise read like yaw here
+const visualOrientationMatrix = new Matrix4().makeRotationX(-Math.PI / 2);
+const extraVisualRollMatrix = new Matrix4().makeRotationZ(-Math.PI / 2);
+// Robot-only pitch correction. Keep this separate from the shared visual basis
+// so camera markers continue using the same transform chain.
+const robotPitchUpMatrix = new Matrix4().makeRotationY(Math.PI / 2);
+const robotActualPitchMatrix = new Matrix4().makeRotationX(-Math.PI / 2);
+const robotPitchRollSwap = new Matrix4().makeRotationY(Math.PI / 2);
+const robotPitchRollSwapInverse = new Matrix4().makeRotationY(-Math.PI / 2);
+const robotCorrectedRotation = new Matrix4();
+const cameraCorrectedRotation = new Matrix4();
 const detectionCylinderRadius = 150;
 const detectionCylinderHeight = 400;
 const detectionLabelOffset = 250;
-const detectionScaleFactor = 1000;
+const cameraFrustumLength = 350;
+const cameraFrustumHalfHeight = 130;
+const cameraFrustumHalfWidth = 160;
+const cameraLabelOffset = 230;
+const cameraPoseStaleTimeoutMs = 2000;
 
 function isAbsoluteUrl(url) {
     return (
@@ -111,18 +137,41 @@ function refreshRobotMatrix() {
     }
 
     if (lastRobotTransformMatrix) {
+        robotPoseRotationMatrix.extractRotation(lastRobotTransformMatrix);
+        robotPosePosition.setFromMatrixPosition(lastRobotTransformMatrix);
+        robotPoseTranslationMatrix.identity().setPosition(robotPosePosition);
+
+        robotCorrectedRotation
+            .copy(robotPitchRollSwap)
+            .multiply(robotPoseRotationMatrix)
+            .multiply(robotPitchRollSwapInverse);
+
         robotFinalMatrix
-            .multiplyMatrices(lastRobotTransformMatrix, robotScaleMatrix)
-            .multiply(robotVerticalOffsetMatrix);
-        robotObject.matrixAutoUpdate = false;
-        robotObject.matrix.copy(robotFinalMatrix);
-        robotObject.matrixWorldNeedsUpdate = true;
-        return;
+            .copy(robotPoseTranslationMatrix)
+            .multiply(robotCorrectedRotation)
+            .multiply(visualOrientationMatrix)
+            .multiply(robotPitchUpMatrix)
+            .multiply(robotActualPitchMatrix)
+            .multiply(robotScaleMatrix);
+    } else {
+        robotFinalMatrix
+            .copy(visualOrientationMatrix)
+            .multiply(robotPitchUpMatrix)
+            .multiply(robotActualPitchMatrix)
+            .multiply(robotScaleMatrix);
     }
 
-    const scale = robotBaseScale * currentRobotScaleFactor;
-    robotObject.matrixAutoUpdate = true;
-    robotObject.scale.set(scale, scale, scale);
+    robotObject.matrixAutoUpdate = false;
+    robotObject.matrix.copy(robotFinalMatrix);
+    robotObject.matrixWorldNeedsUpdate = true;
+}
+
+function applySharedVisualAxisCorrection(matrix) {
+    return matrix
+        .multiply(robotPitchRollSwap)
+        .multiply(visualOrientationMatrix)
+        .multiply(extraVisualRollMatrix)
+        .multiply(robotPitchRollSwapInverse);
 }
 
 function applyRobotScaleFactor(scale) {
@@ -330,6 +379,17 @@ function clearDetectedObjectsGroup() {
     }
 }
 
+function clearCameraMarkersGroup() {
+    while (cameraMarkersGroup && cameraMarkersGroup.children.length > 0) {
+        const child = cameraMarkersGroup.children.pop();
+        if (child) {
+            cameraMarkersGroup.remove(child);
+            disposeObject(child);
+        }
+    }
+    cameraMarkers.clear();
+}
+
 function getHueFromClassIdentifier(classIdentifier) {
     if (
         typeof classIdentifier === "number" &&
@@ -360,20 +420,7 @@ function clampConfidence(confidence) {
 }
 
 function normalizeDetectionPosition(position) {
-    if (!Array.isArray(position) || position.length !== 3) {
-        return null;
-    }
-    const numericPosition = position.map((value) => Number(value));
-    if (numericPosition.some((value) => !Number.isFinite(value))) {
-        return null;
-    }
-    const fieldCenterX = 8.774125;
-    const fieldCenterZ = 4.025901;
-    return new Vector3(
-        (numericPosition[0] - fieldCenterX) * detectionScaleFactor,
-        numericPosition[2] * detectionScaleFactor,
-        (-numericPosition[1] + fieldCenterZ) * detectionScaleFactor,
-    );
+    return position3DToFieldSpaceVector(position);
 }
 
 function createDetectionMaterial(classIdentifier, normalizedConfidence) {
@@ -430,7 +477,11 @@ function buildDetectionLabelText(detection, normalizedConfidence) {
     return `${classLabel} ${confidencePercent}%`;
 }
 
-function createDetectionLabelSprite(labelText) {
+function createLabelSprite(
+    labelText,
+    textColor = "#ffffff",
+    backgroundColor = "rgba(20, 20, 20, 0.8)",
+) {
     const canvas = document.createElement("canvas");
     canvas.width = 512;
     canvas.height = 128;
@@ -439,9 +490,9 @@ function createDetectionLabelSprite(labelText) {
         return null;
     }
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "rgba(20, 20, 20, 0.8)";
+    context.fillStyle = backgroundColor;
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = "#ffffff";
+    context.fillStyle = textColor;
     context.font = "bold 64px Arial";
     context.textAlign = "center";
     context.textBaseline = "middle";
@@ -479,7 +530,7 @@ function createDetectionGroup(detection) {
     );
     detectionGroup.add(cylinder);
     const labelText = buildDetectionLabelText(detection, normalizedConfidence);
-    const labelSprite = createDetectionLabelSprite(labelText);
+    const labelSprite = createLabelSprite(labelText);
     if (labelSprite) {
         labelSprite.position.y = detectionCylinderHeight + detectionLabelOffset;
         detectionGroup.add(labelSprite);
@@ -508,6 +559,258 @@ export function updateDetectedObjects(detections) {
     renderDetectedObjects(detections);
 }
 
+function getCameraVisibilityElements() {
+    return {
+        list: document.getElementById("cameraPoseList"),
+        emptyState: document.getElementById("cameraPoseListEmpty"),
+    };
+}
+
+function getCameraDisplayName(cameraPose) {
+    return String(cameraPose.cameraName || cameraPose.cameraBusId);
+}
+
+function getHueFromIdentifier(identifier) {
+    const key = String(identifier ?? "camera");
+    let hash = 0;
+    for (let index = 0; index < key.length; index += 1) {
+        hash = (hash * 31 + key.charCodeAt(index)) % 360;
+    }
+    return (hash % 360) / 360;
+}
+
+function getCameraAccentColor(cameraBusId) {
+    const color = new Color();
+    color.setHSL(getHueFromIdentifier(cameraBusId), 0.72, 0.58);
+    return color;
+}
+
+function createCameraFrustumMesh(cameraBusId) {
+    const positions = new Float32Array([
+        0,
+        0,
+        0,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+        0,
+        0,
+        0,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        0,
+        0,
+        0,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+        0,
+        0,
+        0,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        -cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        -cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+        cameraFrustumLength,
+        cameraFrustumHalfHeight,
+        cameraFrustumHalfWidth,
+    ]);
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    const material = new LineBasicMaterial({
+        color: getCameraAccentColor(cameraBusId),
+    });
+    const frustum = new LineSegments(geometry, material);
+    frustum.excludeFromShadowToggle = true;
+    return frustum;
+}
+
+function createCameraMarker(cameraPose) {
+    const markerGroup = new Group();
+    markerGroup.matrixAutoUpdate = false;
+    markerGroup.userData.cameraBusId = cameraPose.cameraBusId;
+    markerGroup.userData.labelText = getCameraDisplayName(cameraPose);
+    markerGroup.userData.lastUpdatedMs = cameraPose.timestampMs;
+
+    const axes = new AxesHelper(220);
+    axes.excludeFromShadowToggle = true;
+    markerGroup.add(axes);
+
+    markerGroup.add(createCameraFrustumMesh(cameraPose.cameraBusId));
+
+    const label = createLabelSprite(
+        markerGroup.userData.labelText,
+        getCameraAccentColor(cameraPose.cameraBusId).getStyle(),
+    );
+    if (label) {
+        label.position.set(0, cameraLabelOffset, 0);
+        label.excludeFromShadowToggle = true;
+        markerGroup.add(label);
+    }
+
+    return markerGroup;
+}
+
+function removeCameraMarker(cameraBusId) {
+    const marker = cameraMarkers.get(cameraBusId);
+    if (!marker) {
+        return;
+    }
+
+    if (cameraMarkersGroup) {
+        cameraMarkersGroup.remove(marker);
+    }
+    disposeObject(marker);
+    cameraMarkers.delete(cameraBusId);
+}
+
+function upsertCameraMarker(cameraPose) {
+    if (!cameraMarkersGroup) {
+        return;
+    }
+
+    const labelText = getCameraDisplayName(cameraPose);
+    const existingMarker = cameraMarkers.get(cameraPose.cameraBusId);
+    let marker = existingMarker;
+
+    if (!marker || marker.userData.labelText !== labelText) {
+        if (marker) {
+            removeCameraMarker(cameraPose.cameraBusId);
+        }
+        marker = createCameraMarker(cameraPose);
+        cameraMarkers.set(cameraPose.cameraBusId, marker);
+        cameraMarkersGroup.add(marker);
+    }
+
+    marker.userData.lastUpdatedMs = cameraPose.timestampMs;
+    cameraCorrectedRotation.copy(cameraPose.transformMatrix);
+    applySharedVisualAxisCorrection(cameraCorrectedRotation);
+    marker.matrix.copy(cameraCorrectedRotation);
+    marker.matrixWorldNeedsUpdate = true;
+    marker.visible = cameraVisibility.get(cameraPose.cameraBusId) ?? true;
+}
+
+function pruneStaleCameraPoses(now = Date.now()) {
+    let removedAny = false;
+    for (const [cameraBusId, cameraPose] of pendingCameraPoses.entries()) {
+        if (now - cameraPose.timestampMs <= cameraPoseStaleTimeoutMs) {
+            continue;
+        }
+        pendingCameraPoses.delete(cameraBusId);
+        cameraVisibility.delete(cameraBusId);
+        removeCameraMarker(cameraBusId);
+        removedAny = true;
+    }
+
+    if (removedAny) {
+        renderCameraVisibilityList();
+    }
+}
+
+function renderCameraVisibilityList() {
+    const { list, emptyState } = getCameraVisibilityElements();
+    if (!list || !emptyState) {
+        return;
+    }
+
+    list.replaceChildren();
+
+    const cameraEntries = Array.from(pendingCameraPoses.values()).sort((left, right) =>
+        getCameraDisplayName(left).localeCompare(getCameraDisplayName(right)),
+    );
+
+    emptyState.classList.toggle("hidden", cameraEntries.length > 0);
+    list.classList.toggle("hidden", cameraEntries.length === 0);
+
+    for (const cameraPose of cameraEntries) {
+        const row = document.createElement("label");
+        row.className =
+            "flex items-center justify-between gap-3 cursor-pointer text-sm";
+
+        const text = document.createElement("span");
+        text.className = "truncate";
+        text.textContent = getCameraDisplayName(cameraPose);
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "accent-[#f9c84a] cursor-pointer shrink-0";
+        checkbox.checked = cameraVisibility.get(cameraPose.cameraBusId) ?? true;
+        checkbox.addEventListener("change", (event) => {
+            const isVisible = Boolean(event.target?.checked);
+            cameraVisibility.set(cameraPose.cameraBusId, isVisible);
+            const marker = cameraMarkers.get(cameraPose.cameraBusId);
+            if (marker) {
+                marker.visible = isVisible;
+            }
+        });
+
+        row.append(text, checkbox);
+        list.appendChild(row);
+    }
+}
+
+function syncCameraMarkersFromPending() {
+    pruneStaleCameraPoses();
+    for (const cameraPose of pendingCameraPoses.values()) {
+        upsertCameraMarker(cameraPose);
+    }
+    renderCameraVisibilityList();
+}
+
+export function updateCameraPose(cameraPoseUpdate) {
+    if (
+        !cameraPoseUpdate ||
+        typeof cameraPoseUpdate.cameraBusId !== "string" ||
+        !cameraPoseUpdate.transformMatrix
+    ) {
+        console.warn("Invalid camera pose update:", cameraPoseUpdate);
+        return;
+    }
+
+    const normalizedUpdate = {
+        cameraBusId: cameraPoseUpdate.cameraBusId,
+        cameraName:
+            typeof cameraPoseUpdate.cameraName === "string"
+                ? cameraPoseUpdate.cameraName
+                : cameraPoseUpdate.cameraBusId,
+        transformMatrix: cameraPoseUpdate.transformMatrix.clone(),
+        timestampMs: Number.isFinite(cameraPoseUpdate.timestampMs)
+            ? cameraPoseUpdate.timestampMs
+            : Date.now(),
+    };
+
+    pendingCameraPoses.set(normalizedUpdate.cameraBusId, normalizedUpdate);
+    if (!cameraVisibility.has(normalizedUpdate.cameraBusId)) {
+        cameraVisibility.set(normalizedUpdate.cameraBusId, true);
+    }
+
+    pruneStaleCameraPoses(normalizedUpdate.timestampMs);
+    upsertCameraMarker(normalizedUpdate);
+    renderCameraVisibilityList();
+}
+
 export async function init3DView(modelUrl, options = {}) {
     const loadToken = currentLoadToken + 1;
     currentLoadToken = loadToken;
@@ -534,6 +837,7 @@ export async function init3DView(modelUrl, options = {}) {
     // Clear and destroy existing scene if it exists
     if (scene) {
         clearDetectedObjectsGroup();
+        clearCameraMarkersGroup();
         // Remove all objects from the scene
         while (scene.children.length > 0) {
             const child = scene.children[0];
@@ -566,6 +870,7 @@ export async function init3DView(modelUrl, options = {}) {
         scene = null;
         fieldObject = null;
         detectedObjectsGroup = null;
+        cameraMarkersGroup = null;
         gamePieceObjects = [];
         gamePieces = [];
 
@@ -593,9 +898,13 @@ export async function init3DView(modelUrl, options = {}) {
     detectedObjectsGroup = new Group();
     detectedObjectsGroup.excludeFromShadowToggle = true;
     scene.add(detectedObjectsGroup);
+    cameraMarkersGroup = new Group();
+    cameraMarkersGroup.excludeFromShadowToggle = true;
+    scene.add(cameraMarkersGroup);
     if (pendingDetectedObjects) {
         renderDetectedObjects(pendingDetectedObjects);
     }
+    syncCameraMarkersFromPending();
 
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/gltf/`);
@@ -621,7 +930,6 @@ export async function init3DView(modelUrl, options = {}) {
 
         currentRobotFile = robotFile;
         lastRobotTransformMatrix = null;
-        robotVerticalOffsetMatrix.identity();
         applyRobotScaleFactor(scaleFactor);
         console.log("Loading robot:", robotFile);
         loadingTracker.start("robot", "robot model");
@@ -640,15 +948,6 @@ export async function init3DView(modelUrl, options = {}) {
                         return;
                     }
                     robotObject = gltf.scene;
-
-                    const bbox = new Box3().setFromObject(robotObject);
-                    robotVerticalOffsetMatrix.makeTranslation(0, -bbox.min.y, 0);
-
-                    robotObject.scale.set(
-                        robotBaseScale * currentRobotScaleFactor,
-                        robotBaseScale * currentRobotScaleFactor,
-                        robotBaseScale * currentRobotScaleFactor,
-                    );
 
                     robotObject.traverse((child) => {
                         if (child.isMesh) {
@@ -673,6 +972,7 @@ export async function init3DView(modelUrl, options = {}) {
                     });
 
                     scene.add(robotObject);
+                    refreshRobotMatrix();
                     console.log("Loaded robot:", robotFile);
                     loadingTracker.finish("robot");
                 },
@@ -903,6 +1203,7 @@ export async function init3DView(modelUrl, options = {}) {
             delta += clock.getDelta();
 
             if (delta >= interval) {
+                pruneStaleCameraPoses();
                 renderer.render(scene, camera);
                 updateStats();
                 delta = delta % interval;

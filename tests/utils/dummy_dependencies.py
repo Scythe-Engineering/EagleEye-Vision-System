@@ -36,6 +36,7 @@ class FakeEagleEyeInterface:
     def __init__(self) -> None:
         self.detected_objects_payloads: list[list[dict[str, Any]]] = []
         self.robot_positions: list[np.ndarray] = []
+        self.camera_poses: list[tuple[str, np.ndarray]] = []
         self.operation_errors: list[dict[str, Any]] = []
         self.camera_frames: list[tuple[str, np.ndarray]] = []
 
@@ -44,6 +45,11 @@ class FakeEagleEyeInterface:
 
     def update_detected_objects(self, detections: list[dict[str, Any]]) -> None:
         self.detected_objects_payloads.append(detections)
+
+    def update_camera_pose(
+        self, camera_bus_id: str, transformation_matrix: np.ndarray
+    ) -> None:
+        self.camera_poses.append((camera_bus_id, transformation_matrix))
 
     def publish_operation_errors(self, payload: dict[str, Any]) -> None:
         self.operation_errors.append(payload)
@@ -61,8 +67,37 @@ class FakeNetworkTable:
     def getNumber(self, key: str, default: Any) -> Any:
         return self.values.get(key, default)
 
+    def getEntry(self, key: str) -> Any:  # noqa: N802
+        table = self
+
+        class _Entry:
+            def getDouble(self, default: float) -> float:  # noqa: N802
+                value = table.values.get(key, default)
+                return value if isinstance(value, float | int) else default
+
+        return _Entry()
+
     def putRaw(self, key: str, value: bytes) -> None:
         self.values[key] = value
+
+    def getStructTopic(self, key: str, _value_type: type) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getStructArrayTopic(self, key: str, _value_type: type) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def _make_topic(self, key: str) -> Any:
+        table = self
+
+        class _Topic:
+            def publish(self) -> Any:
+                class _Publisher:
+                    def set(self, value: Any) -> None:
+                        table.values[key] = value
+
+                return _Publisher()
+
+        return _Topic()
 
 
 @dataclass
