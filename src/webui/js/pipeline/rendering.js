@@ -883,9 +883,19 @@ export class FlowchartRenderer {
                     this.cancelConnecting();
                 }
             } else {
-                // Only cancel if it's not a click-click flow (mousedown and mouseup on the same port)
-                const isOriginalOutput = target === event.target;
-                if (!isOriginalOutput) {
+                // Preserve click-click: release on the same source output port without
+                // landing on an input keeps the in-progress wire (mousedown was on output).
+                // Compare to the actual output port element, not event.target (which may be
+                // an input when reconnecting was started from the destination port).
+                const sourceOutputEl =
+                    this.connectingState?.fromNode?.outputPorts?.get(
+                        this.connectingState.fromPort,
+                    );
+                const releasedOnSourceOutput =
+                    Boolean(sourceOutputEl && target) &&
+                    (target === sourceOutputEl ||
+                        sourceOutputEl.contains(target));
+                if (!releasedOnSourceOutput) {
                     this.cancelConnecting();
                 }
             }
@@ -936,13 +946,6 @@ export class FlowchartRenderer {
 
         existingConnections.forEach((id) => {
             this.connections.removeConnection(id);
-            const parts = id.split("-");
-            if (parts.length >= 4) {
-                const [fromId, fromPortName, toId, toPortName] = parts;
-                pipelineStore.removeConnection(
-                    `${pipelineStore.instanceIdToUuid.get(fromId)}-${fromPortName}-${pipelineStore.instanceIdToUuid.get(toId)}-${toPortName}`,
-                );
-            }
         });
 
         const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;

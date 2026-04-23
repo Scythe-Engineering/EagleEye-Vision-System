@@ -65,6 +65,7 @@ Handles visual pipeline creation and configuration.
     - Canvas-based rendering
     - Node positioning and layout
     - Connection line drawing
+    - Removing a flowchart edge calls through to `PipelineStore` so drag-to-disconnect matches auto-save
     - Visual state updates
 
 - **`utils.js`**: Pipeline utility functions (47 lines)

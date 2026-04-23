@@ -252,7 +252,6 @@ export class FlowchartConnections {
                 path.style.opacity = "0";
                 setTimeout(() => {
                     this.removeConnection(connectionId);
-                    this.onConnectionRemoved(connectionId);
                 }, 150);
             }
         });
@@ -350,7 +349,6 @@ export class FlowchartConnections {
                 connection.path.style.opacity = "0";
                 setTimeout(() => {
                     this.removeConnection(connectionId);
-                    this.onConnectionRemoved(connectionId);
                 }, 150);
             }
             menu.remove();
@@ -691,11 +689,23 @@ export class FlowchartConnections {
         }
     }
 
-    removeConnection(connectionId) {
+    /**
+     * Removes a connection from the SVG map and optionally notifies the renderer
+     * to sync PipelineStore (required for disconnect/replace flows).
+     *
+     * @param {string} connectionId
+     * @param {{ notify?: boolean }} [options] - Pass notify: false when tearing
+     *     down visuals during a full re-render (store is rebuilt separately).
+     */
+    removeConnection(connectionId, options = {}) {
+        const notify = options.notify !== false;
         const connection = this.connections.get(connectionId);
         if (connection) {
             connection.group.remove();
             this.connections.delete(connectionId);
+            if (notify) {
+                this.onConnectionRemoved(connectionId);
+            }
         }
     }
 
@@ -715,10 +725,10 @@ export class FlowchartConnections {
     }
 
     clearAllConnections() {
-        for (const [connectionId] of this.connections) {
-            this.removeConnection(connectionId);
+        const ids = [...this.connections.keys()];
+        for (const connectionId of ids) {
+            this.removeConnection(connectionId, { notify: false });
         }
-        this.connections.clear();
     }
 
     setHoverState(connectionId, isHovered) {
@@ -807,6 +817,7 @@ export class FlowchartConnections {
         }
 
         tempPath.id = "temp-connection";
+        tempPath.setAttribute("pointer-events", "none");
 
         // Add transition for morphing effect
         tempPath.style.transition =
