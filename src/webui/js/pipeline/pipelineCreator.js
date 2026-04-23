@@ -1,17 +1,9 @@
 import {
     createDescriptionPopup,
     renderOperations,
-    renderPipeline,
     FlowchartRenderer,
 } from "./rendering.js";
-import {
-    handleDragStart,
-    handleDragEnd,
-    handleDragEnterPipeline,
-    handleDragOverPipeline,
-    handleDragLeavePipeline,
-    handleDropOnPipeline,
-} from "./dragDrop.js";
+import { handleDragStart } from "./dragDrop.js";
 import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
@@ -35,85 +27,14 @@ function handleDragStartWithLogging(
     return handleDragStart(event, item, collection, fromIndex);
 }
 
-function handleDragEndWithLogging(
-    event,
-    pipelineContainer,
-    pipelinePlaceholder,
-    pipeline,
-) {
-    console.log("[PIPELINE] Drag end", {
-        draggedElement: event.target,
-        timestamp: new Date().toISOString(),
-    });
-    return handleDragEnd(
-        event,
-        pipelineContainer,
-        pipelinePlaceholder,
-        pipeline,
-    );
-}
-
-function handleDropOnPipelineWithLogging(
-    event,
-    pipeline,
-    operations,
-    pipelineContainer,
-    pipelinePlaceholder,
-    callbacks,
-) {
-    const pipelineNodes = pipelineStore.getNodes();
-    const pipelineOrderBefore = pipelineNodes.map((node) => ({
-        id: node.operationId,
-        name: node.name,
-        instanceId: node.instanceId,
-    }));
-
-    console.log("[PIPELINE] Drop operation started", {
-        pipelineLengthBefore: pipelineNodes.length,
-        pipelineOrderBefore,
-        dropTarget: event.target,
-        timestamp: new Date().toISOString(),
-    });
-
-    const result = handleDropOnPipeline(
-        event,
-        pipeline,
-        operations,
-        pipelineContainer,
-        pipelinePlaceholder,
-        callbacks,
-    );
-
-    const pipelineNodesAfter = pipelineStore.getNodes();
-    const pipelineOrderAfter = pipelineNodesAfter.map((node) => ({
-        id: node.operationId,
-        name: node.name,
-        instanceId: node.instanceId,
-    }));
-
-    console.log("[PIPELINE] Drop operation completed", {
-        pipelineLengthAfter: pipelineNodesAfter.length,
-        pipelineOrderAfter,
-        orderChanged:
-            JSON.stringify(pipelineOrderBefore.map((p) => p.instanceId)) !==
-            JSON.stringify(pipelineOrderAfter.map((p) => p.instanceId)),
-        lengthChanged: pipelineOrderBefore.length !== pipelineOrderAfter.length,
-        timestamp: new Date().toISOString(),
-    });
-
-    return result;
-}
-
 let isInitialized = false;
 
 let flowchartRenderer = null;
-let useFlowchartMode = true;
 
 const restartRequiredOperations = new Map();
 const PROFILING_STALE_TIMEOUT_MS = 2000;
 
 let pipelineArea;
-let pipelineContainer;
 let pipelinePlaceholder;
 let operationsList;
 let runButton;
@@ -606,25 +527,17 @@ async function loadPipelineIntoBuilder(pipelineName) {
 }
 
 async function renderCurrentPipeline() {
+    if (!flowchartRenderer) {
+        return;
+    }
+
     const pipeline = getPipeline();
     const connections = pipelineStore.getConnectionsForRenderer();
-
-    if (useFlowchartMode && flowchartRenderer) {
-        const options = { connections };
-        await flowchartRenderer.renderPipeline(pipeline, options);
-        applyPipelineErrorHighlights();
-        await fetchAndUpdateThreadInfo();
-        applySelectedPipelineProfiling();
-    } else {
-        renderPipeline(pipeline, pipelineContainer, pipelinePlaceholder, {
-            openOperationSettings,
-            updateRunButton,
-            removeFromPipeline,
-            handleDragStart: handleDragStartWithLogging,
-            handleDragEnd: handleDragEndWithLogging,
-        });
-        applyPipelineErrorHighlights();
-    }
+    const options = { connections };
+    await flowchartRenderer.renderPipeline(pipeline, options);
+    applyPipelineErrorHighlights();
+    await fetchAndUpdateThreadInfo();
+    applySelectedPipelineProfiling();
     updatePipelineCameraNote();
 }
 
@@ -781,34 +694,20 @@ function computeDownstreamErrorUuids() {
 
 function applyPipelineErrorHighlights() {
     computeDownstreamErrorUuids();
-    if (useFlowchartMode && flowchartRenderer) {
-        for (const node of flowchartRenderer.nodes.values()) {
-            const uuid = pipelineStore.instanceIdToUuid.get(node.instanceId);
-            const errorRecord = uuid ? operationErrorsByUuid.get(uuid) : null;
-            const isDownstream = uuid ? downstreamErrorUuids.has(uuid) : false;
-            if (node.setErrorState) {
-                node.setErrorState(errorRecord, isDownstream);
-                applyFlowchartNodeErrorIcon(node, errorRecord);
-            } else {
-                applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream);
-            }
-        }
+    if (!flowchartRenderer) {
         return;
     }
-
-    if (!pipelineContainer) {
-        return;
-    }
-
-    const items = pipelineContainer.querySelectorAll(".pipeline-item");
-    items.forEach((item) => {
-        const instanceId = item.dataset.instanceId;
-        const uuid = pipelineStore.instanceIdToUuid.get(instanceId);
+    for (const node of flowchartRenderer.nodes.values()) {
+        const uuid = pipelineStore.instanceIdToUuid.get(node.instanceId);
         const errorRecord = uuid ? operationErrorsByUuid.get(uuid) : null;
         const isDownstream = uuid ? downstreamErrorUuids.has(uuid) : false;
-
-        applyPipelineItemErrorState(item, errorRecord, isDownstream);
-    });
+        if (node.setErrorState) {
+            node.setErrorState(errorRecord, isDownstream);
+            applyFlowchartNodeErrorIcon(node, errorRecord);
+        } else {
+            applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream);
+        }
+    }
 }
 
 function applyFlowchartNodeErrorIcon(node, errorRecord) {
@@ -910,70 +809,6 @@ function applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream) {
         });
 
         header.appendChild(infoIcon);
-    } else if (!errorRecord && infoIcon) {
-        infoIcon.remove();
-    }
-}
-
-function applyPipelineItemErrorState(item, errorRecord, isDownstream) {
-    item.classList.toggle("pipeline-error-node", Boolean(errorRecord));
-    item.classList.toggle("pipeline-downstream-disabled", Boolean(isDownstream));
-
-    if (errorRecord) {
-        item.style.borderColor = "#ff5c5c";
-        item.style.boxShadow =
-            "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 8px rgba(0,0,0,0.4)";
-    } else {
-        item.style.borderColor = "#404040";
-        item.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
-    }
-
-    let infoIcon = item.querySelector(".pipeline-error-icon");
-    if (errorRecord && !infoIcon) {
-        const header = item.querySelector(".flex.items-center");
-        if (!header) {
-            return;
-        }
-        infoIcon = document.createElement("div");
-        infoIcon.className = "pipeline-error-icon";
-        infoIcon.textContent = "i";
-        infoIcon.style.width = "18px";
-        infoIcon.style.height = "18px";
-        infoIcon.style.borderRadius = "50%";
-        infoIcon.style.backgroundColor = "#ff5c5c";
-        infoIcon.style.color = "#1a1a1a";
-        infoIcon.style.fontSize = "12px";
-        infoIcon.style.fontWeight = "700";
-        infoIcon.style.display = "inline-flex";
-        infoIcon.style.alignItems = "center";
-        infoIcon.style.justifyContent = "center";
-        infoIcon.style.marginLeft = "8px";
-        infoIcon.style.cursor = "default";
-
-        infoIcon.addEventListener("mouseenter", (event) => {
-            showPipelineErrorPopup(errorRecord, event);
-        });
-        infoIcon.addEventListener("mousemove", (event) => {
-            if (pipelineErrorPopup?.classList.contains("opacity-100")) {
-                positionPipelineErrorPopup(
-                    pipelineErrorPopup,
-                    event.clientX,
-                    event.clientY,
-                );
-            }
-        });
-        infoIcon.addEventListener("mouseleave", () => {
-            hidePipelineErrorPopup();
-        });
-
-        const settingsGroup = item.querySelector(
-            ".flex.items-center.gap-2",
-        );
-        if (settingsGroup) {
-            settingsGroup.prepend(infoIcon);
-        } else {
-            header.appendChild(infoIcon);
-        }
     } else if (!errorRecord && infoIcon) {
         infoIcon.remove();
     }
@@ -1105,7 +940,7 @@ async function removeFromPipeline(instanceId) {
 
     pipelineStore.removeNode(instanceId);
 
-    if (useFlowchartMode && flowchartRenderer) {
+    if (flowchartRenderer) {
         flowchartRenderer.removeNode(instanceId);
     }
 
@@ -1135,7 +970,7 @@ async function removeFromPipeline(instanceId) {
 }
 
 function runPipeline() {
-    console.log("Running pipeline:", pipeline);
+    console.log("Running pipeline:", getPipeline());
     alert("Pipeline run! Check console for details.");
 }
 
@@ -1702,8 +1537,10 @@ function initFlowchartRenderer() {
     flowchartCanvas = document.getElementById("flowchartCanvas");
 
     if (!flowchartCanvas) {
-        console.warn("Flowchart canvas not found, falling back to list mode");
-        useFlowchartMode = false;
+        console.error("Flowchart canvas not found (#flowchartCanvas)");
+        showDanger(
+            "Pipeline builder could not start: the flowchart canvas is missing from the page.",
+        );
         return;
     }
 
@@ -1724,7 +1561,6 @@ export async function initPipelineCreator() {
     if (isInitialized) return;
 
     pipelineArea = document.getElementById("pipelineArea");
-    pipelineContainer = document.getElementById("pipelineContainer");
     pipelinePlaceholder = document.getElementById("pipelinePlaceholder");
     operationsList = document.getElementById("operationsList");
     runButton = document.getElementById("runButton");
@@ -1782,87 +1618,6 @@ export async function initPipelineCreator() {
     await checkAndTriggerAutoFill();
 
     updateDeleteButtonVisibility();
-
-    if (!useFlowchartMode) {
-        const setupDragDrop = (element) => {
-            if (!element) return;
-
-            element.addEventListener("dragenter", (e) =>
-                handleDragEnterPipeline(e),
-            );
-            element.addEventListener("dragover", (e) => {
-                if (!getSelectedPipeline()) {
-                    e.preventDefault();
-                    return;
-                }
-                handleDragOverPipeline(e, getPipeline(), pipelineContainer);
-            });
-            element.addEventListener("dragleave", (e) =>
-                handleDragLeavePipeline(e, getPipeline(), pipelinePlaceholder),
-            );
-            element.addEventListener("drop", async (e) => {
-                if (!getSelectedPipeline()) {
-                    console.log(
-                        "[PIPELINE] Cannot drop operations: no pipeline selected",
-                    );
-                    e.preventDefault();
-                    return;
-                }
-
-                const pipelineNodes = getPipeline();
-                const pipelineLengthBefore = pipelineNodes.length;
-                const pipelineOrderBefore = pipelineNodes
-                    .map((item) => item.instanceId)
-                    .join(",");
-
-                handleDropOnPipelineWithLogging(
-                    e,
-                    pipelineNodes,
-                    getOperations(),
-                    pipelineContainer,
-                    pipelinePlaceholder,
-                    {
-                        renderPipeline: () =>
-                            renderPipeline(
-                                getPipeline(),
-                                pipelineContainer,
-                                pipelinePlaceholder,
-                                {
-                                    updateRunButton,
-                                    handleDragStart: handleDragStartWithLogging,
-                                    handleDragEnd: handleDragEndWithLogging,
-                                    removeFromPipeline,
-                                    openOperationSettings,
-                                },
-                            ),
-                        updateRunButton,
-                        openOperationSettings,
-                    },
-                );
-
-                const pipelineNodesAfter = getPipeline();
-                const pipelineOrderAfter = pipelineNodesAfter
-                    .map((item) => item.instanceId)
-                    .join(",");
-                const structureChanged =
-                    pipelineNodesAfter.length !== pipelineLengthBefore ||
-                    pipelineOrderBefore !== pipelineOrderAfter;
-
-                if (structureChanged) {
-                    console.log(
-                        "[PIPELINE] Pipeline structure changed - requiring backend restart",
-                    );
-                    await updateRestartIndicator(true);
-                    pipelineStore.clearRestartRequired();
-                    autoSavePipeline();
-                }
-            });
-        };
-
-        setupDragDrop(pipelineArea);
-        setupDragDrop(pipelineContainer);
-        setupDragDrop(pipelinePlaceholder);
-    }
 
     if (runButton) {
         runButton.addEventListener("click", runPipeline);

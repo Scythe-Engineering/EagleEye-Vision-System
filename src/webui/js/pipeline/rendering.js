@@ -1,4 +1,4 @@
-import { escapeHtml, getIconSVG } from "./utils.js";
+import { escapeHtml } from "./utils.js";
 import { FlowchartCanvas } from "./flowchartCanvas.js";
 import { FlowchartNode } from "./flowchartNode.js";
 import { FlowchartConnections } from "./flowchartConnections.js";
@@ -1214,89 +1214,4 @@ export class FlowchartRenderer {
 
         this.updateCycleHighlights();
     }
-}
-
-export function renderPipeline(
-    pipeline,
-    pipelineContainer,
-    pipelinePlaceholder,
-    callbacks,
-) {
-    pipelineContainer.innerHTML = "";
-
-    const selectedPipeline = globalThis.pipelineCreator?.selectedPipeline;
-    const shouldShowPlaceholder = !selectedPipeline;
-
-    if (shouldShowPlaceholder) {
-        pipelinePlaceholder.classList.remove("hidden");
-        callbacks.updateRunButton();
-        return;
-    }
-
-    pipelinePlaceholder.classList.add("hidden");
-
-    pipeline.forEach((item, index) => {
-        const wrapper = document.createElement("div");
-        wrapper.dataset.instanceId = item.instanceId;
-        wrapper.draggable = true;
-        wrapper.className =
-            "pipeline-item group relative bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg";
-        wrapper.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
-
-        wrapper.innerHTML = `
-        <div class="flex items-center gap-3">
-          <div class="text-gray-600">${getIconSVG("grip")}</div>
-          <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(item.type)}</div>
-          <div class="flex-1">
-            <h3 class="font-semibold text-white truncate max-w-[230px]">${escapeHtml(item.name)}</h3>
-            <p class="text-xs text-gray-500 tracking-wider">Hover for description</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
-              <img src="../../../assets/settings.svg" alt="Settings" class="w-4 h-4 icon-grayscale" />
-            </button>
-            <button class="remove-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Remove"><img src="../../../assets/delete.svg" alt="Delete" class="w-4 h-4 icon-grayscale" /></button>
-          </div>
-        </div>
-      `;
-
-        wrapper.addEventListener("dragstart", (e) =>
-            callbacks.handleDragStart(e, item, index, pipeline),
-        );
-        wrapper.addEventListener("dragend", (e) =>
-            callbacks.handleDragEnd(
-                e,
-                pipelineContainer,
-                pipelinePlaceholder,
-                pipeline,
-            ),
-        );
-
-        addHoverListeners(wrapper, item.name, item.description);
-
-        const removeBtn = wrapper.querySelector(".remove-btn");
-        removeBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            callbacks.removeFromPipeline(item.instanceId);
-        });
-
-        const opSettingsBtn = wrapper.querySelector(".op-settings-btn");
-        if (opSettingsBtn) {
-            opSettingsBtn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                callbacks.openOperationSettings(item);
-            });
-        }
-
-        pipelineContainer.appendChild(wrapper);
-
-        if (index < pipeline.length - 1) {
-            const connector = document.createElement("div");
-            connector.className = "flex justify-center py-1";
-            connector.innerHTML = `<div class="w-0.5 h-6 bg-[#f9c845]"></div>`;
-            pipelineContainer.appendChild(connector);
-        }
-    });
-
-    callbacks.updateRunButton();
 }

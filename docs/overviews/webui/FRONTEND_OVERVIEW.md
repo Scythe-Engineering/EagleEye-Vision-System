@@ -53,12 +53,9 @@ Handles visual pipeline creation and configuration.
     - Settings persistence
     - UI state management
 
-- **`dragDrop.js`**: Drag and drop functionality (302 lines)
+- **`dragDrop.js`**: Sets drag payload for the operations panel so the flowchart canvas can add operations on drop.
 
-    - Element dragging logic
-    - Drop zone management
-    - Visual feedback during drag operations
-    - Event handling for drag interactions
+    - The canvas (`FlowchartRenderer`) owns drop targets, pan/zoom, and connection UI; there is no separate list-based pipeline view.
 
 - **`rendering.js`**: Pipeline visualization rendering (213 lines)
 
