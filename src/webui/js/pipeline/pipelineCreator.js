@@ -46,6 +46,37 @@ let restartIndicator;
 let flowchartCanvas;
 let executionTimestepsList;
 let executionSummaryContent;
+let profilingDetailsOverlay;
+let profilingDetailsBackdrop;
+let profilingDetailsBody;
+let profilingDetailsTitle;
+let profilingDetailsCloseButton;
+let profilingDetailsInfoButton;
+let profilingDetailsAverageCheckbox;
+/**
+ * Running sums for cumulative arithmetic mean of profiling samples (since mode enabled).
+ *
+ * @type {{
+ *   pipelineName: string,
+ *   snapshotCount: number,
+ *   frameWall: { sum: number, n: number },
+ *   operations: Map<
+ *     string,
+ *     { sumMs: number, n: number, name: string, timestep: number, thread: number }
+ *   >,
+ *   timesteps: Map<
+ *     number,
+ *     {
+ *       sumWall: number,
+ *       sumMaxOpTime: number,
+ *       sumOpCount: number,
+ *       n: number,
+ *       lastMaxName: string | null,
+ *     }
+ *   >,
+ * } | null}
+ */
+let profilingAverageAccumulator = null;
 let profilingStaleIntervalId = null;
 
 let pipelineErrorPopup;
@@ -261,10 +292,467 @@ function renderExecutionSummary(snapshot) {
         <div class="text-[#9ad1a8]">FPS: ${estimatedFps.toFixed(1)}</div>`;
 }
 
+/**
+ * @param {number} thread
+ * @returns {string}
+ */
+function profilingThreadSwatchHtml(thread) {
+    const t = Number(thread);
+    const color = getProfilingThreadColor(t);
+    const label = !Number.isFinite(t) || t <= 0 ? "—" : `Thread ${t}`;
+    return `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10" style="background-color:${color}"></span><span class="text-[#ddd]">${label}</span></span>`;
+}
+
+function clearProfilingAverageState() {
+    profilingAverageAccumulator = null;
+}
+
+/**
+ * @param {string} pipelineName
+ */
+function ensureProfilingAverageAccumulator(pipelineName) {
+    if (
+        !profilingAverageAccumulator ||
+        profilingAverageAccumulator.pipelineName !== pipelineName
+    ) {
+        profilingAverageAccumulator = {
+            pipelineName,
+            snapshotCount: 0,
+            frameWall: { sum: 0, n: 0 },
+            operations: new Map(),
+            timesteps: new Map(),
+        };
+    }
+}
+
+/**
+ * Incorporates one profiling snapshot into cumulative means.
+ *
+ * @param {Record<string, any>} snapshot
+ * @param {string} pipelineName
+ */
+function mergeProfilingSnapshotIntoAverage(snapshot, pipelineName) {
+    ensureProfilingAverageAccumulator(pipelineName);
+    const a = profilingAverageAccumulator;
+    if (!a) {
+        return;
+    }
+    const ft = Number(snapshot.frame_time_ms);
+    if (Number.isFinite(ft) && ft > 0) {
+        a.frameWall.sum += ft;
+        a.frameWall.n += 1;
+    }
+    for (const [uuid, row] of Object.entries(snapshot.operations || {})) {
+        const ms = Number(row.execution_time_ms);
+        if (!Number.isFinite(ms) || ms < 0) {
+            continue;
+        }
+        let st = a.operations.get(uuid);
+        if (!st) {
+            st = {
+                sumMs: 0,
+                n: 0,
+                name: "",
+                timestep: -1,
+                thread: 0,
+            };
+        }
+        st.sumMs += ms;
+        st.n += 1;
+        st.name = String(row.name ?? "");
+        const ts = Number(row.timestep);
+        st.timestep = Number.isFinite(ts) ? ts : st.timestep;
+        const th = Number(row.thread);
+        st.thread = Number.isFinite(th) ? th : st.thread;
+        a.operations.set(uuid, st);
+    }
+    for (const row of snapshot.timesteps || []) {
+        const t = Number(row.timestep);
+        if (!Number.isFinite(t)) {
+            continue;
+        }
+        let ts = a.timesteps.get(t);
+        if (!ts) {
+            ts = {
+                sumWall: 0,
+                sumMaxOpTime: 0,
+                sumOpCount: 0,
+                n: 0,
+                lastMaxName: null,
+            };
+        }
+        const wall = Number(row.total_time_ms);
+        const mx = Number(row.max_operation_time_ms);
+        const cnt = Number(row.operation_count);
+        if (Number.isFinite(wall) && wall >= 0) {
+            ts.sumWall += wall;
+        }
+        if (Number.isFinite(mx) && mx >= 0) {
+            ts.sumMaxOpTime += mx;
+        }
+        if (Number.isFinite(cnt) && cnt >= 0) {
+            ts.sumOpCount += cnt;
+        }
+        ts.n += 1;
+        if (row.max_operation_name) {
+            ts.lastMaxName = String(row.max_operation_name);
+        }
+        a.timesteps.set(t, ts);
+    }
+    a.snapshotCount += 1;
+}
+
+/**
+ * @param {Record<string, any>} latest
+ * @returns {Record<string, any>}
+ */
+function buildProfilingAverageDisplaySnapshot(latest) {
+    const a = profilingAverageAccumulator;
+    if (!a || a.snapshotCount <= 0) {
+        return latest;
+    }
+    const operations = {};
+    for (const [uuid, st] of a.operations) {
+        const avgMs = st.n > 0 ? st.sumMs / st.n : 0;
+        operations[uuid] = {
+            name: st.name,
+            timestep: st.timestep,
+            thread: st.thread,
+            execution_time_ms: avgMs,
+        };
+    }
+    const latestTimesteps = latest.timesteps || [];
+    const timesteps = [...a.timesteps.keys()]
+        .sort((x, y) => x - y)
+        .map((t) => {
+            const ts = a.timesteps.get(t);
+            const fromLatest = latestTimesteps.find(
+                (r) => Number(r?.timestep) === t,
+            );
+            return {
+                timestep: t,
+                total_time_ms: ts && ts.n > 0 ? ts.sumWall / ts.n : 0,
+                max_operation_time_ms:
+                    ts && ts.n > 0 ? ts.sumMaxOpTime / ts.n : 0,
+                operation_count: ts && ts.n > 0 ? ts.sumOpCount / ts.n : 0,
+                max_operation_name:
+                    (ts && ts.lastMaxName) || fromLatest?.max_operation_name,
+                max_operation_uuid: fromLatest?.max_operation_uuid ?? null,
+            };
+        });
+    const frameMs =
+        a.frameWall.n > 0
+            ? a.frameWall.sum / a.frameWall.n
+            : Number(latest.frame_time_ms);
+    return {
+        ...latest,
+        frame_time_ms: Number.isFinite(frameMs)
+            ? frameMs
+            : latest.frame_time_ms,
+        operations,
+        timesteps,
+    };
+}
+
+/**
+ * @param {Record<string, any>|null|undefined} snapshot
+ * @param {string} pipelineName
+ * @param {{ cumulativeAverage?: boolean, mergeCount?: number }} [hint]
+ * @returns {string}
+ */
+function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
+    if (!snapshot) {
+        return `<p class="text-[#888] text-sm leading-relaxed">No profiling snapshot is stored yet for <span class="text-[#f9c845]">${escapeHtml(pipelineName)}</span>. Run the pipeline and wait for updates over SSE.</p>`;
+    }
+
+    const ops = snapshot.operations || {};
+    const timestepRows = [...(snapshot.timesteps || [])].sort(
+        (a, b) => (a?.timestep ?? 0) - (b?.timestep ?? 0),
+    );
+    const frameMs = Number(snapshot.frame_time_ms);
+    const fps =
+        Number.isFinite(frameMs) && frameMs > 0
+            ? (1000 / frameMs).toFixed(1)
+            : "—";
+    const seq = snapshot.frame_seq != null ? String(snapshot.frame_seq) : "—";
+    const tsMs = Number(snapshot.timestamp_ms);
+    const tsLabel = Number.isFinite(tsMs)
+        ? new Date(tsMs).toLocaleString()
+        : "—";
+
+    const parts = [];
+    parts.push(
+        `<div class="rounded-lg border border-[#3a3a3a] bg-[#181818] p-4 mb-5">`,
+    );
+    parts.push(
+        `<div class="text-xs uppercase tracking-wide text-[#888] mb-2">Current snapshot</div>`,
+    );
+    if (hint.cumulativeAverage && (hint.mergeCount ?? 0) > 0) {
+        parts.push(
+            `<p class="text-[#9ad1a8] text-xs mb-2 leading-relaxed">Cumulative arithmetic mean of each numeric field over <span class="font-semibold">${hint.mergeCount}</span> profiling update(s) since this mode was enabled (converges toward stable values as samples grow; not a rolling window).</p>`,
+        );
+    }
+    parts.push(`<div class="grid gap-2 text-sm">`);
+    parts.push(
+        `<div><span class="text-[#888]">Pipeline</span> · <span class="text-[#f1f1f1] font-medium">${escapeHtml(pipelineName)}</span></div>`,
+    );
+    parts.push(
+        `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${Number.isFinite(frameMs) && frameMs > 0 ? `${frameMs.toFixed(2)} ms` : "—"}</span>` +
+            (fps !== "—"
+                ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>`
+                : "") +
+            `</div>`,
+    );
+    parts.push(
+        `<div><span class="text-[#888]">Frame sequence</span> · <span class="text-[#f1f1f1]">${escapeHtml(seq)}</span></div>`,
+    );
+    parts.push(
+        `<div><span class="text-[#888]">Recorded at</span> · <span class="text-[#f1f1f1]">${escapeHtml(tsLabel)}</span></div>`,
+    );
+    parts.push(`</div></div>`);
+
+    parts.push(
+        `<h4 class="text-[#f9c845] text-sm font-semibold mb-2 border-b border-[#414141] pb-1">By timestep</h4>`,
+    );
+    parts.push(
+        `<p class="text-[#888] text-xs mb-3 leading-relaxed">Each timestep runs a group of operations (they may overlap on different threads). <span class="text-[#c9c9c9]">Wall</span> is measured around the whole group; <span class="text-[#c9c9c9]">Σ ops</span> is the sum of per-operation execution times for that timestep.</p>`,
+    );
+
+    if (timestepRows.length === 0) {
+        parts.push(
+            `<p class="text-[#666] text-xs mb-4">No timestep rows in this snapshot.</p>`,
+        );
+    } else {
+        for (const row of timestepRows) {
+            const tsN = Number(row?.timestep) || 0;
+            const { sumMs } = analyzeTimestepOperations(ops, tsN);
+            const wallMs = Number(row?.total_time_ms) || 0;
+            const opEntries = Object.entries(ops).filter(
+                ([, op]) => Number(op?.timestep) === tsN,
+            );
+            opEntries.sort((a, b) => {
+                const ta = Number(a[1]?.thread) || 0;
+                const tb = Number(b[1]?.thread) || 0;
+                if (ta !== tb) {
+                    return ta - tb;
+                }
+                return String(a[1]?.name || "").localeCompare(
+                    String(b[1]?.name || ""),
+                );
+            });
+            const dispSum = sumMs > 0 ? sumMs : wallMs;
+            const countFromPayload = Number(row?.operation_count);
+            parts.push(
+                `<div class="mb-4 rounded-md border border-[#3a3a3a] overflow-hidden bg-[#1a1a1a]">`,
+            );
+            parts.push(
+                `<div class="px-3 py-2 bg-[#252525] flex flex-wrap gap-x-3 gap-y-1 text-xs">`,
+            );
+            parts.push(
+                `<span class="font-semibold text-[#f9c845]">Timestep ${tsN}</span>`,
+            );
+            parts.push(
+                `<span class="text-[#aaa]">wall <span class="text-[#f1f1f1]">${wallMs.toFixed(2)} ms</span></span>`,
+            );
+            parts.push(
+                `<span class="text-[#aaa]">Σ ops <span class="text-[#f1f1f1]">${dispSum.toFixed(2)} ms</span></span>`,
+            );
+            if (Number.isFinite(countFromPayload)) {
+                parts.push(
+                    `<span class="text-[#aaa]">count <span class="text-[#f1f1f1]">${countFromPayload}</span></span>`,
+                );
+            }
+            parts.push(`</div>`);
+            if (row?.max_operation_name) {
+                parts.push(
+                    `<div class="px-3 py-1.5 text-xs text-[#ac8a2f] border-b border-[#333]">Heaviest op this frame: <span class="text-[#e8e8e8]">${escapeHtml(String(row.max_operation_name))}</span> (${Number(row?.max_operation_time_ms || 0).toFixed(2)} ms)</div>`,
+                );
+            }
+            parts.push(
+                `<table class="w-full text-xs border-collapse"><thead><tr class="bg-[#222] text-left text-[#c9c9c9]"><th class="px-3 py-1.5 font-medium">Operation</th><th class="px-3 py-1.5 font-medium w-32">Thread</th><th class="px-3 py-1.5 font-medium w-24 text-right">Time (ms)</th></tr></thead><tbody>`,
+            );
+            if (!opEntries.length) {
+                parts.push(
+                    `<tr><td colspan="3" class="px-3 py-2 text-[#666]">No operation rows for this timestep.</td></tr>`,
+                );
+            } else {
+                for (const [uuid, op] of opEntries) {
+                    const name = escapeHtml(
+                        String(op?.name ?? uuid.slice(0, 8)),
+                    );
+                    const th = Number(op?.thread);
+                    const ms = Number(op?.execution_time_ms);
+                    const msStr = Number.isFinite(ms) ? ms.toFixed(2) : "—";
+                    parts.push(
+                        `<tr class="border-t border-[#2f2f2f]"><td class="px-3 py-1.5 text-[#e4e4e4]">${name}</td><td class="px-3 py-1.5">${profilingThreadSwatchHtml(th)}</td><td class="px-3 py-1.5 text-right text-[#e4e4e4] font-mono">${msStr}</td></tr>`,
+                    );
+                }
+            }
+            parts.push(`</tbody></table></div>`);
+        }
+    }
+
+    parts.push(
+        `<h4 class="text-[#f9c845] text-sm font-semibold mt-6 mb-2 border-b border-[#414141] pb-1">By thread</h4>`,
+    );
+    parts.push(
+        `<p class="text-[#888] text-xs mb-3 leading-relaxed">All operations in this snapshot, grouped by worker thread. Each row is one operation at a timestep with its measured execution time.</p>`,
+    );
+
+    const byThread = new Map();
+    for (const [uuid, op] of Object.entries(ops)) {
+        let th = Number(op?.thread);
+        if (!Number.isFinite(th)) {
+            th = 0;
+        }
+        const step = Number(op?.timestep);
+        const stepLabel =
+            Number.isFinite(step) && step >= 0 ? String(step) : "—";
+        const arr = byThread.get(th) || [];
+        arr.push({
+            timestep: stepLabel,
+            name: String(op?.name ?? "—"),
+            ms: Number(op?.execution_time_ms),
+            uuid,
+        });
+        byThread.set(th, arr);
+    }
+    const threads = [...byThread.keys()].sort((a, b) => a - b);
+    if (!threads.length) {
+        parts.push(
+            `<p class="text-[#666] text-xs">No operations in this snapshot.</p>`,
+        );
+    } else {
+        for (const th of threads) {
+            const rows = byThread.get(th) || [];
+            rows.sort((a, b) => {
+                const cmp = String(a.timestep).localeCompare(
+                    String(b.timestep),
+                    undefined,
+                    { numeric: true },
+                );
+                if (cmp !== 0) {
+                    return cmp;
+                }
+                return a.name.localeCompare(b.name);
+            });
+            const subtotal = rows.reduce((s, r) => {
+                const m = Number(r.ms);
+                return s + (Number.isFinite(m) && m > 0 ? m : 0);
+            }, 0);
+            parts.push(
+                `<div class="mb-4 rounded-md border border-[#3a3a3a] overflow-hidden bg-[#1a1a1a]">`,
+            );
+            parts.push(
+                `<div class="px-3 py-2 bg-[#252525] text-xs font-semibold text-[#e8e8e8] flex items-center gap-2">${profilingThreadSwatchHtml(th)}<span class="text-[#888] font-normal">Σ ${subtotal.toFixed(2)} ms</span></div>`,
+            );
+            parts.push(
+                `<table class="w-full text-xs border-collapse"><thead><tr class="bg-[#222] text-left text-[#c9c9c9]"><th class="px-3 py-1.5 font-medium w-20">Timestep</th><th class="px-3 py-1.5 font-medium">Operation</th><th class="px-3 py-1.5 font-medium w-24 text-right">Time (ms)</th></tr></thead><tbody>`,
+            );
+            for (const r of rows) {
+                const ms = Number(r.ms);
+                const msStr = Number.isFinite(ms) ? ms.toFixed(2) : "—";
+                parts.push(
+                    `<tr class="border-t border-[#2f2f2f]"><td class="px-3 py-1.5 text-[#c9c9c9] font-mono">${escapeHtml(String(r.timestep))}</td><td class="px-3 py-1.5 text-[#e4e4e4]">${escapeHtml(r.name)}</td><td class="px-3 py-1.5 text-right font-mono text-[#e4e4e4]">${msStr}</td></tr>`,
+                );
+            }
+            parts.push(`</tbody></table></div>`);
+        }
+    }
+
+    return parts.join("");
+}
+
+/**
+ * Refreshes the profiling details modal when it is open.
+ *
+ * @param {Record<string, any>|null|undefined} snapshot - Snapshot from
+ *   `applyProfilingSnapshot`, `null` to show the empty state, or `undefined`
+ *   to load the latest snapshot for the currently selected pipeline.
+ */
+function refreshProfilingDetailsPopupIfVisible(snapshot) {
+    if (
+        !profilingDetailsOverlay ||
+        profilingDetailsOverlay.classList.contains("hidden")
+    ) {
+        return;
+    }
+    const selected = getSelectedPipeline();
+    const pipelineName = selected?.name || "—";
+    let snapshotForView = snapshot;
+    if (snapshot === undefined) {
+        snapshotForView = selected?.name
+            ? pipelineStore.getProfilingSnapshot(selected.name)
+            : null;
+    }
+    if (!profilingDetailsBody || !profilingDetailsTitle) {
+        return;
+    }
+
+    const useAvg = Boolean(profilingDetailsAverageCheckbox?.checked);
+    let displaySnapshot = snapshotForView;
+    const hint = {
+        cumulativeAverage: false,
+        mergeCount: 0,
+    };
+
+    if (useAvg && snapshotForView && selected?.name) {
+        mergeProfilingSnapshotIntoAverage(snapshotForView, selected.name);
+        displaySnapshot = buildProfilingAverageDisplaySnapshot(snapshotForView);
+        hint.cumulativeAverage = true;
+        hint.mergeCount = profilingAverageAccumulator?.snapshotCount ?? 0;
+    }
+
+    profilingDetailsBody.innerHTML = buildProfilingDetailsHtml(
+        displaySnapshot,
+        pipelineName,
+        hint,
+    );
+    profilingDetailsTitle.textContent = selected?.name
+        ? `Profiling — ${selected.name}`
+        : "Profiling details";
+}
+
+function profilingDetailsOnKeydown(event) {
+    if (event.key === "Escape") {
+        event.preventDefault();
+        closeProfilingDetailsPopup();
+    }
+}
+
+function closeProfilingDetailsPopup() {
+    if (
+        !profilingDetailsOverlay ||
+        profilingDetailsOverlay.classList.contains("hidden")
+    ) {
+        return;
+    }
+    profilingDetailsOverlay.classList.add("hidden");
+    profilingDetailsOverlay.setAttribute("aria-hidden", "true");
+    document.removeEventListener("keydown", profilingDetailsOnKeydown, true);
+}
+
+function openProfilingDetailsPopup() {
+    const selected = getSelectedPipeline();
+    if (!selected?.name) {
+        showWarning("Select a pipeline first.");
+        return;
+    }
+    if (!profilingDetailsOverlay) {
+        return;
+    }
+    document.removeEventListener("keydown", profilingDetailsOnKeydown, true);
+    profilingDetailsOverlay.classList.remove("hidden");
+    profilingDetailsOverlay.setAttribute("aria-hidden", "false");
+    document.addEventListener("keydown", profilingDetailsOnKeydown, true);
+    refreshProfilingDetailsPopupIfVisible(undefined);
+}
+
 function clearProfilingUI() {
     hideAllProfilingBadges();
     renderExecutionTimestepsPanel(null);
     renderExecutionSummary(null);
+    refreshProfilingDetailsPopupIfVisible(null);
 }
 
 function applyProfilingSnapshot(snapshot) {
@@ -293,6 +781,7 @@ function applyProfilingSnapshot(snapshot) {
 
     renderExecutionTimestepsPanel(snapshot);
     renderExecutionSummary(snapshot);
+    refreshProfilingDetailsPopupIfVisible(snapshot);
 }
 
 function applySelectedPipelineProfiling() {
@@ -1690,6 +2179,45 @@ export async function initPipelineCreator() {
     executionSummaryContent = document.getElementById(
         "executionSummaryContent",
     );
+    profilingDetailsOverlay = document.getElementById(
+        "profilingDetailsOverlay",
+    );
+    profilingDetailsBackdrop = document.getElementById(
+        "profilingDetailsBackdrop",
+    );
+    profilingDetailsBody = document.getElementById("profilingDetailsBody");
+    profilingDetailsTitle = document.getElementById("profilingDetailsTitle");
+    profilingDetailsCloseButton = document.getElementById(
+        "profilingDetailsCloseButton",
+    );
+    profilingDetailsInfoButton = document.getElementById(
+        "profilingDetailsInfoButton",
+    );
+    profilingDetailsAverageCheckbox = document.getElementById(
+        "profilingDetailsAverageCheckbox",
+    );
+
+    if (profilingDetailsBackdrop) {
+        profilingDetailsBackdrop.addEventListener("click", () => {
+            closeProfilingDetailsPopup();
+        });
+    }
+    if (profilingDetailsCloseButton) {
+        profilingDetailsCloseButton.addEventListener("click", () => {
+            closeProfilingDetailsPopup();
+        });
+    }
+    if (profilingDetailsInfoButton) {
+        profilingDetailsInfoButton.addEventListener("click", () => {
+            openProfilingDetailsPopup();
+        });
+    }
+    if (profilingDetailsAverageCheckbox) {
+        profilingDetailsAverageCheckbox.addEventListener("change", () => {
+            clearProfilingAverageState();
+            refreshProfilingDetailsPopupIfVisible(undefined);
+        });
+    }
 
     createDescriptionPopup();
 

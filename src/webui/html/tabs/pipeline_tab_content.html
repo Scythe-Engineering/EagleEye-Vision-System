@@ -132,6 +132,15 @@
                                 <div class="text-[#888]">No profiling data</div>
                             </div>
                         </div>
+                        <button
+                            type="button"
+                            id="profilingDetailsInfoButton"
+                            class="mt-0.5 shrink-0 w-7 h-7 rounded-full border border-[#414141] bg-[#2a2a2a] hover:bg-[#3a3a3a] hover:border-[#f9c845]/50 text-[#f9c845] text-xs font-bold leading-none flex items-center justify-center transition-colors"
+                            title="Open profiling details for the current pipeline"
+                            aria-label="Profiling details"
+                        >
+                            i
+                        </button>
                     </div>
 
                     <!-- Pipeline Placeholder (shown when empty) -->
@@ -197,6 +206,79 @@
                 ></div>
 
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Profiling details (live for selected pipeline while open) -->
+<div
+    id="profilingDetailsOverlay"
+    class="hidden fixed inset-0 z-[60]"
+    aria-hidden="true"
+>
+    <div
+        id="profilingDetailsBackdrop"
+        class="absolute inset-0 bg-black/60"
+        aria-hidden="true"
+    ></div>
+    <div
+        class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none"
+    >
+        <div
+            id="profilingDetailsModal"
+            class="pointer-events-auto w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl bg-[#1f1f1f] border border-[#414141] overflow-hidden"
+            style="box-shadow: 12px 12px 24px rgba(0, 0, 0, 0.55);"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profilingDetailsTitle"
+        >
+            <div
+                class="flex items-center gap-3 px-5 py-4 bg-[#1E1E1E] border-b border-[#414141] shrink-0"
+            >
+                <h3
+                    id="profilingDetailsTitle"
+                    class="text-lg font-semibold text-[#f9c845] min-w-0 truncate shrink"
+                >
+                    Profiling details
+                </h3>
+                <div class="flex-1 min-w-[8px]"></div>
+                <label
+                    class="flex items-center gap-2 cursor-pointer select-none shrink-0 text-xs text-[#b8b8b8] hover:text-[#e4e4e4]"
+                >
+                    <input
+                        type="checkbox"
+                        id="profilingDetailsAverageCheckbox"
+                        class="rounded border-[#555] bg-[#2a2a2a] text-[#f9c845] shrink-0 focus:ring-1 focus:ring-[#f9c845]"
+                    />
+                    <span
+                        class="whitespace-nowrap"
+                        title="Arithmetic mean of every sample since enabled; converges as more frames arrive"
+                        >Cumulative avg</span>
+                </label>
+                <button
+                    type="button"
+                    id="profilingDetailsCloseButton"
+                    class="text-gray-400 hover:text-white shrink-0 p-1 rounded-md hover:bg-[#2a2a2a]"
+                    title="Close"
+                    aria-label="Close"
+                >
+                    <svg
+                        class="w-5 h-5"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                    >
+                        <path
+                            fill-rule="evenodd"
+                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                            clip-rule="evenodd"
+                        />
+                    </svg>
+                </button>
+            </div>
+            <div
+                id="profilingDetailsBody"
+                class="px-5 py-4 overflow-y-auto text-sm text-[#d4d4d4] min-h-0"
+            ></div>
         </div>
     </div>
 </div>
