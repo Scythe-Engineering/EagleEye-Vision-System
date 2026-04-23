@@ -58,7 +58,6 @@ function getOperations() {
     return pipelineStore.state.operations;
 }
 
-
 function getPipeline() {
     return pipelineStore.getNodesForRenderer();
 }
@@ -107,6 +106,98 @@ function getProfilingThreadColor(threadNumber) {
     return threadColors[(normalizedThread - 1) % threadColors.length];
 }
 
+/**
+ * Distinct threads scheduled at the timestep and sum of execution_time_ms.
+ *
+ * @param {Record<string, any>} operationsByUuid
+ * @param {number} timestep
+ * @returns {{ threadsSorted: number[], sumMs: number }}
+ */
+function analyzeTimestepOperations(operationsByUuid, timestep) {
+    const presentThreads = new Set();
+    let sumMs = 0;
+    for (const row of Object.values(operationsByUuid)) {
+        if (Number(row?.timestep) !== timestep) {
+            continue;
+        }
+        let thread = Number(row?.thread);
+        if (!Number.isFinite(thread)) {
+            thread = 0;
+        }
+        presentThreads.add(thread);
+        const ms = Number(row?.execution_time_ms);
+        if (Number.isFinite(ms) && ms > 0) {
+            sumMs += ms;
+        }
+    }
+    const threadsSorted = [...presentThreads].sort((a, b) => a - b);
+    return { threadsSorted, sumMs };
+}
+
+/**
+ * One circular badge: timestep index in the center; ring split into equal
+ * slices (one per thread at this timestep), colored by thread id.
+ *
+ * @param {number[]} threadsSorted
+ * @param {number} timestep
+ * @param {number} size
+ * @returns {string}
+ */
+function buildTimestepThreadBadgeSvg(threadsSorted, timestep, size) {
+    const dim = Number.isFinite(size) && size > 8 ? size : 22;
+    const cx = dim / 2;
+    const cy = dim / 2;
+    const R = dim / 2 - 0.5;
+    const n = threadsSorted.length;
+    const ts = String(timestep);
+    const innerR = R * 0.58;
+    const singleThread = n === 1 ? threadsSorted[0] : null;
+    let textFill = "#f5f5f5";
+    if (n === 1 && singleThread > 0) {
+        textFill = "#0a0a0a";
+    }
+    const textEl = `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="${textFill}" font-size="10" font-weight="600" font-family="ui-sans-serif,system-ui,sans-serif">${escapeHtml(ts)}</text>`;
+    const svgOpen = `<svg viewBox="0 0 ${dim} ${dim}" width="${dim}" height="${dim}" class="shrink-0" aria-hidden="true">`;
+
+    if (n <= 0) {
+        const tip = escapeHtml(`Timestep ${timestep} (no thread data)`);
+        return `${svgOpen}<circle cx="${cx}" cy="${cy}" r="${R}" fill="#3a3a3a"><title>${tip}</title></circle>${textEl}</svg>`;
+    }
+    if (n === 1) {
+        const fill = getProfilingThreadColor(threadsSorted[0]);
+        const tip = escapeHtml(
+            `Timestep ${timestep} · thread ${threadsSorted[0]}`,
+        );
+        return `${svgOpen}<circle cx="${cx}" cy="${cy}" r="${R}" fill="${fill}"><title>${tip}</title></circle>${textEl}</svg>`;
+    }
+
+    const sliceAngle = (2 * Math.PI) / n;
+    let angle = -Math.PI / 2;
+    const paths = [];
+    for (let i = 0; i < n; i++) {
+        const endAngle = angle + sliceAngle;
+        const x1 = cx + R * Math.cos(angle);
+        const y1 = cy + R * Math.sin(angle);
+        const x2 = cx + R * Math.cos(endAngle);
+        const y2 = cy + R * Math.sin(endAngle);
+        const largeArc = sliceAngle > Math.PI ? 1 : 0;
+        const d = `M ${cx} ${cy} L ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+        const fill = getProfilingThreadColor(threadsSorted[i]);
+        const tip = escapeHtml(
+            `Timestep ${timestep} · thread ${threadsSorted[i]} (${n} threads, equal split)`,
+        );
+        paths.push(
+            `<path d="${d}" fill="${fill}"><title>${tip}</title></path>`,
+        );
+        angle = endAngle;
+    }
+    const mask = `<circle cx="${cx}" cy="${cy}" r="${innerR}" fill="#1f1f1f"/>`;
+    const tipAll = escapeHtml(
+        `Timestep ${timestep} · ${n} threads (equal segments)`,
+    );
+    return `${svgOpen}<g><title>${tipAll}</title>${paths.join("")}</g>${mask}${textEl}</svg>`;
+}
+
 function renderExecutionTimestepsPanel(snapshot) {
     if (!executionTimestepsList) {
         return;
@@ -123,22 +214,31 @@ function renderExecutionTimestepsPanel(snapshot) {
 
     const operationsByUuid = snapshot?.operations || {};
     timesteps.sort((a, b) => (a?.timestep ?? 0) - (b?.timestep ?? 0));
+    const badgeSize = 22;
     executionTimestepsList.innerHTML = timesteps
         .map((row) => {
-            const total = Number(row?.total_time_ms) || 0;
             const timestep = Number(row?.timestep) || 0;
-            const limiterUuid = row?.max_operation_uuid;
-            const limiterThread = limiterUuid
-                ? operationsByUuid?.[limiterUuid]?.thread
-                : null;
-            const circleColor = getProfilingThreadColor(limiterThread);
-            return `<div class="flex items-center gap-2 py-1">
-                <div
-                    class="w-5 h-5 rounded-full text-[10px] font-semibold text-black flex items-center justify-center"
-                    style="background-color: ${circleColor};"
-                    title="Timestep ${timestep}"
-                >${timestep}</div>
-                <div class="text-[#f1f1f1]">${total.toFixed(2)}ms</div>
+            const { threadsSorted, sumMs } = analyzeTimestepOperations(
+                operationsByUuid,
+                timestep,
+            );
+            const wallMs = Number(row?.total_time_ms) || 0;
+            const displayMs = sumMs > 0 ? sumMs : wallMs;
+            const badgeSvg = buildTimestepThreadBadgeSvg(
+                threadsSorted,
+                timestep,
+                badgeSize,
+            );
+            const titleParts = [
+                `Timestep ${timestep}: Σ ops ${displayMs.toFixed(2)}ms`,
+            ];
+            if (sumMs > 0 && wallMs > 0 && Math.abs(sumMs - wallMs) > 0.05) {
+                titleParts.push(`wall ${wallMs.toFixed(2)}ms`);
+            }
+            const rowTitle = escapeHtml(titleParts.join(" · "));
+            return `<div class="flex items-center gap-2 py-1" title="${rowTitle}">
+                ${badgeSvg}
+                <div class="text-[#f1f1f1]">${displayMs.toFixed(2)}ms</div>
             </div>`;
         })
         .join("");
@@ -225,7 +325,9 @@ function checkAndClearStaleProfiling() {
         return;
     }
 
-    const lastUpdateMs = pipelineStore.getProfilingLastUpdateMs(selectedPipeline.name);
+    const lastUpdateMs = pipelineStore.getProfilingLastUpdateMs(
+        selectedPipeline.name,
+    );
     if (lastUpdateMs <= 0) {
         clearProfilingUI();
         return;
@@ -238,15 +340,19 @@ function checkAndClearStaleProfiling() {
 
 function getDeviceInputNodes() {
     return pipelineStore.getNodes().filter((node) => {
-        return pipelineStore.normalizeOperationId(node.operationId) ===
-            "device_input";
+        return (
+            pipelineStore.normalizeOperationId(node.operationId) ===
+            "device_input"
+        );
     });
 }
 
 function getDeviceInputBusIds() {
     const busIds = new Set();
     pipelineStore.getNodes().forEach((node) => {
-        const operationId = pipelineStore.normalizeOperationId(node.operationId);
+        const operationId = pipelineStore.normalizeOperationId(
+            node.operationId,
+        );
         if (operationId === "device_input") {
             const busId = node.config?.bus_id;
             if (busId !== undefined && busId !== null) {
@@ -383,9 +489,7 @@ function populateCameraDropdown() {
 
 async function fetchPipelines() {
     try {
-        const response = await fetch(
-            `${BACKEND_BASE_URL}/get-pipeline-names`,
-        );
+        const response = await fetch(`${BACKEND_BASE_URL}/get-pipeline-names`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -734,7 +838,9 @@ function applyFlowchartNodeErrorIcon(node, errorRecord) {
         if (!icon.dataset.pipelineErrorBound) {
             icon.dataset.pipelineErrorBound = "true";
             icon.addEventListener("mouseenter", (event) => {
-                const uuid = pipelineStore.instanceIdToUuid.get(node.instanceId);
+                const uuid = pipelineStore.instanceIdToUuid.get(
+                    node.instanceId,
+                );
                 const currentError = uuid
                     ? operationErrorsByUuid.get(uuid)
                     : null;
@@ -776,7 +882,10 @@ function applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream) {
     }
 
     element.classList.toggle("pipeline-error-node", Boolean(errorRecord));
-    element.classList.toggle("pipeline-downstream-disabled", Boolean(isDownstream));
+    element.classList.toggle(
+        "pipeline-downstream-disabled",
+        Boolean(isDownstream),
+    );
 
     let infoIcon = element.querySelector(".error-info-icon");
     if (errorRecord && !infoIcon) {
@@ -921,9 +1030,7 @@ async function checkAndTriggerAutoFill() {
 
         pipelineStore.setCurrentPipeline(pipelineObj.name);
 
-        console.log(
-            "Pipeline pre-selected, triggering auto-fill",
-        );
+        console.log("Pipeline pre-selected, triggering auto-fill");
         await loadPipelineIntoBuilder(pipelineObj.name);
     } catch (error) {
         console.error("Error during auto-fill check:", error);
@@ -1580,7 +1687,9 @@ export async function initPipelineCreator() {
     deletePipelineButton = document.getElementById("deletePipelineButton");
     restartIndicator = document.getElementById("restartIndicator");
     executionTimestepsList = document.getElementById("executionTimestepsList");
-    executionSummaryContent = document.getElementById("executionSummaryContent");
+    executionSummaryContent = document.getElementById(
+        "executionSummaryContent",
+    );
 
     createDescriptionPopup();
 
@@ -1606,13 +1715,16 @@ export async function initPipelineCreator() {
 
     initFlowchartRenderer();
 
-    pipelineStore.subscribe("profiling:updated", ({ snapshot, pipelineName }) => {
-        const selectedPipeline = getSelectedPipeline();
-        if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
-            return;
-        }
-        applyProfilingSnapshot(snapshot);
-    });
+    pipelineStore.subscribe(
+        "profiling:updated",
+        ({ snapshot, pipelineName }) => {
+            const selectedPipeline = getSelectedPipeline();
+            if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
+                return;
+            }
+            applyProfilingSnapshot(snapshot);
+        },
+    );
 
     await fetchAvailableOperations();
 
@@ -1682,7 +1794,10 @@ export async function initPipelineCreator() {
     await renderCurrentPipeline();
 
     if (!profilingStaleIntervalId) {
-        profilingStaleIntervalId = setInterval(checkAndClearStaleProfiling, 500);
+        profilingStaleIntervalId = setInterval(
+            checkAndClearStaleProfiling,
+            500,
+        );
     }
 
     await checkBackendRestartStatus();

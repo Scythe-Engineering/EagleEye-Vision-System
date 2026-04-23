@@ -41,6 +41,7 @@ Handles visual pipeline creation and configuration.
 
 - **`pipelineCreator.js`**: Main pipeline creation interface (875 lines)
 
+    - Profiling timestep panel: one circular badge per timestep with the timestep index in the center; the ring uses equal-angle slices (one per distinct thread on that timestep), colored by thread id, not weighted by runtime. The adjacent value is the summed `execution_time_ms` for that timestep (tooltip may include wall-clock duration when it differs).
     - Visual drag-and-drop pipeline builder
     - Pipeline node management
     - Settings integration
