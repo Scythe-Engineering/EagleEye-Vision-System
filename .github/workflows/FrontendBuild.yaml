@@ -8,9 +8,6 @@ on:
 jobs:
     build:
         runs-on: ubuntu-24.04
-        defaults:
-            run:
-                working-directory: src/webui
         steps:
             - uses: actions/checkout@v4
               with:

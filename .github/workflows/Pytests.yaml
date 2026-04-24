@@ -21,6 +21,11 @@ jobs:
               with:
                   python-version: 3.11
 
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+
             - name: Install uv CLI
               run: |
                   python -m pip install --upgrade pip
@@ -28,6 +33,11 @@ jobs:
 
             - name: Install dependencies
               run: uv sync
+
+            - name: Build WebUI assets
+              run: |
+                  npm install
+                  npm run build
 
             - name: Ensure pytest is installed
               run: uv pip install pytest
