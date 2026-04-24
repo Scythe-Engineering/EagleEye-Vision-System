@@ -222,11 +222,13 @@ function getLoadingElements() {
     return {
         overlay: document.getElementById("threeDLoadingOverlay"),
         status: document.getElementById("threeDLoadingStatus"),
+        progress: document.getElementById("threeDLoadingProgress"),
     };
 }
 
 function createLoadingTracker(token) {
     const pendingTasks = new Map();
+    const taskProgress = new Map();
     let failedCount = 0;
 
     function update() {
@@ -234,8 +236,8 @@ function createLoadingTracker(token) {
             return;
         }
 
-        const { overlay, status } = getLoadingElements();
-        if (!overlay || !status) {
+        const { overlay, status, progress } = getLoadingElements();
+        if (!overlay || !status || !progress) {
             return;
         }
 
@@ -244,6 +246,8 @@ function createLoadingTracker(token) {
                 failedCount > 0
                     ? "Loaded with missing assets. Check the browser console."
                     : "Ready.";
+            progress.value = failedCount > 0 ? 0 : 100;
+            progress.removeAttribute("aria-valuetext");
             overlay.classList.add("hidden");
             overlay.setAttribute("aria-busy", "false");
             return;
@@ -251,28 +255,60 @@ function createLoadingTracker(token) {
 
         const taskList = Array.from(pendingTasks.values()).join(", ");
         status.textContent = `Loading ${taskList}...`;
+        const knownProgress = Array.from(taskProgress.values()).filter(
+            (value) => Number.isFinite(value),
+        );
+        if (knownProgress.length > 0) {
+            const averageProgress =
+                knownProgress.reduce((sum, value) => sum + value, 0) /
+                knownProgress.length;
+            progress.value = Math.round(averageProgress);
+            progress.setAttribute(
+                "aria-valuetext",
+                `${Math.round(averageProgress)}% loaded`,
+            );
+        } else {
+            progress.removeAttribute("value");
+            progress.setAttribute("aria-valuetext", "Loading assets");
+        }
         overlay.classList.remove("hidden");
         overlay.setAttribute("aria-busy", "true");
     }
 
     function start(key, label) {
         pendingTasks.set(key, label);
+        taskProgress.set(key, 0);
+        update();
+    }
+
+    function progress(key, loaded, total) {
+        if (!pendingTasks.has(key)) {
+            return;
+        }
+
+        if (Number.isFinite(total) && total > 0) {
+            taskProgress.set(key, Math.min(100, (loaded / total) * 100));
+        } else {
+            taskProgress.set(key, Number.NaN);
+        }
         update();
     }
 
     function finish(key) {
         pendingTasks.delete(key);
+        taskProgress.delete(key);
         update();
     }
 
     function fail(key, errorMessage) {
         failedCount += 1;
         pendingTasks.delete(key);
+        taskProgress.delete(key);
         console.error(errorMessage);
         update();
     }
 
-    return { start, finish, fail };
+    return { start, progress, finish, fail };
 }
 
 function updateStats() {
@@ -357,13 +393,24 @@ function disposeObject(object) {
                 ? node.material
                 : [node.material];
             for (const material of materials) {
-                if (material.map) {
-                    material.map.dispose();
+                for (const key in material) {
+                    const value = material[key];
+                    if (value?.isTexture) {
+                        value.dispose();
+                    }
                 }
                 material.dispose();
             }
         }
     });
+}
+
+function removeAndDisposeObject(object) {
+    if (!object) {
+        return;
+    }
+    object.parent?.remove(object);
+    disposeObject(object);
 }
 
 function clearDetectedObjectsGroup() {
@@ -842,32 +889,13 @@ export async function init3DView(modelUrl, options = {}) {
         while (scene.children.length > 0) {
             const child = scene.children[0];
             scene.remove(child);
-            child.traverse((node) => {
-                // dispose geometry
-                if (node.geometry) {
-                    node.geometry.dispose();
-                }
-                // dispose material(s) and any bound textures
-                if (node.material) {
-                    const materials = Array.isArray(node.material)
-                        ? node.material
-                        : [node.material];
-                    for (const m of materials) {
-                        for (const key in m) {
-                            const val = m[key];
-                            if (val && val.isTexture) {
-                                val.dispose();
-                            }
-                        }
-                        m.dispose();
-                    }
-                }
-            });
+            disposeObject(child);
         }
 
         // Clear the scene
         scene.clear();
         scene = null;
+        robotObject = null;
         fieldObject = null;
         detectedObjectsGroup = null;
         cameraMarkersGroup = null;
@@ -935,7 +963,8 @@ export async function init3DView(modelUrl, options = {}) {
         loadingTracker.start("robot", "robot model");
         try {
             if (robotObject) {
-                scene.remove(robotObject);
+                removeAndDisposeObject(robotObject);
+                robotObject = null;
             }
 
             const robotLoader = new GLTFLoader();
@@ -945,6 +974,7 @@ export async function init3DView(modelUrl, options = {}) {
                 `${BACKEND_BASE_URL}/get-robot-file/${robotFile}`,
                 (gltf) => {
                     if (loadToken !== currentLoadToken) {
+                        disposeObject(gltf.scene);
                         return;
                     }
                     robotObject = gltf.scene;
@@ -976,7 +1006,13 @@ export async function init3DView(modelUrl, options = {}) {
                     console.log("Loaded robot:", robotFile);
                     loadingTracker.finish("robot");
                 },
-                undefined,
+                (event) => {
+                    loadingTracker.progress(
+                        "robot",
+                        event.loaded,
+                        event.total,
+                    );
+                },
                 (error) => {
                     loadingTracker.fail(
                         "robot",
@@ -1061,6 +1097,7 @@ export async function init3DView(modelUrl, options = {}) {
         resolvedModelUrl,
         (gltf) => {
             if (loadToken !== currentLoadToken) {
+                disposeObject(gltf.scene);
                 return;
             }
             const model = gltf.scene;
@@ -1090,7 +1127,9 @@ export async function init3DView(modelUrl, options = {}) {
             startAnimationLoop();
             loadingTracker.finish("field");
         },
-        undefined,
+        (event) => {
+            loadingTracker.progress("field", event.loaded, event.total);
+        },
         (error) => {
             console.error("Error loading the model:", error);
             startAnimationLoop();
@@ -1113,8 +1152,26 @@ export async function init3DView(modelUrl, options = {}) {
         const gpLoader = new GLTFLoader();
         gpLoader.setDRACOLoader(dracoLoader);
         let pendingGamePieces = gamePieceUrls.length;
+        const gamePieceProgress = new Map();
 
         loadingTracker.start("gamePieces", "game pieces");
+
+        function updateGamePieceProgress(url, loaded, total) {
+            gamePieceProgress.set(url, {
+                loaded: Number.isFinite(loaded) ? loaded : 0,
+                total: Number.isFinite(total) ? total : 0,
+            });
+            const progressValues = Array.from(gamePieceProgress.values());
+            const loadedBytes = progressValues.reduce(
+                (sum, progressValue) => sum + progressValue.loaded,
+                0,
+            );
+            const totalBytes = progressValues.reduce(
+                (sum, progressValue) => sum + progressValue.total,
+                0,
+            );
+            loadingTracker.progress("gamePieces", loadedBytes, totalBytes);
+        }
 
         function finishGamePieceLoad() {
             pendingGamePieces -= 1;
@@ -1129,6 +1186,8 @@ export async function init3DView(modelUrl, options = {}) {
                 resolvedGamePieceUrl,
                 (gltf) => {
                     if (loadToken !== currentLoadToken) {
+                        disposeObject(gltf.scene);
+                        finishGamePieceLoad();
                         return;
                     }
                     const model = gltf.scene;
@@ -1153,7 +1212,13 @@ export async function init3DView(modelUrl, options = {}) {
                     scene.add(model);
                     finishGamePieceLoad();
                 },
-                undefined,
+                (event) => {
+                    updateGamePieceProgress(
+                        resolvedGamePieceUrl,
+                        event.loaded,
+                        event.total,
+                    );
+                },
                 (error) => {
                     console.error(
                         `Error loading game piece ${resolvedGamePieceUrl}: ${error}`,
@@ -1266,9 +1331,16 @@ export async function init3DView(modelUrl, options = {}) {
                 return;
             }
             let remainingTags = fiducials.length;
+            let loadedTags = 0;
             let aprilTagLoadFailed = false;
             const finishTag = () => {
                 remainingTags -= 1;
+                loadedTags += 1;
+                loadingTracker.progress(
+                    "apriltags",
+                    loadedTags,
+                    fiducials.length,
+                );
                 if (remainingTags === 0) {
                     if (aprilTagLoadFailed) {
                         loadingTracker.fail(
@@ -1288,6 +1360,7 @@ export async function init3DView(modelUrl, options = {}) {
                     tagImagePath,
                     (texture) => {
                         if (loadToken !== currentLoadToken) {
+                            texture.dispose();
                             finishTag();
                             return;
                         }
