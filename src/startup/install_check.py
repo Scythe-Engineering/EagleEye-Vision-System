@@ -20,7 +20,7 @@ PROJECT_REQUIRED_IMPORTS = (
     "flask",
     "flask_cors",
     "flask_socketio",
-    "networktables",
+    "ntcore",
     "numpy",
     "psutil",
 )
