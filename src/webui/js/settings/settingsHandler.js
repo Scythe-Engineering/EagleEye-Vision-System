@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { setNetworkTablesConnected } from "../ui/connectionStatus.js";
 
 export function renderNetworkTableStatus(status) {
     const badge = document.getElementById("networkTableStatusBadge");
@@ -59,9 +60,11 @@ async function loadNetworkTableStatus() {
 
         const status = await response.json();
         renderNetworkTableStatus(status.network_table);
+        setNetworkTablesConnected(status?.network_table?.connected === true);
     } catch (error) {
         console.error("Error loading NetworkTables status:", error);
         renderNetworkTableStatus(null);
+        setNetworkTablesConnected(false);
     }
 }
 

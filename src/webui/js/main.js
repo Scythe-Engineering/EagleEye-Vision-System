@@ -17,6 +17,12 @@ import {
 import { BACKEND_BASE_URL } from "./config.js";
 import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
 import { createSystemStatusModule } from "./system/systemStatus.js";
+import { createStatusIconController } from "./ui/statusIcon.js";
+import {
+    setBackendConnected,
+    setNetworkTablesConnected,
+    subscribeConnectionStatus,
+} from "./ui/connectionStatus.js";
 import { cameraPoseToFieldSpaceMatrix } from "./utils/fieldSpaceTransforms.js";
 import "../style.css";
 
@@ -76,6 +82,19 @@ window.onload = async () => {
     saveSettings();
 
     const systemStatusModule = createSystemStatusModule();
+    const faviconLink = document.getElementById("favicon");
+    const faviconController = createStatusIconController({
+        targetLink: faviconLink,
+        baseIconUrl: faviconLink?.getAttribute("href") ?? "/favicon.ico",
+    });
+    const unsubscribeConnectionStatus = subscribeConnectionStatus((state) => {
+        faviconController.setStatus(state.status);
+    });
+
+    window.addEventListener("beforeunload", () => {
+        unsubscribeConnectionStatus();
+        faviconController.destroy();
+    });
 
     const clearAllButton = document.getElementById("clearAllNotificationsBtn");
     if (clearAllButton) {
@@ -124,6 +143,7 @@ window.onload = async () => {
         console.log(
             `SSE connection established at ${new Date().toISOString()}`,
         );
+        setBackendConnected(true);
         hideConnectionLostOverlay();
         if (wasDisconnected) {
             console.log("SSE reconnected after disconnection");
@@ -140,8 +160,9 @@ window.onload = async () => {
         }
     });
 
-    es.addEventListener("heartbeat", (e) => {
+    es.addEventListener("heartbeat", () => {
         lastHeartbeat = Date.now();
+        setBackendConnected(true);
         hideConnectionLostOverlay();
     });
 
@@ -310,6 +331,9 @@ window.onload = async () => {
             const data = JSON.parse(e.data);
             systemStatusModule.render(data);
             renderNetworkTableStatus(data.network_table);
+            setNetworkTablesConnected(
+                data?.network_table?.connected === true,
+            );
         } catch (err) {
             console.warn("Failed to parse SSE system_status event", err);
         }
@@ -317,6 +341,7 @@ window.onload = async () => {
 
     es.onerror = () => {
         console.warn("SSE connection error or lost");
+        setBackendConnected(false);
         showConnectionLostOverlay();
         wasDisconnected = true;
     };
@@ -325,6 +350,7 @@ window.onload = async () => {
     setInterval(() => {
         if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
             console.warn("SSE connection lost - heartbeat timeout");
+            setBackendConnected(false);
             wasDisconnected = true;
             showConnectionLostOverlay();
         }
