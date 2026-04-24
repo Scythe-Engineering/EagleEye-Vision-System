@@ -39,8 +39,8 @@ def test_camera_to_robot_pose_applies_extrinsics(tmp_path) -> None:
     )
     camera_pose = _make_pose(x=5.0, y=2.0, z=1.5, yaw_deg=45.0)
 
-    robot_from_camera = euler_to_rotation_matrix(pitch=0.0, yaw=90.0, roll=0.0)
-    robot_from_camera[:3, 3] = np.array([0.5, 0.0, 0.25], dtype=float)
+    robot_from_camera = euler_to_rotation_matrix(pitch=-90.0, yaw=-0.0, roll=0.0)
+    robot_from_camera[:3, 3] = np.array([0.0, -0.25, 0.5], dtype=float)
     expected_robot_pose = camera_pose @ CameraToRobotPose._fast_se3_inverse(
         robot_from_camera
     )
@@ -90,8 +90,8 @@ def test_camera_to_robot_pose_invalidates_cached_extrinsics_on_update(tmp_path) 
 
     assert initial_result is not None
     assert updated_result is not None
-    assert initial_result[0, 3] == -1.0
-    assert updated_result[0, 3] == -2.0
+    assert initial_result[2, 3] == -1.0
+    assert updated_result[2, 3] == -2.0
 
 
 def test_camera_to_robot_pose_rejects_invalid_input() -> None:

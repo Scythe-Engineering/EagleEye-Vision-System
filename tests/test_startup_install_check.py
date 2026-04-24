@@ -97,6 +97,8 @@ def test_ensure_uv_environment_runs_sync_only_when_imports_missing(
 
     def fake_run(command: list[str], **_kwargs):
         calls.append(command)
+        checker.venv_python.parent.mkdir(parents=True, exist_ok=True)
+        checker.venv_python.write_text("", encoding="utf-8")
         state["current_ready"] = True
         return subprocess.CompletedProcess(command, 0, "", "")
 
