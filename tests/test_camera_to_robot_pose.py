@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from src.secondary_operations.camera_to_robot_pose import CameraToRobotPose
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
@@ -90,8 +91,8 @@ def test_camera_to_robot_pose_invalidates_cached_extrinsics_on_update(tmp_path) 
 
     assert initial_result is not None
     assert updated_result is not None
-    assert initial_result[2, 3] == -1.0
-    assert updated_result[2, 3] == -2.0
+    assert initial_result[2, 3] == pytest.approx(-1.0)
+    assert updated_result[2, 3] == pytest.approx(-2.0)
 
 
 def test_camera_to_robot_pose_rejects_invalid_input() -> None:

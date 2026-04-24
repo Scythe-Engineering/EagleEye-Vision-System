@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.webui import web_server
 from src.webui.web_server import EagleEyeInterface
 
@@ -75,7 +77,7 @@ def test_robot_files_are_listed_uploaded_and_draco_prepared(
     assert status == 200
     assert payload["robots"] == ["Practice.glb"]
     assert payload["file_details"][0]["filename"] == "Practice.glb"
-    assert payload["file_details"][0]["scale"] == 1.0
+    assert payload["file_details"][0]["scale"] == pytest.approx(1.0)
 
     monkeypatch.setattr(
         web_server,
@@ -86,7 +88,7 @@ def test_robot_files_are_listed_uploaded_and_draco_prepared(
 
     assert status == 200
     assert payload["file"]["filename"] == "New_Bot.glb"
-    assert payload["file"]["scale"] == 1.0
+    assert payload["file"]["scale"] == pytest.approx(1.0)
     assert (robot_dir / "New_Bot.glb").read_bytes() == b"new"
     assert interface.draco_asset_cache.resolved_paths == [
         Path("robots") / "New_Bot.glb"
@@ -111,7 +113,7 @@ def test_robot_file_scale_is_saved_to_metadata(
     payload, status = interface.save_robot_file_scale("Practice.glb")
 
     assert status == 200
-    assert payload["file"]["scale"] == 0.25
+    assert payload["file"]["scale"] == pytest.approx(0.25)
     assert (
         robot_dir / "Practice.glb.metadata.json"
     ).read_text(encoding="utf-8") == '{\n  "scale": 0.25\n}\n'
@@ -119,7 +121,7 @@ def test_robot_file_scale_is_saved_to_metadata(
     payload, status = interface.get_robot_files()
 
     assert status == 200
-    assert payload["file_details"][0]["scale"] == 0.25
+    assert payload["file_details"][0]["scale"] == pytest.approx(0.25)
 
     monkeypatch.setattr(
         web_server,
@@ -187,7 +189,7 @@ def test_field_files_are_grouped_uploaded_and_deleted(
     assert field_detail["path"] == "2025/field_files/Field.glb"
     assert field_detail["asset_path"] == "fields/2025/field_files/Field.glb"
     assert field_detail["url"] == "/assets/fields/2025/field_files/Field.glb"
-    assert field_detail["scale"] == 1.0
+    assert field_detail["scale"] == pytest.approx(1.0)
     assert field_detail["game_piece_urls"] == [
         "/assets/fields/2025/game_pieces/Piece.glb"
     ]
@@ -209,7 +211,7 @@ def test_field_files_are_grouped_uploaded_and_deleted(
     assert status == 200
     assert payload["file"]["path"] == "2026/field_files/Custom_Field.glb"
     assert payload["file"]["url"] == "/assets/fields/2026/field_files/Custom_Field.glb"
-    assert payload["file"]["scale"] == 1.0
+    assert payload["file"]["scale"] == pytest.approx(1.0)
     assert payload["file"]["game_piece_urls"] == []
     assert (
         payload["file"]["apriltag_map_url"]
@@ -251,14 +253,14 @@ def test_field_file_scale_is_saved_and_deleted_with_asset(
     payload, status = interface.save_field_file_scale("2025", "Field.glb")
 
     assert status == 200
-    assert payload["file"]["scale"] == 2.5
+    assert payload["file"]["scale"] == pytest.approx(2.5)
     metadata_path = field_dir / "Field.glb.metadata.json"
     assert metadata_path.exists()
 
     payload, status = interface.get_field_files()
 
     assert status == 200
-    assert payload["file_details"][0]["scale"] == 2.5
+    assert payload["file_details"][0]["scale"] == pytest.approx(2.5)
 
     monkeypatch.setattr(web_server, "request", _FakeRequest())
     payload, status = interface.delete_field_file("2025", "Field.glb")

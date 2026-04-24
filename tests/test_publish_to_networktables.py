@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 
 from src.secondary_operations.publish_to_networktables import _matrix_to_pose3d
 
@@ -25,9 +26,9 @@ def test_matrix_to_pose3d_converts_opencv_camera_axes_to_wpilib_body_axes() -> N
 
     pose = _matrix_to_pose3d(transform)
 
-    assert pose.X() == 1.0
-    assert pose.Y() == 2.0
-    assert pose.Z() == 3.0
+    assert pose.X() == pytest.approx(1.0)
+    assert pose.Y() == pytest.approx(2.0)
+    assert pose.Z() == pytest.approx(3.0)
     assert math.isclose(math.degrees(pose.rotation().X()), 0.0, abs_tol=1e-9)
     assert math.isclose(math.degrees(pose.rotation().Y()), 0.0, abs_tol=1e-9)
     assert math.isclose(math.degrees(pose.rotation().Z()), 0.0, abs_tol=1e-9)

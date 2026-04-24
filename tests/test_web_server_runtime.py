@@ -7,6 +7,7 @@ import threading
 from typing import Any
 
 import numpy as np
+import pytest
 
 from src.webui.web_server import (
     DEFAULT_VIEW_STREAM_DOWNSCALE,
@@ -240,8 +241,8 @@ def test_save_general_conf_updates_view_stream_downscale(
     assert status_code == 200
     assert response == {"message": "General configuration saved successfully"}
     assert saved_config["network_table_address"] == "10.0.0.2"
-    assert saved_config[VIEW_STREAM_DOWNSCALE_KEY] == 0.35
-    assert interface.view_stream_downscale == 0.35
+    assert saved_config[VIEW_STREAM_DOWNSCALE_KEY] == pytest.approx(0.35)
+    assert interface.view_stream_downscale == pytest.approx(0.35)
 
 
 def test_save_general_conf_rejects_invalid_view_stream_downscale(

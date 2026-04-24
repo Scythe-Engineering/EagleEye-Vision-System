@@ -47,6 +47,7 @@ let flowchartCanvas;
 let executionTimestepsList;
 let executionSummaryContent;
 let profilingDetailsOverlay;
+let profilingDetailsModal;
 let profilingDetailsBackdrop;
 let profilingDetailsBody;
 let profilingDetailsTitle;
@@ -480,41 +481,27 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
         ? new Date(tsMs).toLocaleString()
         : "—";
 
-    const parts = [];
-    parts.push(
+    const parts = [
         `<div class="rounded-lg border border-[#3a3a3a] bg-[#181818] p-4 mb-5">`,
-    );
-    parts.push(
         `<div class="text-xs uppercase tracking-wide text-[#888] mb-2">Current snapshot</div>`,
-    );
+    ];
     if (hint.cumulativeAverage && (hint.mergeCount ?? 0) > 0) {
         parts.push(
             `<p class="text-[#9ad1a8] text-xs mb-2 leading-relaxed">Cumulative arithmetic mean of each numeric field over <span class="font-semibold">${hint.mergeCount}</span> profiling update(s) since this mode was enabled (converges toward stable values as samples grow; not a rolling window).</p>`,
         );
     }
-    parts.push(`<div class="grid gap-2 text-sm">`);
     parts.push(
+        `<div class="grid gap-2 text-sm">`,
         `<div><span class="text-[#888]">Pipeline</span> · <span class="text-[#f1f1f1] font-medium">${escapeHtml(pipelineName)}</span></div>`,
-    );
-    parts.push(
         `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${Number.isFinite(frameMs) && frameMs > 0 ? `${frameMs.toFixed(2)} ms` : "—"}</span>` +
             (fps !== "—"
                 ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>`
                 : "") +
             `</div>`,
-    );
-    parts.push(
         `<div><span class="text-[#888]">Frame sequence</span> · <span class="text-[#f1f1f1]">${escapeHtml(seq)}</span></div>`,
-    );
-    parts.push(
         `<div><span class="text-[#888]">Recorded at</span> · <span class="text-[#f1f1f1]">${escapeHtml(tsLabel)}</span></div>`,
-    );
-    parts.push(`</div></div>`);
-
-    parts.push(
+        `</div></div>`,
         `<h4 class="text-[#f9c845] text-sm font-semibold mb-2 border-b border-[#414141] pb-1">By timestep</h4>`,
-    );
-    parts.push(
         `<p class="text-[#888] text-xs mb-3 leading-relaxed">Each timestep runs a group of operations (they may overlap on different threads). <span class="text-[#c9c9c9]">Wall</span> is measured around the whole group; <span class="text-[#c9c9c9]">Σ ops</span> is the sum of per-operation execution times for that timestep.</p>`,
     );
 
@@ -544,17 +531,9 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
             const countFromPayload = Number(row?.operation_count);
             parts.push(
                 `<div class="mb-4 rounded-md border border-[#3a3a3a] overflow-hidden bg-[#1a1a1a]">`,
-            );
-            parts.push(
                 `<div class="px-3 py-2 bg-[#252525] flex flex-wrap gap-x-3 gap-y-1 text-xs">`,
-            );
-            parts.push(
                 `<span class="font-semibold text-[#f9c845]">Timestep ${tsN}</span>`,
-            );
-            parts.push(
                 `<span class="text-[#aaa]">wall <span class="text-[#f1f1f1]">${wallMs.toFixed(2)} ms</span></span>`,
-            );
-            parts.push(
                 `<span class="text-[#aaa]">Σ ops <span class="text-[#f1f1f1]">${dispSum.toFixed(2)} ms</span></span>`,
             );
             if (Number.isFinite(countFromPayload)) {
@@ -594,8 +573,6 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
 
     parts.push(
         `<h4 class="text-[#f9c845] text-sm font-semibold mt-6 mb-2 border-b border-[#414141] pb-1">By thread</h4>`,
-    );
-    parts.push(
         `<p class="text-[#888] text-xs mb-3 leading-relaxed">All operations in this snapshot, grouped by worker thread. Each row is one operation at a timestep with its measured execution time.</p>`,
     );
 
@@ -642,11 +619,7 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
             }, 0);
             parts.push(
                 `<div class="mb-4 rounded-md border border-[#3a3a3a] overflow-hidden bg-[#1a1a1a]">`,
-            );
-            parts.push(
                 `<div class="px-3 py-2 bg-[#252525] text-xs font-semibold text-[#e8e8e8] flex items-center gap-2">${profilingThreadSwatchHtml(th)}<span class="text-[#888] font-normal">Σ ${subtotal.toFixed(2)} ms</span></div>`,
-            );
-            parts.push(
                 `<table class="w-full text-xs border-collapse"><thead><tr class="bg-[#222] text-left text-[#c9c9c9]"><th class="px-3 py-1.5 font-medium w-20">Timestep</th><th class="px-3 py-1.5 font-medium">Operation</th><th class="px-3 py-1.5 font-medium w-24 text-right">Time (ms)</th></tr></thead><tbody>`,
             );
             for (const r of rows) {
@@ -729,6 +702,7 @@ function closeProfilingDetailsPopup() {
     }
     profilingDetailsOverlay.classList.add("hidden");
     profilingDetailsOverlay.setAttribute("aria-hidden", "true");
+    profilingDetailsModal?.removeAttribute("open");
     document.removeEventListener("keydown", profilingDetailsOnKeydown, true);
 }
 
@@ -744,6 +718,7 @@ function openProfilingDetailsPopup() {
     document.removeEventListener("keydown", profilingDetailsOnKeydown, true);
     profilingDetailsOverlay.classList.remove("hidden");
     profilingDetailsOverlay.setAttribute("aria-hidden", "false");
+    profilingDetailsModal?.setAttribute("open", "");
     document.addEventListener("keydown", profilingDetailsOnKeydown, true);
     refreshProfilingDetailsPopupIfVisible(undefined);
 }
@@ -2183,6 +2158,7 @@ export async function initPipelineCreator() {
     profilingDetailsOverlay = document.getElementById(
         "profilingDetailsOverlay",
     );
+    profilingDetailsModal = document.getElementById("profilingDetailsModal");
     profilingDetailsBackdrop = document.getElementById(
         "profilingDetailsBackdrop",
     );
