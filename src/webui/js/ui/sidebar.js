@@ -96,10 +96,12 @@ class ViewManager {
                 refreshCameraFeeds();
                 break;
             case VIEWS.SETTINGS:
+                pauseCameraFeeds();
                 loadSettings();
                 refreshLogMessages();
                 break;
             case VIEWS.PIPELINE:
+                pauseCameraFeeds();
                 // If pipeline creator is already initialized, refresh it; otherwise initialize it
                 if (globalThis.pipelineCreator?.refreshPipelineCreator) {
                     globalThis.pipelineCreator.refreshPipelineCreator();

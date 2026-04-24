@@ -1,13 +1,43 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
+const EMPTY_IMAGE_SRC =
+    "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+
 let cameraFeedsPaused = false;
 let cameraListPollIntervalId = null;
 let cameraFetchFn = null;
+let cameraListFetchController = null;
+
+function isCameraViewActive() {
+    const cameraView = document.getElementById("view-views");
+    return Boolean(cameraView && !cameraView.classList.contains("hidden"));
+}
+
+function buildCameraFeedSrc(cameraName) {
+    return `${BACKEND_BASE_URL}/feed/${cameraName.replaceAll(" ", "_")}`;
+}
+
+function stopCameraImage(img) {
+    if (!img) {
+        return;
+    }
+
+    if (img.src && img.src !== EMPTY_IMAGE_SRC) {
+        img.dataset.pausedSrc = img.src;
+    }
+
+    img.src = EMPTY_IMAGE_SRC;
+    if (typeof img.load === "function") {
+        img.load();
+    }
+}
 
 export function setupCameraFeedHandlers() {
     const cameraList = document.getElementById("cameraList");
     const noCamerasMessage = document.getElementById("noCamerasMessage");
     const bottomBlur = document.getElementById("cameraListBottomBlur");
+
+    cameraFeedsPaused = !isCameraViewActive();
 
     // Handle bottom blur visibility on scroll
     if (cameraList && bottomBlur) {
@@ -95,10 +125,10 @@ export function setupCameraFeedHandlers() {
 
             const cameraView = document.createElement("img");
             cameraView.className = "camera-view rounded-lg";
-            const feedSrc = `${BACKEND_BASE_URL}/feed/${name.replaceAll(' ', "_")}`;
+            const feedSrc = buildCameraFeedSrc(name);
             if (cameraFeedsPaused) {
                 cameraView.dataset.pausedSrc = feedSrc;
-                cameraView.src = "";
+                cameraView.src = EMPTY_IMAGE_SRC;
             } else {
                 cameraView.src = feedSrc;
             }
@@ -114,8 +144,15 @@ export function setupCameraFeedHandlers() {
     }
 
     function fetchAndUpdateCameras() {
+        if (cameraListFetchController) {
+            cameraListFetchController.abort();
+        }
+        const fetchController = new AbortController();
+        cameraListFetchController = fetchController;
+
         fetch(`${BACKEND_BASE_URL}/get-available-cameras`, {
             method: "GET",
+            signal: fetchController.signal,
             headers: {
                 "Content-Type": "application/json",
             },
@@ -126,7 +163,15 @@ export function setupCameraFeedHandlers() {
                 renderCameras(cameraNames);
             })
             .catch((error) => {
+                if (error?.name === "AbortError") {
+                    return;
+                }
                 console.error("Error fetching cameras:", error);
+            })
+            .finally(() => {
+                if (cameraListFetchController === fetchController) {
+                    cameraListFetchController = null;
+                }
             });
     }
 
@@ -141,13 +186,14 @@ export function pauseCameraFeeds() {
         clearInterval(cameraListPollIntervalId);
         cameraListPollIntervalId = null;
     }
+    if (cameraListFetchController) {
+        cameraListFetchController.abort();
+        cameraListFetchController = null;
+    }
 
     const imageElements = document.querySelectorAll("img.camera-view");
     for (const img of imageElements) {
-        if (img?.src && img.src !== "") {
-            img.dataset.pausedSrc = img.src;
-            img.src = "";
-        }
+        stopCameraImage(img);
     }
 }
 
@@ -159,11 +205,11 @@ export function resumeCameraFeeds() {
         if (img.dataset?.pausedSrc) {
             img.src = img.dataset.pausedSrc;
             delete img.dataset.pausedSrc;
-        } else if (img && (!img.src || img.src.trim() === "")) {
+        } else if (img && (!img.src || img.src === EMPTY_IMAGE_SRC)) {
             const container = img.closest("[data-camera-name]");
             if (container?.dataset?.cameraName) {
                 const name = container.dataset.cameraName;
-                img.src = `${BACKEND_BASE_URL}/feed/${name.replaceAll(' ', "_")}`;
+                img.src = buildCameraFeedSrc(name);
             }
         }
     }
