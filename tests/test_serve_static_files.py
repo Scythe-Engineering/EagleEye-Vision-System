@@ -52,6 +52,11 @@ def test_built_webui_bundle_includes_popup_modules_without_source_js_requests() 
         ]
     )
 
-    assert "/js/pipeline/" not in built_scripts
+    assert 'src="/js/pipeline/' not in built_scripts
+    assert "src='/js/pipeline/" not in built_scripts
+    assert 'src="./js/pipeline/' not in built_scripts
+    assert "src='./js/pipeline/" not in built_scripts
+    assert 'import("/js/pipeline/' not in built_scripts
+    assert "import('/js/pipeline/" not in built_scripts
     assert "fileManagerOverlay" in built_scripts
     assert "operationSettingsOverlay" in built_scripts
