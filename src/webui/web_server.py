@@ -1,4 +1,5 @@
 from __future__ import annotations
+import gzip
 import json
 import logging
 import os
@@ -210,6 +211,7 @@ class EagleEyeInterface(
         self.frame_locks = {}
         self.frame_list_structure_lock = threading.Lock()
 
+        self._register_response_optimizations()
         self._register_error_handlers()
         self._register_routes()
 
@@ -243,6 +245,49 @@ class EagleEyeInterface(
                 return e
             self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
+
+    def _register_response_optimizations(self) -> None:
+        """Register low-bandwidth response optimizations for WebUI clients."""
+
+        compressible_mimetypes = {
+            "application/json",
+            "application/javascript",
+            "text/css",
+            "text/html",
+            "text/javascript",
+            "text/plain",
+        }
+        min_compress_size_bytes = 512
+
+        @self.app.after_request
+        def _gzip_response(response: Response) -> Response:
+            accept_encoding = request.headers.get("Accept-Encoding", "")
+            if "gzip" not in accept_encoding.lower():
+                return response
+
+            if (
+                response.status_code < 200
+                or response.status_code >= 300
+                or response.direct_passthrough
+                or response.is_streamed
+                or response.headers.get("Content-Encoding")
+                or response.mimetype not in compressible_mimetypes
+            ):
+                return response
+
+            payload = response.get_data()
+            if len(payload) < min_compress_size_bytes:
+                return response
+
+            compressed = gzip.compress(payload, compresslevel=5)
+            if len(compressed) >= len(payload):
+                return response
+
+            response.set_data(compressed)
+            response.headers["Content-Encoding"] = "gzip"
+            response.headers["Vary"] = "Accept-Encoding"
+            response.headers["Content-Length"] = str(len(compressed))
+            return response
 
     def _log_serving_error(self, response: Response) -> None:
         """Log failed HTTP responses with enough context to find frontend misses."""

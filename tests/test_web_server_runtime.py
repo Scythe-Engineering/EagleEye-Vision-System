@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import threading
 from typing import Any
@@ -77,6 +78,27 @@ class _FakeRequest:
     method = "GET"
     full_path = "/frontend-missing?asset=bundle"
     headers: dict[str, str] = {}
+
+
+class _FakeCompressibleResponse:
+    def __init__(
+        self,
+        data: bytes,
+        mimetype: str = "application/json",
+        is_streamed: bool = False,
+    ) -> None:
+        self.status_code = 200
+        self.direct_passthrough = False
+        self.is_streamed = is_streamed
+        self.mimetype = mimetype
+        self.headers: dict[str, str] = {}
+        self._data = data
+
+    def get_data(self) -> bytes:
+        return self._data
+
+    def set_data(self, data: bytes) -> None:
+        self._data = data
 
 
 def test_background_server_uses_threaded_wsgi(
@@ -360,3 +382,39 @@ def test_update_camera_pose_skips_non_finite_values() -> None:
 
     assert published_events == []
     assert messages == ["Skipping publish of camera transform due to non-finite values"]
+
+
+def test_gzip_response_optimization_compresses_json(monkeypatch) -> None:
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface.app = _FakeApp()
+    EagleEyeInterface._register_response_optimizations(interface)
+
+    response = _FakeCompressibleResponse(json.dumps({"payload": "x" * 2048}).encode())
+    request = _FakeRequest()
+    request.headers = {"Accept-Encoding": "gzip"}
+
+    monkeypatch.setattr("src.webui.web_server.request", request)
+    optimized = interface.app.after_request_funcs[0](response)
+
+    assert optimized.headers["Content-Encoding"] == "gzip"
+    assert json.loads(gzip.decompress(optimized.get_data())) == {"payload": "x" * 2048}
+
+
+def test_gzip_response_optimization_skips_streamed_responses(monkeypatch) -> None:
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface.app = _FakeApp()
+    EagleEyeInterface._register_response_optimizations(interface)
+
+    response = _FakeCompressibleResponse(
+        b"x" * 2048,
+        mimetype="text/plain",
+        is_streamed=True,
+    )
+    request = _FakeRequest()
+    request.headers = {"Accept-Encoding": "gzip"}
+
+    monkeypatch.setattr("src.webui.web_server.request", request)
+    optimized = interface.app.after_request_funcs[0](response)
+
+    assert "Content-Encoding" not in optimized.headers
+    assert optimized.get_data() == b"x" * 2048
