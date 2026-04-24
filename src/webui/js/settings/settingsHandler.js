@@ -1,5 +1,70 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
+export function renderNetworkTableStatus(status) {
+    const badge = document.getElementById("networkTableStatusBadge");
+    const dot = document.getElementById("networkTableStatusDot");
+    const text = document.getElementById("networkTableStatusText");
+
+    if (!badge || !dot || !text) {
+        return;
+    }
+
+    badge.className =
+        "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-xs font-semibold";
+    dot.className = "h-2 w-2 rounded-full";
+
+    if (status?.connected === true) {
+        badge.classList.add(
+            "border-emerald-500/40",
+            "bg-emerald-900/30",
+            "text-emerald-200",
+        );
+        dot.classList.add("bg-emerald-400");
+        text.textContent = "Connected";
+        return;
+    }
+
+    if (status?.status === "ok" || status?.status === "unavailable") {
+        badge.classList.add(
+            "border-red-500/40",
+            "bg-red-950/40",
+            "text-red-200",
+        );
+        dot.classList.add("bg-red-400");
+        text.textContent = "Disconnected";
+        return;
+    }
+
+    badge.classList.add(
+        "border-gray-500/40",
+        "bg-gray-800/40",
+        "text-gray-200",
+    );
+    dot.classList.add("bg-gray-400");
+    text.textContent = "Unknown";
+}
+
+async function loadNetworkTableStatus() {
+    try {
+        const response = await fetch(`${BACKEND_BASE_URL}/get-system-status`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error("Network response was not ok");
+        }
+
+        const status = await response.json();
+        renderNetworkTableStatus(status.network_table);
+    } catch (error) {
+        console.error("Error loading NetworkTables status:", error);
+        renderNetworkTableStatus(null);
+    }
+}
+
 export async function loadSettings() {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/get-general-conf`, {
@@ -31,6 +96,8 @@ export async function loadSettings() {
     } catch (error) {
         console.error("Error loading settings:", error);
     }
+
+    await loadNetworkTableStatus();
 }
 
 export function saveSettings() {

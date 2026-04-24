@@ -157,6 +157,7 @@ class SystemMonitorMixin:
         memory_payload: dict[str, Any] = {"status": "unavailable"}
         storage_payload: dict[str, Any] = {"status": "unavailable"}
         pipeline_payload = self._build_pipeline_status_list()
+        network_table_payload = self._build_network_table_status()
 
         try:
             import psutil
@@ -195,7 +196,47 @@ class SystemMonitorMixin:
             "memory": memory_payload,
             "storage": storage_payload,
             "pipelines": pipeline_payload,
+            "network_table": network_table_payload,
         }
+
+    def _build_network_table_status(self) -> dict[str, Any]:
+        """
+        Build NetworkTables client connection status for the frontend.
+
+        Returns:
+            dict[str, Any]: Connection status and configured server address.
+        """
+        try:
+            server_address = self._read_general_conf().get("network_table_address", "")
+        except Exception:
+            server_address = ""
+
+        instance = getattr(self, "network_table_instance", None)
+        if instance is None:
+            return {
+                "status": "unavailable",
+                "connected": False,
+                "server": server_address,
+                "connection_count": 0,
+            }
+
+        try:
+            connected = bool(instance.isConnected())
+            connections = instance.getConnections()
+            return {
+                "status": "ok",
+                "connected": connected,
+                "server": server_address,
+                "connection_count": len(connections),
+            }
+        except Exception as error:
+            return {
+                "status": "unavailable",
+                "connected": False,
+                "server": server_address,
+                "connection_count": 0,
+                "error": str(error),
+            }
 
     def _build_pipeline_status_list(self) -> list[dict[str, Any]]:
         """

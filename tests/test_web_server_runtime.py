@@ -274,6 +274,37 @@ def test_save_general_conf_rejects_invalid_view_stream_downscale(
     assert interface.view_stream_downscale == DEFAULT_VIEW_STREAM_DOWNSCALE
 
 
+def test_system_status_includes_network_table_connection(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    general_conf_path = tmp_path / "general_conf.json"
+    general_conf_path.write_text(
+        json.dumps({"network_table_address": "10.0.0.2"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.webui.web_server.GENERAL_CONF_PATH", general_conf_path)
+
+    class _FakeNetworkTableInstance:
+        def isConnected(self) -> bool:  # noqa: N802
+            return True
+
+        def getConnections(self) -> list[object]:  # noqa: N802
+            return [object()]
+
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface.network_table_instance = _FakeNetworkTableInstance()
+
+    status = EagleEyeInterface._build_network_table_status(interface)
+
+    assert status == {
+        "status": "ok",
+        "connected": True,
+        "server": "10.0.0.2",
+        "connection_count": 1,
+    }
+
+
 def test_update_camera_pose_publishes_camera_pose_event() -> None:
     interface = EagleEyeInterface.__new__(EagleEyeInterface)
     published_events: list[tuple[str, dict[str, Any]]] = []

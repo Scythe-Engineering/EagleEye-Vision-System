@@ -1,7 +1,11 @@
 import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
-import { saveSettings, loadSettings } from "./settings/settingsHandler.js";
+import {
+    saveSettings,
+    loadSettings,
+    renderNetworkTableStatus,
+} from "./settings/settingsHandler.js";
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
@@ -305,6 +309,7 @@ window.onload = async () => {
         try {
             const data = JSON.parse(e.data);
             systemStatusModule.render(data);
+            renderNetworkTableStatus(data.network_table);
         } catch (err) {
             console.warn("Failed to parse SSE system_status event", err);
         }

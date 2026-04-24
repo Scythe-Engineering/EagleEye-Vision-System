@@ -89,6 +89,7 @@ class EagleEyeInterface(
         pipeline_objects_callback: Callable[[], dict[str, Pipeline]],
         dev_mode: bool = False,
         logger: Logger | None = None,
+        network_table_instance: Any | None = None,
     ):
         """
         Initialize the EagleEyeInterface.
@@ -100,6 +101,7 @@ class EagleEyeInterface(
             pipeline_objects_callback: Callable returning the live pipeline dict.
             dev_mode (bool): Whether to run in development mode.
             logger: Logger instance for logging.
+            network_table_instance: Optional ntcore NetworkTableInstance for status reporting.
         """
         self.logger = logger
         self.log = self.logger.log if self.logger is not None else print
@@ -142,6 +144,7 @@ class EagleEyeInterface(
 
         self.restart_required_for_config = False
         self.last_log_message_count = 0
+        self.network_table_instance = network_table_instance
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
         self._system_status_interval = 1.5

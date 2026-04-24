@@ -73,16 +73,17 @@ class MainBackend:
             )
 
             # NetworkTables wiring
-            _inst = ntcore.NetworkTableInstance.getDefault()
-            _inst.startClient4("EagleEye")
-            _inst.setServer(general_conf["network_table_address"])
-            self.network_table = _inst.getTable("EagleEye")
+            network_tables_inst = ntcore.NetworkTableInstance.getDefault()
+            network_tables_inst.startClient4("EagleEye")
+            network_tables_inst.setServer(general_conf["network_table_address"])
+            self.network_table = network_tables_inst.getTable("EagleEye")
 
             # Web interface, camera manager, and known camera cache
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
                 pipeline_objects_callback=self.get_pipelines,
                 logger=self.logger,
+                network_table_instance=network_tables_inst,
             )
             self.camera_manager = CameraThreadManager(
                 self.web_interface, logger=self.logger
