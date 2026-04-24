@@ -174,6 +174,32 @@ class OperationConfigMixin:
             self.log(f"Error loading config for operation {operation_name}: {e}")
             return {}
 
+    def get_operation_config_data_batch(self) -> tuple[dict, int]:
+        """Get config data for multiple operations in a single request.
+
+        Expects a JSON array of objects with ``name`` and ``is_secondary``
+        fields. Returns a dict keyed by ``"{name}:{is_secondary_int}"``
+        mapped to each operation's config data.
+
+        Returns:
+            tuple[dict, int]: Mapping of operation keys to config dicts and
+            HTTP status 200, or an error dict and status 400 on bad input.
+        """
+        body = request.get_json(silent=True)
+        if not isinstance(body, list):
+            return {"error": "Request body must be a JSON array"}, 400
+
+        result: dict[str, dict] = {}
+        for op in body:
+            if not isinstance(op, dict):
+                continue
+            name: str = op.get("name", "")
+            is_secondary: bool = bool(op.get("is_secondary", 0))
+            key = f"{name}:{1 if is_secondary else 0}"
+            result[key] = self.get_operation_config_data(name, is_secondary)
+
+        return result, 200
+
     def _normalize_dynamic_group_config(self, config_data: dict[str, Any]) -> dict[str, Any]:
         """Normalize optional dynamic group metadata in operation config.
 

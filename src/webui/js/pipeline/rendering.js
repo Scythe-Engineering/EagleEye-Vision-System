@@ -5,6 +5,7 @@ import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
 import { findCycles } from "./graphUtils.js";
 import { pipelineStore } from "./PipelineStore.js";
+import { prefetchConfigs } from "./operationConfigCache.js";
 
 let descriptionPopup = null;
 
@@ -568,18 +569,29 @@ export class FlowchartRenderer {
             return;
         }
 
-        for (let i = 0; i < pipeline.length; i++) {
-            const item = pipeline[i];
-
+        pipeline.forEach((item, i) => {
             if (!item.position) {
                 item.position = this.calculateDefaultPosition(
                     i,
                     pipeline.length,
                 );
             }
+        });
 
-            await this.createNode(item);
-        }
+        const uniqueOps = [
+            ...new Map(
+                pipeline.map((item) => {
+                    const isSecondary = item.isSecondary || false;
+                    return [
+                        `${item.id}:${isSecondary ? 1 : 0}`,
+                        { name: item.id, isSecondary },
+                    ];
+                }),
+            ).values(),
+        ];
+        await prefetchConfigs(uniqueOps);
+
+        await Promise.all(pipeline.map((item) => this.createNode(item)));
 
         // Restore connections if provided
         if (options.connections && options.connections.length > 0) {

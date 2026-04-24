@@ -4,6 +4,11 @@
 
 import { escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
+import {
+    hasCachedConfig,
+    getCachedConfig,
+    setCachedConfig,
+} from "./operationConfigCache.js";
 
 export class FlowchartNode {
     constructor(operationData, options = {}) {
@@ -415,14 +420,24 @@ export class FlowchartNode {
     async loadConfigData() {
         if (this.configDataLoaded) return;
 
+        const isSecondary = this.operationData.isSecondary || false;
+
+        if (hasCachedConfig(this.operationData.id, isSecondary)) {
+            this.initializePortsFromConfig(
+                getCachedConfig(this.operationData.id, isSecondary),
+            );
+            this.configDataLoaded = true;
+            return;
+        }
+
         try {
-            const isSecondary = this.operationData.isSecondary || false;
             const response = await fetch(
                 `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(this.operationData.id)}/${isSecondary ? 1 : 0}`,
             );
 
             if (response.ok) {
                 const configData = await response.json();
+                setCachedConfig(this.operationData.id, isSecondary, configData);
                 this.initializePortsFromConfig(configData);
                 this.configDataLoaded = true;
             } else {

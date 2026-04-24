@@ -426,6 +426,12 @@ class EagleEyeInterface(
             methods=["GET"],
         )
         self.app.add_url_rule(
+            "/get-operation-config-data-batch",
+            "get_operation_config_data_batch",
+            self.get_operation_config_data_batch,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
             "/get-operation-files/<path:operation_name>/<path:parameter_name>",
             "get_operation_files",
             self.get_operation_files,
