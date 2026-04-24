@@ -2,12 +2,15 @@
     "class_name": "RobotPoseOutput",
     "description": "Publishes robot pose and localization data to web interfaces for visualization",
     "category": "proc",
+    "folder": "Output",
     "input_nodes": [
         {
             "name": "pose",
             "has_default": false
         }
     ],
-    "output_nodes": ["pose"],
+    "output_nodes": [
+        "pose"
+    ],
     "parameters": {}
 }

@@ -64,25 +64,39 @@ export function addHoverListeners(element, name, description) {
     });
 }
 
-export function renderOperations(
-    operations,
-    operationsList,
-    openOperationSettings,
-    handleDragStart,
-) {
-    operationsList.innerHTML = "";
-    operations.forEach((op, index) => {
-        const el = document.createElement("div");
-        el.draggable = true;
-        el.className =
-            "bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg mb-2 group";
-        el.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
-        el.innerHTML = `
+const FOLDER_ORDER = [
+    "Input",
+    "Detection",
+    "Preprocessing",
+    "Localization",
+    "Filtering",
+    "Networking",
+    "Output",
+];
+
+function getFolderIcon(folderName) {
+    const icons = {
+        Input: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="10" rx="1.5"/><path d="M5 4V3a2 2 0 0 1 4 0v1"/></svg>`,
+        Detection: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="3"/><path d="M1 8h2M13 8h2M8 1v2M8 13v2"/></svg>`,
+        Preprocessing: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h2v10H3zM7 6h2v7H7zM11 1h2v12h-2z"/></svg>`,
+        Localization: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="7" r="3"/><path d="M8 10c0 0-5 3-5 0a5 5 0 0 1 10 0c0 3-5 0-5 0z"/></svg>`,
+        Filtering: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 4h12M4 8h8M6 12h4"/></svg>`,
+        Networking: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="3"/><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM1 8h14M8 1c-2 2-3 4-3 7s1 5 3 7M8 1c2 2 3 4 3 7s-1 5-3 7"/></svg>`,
+        Output: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v9M4 7l4 4 4-4M2 13h12"/></svg>`,
+    };
+    return icons[folderName] ?? `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5h5l2 2h5v7H2z"/></svg>`;
+}
+
+function createOperationCard(op, operations, openOperationSettings, handleDragStart) {
+    const el = document.createElement("div");
+    el.draggable = true;
+    el.className =
+        "bg-[#232323] border-2 border-[#404040] rounded-xl p-4 cursor-move hover:border-[#f9c845] transition-all transform hover:scale-105 hover:shadow-lg mb-2 group";
+    el.style.boxShadow = "4px 4px 8px rgba(0, 0, 0, 0.4)";
+    el.innerHTML = `
         <div class="flex items-center gap-3">
-          <div class="bg-[#995e19] text-white text-xs font-semibold px-2 py-1 rounded-md uppercase tracking-wider">${escapeHtml(op.type)}</div>
           <div>
-            <h3 class="font-medium text-white truncate max-w-[190px]">${escapeHtml(op.name)}</h3>
-            ${index === 0 ? '<p class="text-xs text-gray-500 tracking-wider">Hover for description</p>' : ""}
+            <h3 class="font-medium text-white truncate max-w-[210px]">${escapeHtml(op.name)}</h3>
           </div>
           <div class="ml-auto">
             <button class="op-settings-btn p-2 hover:bg-[#404040] rounded-lg transition-all" title="Settings">
@@ -90,43 +104,165 @@ export function renderOperations(
             </button>
           </div>
         </div>
-      `;
+    `;
 
-        el.addEventListener("dragstart", (e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const offsetX = e.clientX - rect.left;
-            const offsetY = e.clientY - rect.top;
+    el.addEventListener("dragstart", (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
 
-            if (globalThis.flowchartRenderer) {
-                globalThis.flowchartRenderer.setDragOffset(offsetX, offsetY);
-            }
-
-            handleDragStart(e, op, null, operations);
-        });
-        el.addEventListener("dragend", (e) => {
-            if (e.currentTarget instanceof HTMLElement) {
-                e.currentTarget.classList.remove("dragging");
-                e.currentTarget.style.opacity = "";
-            }
-
-            if (globalThis.flowchartRenderer) {
-                globalThis.flowchartRenderer.setDragOffset(0, 0);
-            }
-        });
-
-        addHoverListeners(el, op.name, op.description);
-
-        const settingsBtn = el.querySelector(".op-settings-btn");
-        if (settingsBtn) {
-            settingsBtn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                openOperationSettings(op);
-            });
+        if (globalThis.flowchartRenderer) {
+            globalThis.flowchartRenderer.setDragOffset(offsetX, offsetY);
         }
 
-        operationsList.appendChild(el);
+        handleDragStart(e, op, null, operations);
     });
+    el.addEventListener("dragend", (e) => {
+        if (e.currentTarget instanceof HTMLElement) {
+            e.currentTarget.classList.remove("dragging");
+            e.currentTarget.style.opacity = "";
+        }
+
+        if (globalThis.flowchartRenderer) {
+            globalThis.flowchartRenderer.setDragOffset(0, 0);
+        }
+    });
+
+    addHoverListeners(el, op.name, op.description);
+
+    const settingsBtn = el.querySelector(".op-settings-btn");
+    if (settingsBtn) {
+        settingsBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            openOperationSettings(op);
+        });
+    }
+
+    return el;
+}
+
+export function renderOperations(
+    operations,
+    operationsList,
+    openOperationSettings,
+    handleDragStart,
+) {
+    operationsList.innerHTML = "";
+
+    const byFolder = new Map();
+    for (const op of operations) {
+        const folder = op.folder || "Uncategorized";
+        if (!byFolder.has(folder)) byFolder.set(folder, []);
+        byFolder.get(folder).push(op);
+    }
+
+    const orderedFolders = [
+        ...FOLDER_ORDER.filter((f) => byFolder.has(f)),
+        ...[...byFolder.keys()].filter((f) => !FOLDER_ORDER.includes(f)).sort(),
+    ];
+
+    let isFirstFolder = true;
+    for (const folderName of orderedFolders) {
+        const ops = byFolder.get(folderName);
+
+        const section = document.createElement("div");
+        section.className = isFirstFolder ? "mb-1" : "mt-1 mb-1";
+
+        const header = document.createElement("button");
+        header.type = "button";
+        header.className =
+            "w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-[#2a2a2a] transition-colors group/folder select-none";
+
+        const arrow = document.createElement("span");
+        arrow.className = "text-[#666] transition-transform duration-200 group-hover/folder:text-[#888]";
+        arrow.innerHTML = `<svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4"/></svg>`;
+
+        const iconEl = document.createElement("span");
+        iconEl.className = "text-[#f9c845]";
+        iconEl.innerHTML = getFolderIcon(folderName);
+
+        const label = document.createElement("span");
+        label.className = "text-[#c0c0c0] text-xs font-semibold uppercase tracking-widest group-hover/folder:text-white transition-colors";
+        label.textContent = folderName;
+
+        const count = document.createElement("span");
+        count.className = "ml-auto text-[#555] text-xs font-mono group-hover/folder:text-[#666] transition-colors";
+        count.textContent = ops.length;
+
+        header.appendChild(arrow);
+        header.appendChild(iconEl);
+        header.appendChild(label);
+        header.appendChild(count);
+
+        const contentWrapper = document.createElement("div");
+        contentWrapper.className = "relative mt-1";
+
+        const braceCol = document.createElement("div");
+        braceCol.style.cssText =
+            "position:absolute;left:0;top:4px;bottom:4px;width:12px;pointer-events:none;";
+
+        const braceSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        braceSvg.setAttribute("width", "12");
+        braceSvg.setAttribute("viewBox", "0 0 12 100");
+        braceSvg.setAttribute("preserveAspectRatio", "none");
+        braceSvg.style.cssText =
+            "display:block;width:12px;height:100%;transition:opacity 0.25s ease;";
+
+        const bracePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        bracePath.setAttribute(
+            "d",
+            "M11,2 C11,2 3,2 3,12 L3,44 C3,44 1,50 3,56 L3,88 C3,88 3,98 11,98",
+        );
+        bracePath.setAttribute("fill", "none");
+        bracePath.setAttribute("stroke", "#484848");
+        bracePath.setAttribute("stroke-width", "1.5");
+        bracePath.setAttribute("stroke-linecap", "round");
+        bracePath.setAttribute("vector-effect", "non-scaling-stroke");
+
+        braceSvg.appendChild(bracePath);
+        braceCol.appendChild(braceSvg);
+
+        const body = document.createElement("div");
+        body.className = "pl-4 pr-0.5";
+
+        for (const op of ops) {
+            body.appendChild(createOperationCard(op, operations, openOperationSettings, handleDragStart));
+        }
+
+        body.addEventListener("mouseenter", () => {
+            braceSvg.style.opacity = "0";
+        });
+        body.addEventListener("mouseleave", () => {
+            braceSvg.style.opacity = "1";
+        });
+
+        contentWrapper.appendChild(braceCol);
+        contentWrapper.appendChild(body);
+
+        header.addEventListener("click", () => {
+            const isOpen = !contentWrapper.classList.contains("hidden");
+            if (isOpen) {
+                contentWrapper.classList.add("hidden");
+                arrow.style.transform = "rotate(-90deg)";
+            } else {
+                contentWrapper.classList.remove("hidden");
+                arrow.style.transform = "";
+            }
+        });
+
+        section.appendChild(header);
+        section.appendChild(contentWrapper);
+
+        if (!isFirstFolder) {
+            const divider = document.createElement("div");
+            divider.className = "h-px bg-[#2a2a2a] my-1";
+            operationsList.appendChild(divider);
+        }
+        operationsList.appendChild(section);
+
+        isFirstFolder = false;
+    }
 }
 
 export class FlowchartRenderer {

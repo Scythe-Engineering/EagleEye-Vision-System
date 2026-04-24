@@ -2,13 +2,16 @@
     "class_name": "GroundPlaneIntersection",
     "description": "Ground plane intersection for 3D position estimation",
     "category": "proc",
+    "folder": "Output",
     "input_nodes": [
         {
             "name": "detections",
             "has_default": false
         }
     ],
-    "output_nodes": ["positions_3d"],
+    "output_nodes": [
+        "positions_3d"
+    ],
     "parameters": {
         "camera_bus_id": {
             "type": "str",

@@ -2,13 +2,16 @@
     "class_name": "CameraPoseOutput",
     "description": "Publishes camera poses to the web interface for 3D visualization.",
     "category": "proc",
+    "folder": "Output",
     "input_nodes": [
         {
             "name": "camera_pose",
             "has_default": false
         }
     ],
-    "output_nodes": ["camera_pose"],
+    "output_nodes": [
+        "camera_pose"
+    ],
     "parameters": {
         "camera_bus_id": {
             "type": "str",

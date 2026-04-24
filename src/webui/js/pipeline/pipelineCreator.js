@@ -899,6 +899,7 @@ async function fetchAvailableOperations() {
                 .replaceAll("_", " ")
                 .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
             type: op.category.toUpperCase(),
+            folder: op.folder || "Uncategorized",
             description: op.description,
             path: op.path,
             configDataPath: op.config_data_path,

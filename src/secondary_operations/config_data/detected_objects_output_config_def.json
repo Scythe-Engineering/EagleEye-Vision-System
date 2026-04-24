@@ -2,12 +2,15 @@
     "class_name": "DetectedObjectsOutput",
     "description": "Push detected objects to the web interface for 3D visualization.",
     "category": "proc",
+    "folder": "Output",
     "input_nodes": [
         {
             "name": "detections",
             "has_default": false
         }
     ],
-    "output_nodes": ["detections"],
+    "output_nodes": [
+        "detections"
+    ],
     "parameters": {}
 }

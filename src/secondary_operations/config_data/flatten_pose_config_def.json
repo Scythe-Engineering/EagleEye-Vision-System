@@ -2,6 +2,7 @@
     "class_name": "FlattenPose",
     "description": "Converts 3D_pose data to 2D coordinates by removing rotational and height components",
     "category": "proc",
+    "folder": "Localization",
     "input_nodes": [
         {
             "name": "pose_3d",

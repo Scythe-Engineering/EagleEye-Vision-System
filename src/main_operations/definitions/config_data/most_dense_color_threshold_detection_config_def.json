@@ -2,13 +2,16 @@
     "class_name": "MostDenseColorThresholdDetectionDefinition",
     "description": "Color-based detection that returns exactly one region selected by contour-area density. Supports runtime switching between most-dense and least-dense selection without a pipeline restart.",
     "category": "det",
+    "folder": "Detection",
     "input_nodes": [
         {
             "name": "frame",
             "has_default": false
         }
     ],
-    "output_nodes": ["detection"],
+    "output_nodes": [
+        "detection"
+    ],
     "parameters": {
         "camera_bus_id": {
             "type": "str",
@@ -47,23 +50,55 @@
                     "type": "list",
                     "item_type": "int",
                     "description": "Lower HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
-                    "default": [0, 0, 0],
+                    "default": [
+                        0,
+                        0,
+                        0
+                    ],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"],
-                    "item_min": [0, 0, 0],
-                    "item_max": [179, 255, 255]
+                    "item_labels": [
+                        "H",
+                        "S",
+                        "V"
+                    ],
+                    "item_min": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "item_max": [
+                        179,
+                        255,
+                        255
+                    ]
                 },
                 "upper_hsv": {
                     "type": "list",
                     "item_type": "int",
                     "description": "Upper HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
-                    "default": [179, 255, 255],
+                    "default": [
+                        179,
+                        255,
+                        255
+                    ],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"],
-                    "item_min": [0, 0, 0],
-                    "item_max": [179, 255, 255]
+                    "item_labels": [
+                        "H",
+                        "S",
+                        "V"
+                    ],
+                    "item_min": [
+                        0,
+                        0,
+                        0
+                    ],
+                    "item_max": [
+                        179,
+                        255,
+                        255
+                    ]
                 }
             }
         },
@@ -117,7 +152,10 @@
             "description": "Which candidate to select after thresholding. 'most_dense' returns the largest-area region; 'least_dense' returns the smallest-area region.",
             "default": "most_dense",
             "required": false,
-            "options": ["most_dense", "least_dense"],
+            "options": [
+                "most_dense",
+                "least_dense"
+            ],
             "restart_for_change": false
         }
     }

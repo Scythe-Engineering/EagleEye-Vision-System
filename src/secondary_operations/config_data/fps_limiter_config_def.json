@@ -2,13 +2,16 @@
     "class_name": "FpsLimiter",
     "description": "Limits frame rate by sleeping to maintain target FPS",
     "category": "proc",
+    "folder": "Preprocessing",
     "input_nodes": [
         {
             "name": "data",
             "has_default": false
         }
     ],
-    "output_nodes": ["data"],
+    "output_nodes": [
+        "data"
+    ],
     "parameters": {
         "fps": {
             "type": "float",

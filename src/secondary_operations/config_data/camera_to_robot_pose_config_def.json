@@ -2,6 +2,7 @@
     "class_name": "CameraToRobotPose",
     "description": "Transforms a 4x4 camera pose into robot pose using live camera extrinsics (pitch, yaw, roll, and XYZ offsets)",
     "category": "proc",
+    "folder": "Localization",
     "input_nodes": [
         {
             "name": "camera_pose",

@@ -2,12 +2,15 @@
     "class_name": "ExtractPose",
     "description": "Extracts 2D pose data (x, y, rotation) from a 4x4 transformation matrix",
     "category": "proc",
+    "folder": "Localization",
     "input_nodes": [
         {
             "name": "transform",
             "has_default": false
         }
     ],
-    "output_nodes": ["pose_2d"],
+    "output_nodes": [
+        "pose_2d"
+    ],
     "parameters": {}
 }

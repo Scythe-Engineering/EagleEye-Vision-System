@@ -2,6 +2,7 @@
     "class_name": "CameraAdjust",
     "description": "Hardware-accelerated camera adjustments for brightness, contrast, saturation, gain, and exposure.",
     "category": "prep",
+    "folder": "Preprocessing",
     "input_nodes": [
         {
             "name": "frame",
@@ -12,7 +13,9 @@
             "has_default": true
         }
     ],
-    "output_nodes": ["frame"],
+    "output_nodes": [
+        "frame"
+    ],
     "parameters": {
         "brightness": {
             "type": "float",

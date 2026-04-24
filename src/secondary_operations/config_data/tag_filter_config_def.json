@@ -2,13 +2,16 @@
     "class_name": "TagFilter",
     "description": "Filter AprilTag detections based on whitelist or blacklist of tag IDs",
     "category": "filt",
+    "folder": "Filtering",
     "input_nodes": [
         {
             "name": "detections",
             "has_default": false
         }
     ],
-    "output_nodes": ["filtered_detections"],
+    "output_nodes": [
+        "filtered_detections"
+    ],
     "parameters": {
         "filter_mode": {
             "type": "str",

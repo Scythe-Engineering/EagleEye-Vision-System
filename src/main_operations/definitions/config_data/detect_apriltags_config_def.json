@@ -2,13 +2,16 @@
     "class_name": "DetectApriltagsDefinition",
     "description": "Detects AprilTag markers in camera images and extracts their IDs and corner positions for robot localization",
     "category": "det",
+    "folder": "Detection",
     "input_nodes": [
         {
             "name": "frame",
             "has_default": false
         }
     ],
-    "output_nodes": ["detections"],
+    "output_nodes": [
+        "detections"
+    ],
     "parameters": {
         "families": {
             "type": "str",
@@ -59,7 +62,10 @@
             "description": "When non-zero, the edges of each quad are adjusted to snap to strong gradients nearby",
             "default": 1,
             "required": false,
-            "options": [0, 1],
+            "options": [
+                0,
+                1
+            ],
             "restart_for_change": false
         },
         "decode_sharpening": {

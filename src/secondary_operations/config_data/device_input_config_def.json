@@ -2,6 +2,7 @@
     "class_name": "DeviceInput",
     "description": "Provides the initial device input for the pipeline",
     "category": "prep",
+    "folder": "Input",
     "is_data_source": true,
     "input_nodes": [],
     "output_nodes": [

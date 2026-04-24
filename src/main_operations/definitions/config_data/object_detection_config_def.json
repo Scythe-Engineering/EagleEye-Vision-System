@@ -2,13 +2,16 @@
     "class_name": "ObjectDetectionDefinition",
     "description": "Generic object detection operation using device-backed model if available or CPU fallback. Supports compiled models (.dfp) with optional post-processing or standalone ONNX models. Returns detections as dictionaries with bbox, score, and class_id.",
     "category": "det",
+    "folder": "Detection",
     "input_nodes": [
         {
             "name": "frame",
             "has_default": false
         }
     ],
-    "output_nodes": ["detections"],
+    "output_nodes": [
+        "detections"
+    ],
     "parameters": {
         "model_path": {
             "type": "str",

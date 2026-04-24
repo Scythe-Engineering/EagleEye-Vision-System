@@ -2,13 +2,16 @@
     "class_name": "ColorThresholdDetectionDefinition",
     "description": "Color-based object detection with downscaling, letterboxing, HSV color thresholding for multiple objects, contour extraction, and bounding box calculation. Returns detections with bounding boxes scaled to original frame coordinates.",
     "category": "det",
+    "folder": "Detection",
     "input_nodes": [
         {
             "name": "frame",
             "has_default": false
         }
     ],
-    "output_nodes": ["detections"],
+    "output_nodes": [
+        "detections"
+    ],
     "parameters": {
         "camera_bus_id": {
             "type": "str",
@@ -47,19 +50,35 @@
                     "type": "list",
                     "item_type": "int",
                     "description": "Lower HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
-                    "default": [0, 0, 0],
+                    "default": [
+                        0,
+                        0,
+                        0
+                    ],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"]
+                    "item_labels": [
+                        "H",
+                        "S",
+                        "V"
+                    ]
                 },
                 "upper_hsv": {
                     "type": "list",
                     "item_type": "int",
                     "description": "Upper HSV bounds as [H, S, V]. H: 0-179, S: 0-255, V: 0-255",
-                    "default": [179, 255, 255],
+                    "default": [
+                        179,
+                        255,
+                        255
+                    ],
                     "min_items": 3,
                     "max_items": 3,
-                    "item_labels": ["H", "S", "V"]
+                    "item_labels": [
+                        "H",
+                        "S",
+                        "V"
+                    ]
                 }
             }
         },

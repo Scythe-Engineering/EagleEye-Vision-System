@@ -2,12 +2,15 @@
     "class_name": "PoseFusion",
     "description": "Fuses multiple 4x4 transformation matrix poses into a single consensus pose using weighted averaging with outlier rejection",
     "category": "proc",
+    "folder": "Localization",
     "dynamic_group": {
         "input_prefix": "pose",
         "max_inputs": "unlimited",
         "min_inputs": 1
     },
-    "output_nodes": ["fused_pose"],
+    "output_nodes": [
+        "fused_pose"
+    ],
     "parameters": {
         "outlier_threshold": {
             "type": "float",

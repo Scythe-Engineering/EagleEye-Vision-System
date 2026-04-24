@@ -40,9 +40,11 @@ class OperationConfigMixin:
                         "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
+                    folder = config_data.get("folder", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
+                    folder = "Uncategorized"
 
                 main_operations.append(
                     {
@@ -53,6 +55,7 @@ class OperationConfigMixin:
                         "config_data_path": config_data_path,
                         "description": description,
                         "category": category,
+                        "folder": folder,
                         "is_secondary": False,
                         "has_visualization": self._operation_has_visualization(
                             file,
@@ -78,9 +81,11 @@ class OperationConfigMixin:
                         "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )
                     category = config_data.get("category", "Uncategorized")
+                    folder = config_data.get("folder", "Uncategorized")
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
+                    folder = "Uncategorized"
 
                 secondary_operations.append(
                     {
@@ -89,6 +94,7 @@ class OperationConfigMixin:
                         "config_data_path": config_data_path,
                         "description": description,
                         "category": category,
+                        "folder": folder,
                         "is_secondary": True,
                         "has_visualization": self._operation_has_visualization(
                             file,
