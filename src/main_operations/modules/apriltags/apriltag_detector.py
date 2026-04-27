@@ -67,6 +67,7 @@ class AprilTagDetector:
         self.decode_sharpening = decode_sharpening
 
         self.ready = False
+        self._detect_lock: Lock = Lock()
 
         self.detector = Detector(
             families=self.families,
@@ -76,7 +77,6 @@ class AprilTagDetector:
             refine_edges=self.refine_edges,
             decode_sharpening=self.decode_sharpening,
         )
-        self._detect_lock: Lock = Lock()
         self.ready = True
 
     def _preprocess_image(self, image: np.ndarray) -> Optional[np.ndarray]:
@@ -141,29 +141,38 @@ class AprilTagDetector:
             refine_edges: Whether to refine quad edges.
             decode_sharpening: Sharpening amount for decoded images.
         """
-        if families is not None:
-            self.families = families
-        if nthreads is not None:
-            self.nthreads = nthreads
-        if quad_decimate is not None:
-            self.quad_decimate = quad_decimate
-        if quad_sigma is not None:
-            self.quad_sigma = quad_sigma
-        if refine_edges is not None:
-            self.refine_edges = refine_edges
-        if decode_sharpening is not None:
-            self.decode_sharpening = decode_sharpening
-
-        self.ready = False
-        self.detector = Detector(
-            families=self.families,
-            nthreads=self.nthreads,
-            quad_decimate=self.quad_decimate,
-            quad_sigma=self.quad_sigma,
-            refine_edges=self.refine_edges,
-            decode_sharpening=self.decode_sharpening,
+        next_families = self.families if families is None else families
+        next_nthreads = self.nthreads if nthreads is None else nthreads
+        next_quad_decimate = (
+            self.quad_decimate if quad_decimate is None else quad_decimate
         )
-        self.ready = True
+        next_quad_sigma = self.quad_sigma if quad_sigma is None else quad_sigma
+        next_refine_edges = self.refine_edges if refine_edges is None else refine_edges
+        next_decode_sharpening = (
+            self.decode_sharpening
+            if decode_sharpening is None
+            else decode_sharpening
+        )
+
+        new_detector = Detector(
+            families=next_families,
+            nthreads=next_nthreads,
+            quad_decimate=next_quad_decimate,
+            quad_sigma=next_quad_sigma,
+            refine_edges=next_refine_edges,
+            decode_sharpening=next_decode_sharpening,
+        )
+
+        with self._detect_lock:
+            self.ready = False
+            self.families = next_families
+            self.nthreads = next_nthreads
+            self.quad_decimate = next_quad_decimate
+            self.quad_sigma = next_quad_sigma
+            self.refine_edges = next_refine_edges
+            self.decode_sharpening = next_decode_sharpening
+            self.detector = new_detector
+            self.ready = True
 
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
