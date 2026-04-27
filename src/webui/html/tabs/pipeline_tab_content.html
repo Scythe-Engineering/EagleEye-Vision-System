@@ -46,6 +46,30 @@
                                     No cameras configured
                                 </p>
                             </div>
+                            <div class="flex items-center gap-1">
+                                <button
+                                    id="undoButton"
+                                    class="flex items-center justify-center w-9 h-9 bg-[#232323] text-[#888] rounded-md border border-[#414141] hover:border-[#f9c845] hover:text-[#f9c845] transition-colors opacity-40 cursor-not-allowed"
+                                    title="Undo (Ctrl+Z)"
+                                    disabled
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 7v6h6"/>
+                                        <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+                                    </svg>
+                                </button>
+                                <button
+                                    id="redoButton"
+                                    class="flex items-center justify-center w-9 h-9 bg-[#232323] text-[#888] rounded-md border border-[#414141] hover:border-[#f9c845] hover:text-[#f9c845] transition-colors opacity-40 cursor-not-allowed"
+                                    title="Redo (Ctrl+Shift+Z)"
+                                    disabled
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 7v6h-6"/>
+                                        <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>
+                                    </svg>
+                                </button>
+                            </div>
                             <button
                                 id="newPipelineButton"
                                 class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"

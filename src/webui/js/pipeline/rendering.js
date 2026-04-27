@@ -750,6 +750,7 @@ export class FlowchartRenderer {
         if (item) {
             item.position = position;
         }
+        pipelineStore.updateNodePosition(node.instanceId, position);
 
         if (this.positionChangeDebounce) {
             clearTimeout(this.positionChangeDebounce);

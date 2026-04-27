@@ -7,6 +7,7 @@ import { handleDragStart } from "./dragDrop.js";
 import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
+import { pipelineHistory } from "./pipelineHistory.js";
 import { showDanger, showWarning } from "../ui/notificationSystem.js";
 import { registerSettingsPopup } from "./settingsPopup.js";
 
@@ -42,6 +43,8 @@ let pipelineSelect;
 let pipelineCameraNote;
 let newPipelineButton;
 let deletePipelineButton;
+let undoButton;
+let redoButton;
 let restartIndicator;
 let flowchartCanvas;
 let executionTimestepsList;
@@ -2150,6 +2153,8 @@ export async function initPipelineCreator() {
     pipelineCameraNote = document.getElementById("pipelineCameraNote");
     newPipelineButton = document.getElementById("newPipelineButton");
     deletePipelineButton = document.getElementById("deletePipelineButton");
+    undoButton = document.getElementById("undoButton");
+    redoButton = document.getElementById("redoButton");
     restartIndicator = document.getElementById("restartIndicator");
     executionTimestepsList = document.getElementById("executionTimestepsList");
     executionSummaryContent = document.getElementById(
@@ -2220,6 +2225,20 @@ export async function initPipelineCreator() {
 
     initFlowchartRenderer();
 
+    pipelineHistory.init(pipelineStore, {
+        renderCallback: async () => {
+            if (!flowchartRenderer) return;
+            const pipeline = getPipeline();
+            const connections = pipelineStore.getConnectionsForRenderer();
+            await flowchartRenderer.renderPipeline(pipeline, {
+                connections,
+                centerView: false,
+            });
+        },
+        autoSaveCallback: () => autoSavePipeline(),
+        postRefreshCallback: () => postFlowchartStructureRefresh(),
+    });
+
     pipelineStore.subscribe(
         "profiling:updated",
         ({ snapshot, pipelineName }) => {
@@ -2257,6 +2276,46 @@ export async function initPipelineCreator() {
     if (deletePipelineButton) {
         deletePipelineButton.addEventListener("click", deleteCurrentPipeline);
     }
+
+    pipelineHistory.setButtons(undoButton, redoButton);
+
+    if (undoButton) {
+        undoButton.addEventListener("click", () => pipelineHistory.undo());
+    }
+
+    if (redoButton) {
+        redoButton.addEventListener("click", () => pipelineHistory.redo());
+    }
+
+    document.addEventListener("keydown", (event) => {
+        const pipelineView = document.getElementById("view-pipeline");
+        if (pipelineView?.classList.contains("hidden")) return;
+
+        const target = event.target;
+        if (
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable
+        ) return;
+
+        const key = event.key.toLowerCase();
+        const isUndo = (event.ctrlKey || event.metaKey) && key === "z" && !event.shiftKey;
+        const isRedo = (event.ctrlKey || event.metaKey) && key === "z" && event.shiftKey;
+
+        if (!isUndo && !isRedo) return;
+
+        // Defer to manualPathCreator's own Ctrl+Z (undo-waypoint) when it is active.
+        if (globalThis.flowchartRenderer?.connections?.manualPathCreator?.isActive) return;
+
+        event.preventDefault();
+
+        if (isUndo) {
+            pipelineHistory.undo();
+        } else {
+            pipelineHistory.redo();
+        }
+    });
 
     if (restartIndicator) {
         const restartButton = restartIndicator.querySelector(
