@@ -56,6 +56,14 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[dependency-groups]
+dev = [
+  "pytest>=7.4",
+  "pytest-anyio",
+  "faker",
+  "requests-mock",
+]
+
 [tool.uv]
 required-environments = [
     "sys_platform == 'linux'"
