@@ -22,9 +22,7 @@ class OperationConfigMixin:
         NO_DESCRIPTION_AVAILABLE_MESSAGE = "No description available"
         main_operations = []
 
-        for file in os.listdir(
-            os.path.join(SRC_DIR, "main_operations", "definitions")
-        ):
+        for file in os.listdir(os.path.join(SRC_DIR, "main_operations", "definitions")):
             if file.endswith(".py") and not file.startswith("_"):
                 config_data_path = os.path.join(
                     SRC_DIR,
@@ -41,10 +39,12 @@ class OperationConfigMixin:
                     )
                     category = config_data.get("category", "Uncategorized")
                     folder = config_data.get("folder", "Uncategorized")
+                    is_data_source = bool(config_data.get("is_data_source", False))
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
                     folder = "Uncategorized"
+                    is_data_source = False
 
                 main_operations.append(
                     {
@@ -56,6 +56,7 @@ class OperationConfigMixin:
                         "description": description,
                         "category": category,
                         "folder": folder,
+                        "is_data_source": is_data_source,
                         "is_secondary": False,
                         "has_visualization": self._operation_has_visualization(
                             file,
@@ -82,10 +83,12 @@ class OperationConfigMixin:
                     )
                     category = config_data.get("category", "Uncategorized")
                     folder = config_data.get("folder", "Uncategorized")
+                    is_data_source = bool(config_data.get("is_data_source", False))
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     description = NO_DESCRIPTION_AVAILABLE_MESSAGE
                     category = "Uncategorized"
                     folder = "Uncategorized"
+                    is_data_source = False
 
                 secondary_operations.append(
                     {
@@ -95,6 +98,7 @@ class OperationConfigMixin:
                         "description": description,
                         "category": category,
                         "folder": folder,
+                        "is_data_source": is_data_source,
                         "is_secondary": True,
                         "has_visualization": self._operation_has_visualization(
                             file,
@@ -200,7 +204,9 @@ class OperationConfigMixin:
 
         return result, 200
 
-    def _normalize_dynamic_group_config(self, config_data: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_dynamic_group_config(
+        self, config_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Normalize optional dynamic group metadata in operation config.
 
         Args:
@@ -263,12 +269,12 @@ class OperationConfigMixin:
         input_nodes = config_data.get("input_nodes") or []
         output_nodes = config_data.get("output_nodes") or []
 
-        input_base_name = normalized_group.get("input_base_name") or normalized_group.get(
-            "input_node"
-        )
-        output_base_name = normalized_group.get("output_base_name") or normalized_group.get(
-            "output_node"
-        )
+        input_base_name = normalized_group.get(
+            "input_base_name"
+        ) or normalized_group.get("input_node")
+        output_base_name = normalized_group.get(
+            "output_base_name"
+        ) or normalized_group.get("output_node")
 
         if not input_base_name:
             if input_nodes:

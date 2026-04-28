@@ -50,7 +50,12 @@ export function findCycles(nodes, connections) {
         for (const neighbor of neighbors) {
             if (!visited.has(neighbor)) {
                 // Continue DFS
-                const neighborCycleFound = dfs(neighbor, visited, recStack, path);
+                const neighborCycleFound = dfs(
+                    neighbor,
+                    visited,
+                    recStack,
+                    path,
+                );
                 if (neighborCycleFound) {
                     cycleFound = true;
                 }
@@ -104,4 +109,89 @@ export function findCycles(nodes, connections) {
     });
 
     return Array.from(cycleConnectionIds);
+}
+
+/**
+ * Finds operation islands that cannot be reached from any data-source node.
+ * @param {Map<string, object>} nodes - Map of node instance IDs to node objects.
+ * @param {Array<object>} connections - Array of connection objects.
+ * @returns {Array<Array<string>>} Groups of unreachable node instance IDs.
+ */
+export function findUnreachableIslands(nodes, connections) {
+    const outgoing = new Map();
+    const undirected = new Map();
+
+    nodes.forEach((_node, instanceId) => {
+        outgoing.set(instanceId, []);
+        undirected.set(instanceId, new Set());
+    });
+
+    connections.forEach((conn) => {
+        const fromId = conn.fromNodeId;
+        const toId = conn.toNodeId;
+        if (!nodes.has(fromId) || !nodes.has(toId)) {
+            return;
+        }
+
+        outgoing.get(fromId).push(toId);
+        undirected.get(fromId).add(toId);
+        undirected.get(toId).add(fromId);
+    });
+
+    const roots = [];
+    nodes.forEach((node, instanceId) => {
+        if (node?.operationData?.isDataSource) {
+            roots.push(instanceId);
+        }
+    });
+
+    const reachable = new Set();
+    const queue = [...roots];
+    while (queue.length > 0) {
+        const current = queue.shift();
+        if (reachable.has(current)) {
+            continue;
+        }
+        reachable.add(current);
+        for (const next of outgoing.get(current) || []) {
+            if (!reachable.has(next)) {
+                queue.push(next);
+            }
+        }
+    }
+
+    const unreachable = new Set();
+    nodes.forEach((_node, instanceId) => {
+        if (!reachable.has(instanceId)) {
+            unreachable.add(instanceId);
+        }
+    });
+
+    const islands = [];
+    const visited = new Set();
+    for (const instanceId of unreachable) {
+        if (visited.has(instanceId)) {
+            continue;
+        }
+
+        const island = [];
+        const componentQueue = [instanceId];
+        visited.add(instanceId);
+        while (componentQueue.length > 0) {
+            const current = componentQueue.shift();
+            island.push(current);
+
+            for (const next of undirected.get(current) || []) {
+                if (!unreachable.has(next) || visited.has(next)) {
+                    continue;
+                }
+                visited.add(next);
+                componentQueue.push(next);
+            }
+        }
+
+        islands.push(island);
+    }
+
+    return islands;
 }

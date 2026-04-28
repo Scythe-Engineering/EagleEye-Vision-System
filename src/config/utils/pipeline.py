@@ -231,26 +231,136 @@ class Pipeline:
                     f"Malformed connection data: missing key {e} in connection {connection}"
                 )
 
+        self._remove_unreachable_operation_islands(operations)
+
         detect_connection_cycles(operations)
 
-        orphan_operations = [
-            operation
-            for operation in operations.values()
-            if not operation.has_input_connections
-            and not operation.is_data_source  # Data sources don't need input connections
-        ]
-        if len(orphan_operations) > 0:
-            self.logger.log(
-                Colors.YELLOW
-                + f"WARNING: Orphan Operation!! Operations {[op.name for op in orphan_operations]} have no input connections"
-                + Colors.RESET
-            )
-            for operation in orphan_operations:
-                operations.pop(
-                    operation.uuid
-                )  # remove orphan operation, more important to make the rest work than crash
-
         return operations
+
+    def _remove_unreachable_operation_islands(
+        self, operations: dict[str, Operation]
+    ) -> None:
+        """Remove runtime-only operation islands disconnected from data sources.
+
+        Args:
+            operations: Mutable operation graph keyed by operation UUID.
+        """
+        reachable_uuids = self._find_data_source_reachable_operation_uuids(operations)
+        unreachable_uuids = set(operations.keys()) - reachable_uuids
+
+        if not unreachable_uuids:
+            return
+
+        island_groups = self._group_unreachable_operation_islands(
+            operations, unreachable_uuids
+        )
+        formatted_groups = [
+            [
+                f"{operations[uuid].name}:{uuid}"
+                for uuid in sorted(group, key=lambda value: operations[value].name)
+            ]
+            for group in island_groups
+        ]
+        self.logger.log(
+            Colors.YELLOW
+            + f"WARNING: Pipeline {self.pipeline_name} has operation islands disconnected "
+            + f"from data sources. These operations will not run: {formatted_groups}"
+            + Colors.RESET
+        )
+
+        for operation in operations.values():
+            operation.input_connections = [
+                connection
+                for connection in operation.input_connections
+                if connection.from_operation.uuid not in unreachable_uuids
+                and connection.to_operation.uuid not in unreachable_uuids
+            ]
+            operation.output_connections = [
+                connection
+                for connection in operation.output_connections
+                if connection.from_operation.uuid not in unreachable_uuids
+                and connection.to_operation.uuid not in unreachable_uuids
+            ]
+            operation.has_input_connections = len(operation.input_connections) > 0
+            operation.has_output_connections = len(operation.output_connections) > 0
+
+        for uuid in unreachable_uuids:
+            operations.pop(uuid, None)
+
+    def _find_data_source_reachable_operation_uuids(
+        self, operations: dict[str, Operation]
+    ) -> set[str]:
+        """Find operations reachable from any data source operation.
+
+        Args:
+            operations: Operation graph keyed by operation UUID.
+
+        Returns:
+            Set of operation UUIDs reachable through output connections.
+        """
+        roots = [
+            operation for operation in operations.values() if operation.is_data_source
+        ]
+        reachable_uuids: set[str] = set()
+        queue: deque[Operation] = deque(roots)
+
+        while queue:
+            operation = queue.popleft()
+            if operation.uuid in reachable_uuids:
+                continue
+
+            reachable_uuids.add(operation.uuid)
+            for connection in operation.output_connections:
+                if connection.to_operation.uuid not in reachable_uuids:
+                    queue.append(connection.to_operation)
+
+        return reachable_uuids
+
+    def _group_unreachable_operation_islands(
+        self, operations: dict[str, Operation], unreachable_uuids: set[str]
+    ) -> list[list[str]]:
+        """Group unreachable operations into undirected connected components.
+
+        Args:
+            operations: Operation graph keyed by operation UUID.
+            unreachable_uuids: UUIDs not reachable from any data source.
+
+        Returns:
+            List of island groups, each containing operation UUIDs.
+        """
+        adjacency: dict[str, set[str]] = {uuid: set() for uuid in unreachable_uuids}
+        for uuid in unreachable_uuids:
+            operation = operations[uuid]
+            for connection in operation.input_connections:
+                neighbor_uuid = connection.from_operation.uuid
+                if neighbor_uuid in unreachable_uuids:
+                    adjacency[uuid].add(neighbor_uuid)
+                    adjacency[neighbor_uuid].add(uuid)
+            for connection in operation.output_connections:
+                neighbor_uuid = connection.to_operation.uuid
+                if neighbor_uuid in unreachable_uuids:
+                    adjacency[uuid].add(neighbor_uuid)
+                    adjacency[neighbor_uuid].add(uuid)
+
+        groups: list[list[str]] = []
+        visited: set[str] = set()
+        for uuid in sorted(unreachable_uuids):
+            if uuid in visited:
+                continue
+            group: list[str] = []
+            queue: deque[str] = deque([uuid])
+            visited.add(uuid)
+            while queue:
+                current_uuid = queue.popleft()
+                group.append(current_uuid)
+                for next_uuid in sorted(adjacency[current_uuid]):
+                    if next_uuid in visited:
+                        continue
+                    visited.add(next_uuid)
+                    queue.append(next_uuid)
+            groups.append(group)
+
+        return groups
 
     def record_operation_init_error(
         self, operation_uuid: str, operation_name: str, message: str

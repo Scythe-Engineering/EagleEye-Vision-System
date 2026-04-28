@@ -10,6 +10,7 @@ export class FlowchartCanvas {
         this.gridSpacing = options.gridSpacing || 20;
 
         this.gridLayer = null;
+        this.islandLayer = null;
         this.connectionsLayer = null;
         this.nodesLayer = null;
 
@@ -55,6 +56,18 @@ export class FlowchartCanvas {
         this.translateX = 0;
         this.translateY = 0;
 
+        // Create island background layer behind connections and nodes.
+        this.islandLayer = document.createElement("div");
+        this.islandLayer.id = "flowchartIslands";
+        this.islandLayer.style.position = "absolute";
+        this.islandLayer.style.top = "0";
+        this.islandLayer.style.left = "0";
+        this.islandLayer.style.width = "100%";
+        this.islandLayer.style.height = "100%";
+        this.islandLayer.style.overflow = "visible";
+        this.islandLayer.style.pointerEvents = "none";
+        this.islandLayer.style.zIndex = "0";
+
         // Create connections layer (SVG)
         this.connectionsLayer = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -84,6 +97,7 @@ export class FlowchartCanvas {
         this.nodesLayer.style.pointerEvents = "none";
         this.nodesLayer.style.zIndex = "2";
 
+        this.viewport.appendChild(this.islandLayer);
         this.viewport.appendChild(this.connectionsLayer);
         this.viewport.appendChild(this.nodesLayer);
         this.container.appendChild(this.viewport);
@@ -204,7 +218,7 @@ export class FlowchartCanvas {
             this.interactiveGrid.updateViewport(
                 this.translateX,
                 this.translateY,
-                this.scale
+                this.scale,
             );
         }
     }
@@ -251,6 +265,10 @@ export class FlowchartCanvas {
 
     getConnectionsLayer() {
         return this.connectionsLayer;
+    }
+
+    getIslandLayer() {
+        return this.islandLayer;
     }
 
     getViewportState() {

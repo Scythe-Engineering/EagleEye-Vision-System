@@ -3,7 +3,7 @@ import { FlowchartCanvas } from "./flowchartCanvas.js";
 import { FlowchartNode } from "./flowchartNode.js";
 import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
-import { findCycles } from "./graphUtils.js";
+import { findCycles, findUnreachableIslands } from "./graphUtils.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { prefetchConfigs } from "./operationConfigCache.js";
 
@@ -85,10 +85,18 @@ function getFolderIcon(folderName) {
         Networking: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="8" r="3"/><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM1 8h14M8 1c-2 2-3 4-3 7s1 5 3 7M8 1c2 2 3 4 3 7s-1 5-3 7"/></svg>`,
         Output: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v9M4 7l4 4 4-4M2 13h12"/></svg>`,
     };
-    return icons[folderName] ?? `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5h5l2 2h5v7H2z"/></svg>`;
+    return (
+        icons[folderName] ??
+        `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5h5l2 2h5v7H2z"/></svg>`
+    );
 }
 
-function createOperationCard(op, operations, openOperationSettings, handleDragStart) {
+function createOperationCard(
+    op,
+    operations,
+    openOperationSettings,
+    handleDragStart,
+) {
     const el = document.createElement("div");
     el.draggable = true;
     el.className =
@@ -176,7 +184,8 @@ export function renderOperations(
             "w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-[#2a2a2a] transition-colors group/folder select-none";
 
         const arrow = document.createElement("span");
-        arrow.className = "text-[#666] transition-transform duration-200 group-hover/folder:text-[#888]";
+        arrow.className =
+            "text-[#666] transition-transform duration-200 group-hover/folder:text-[#888]";
         arrow.innerHTML = `<svg class="w-3 h-3" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4"/></svg>`;
 
         const iconEl = document.createElement("span");
@@ -184,11 +193,13 @@ export function renderOperations(
         iconEl.innerHTML = getFolderIcon(folderName);
 
         const label = document.createElement("span");
-        label.className = "text-[#c0c0c0] text-xs font-semibold uppercase tracking-widest group-hover/folder:text-white transition-colors";
+        label.className =
+            "text-[#c0c0c0] text-xs font-semibold uppercase tracking-widest group-hover/folder:text-white transition-colors";
         label.textContent = folderName;
 
         const count = document.createElement("span");
-        count.className = "ml-auto text-[#555] text-xs font-mono group-hover/folder:text-[#666] transition-colors";
+        count.className =
+            "ml-auto text-[#555] text-xs font-mono group-hover/folder:text-[#666] transition-colors";
         count.textContent = ops.length;
 
         header.appendChild(arrow);
@@ -203,14 +214,20 @@ export function renderOperations(
         braceCol.style.cssText =
             "position:absolute;left:0;top:4px;bottom:4px;width:12px;pointer-events:none;";
 
-        const braceSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        const braceSvg = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+        );
         braceSvg.setAttribute("width", "12");
         braceSvg.setAttribute("viewBox", "0 0 12 100");
         braceSvg.setAttribute("preserveAspectRatio", "none");
         braceSvg.style.cssText =
             "display:block;width:12px;height:100%;transition:opacity 0.25s ease;";
 
-        const bracePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const bracePath = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path",
+        );
         bracePath.setAttribute(
             "d",
             "M11,2 C11,2 3,2 3,12 L3,44 C3,44 1,50 3,56 L3,88 C3,88 3,98 11,98",
@@ -228,7 +245,14 @@ export function renderOperations(
         body.className = "pl-4 pr-0.5";
 
         for (const op of ops) {
-            body.appendChild(createOperationCard(op, operations, openOperationSettings, handleDragStart));
+            body.appendChild(
+                createOperationCard(
+                    op,
+                    operations,
+                    openOperationSettings,
+                    handleDragStart,
+                ),
+            );
         }
 
         body.addEventListener("mouseenter", () => {
@@ -274,6 +298,7 @@ export class FlowchartRenderer {
         this.minimap = null;
         this.nodes = new Map();
         this.pipeline = [];
+        this.islandBlocks = [];
 
         this.callbacks = {
             openOperationSettings: options.openOperationSettings || (() => {}),
@@ -477,6 +502,7 @@ export class FlowchartRenderer {
 
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
+        this.clearIslandBlocks();
 
         // Only clear connections if we're not preserving them (default behavior for loading saved connections)
         if (!options.preserveConnections) {
@@ -560,6 +586,7 @@ export class FlowchartRenderer {
         if (pipeline.length === 0) {
             // Update grid with empty operation positions to clear caches
             this.updateGridOperationPositions();
+            this.updateIslandBlocks();
             // Clear minimap when pipeline is empty
             if (this.minimap) {
                 this.minimap.updateNodes([]);
@@ -601,6 +628,7 @@ export class FlowchartRenderer {
         this.syncAllDynamicNodes();
 
         this.refreshLayoutChrome();
+        this.updateIslandBlocks();
 
         if (options.centerView !== false) {
             this.centerViewOnNodes();
@@ -624,6 +652,7 @@ export class FlowchartRenderer {
         }
         this.updateGridOperationPositions();
         this.callbacks.updateRunButton();
+        this.updateIslandBlocks();
     }
 
     syncPipelineArrayFromStore() {
@@ -669,6 +698,7 @@ export class FlowchartRenderer {
         this.syncAllDynamicNodes();
         this.updateCycleHighlights();
         this.refreshLayoutChrome();
+        this.updateIslandBlocks();
         if (wasEmpty) {
             this.centerViewOnNodes();
         }
@@ -711,7 +741,9 @@ export class FlowchartRenderer {
             return false;
         }
 
-        const didChange = node.syncDynamicPorts(this.connections.getConnectionData());
+        const didChange = node.syncDynamicPorts(
+            this.connections.getConnectionData(),
+        );
         if (!didChange) {
             return false;
         }
@@ -783,6 +815,7 @@ export class FlowchartRenderer {
         }
 
         this.updateGridOperationPositions();
+        this.updateIslandBlocks();
 
         this.callbacks.autoSavePipeline();
     }
@@ -808,6 +841,7 @@ export class FlowchartRenderer {
                     );
                 }
                 this.updateGridOperationPositions();
+                this.updateIslandBlocks();
                 this.positionChangeDebounce = null;
             }, 16);
         }
@@ -1178,6 +1212,7 @@ export class FlowchartRenderer {
         this.cancelConnecting();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
+        this.updateIslandBlocks();
     }
 
     updateCycleHighlights() {
@@ -1234,6 +1269,7 @@ export class FlowchartRenderer {
         this.syncAllDynamicNodes();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
+        this.updateIslandBlocks();
     }
 
     handleConnectionChanged(connectionId) {
@@ -1285,6 +1321,7 @@ export class FlowchartRenderer {
         }
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
+        this.updateIslandBlocks();
     }
 
     handleViewportChange(viewportState) {
@@ -1305,6 +1342,7 @@ export class FlowchartRenderer {
 
             this.syncPipelineArrayFromStore();
             this.refreshLayoutChrome();
+            this.updateIslandBlocks();
         }
     }
 
@@ -1365,6 +1403,7 @@ export class FlowchartRenderer {
     destroy() {
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
+        this.clearIslandBlocks();
         this.connections.destroy();
         if (this.minimap) {
             this.minimap.destroy();
@@ -1408,5 +1447,208 @@ export class FlowchartRenderer {
         });
 
         this.updateCycleHighlights();
+        this.updateIslandBlocks();
+    }
+
+    clearIslandBlocks() {
+        const islandLayer = this.canvas?.getIslandLayer?.();
+        if (islandLayer) {
+            islandLayer.innerHTML = "";
+        }
+        this.islandBlocks = [];
+        this.hideIslandTooltip();
+    }
+
+    updateIslandBlocks() {
+        const islandLayer = this.canvas?.getIslandLayer?.();
+        if (!islandLayer) {
+            return;
+        }
+
+        islandLayer.innerHTML = "";
+        this.islandBlocks = [];
+        this.nodes.forEach((node) => {
+            node.setIslandInactive?.(false);
+        });
+
+        const islands = findUnreachableIslands(
+            this.nodes,
+            this.connections.getConnectionData(),
+        );
+        const padding = 28;
+
+        islands.forEach((island, index) => {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+
+            island.forEach((instanceId) => {
+                const node = this.nodes.get(instanceId);
+                if (!node?.element) {
+                    return;
+                }
+                const position = node.getPosition();
+                const width = node.element.offsetWidth || 200;
+                const height = node.element.offsetHeight || 80;
+
+                minX = Math.min(minX, position.x);
+                minY = Math.min(minY, position.y);
+                maxX = Math.max(maxX, position.x + width);
+                maxY = Math.max(maxY, position.y + height);
+            });
+
+            if (
+                !Number.isFinite(minX) ||
+                !Number.isFinite(minY) ||
+                !Number.isFinite(maxX) ||
+                !Number.isFinite(maxY)
+            ) {
+                return;
+            }
+
+            const block = document.createElement("div");
+            block.className = "pipeline-island-block";
+            block.setAttribute(
+                "aria-label",
+                `Disconnected operation island ${index + 1}`,
+            );
+            Object.assign(block.style, {
+                position: "absolute",
+                left: `${minX - padding}px`,
+                top: `${minY - padding}px`,
+                width: `${maxX - minX + padding * 2}px`,
+                height: `${maxY - minY + padding * 2}px`,
+                border: "2px dotted rgba(255, 194, 74, 0.75)",
+                borderRadius: "16px",
+                pointerEvents: "none",
+                background:
+                    "repeating-linear-gradient(135deg, rgba(255, 194, 74, 0.16) 0, rgba(255, 194, 74, 0.16) 2px, transparent 2px, transparent 14px)",
+                boxShadow: "0 0 0 1px rgba(255, 194, 74, 0.05)",
+                opacity: "0.95",
+            });
+
+            const infoDot = this.createIslandInfoDot();
+            block.appendChild(infoDot);
+            islandLayer.appendChild(block);
+            this.islandBlocks.push(block);
+
+            island.forEach((instanceId) => {
+                this.nodes.get(instanceId)?.setIslandInactive?.(true);
+            });
+        });
+    }
+
+    createIslandInfoDot() {
+        const message =
+            "Operation Island: these operations will not execute in the current configuration.";
+        const dot = document.createElement("button");
+        dot.type = "button";
+        dot.className = "pipeline-island-info-dot";
+        dot.setAttribute("aria-label", message);
+        dot.title = message;
+        Object.assign(dot.style, {
+            position: "absolute",
+            top: "-11px",
+            left: "-11px",
+            width: "24px",
+            height: "24px",
+            borderRadius: "50%",
+            border: "2px solid rgba(26, 26, 26, 0.95)",
+            background: "#f9c845",
+            color: "#1a1a1a",
+            fontSize: "13px",
+            fontWeight: "800",
+            lineHeight: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "help",
+            pointerEvents: "auto",
+            zIndex: "3",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.35)",
+        });
+        dot.textContent = "i";
+
+        const showTooltip = () => {
+            this.showIslandTooltip(dot, message);
+        };
+        const hideTooltip = () => {
+            this.hideIslandTooltip();
+        };
+
+        dot.addEventListener("mouseenter", showTooltip);
+        dot.addEventListener("mouseleave", hideTooltip);
+        dot.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (this.islandTooltipAnchor === dot) {
+                hideTooltip();
+            } else {
+                showTooltip();
+            }
+        });
+
+        return dot;
+    }
+
+    ensureIslandTooltip() {
+        if (this.islandTooltip?.isConnected) {
+            return this.islandTooltip;
+        }
+
+        const tooltip = document.createElement("div");
+        tooltip.className = "pipeline-island-tooltip";
+        Object.assign(tooltip.style, {
+            position: "fixed",
+            width: "260px",
+            padding: "8px 10px",
+            borderRadius: "8px",
+            border: "1px solid rgba(249, 200, 69, 0.6)",
+            background: "rgba(35, 35, 35, 0.98)",
+            color: "#f1f1f1",
+            fontSize: "12px",
+            fontWeight: "500",
+            lineHeight: "1.3",
+            textAlign: "left",
+            pointerEvents: "none",
+            opacity: "0",
+            transform: "translateY(-3px)",
+            transition: "opacity 120ms ease, transform 120ms ease",
+            boxShadow: "0 8px 18px rgba(0, 0, 0, 0.35)",
+            zIndex: "9999",
+        });
+        document.body.appendChild(tooltip);
+        this.islandTooltip = tooltip;
+        return tooltip;
+    }
+
+    showIslandTooltip(anchor, message) {
+        const tooltip = this.ensureIslandTooltip();
+        tooltip.textContent = message;
+
+        const anchorRect = anchor.getBoundingClientRect();
+        const margin = 8;
+        const tooltipWidth = 260;
+        const left = Math.min(
+            Math.max(anchorRect.left, margin),
+            window.innerWidth - tooltipWidth - margin,
+        );
+        const top = Math.max(anchorRect.top - 4, margin);
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        tooltip.style.opacity = "1";
+        tooltip.style.transform = "translateY(-100%)";
+        this.islandTooltipAnchor = anchor;
+    }
+
+    hideIslandTooltip() {
+        if (!this.islandTooltip) {
+            return;
+        }
+        this.islandTooltip.style.opacity = "0";
+        this.islandTooltip.style.transform = "translateY(-3px)";
+        this.islandTooltipAnchor = null;
     }
 }

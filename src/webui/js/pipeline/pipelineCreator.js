@@ -886,6 +886,7 @@ async function fetchAvailableOperations() {
             path: op.path,
             configDataPath: op.config_data_path,
             isSecondary: op.is_secondary,
+            isDataSource: Boolean(op.is_data_source),
             hasVisualization: Boolean(op.has_visualization),
         }));
 

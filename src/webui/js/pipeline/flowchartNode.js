@@ -89,14 +89,17 @@ export class FlowchartNode {
 
         const mirroredOutputGroup =
             rawDynamicGroup.mirrored_output_group === true ||
-            String(rawDynamicGroup.mirrored_output_group).toLowerCase() === "true";
+            String(rawDynamicGroup.mirrored_output_group).toLowerCase() ===
+                "true";
 
         const outputDynamicGroup =
             rawDynamicGroup.output_dynamic_group === true ||
-            String(rawDynamicGroup.output_dynamic_group).toLowerCase() === "true";
+            String(rawDynamicGroup.output_dynamic_group).toLowerCase() ===
+                "true";
         const inputDynamicGroupDisabled =
             rawDynamicGroup.input_dynamic_group === false ||
-            String(rawDynamicGroup.input_dynamic_group).toLowerCase() === "false";
+            String(rawDynamicGroup.input_dynamic_group).toLowerCase() ===
+                "false";
 
         const hasDynamicInputGroup = !inputDynamicGroupDisabled;
         const hasDynamicOutputGroup = mirroredOutputGroup || outputDynamicGroup;
@@ -105,12 +108,15 @@ export class FlowchartNode {
             rawDynamicGroup.coupled_groups === undefined
                 ? mirroredOutputGroup
                 : rawDynamicGroup.coupled_groups === true ||
-                  String(rawDynamicGroup.coupled_groups).toLowerCase() === "true";
+                  String(rawDynamicGroup.coupled_groups).toLowerCase() ===
+                      "true";
 
         const inputBaseName =
             rawDynamicGroup.input_base_name ||
             rawDynamicGroup.input_node ||
-            (rawInputNodes.length > 0 ? rawInputNodes[rawInputNodes.length - 1] : "data");
+            (rawInputNodes.length > 0
+                ? rawInputNodes[rawInputNodes.length - 1]
+                : "data");
 
         const outputBaseName =
             rawDynamicGroup.output_base_name ||
@@ -126,7 +132,8 @@ export class FlowchartNode {
             outputDynamicGroup,
             hasDynamicInputGroup,
             hasDynamicOutputGroup,
-            coupledGroups: coupledGroups && hasDynamicInputGroup && hasDynamicOutputGroup,
+            coupledGroups:
+                coupledGroups && hasDynamicInputGroup && hasDynamicOutputGroup,
             inputBaseName,
             outputBaseName,
             inputCount: hasDynamicInputGroup ? 1 : 0,
@@ -219,10 +226,12 @@ export class FlowchartNode {
             ? Math.max(1, Math.min(this.dynamicGroup.maxOutputs, outputCount))
             : 0;
 
-        const boundedConnectedInputCount = this.dynamicGroup.hasDynamicInputGroup
+        const boundedConnectedInputCount = this.dynamicGroup
+            .hasDynamicInputGroup
             ? Math.max(0, Math.min(boundedInputCount, connectedInputCount))
             : 0;
-        const boundedConnectedOutputCount = this.dynamicGroup.hasDynamicOutputGroup
+        const boundedConnectedOutputCount = this.dynamicGroup
+            .hasDynamicOutputGroup
             ? Math.max(0, Math.min(boundedOutputCount, connectedOutputCount))
             : 0;
 
@@ -233,18 +242,27 @@ export class FlowchartNode {
 
         this.dynamicInputNodes = this.dynamicGroup.hasDynamicInputGroup
             ? Array.from({ length: boundedInputCount }, (_, idx) =>
-                  this.buildIndexedPortName(this.dynamicGroup.inputBaseName, idx + 1),
+                  this.buildIndexedPortName(
+                      this.dynamicGroup.inputBaseName,
+                      idx + 1,
+                  ),
               )
             : [];
 
         this.dynamicOutputNodes = this.dynamicGroup.hasDynamicOutputGroup
             ? Array.from({ length: boundedOutputCount }, (_, idx) =>
-                  this.buildIndexedPortName(this.dynamicGroup.outputBaseName, idx + 1),
+                  this.buildIndexedPortName(
+                      this.dynamicGroup.outputBaseName,
+                      idx + 1,
+                  ),
               )
             : [];
 
         this.inputNodes = [...this.staticInputNodes, ...this.dynamicInputNodes];
-        this.outputNodes = [...this.staticOutputNodes, ...this.dynamicOutputNodes];
+        this.outputNodes = [
+            ...this.staticOutputNodes,
+            ...this.dynamicOutputNodes,
+        ];
 
         this.dynamicInputNodes.forEach((portName) => {
             this.inputNodeConfig.set(portName, { hasDefault: false });
@@ -307,7 +325,10 @@ export class FlowchartNode {
                       desiredConnectedOutputCount,
                   );
                   const sharedCount = Math.min(
-                      Math.min(this.dynamicGroup.maxInputs, this.dynamicGroup.maxOutputs),
+                      Math.min(
+                          this.dynamicGroup.maxInputs,
+                          this.dynamicGroup.maxOutputs,
+                      ),
                       Math.max(1, sharedConnected + 1),
                   );
                   return {
@@ -365,7 +386,10 @@ export class FlowchartNode {
             ? this.dynamicGroup.connectedOutputCount
             : this.dynamicGroup.connectedInputCount;
 
-        if (parsedIndex <= currentCount && parsedIndex <= currentConnectedCount) {
+        if (
+            parsedIndex <= currentCount &&
+            parsedIndex <= currentConnectedCount
+        ) {
             return false;
         }
 
@@ -374,7 +398,10 @@ export class FlowchartNode {
             : this.dynamicGroup.maxInputs;
         const desiredSideCount = Math.min(
             maxCount,
-            Math.max(currentCount, parsedIndex < maxCount ? parsedIndex + 1 : parsedIndex),
+            Math.max(
+                currentCount,
+                parsedIndex < maxCount ? parsedIndex + 1 : parsedIndex,
+            ),
         );
 
         if (this.dynamicGroup.coupledGroups) {
@@ -389,9 +416,15 @@ export class FlowchartNode {
                 outputCount: sharedCount,
                 connectedInputCount: isOutputPort
                     ? this.dynamicGroup.connectedInputCount
-                    : Math.max(this.dynamicGroup.connectedInputCount, parsedIndex),
+                    : Math.max(
+                          this.dynamicGroup.connectedInputCount,
+                          parsedIndex,
+                      ),
                 connectedOutputCount: isOutputPort
-                    ? Math.max(this.dynamicGroup.connectedOutputCount, parsedIndex)
+                    ? Math.max(
+                          this.dynamicGroup.connectedOutputCount,
+                          parsedIndex,
+                      )
                     : this.dynamicGroup.connectedOutputCount,
             });
         } else {
@@ -404,9 +437,15 @@ export class FlowchartNode {
                     : this.dynamicGroup.outputCount,
                 connectedInputCount: isOutputPort
                     ? this.dynamicGroup.connectedInputCount
-                    : Math.max(this.dynamicGroup.connectedInputCount, parsedIndex),
+                    : Math.max(
+                          this.dynamicGroup.connectedInputCount,
+                          parsedIndex,
+                      ),
                 connectedOutputCount: isOutputPort
-                    ? Math.max(this.dynamicGroup.connectedOutputCount, parsedIndex)
+                    ? Math.max(
+                          this.dynamicGroup.connectedOutputCount,
+                          parsedIndex,
+                      )
                     : this.dynamicGroup.connectedOutputCount,
             });
         }
@@ -588,7 +627,7 @@ export class FlowchartNode {
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
                 "></div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
-                    <span style="
+                    <span class="node-category-badge" style="
                         background-color: ${categoryColor};
                         color: white;
                         font-size: 10px;
@@ -678,6 +717,36 @@ export class FlowchartNode {
 
         this.setupButtonListeners();
         this.cachePortElements();
+        this.applyIslandInactiveState();
+    }
+
+    setIslandInactive(isInactive) {
+        this.isIslandInactive = Boolean(isInactive);
+        this.applyIslandInactiveState();
+    }
+
+    applyIslandInactiveState() {
+        if (!this.element) {
+            return;
+        }
+
+        const categoryBadge = this.element.querySelector(
+            ".node-category-badge",
+        );
+        if (!categoryBadge) {
+            return;
+        }
+
+        if (this.isIslandInactive) {
+            categoryBadge.style.filter = "grayscale(100%)";
+            categoryBadge.style.opacity = "0.58";
+            categoryBadge.title =
+                "Operation Island: this operation will not execute in the current configuration.";
+        } else {
+            categoryBadge.style.filter = "";
+            categoryBadge.style.opacity = "";
+            categoryBadge.removeAttribute("title");
+        }
     }
 
     renderInputPorts() {
@@ -1233,8 +1302,7 @@ export class FlowchartNode {
                 "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 12px rgba(0, 0, 0, 0.5)";
         } else if (!this.isDragging) {
             this.element.style.borderColor = "#404040";
-            this.element.style.boxShadow =
-                "4px 4px 12px rgba(0, 0, 0, 0.5)";
+            this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
         }
 
         if (nodeIcon) {
