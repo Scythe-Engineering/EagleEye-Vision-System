@@ -40,12 +40,12 @@ from src.webui.web_server_utils.constants import (
     CORS_ALLOWED_ORIGINS,
     DEFAULT_GENERAL_CONF,
     DEFAULT_VIEW_STREAM_DOWNSCALE,
-    GENERAL_CONF_PATH, # noqa: F401 (for tests)
-    PIPELINE_NOT_FOUND_MESSAGE, # noqa: F401 (for tests)
+    GENERAL_CONF_PATH,  # noqa: F401 (for tests)
+    PIPELINE_NOT_FOUND_MESSAGE,  # noqa: F401 (for tests)
     PROFILING_PUBLISH_INTERVAL_SECONDS,
     SRC_DIR,
     SSE_SERIALIZATION_WARN_INTERVAL_SECONDS,
-    TEXT_PLAIN_MIMETYPE, # noqa: F401 (for tests)
+    TEXT_PLAIN_MIMETYPE,  # noqa: F401 (for tests)
     WEBUI_DIR,
     WEB_SERVER_HOST,
     WEB_SERVER_PORT,
@@ -144,6 +144,7 @@ class EagleEyeInterface(
         self.pipeline_objects_callback = pipeline_objects_callback
 
         self.restart_required_for_config = False
+        self.runtime_id = f"{os.getpid()}-{time.time_ns()}"
         self.last_log_message_count = 0
         self.network_table_instance = network_table_instance
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
@@ -672,7 +673,9 @@ class EagleEyeInterface(
             self._sse_queue = q
 
         with self._pipeline_error_lock:
-            self._pipeline_error_dirty_pipelines.update(self._pipeline_error_cache.keys())
+            self._pipeline_error_dirty_pipelines.update(
+                self._pipeline_error_cache.keys()
+            )
 
         self._publish_cached_pipeline_errors()
 

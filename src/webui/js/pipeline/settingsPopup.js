@@ -40,14 +40,18 @@ export function registerSettingsPopup() {
     function operationHasSettings(config) {
         const params = config?.parameters;
         const hasParameters =
-            params && typeof params === "object" && Object.keys(params).length > 0;
+            params &&
+            typeof params === "object" &&
+            Object.keys(params).length > 0;
         const hasDynamicGroup =
             config?.dynamic_group && typeof config.dynamic_group === "object";
         return hasParameters || hasDynamicGroup;
     }
 
     function renderPortGroupsSummary(modalBody, config) {
-        const inputNodes = Array.isArray(config?.input_nodes) ? config.input_nodes : [];
+        const inputNodes = Array.isArray(config?.input_nodes)
+            ? config.input_nodes
+            : [];
         const outputNodes = Array.isArray(config?.output_nodes)
             ? config.output_nodes
             : [];
@@ -73,7 +77,8 @@ export function registerSettingsPopup() {
         if (dynamicGroup) {
             const inputDynDisabled =
                 dynamicGroup.input_dynamic_group === false ||
-                String(dynamicGroup.input_dynamic_group).toLowerCase() === "false";
+                String(dynamicGroup.input_dynamic_group).toLowerCase() ===
+                    "false";
             hasDynamicInput = !inputDynDisabled;
 
             mirrored =
@@ -82,7 +87,8 @@ export function registerSettingsPopup() {
                     "true";
             const outputDyn =
                 dynamicGroup.output_dynamic_group === true ||
-                String(dynamicGroup.output_dynamic_group).toLowerCase() === "true";
+                String(dynamicGroup.output_dynamic_group).toLowerCase() ===
+                    "true";
             hasDynamicOutput = mirrored || outputDyn;
 
             dynamicInputBase =
@@ -101,13 +107,15 @@ export function registerSettingsPopup() {
             );
         }
 
-        const effectiveStaticInputs = dynamicInputBase && hasDynamicInput
-            ? staticInputNames.filter((name) => name !== dynamicInputBase)
-            : staticInputNames;
+        const effectiveStaticInputs =
+            dynamicInputBase && hasDynamicInput
+                ? staticInputNames.filter((name) => name !== dynamicInputBase)
+                : staticInputNames;
 
-        const effectiveStaticOutputs = dynamicOutputBase && hasDynamicOutput
-            ? staticOutputNames.filter((name) => name !== dynamicOutputBase)
-            : staticOutputNames;
+        const effectiveStaticOutputs =
+            dynamicOutputBase && hasDynamicOutput
+                ? staticOutputNames.filter((name) => name !== dynamicOutputBase)
+                : staticOutputNames;
 
         if (
             effectiveStaticInputs.length === 0 &&
@@ -137,7 +145,8 @@ export function registerSettingsPopup() {
         });
         staticBlock.appendChild(
             createElement("div", {
-                className: "text-xs uppercase tracking-wide text-[#ac8a2f] mb-2",
+                className:
+                    "text-xs uppercase tracking-wide text-[#ac8a2f] mb-2",
                 text: "Static slots",
             }),
         );
@@ -156,11 +165,13 @@ export function registerSettingsPopup() {
 
         if (dynamicGroup) {
             const dynamicBlock = createElement("div", {
-                className: "bg-[#1a2430] border border-[#2f5f89] rounded-md p-3",
+                className:
+                    "bg-[#1a2430] border border-[#2f5f89] rounded-md p-3",
             });
             dynamicBlock.appendChild(
                 createElement("div", {
-                    className: "text-xs uppercase tracking-wide text-[#8dc8ff] mb-2",
+                    className:
+                        "text-xs uppercase tracking-wide text-[#8dc8ff] mb-2",
                     text: "Dynamic group",
                 }),
             );
@@ -175,7 +186,10 @@ export function registerSettingsPopup() {
             if (hasDynamicOutput) {
                 const maxOutputs = Math.max(
                     1,
-                    Number.parseInt(dynamicGroup.max_outputs ?? maxInputs, 10) || maxInputs,
+                    Number.parseInt(
+                        dynamicGroup.max_outputs ?? maxInputs,
+                        10,
+                    ) || maxInputs,
                 );
                 dynamicBlock.appendChild(
                     createElement("div", {
@@ -217,28 +231,30 @@ export function registerSettingsPopup() {
                 return response.json();
             })
             .then((data) => {
-                const cameras = Object.entries(data || {}).map(([name, cameraInfo]) => {
-                    let id;
+                const cameras = Object.entries(data || {}).map(
+                    ([name, cameraInfo]) => {
+                        let id;
 
-                    if (
-                        cameraInfo?.bus_id !== undefined &&
-                        cameraInfo?.bus_id !== null
-                    ) {
-                        id = String(cameraInfo.bus_id);
-                    } else if (
-                        cameraInfo?.id !== undefined &&
-                        cameraInfo?.id !== null
-                    ) {
-                        id = String(cameraInfo.id);
-                    } else {
-                        id = name;
-                    }
+                        if (
+                            cameraInfo?.bus_id !== undefined &&
+                            cameraInfo?.bus_id !== null
+                        ) {
+                            id = String(cameraInfo.bus_id);
+                        } else if (
+                            cameraInfo?.id !== undefined &&
+                            cameraInfo?.id !== null
+                        ) {
+                            id = String(cameraInfo.id);
+                        } else {
+                            id = name;
+                        }
 
-                    return {
-                        name,
-                        id,
-                    };
-                });
+                        return {
+                            name,
+                            id,
+                        };
+                    },
+                );
                 _availableCameras = cameras;
                 return cameras;
             })
@@ -521,7 +537,11 @@ export function registerSettingsPopup() {
             });
 
             let itemLabel = `Item ${index + 1}`;
-            if (def.item_labels && Array.isArray(def.item_labels) && def.item_labels[index]) {
+            if (
+                def.item_labels &&
+                Array.isArray(def.item_labels) &&
+                def.item_labels[index]
+            ) {
                 itemLabel = def.item_labels[index];
             }
 
@@ -699,6 +719,7 @@ export function registerSettingsPopup() {
                 label,
                 operationName,
                 `${parentPath}${parentPath ? "-" : ""}${name}`,
+                false,
             );
         }
 
@@ -712,6 +733,7 @@ export function registerSettingsPopup() {
                 label,
                 operationName,
                 `${parentPath}${parentPath ? "-" : ""}${name}`,
+                false,
             );
         }
 
@@ -786,12 +808,11 @@ export function registerSettingsPopup() {
                         input.appendChild(optEl);
                     });
 
-                    const knownBusIds = normalizedCameras.map((camera) => camera.id);
+                    const knownBusIds = normalizedCameras.map(
+                        (camera) => camera.id,
+                    );
 
-                    if (
-                        selectedValue &&
-                        !knownBusIds.includes(selectedValue)
-                    ) {
+                    if (selectedValue && !knownBusIds.includes(selectedValue)) {
                         const customOption = createElement("option", {
                             value: selectedValue,
                             text: `${selectedValue} (custom)`,
@@ -812,8 +833,8 @@ export function registerSettingsPopup() {
                 input.appendChild(customOption);
             };
 
-            const pipelineCameras = globalThis.pipelineCreator
-                ?.getAvailableCameras?.() || [];
+            const pipelineCameras =
+                globalThis.pipelineCreator?.getAvailableCameras?.() || [];
             if (pipelineCameras.length > 0) {
                 updateOptions(pipelineCameras);
             } else {
@@ -1033,6 +1054,24 @@ export function registerSettingsPopup() {
         // Add input to container
         inputContainer.appendChild(input);
 
+        let restartIndicator = null;
+        if (def.restart_for_change) {
+            restartIndicator = createElement("span", {
+                className:
+                    "group/restart absolute left-0 top-1/2 z-20 inline-flex w-3 h-3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#f9c845]",
+                "aria-label": "Restart required to apply config change",
+                style: isEdited ? "" : "display: none;",
+            });
+            restartIndicator.appendChild(
+                createElement("span", {
+                    className:
+                        "pointer-events-none absolute left-full top-1/2 ml-2 w-max max-w-64 -translate-y-1/2 rounded-md border border-orange-300/60 bg-[#1f1f1f] px-2 py-1 text-xs leading-tight text-orange-100 opacity-0 shadow-lg transition-opacity duration-75 group-hover/restart:opacity-100 group-focus/restart:opacity-100",
+                    text: "Restart required to apply config change",
+                }),
+            );
+            inputContainer.appendChild(restartIndicator);
+        }
+
         // Add Manage button for path parameters
         let manageButton = null;
         if (isPathParameter && operationName) {
@@ -1079,7 +1118,7 @@ export function registerSettingsPopup() {
             className:
                 "absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-yellow-400 rounded-full",
             title: "This field has been modified from its default value",
-            style: isEdited ? "" : "display: none;",
+            style: isEdited && !def.restart_for_change ? "" : "display: none;",
         });
         inputContainer.appendChild(editedIndicator);
 
@@ -1100,7 +1139,13 @@ export function registerSettingsPopup() {
 
             const edited =
                 JSON.stringify(currentVal) !== JSON.stringify(originalValue);
-            editedIndicator.style.display = edited ? "block" : "none";
+            editedIndicator.style.display =
+                edited && !def.restart_for_change ? "block" : "none";
+            if (restartIndicator) {
+                restartIndicator.style.display = edited
+                    ? "inline-flex"
+                    : "none";
+            }
         };
 
         input.addEventListener("input", updateIndicator);
@@ -1146,6 +1191,7 @@ export function registerSettingsPopup() {
                 initialValues || {},
                 originalValues || {},
                 operationName,
+                "",
             );
             fields.push({ name: key, ...field });
             modalBody.appendChild(field.wrapper);
@@ -1248,18 +1294,6 @@ export function registerSettingsPopup() {
                     );
                 }
                 onSave(currentValues);
-
-                // Update restart indicator if available
-                if (globalThis.pipelineCreator?.updateRestartIndicator) {
-                    const requiresRestart = checkIfRestartRequired(
-                        currentValues,
-                        originalValues,
-                        config,
-                    );
-                    globalThis.pipelineCreator.updateRestartIndicator(
-                        requiresRestart,
-                    );
-                }
             } else {
                 console.log("onSave function not provided");
             }
@@ -1344,7 +1378,9 @@ export function registerSettingsPopup() {
         const liveViewCloseBtn = document.getElementById(
             "operationLiveCloseButton",
         );
-        const settingsContent = document.getElementById("operationSettingsContent");
+        const settingsContent = document.getElementById(
+            "operationSettingsContent",
+        );
         return {
             overlay,
             modal,
@@ -1355,12 +1391,8 @@ export function registerSettingsPopup() {
     }
 
     function setSettingsPanelVisibility(showSettings) {
-        const {
-            modal,
-            liveViewPanel,
-            liveViewCloseBtn,
-            settingsContent,
-        } = findOverlayElements();
+        const { modal, liveViewPanel, liveViewCloseBtn, settingsContent } =
+            findOverlayElements();
 
         if (modal) {
             modal.style.display = showSettings ? "" : "none";
@@ -1659,17 +1691,22 @@ export function registerSettingsPopup() {
                     );
 
                     const saveBtn = modal.querySelector("[data-action='save']");
-                    const cancelBtn = modal.querySelector("[data-action='cancel']");
+                    const cancelBtn = modal.querySelector(
+                        "[data-action='cancel']",
+                    );
 
                     if (saveBtn) {
                         saveBtn.onclick = () => {
                             const values = getValues();
-                            console.log("[SETTINGS] Saving operation settings", {
-                                operationName,
-                                isSecondary,
-                                savedValues: values,
-                                timestamp: new Date().toISOString(),
-                            });
+                            console.log(
+                                "[SETTINGS] Saving operation settings",
+                                {
+                                    operationName,
+                                    isSecondary,
+                                    savedValues: values,
+                                    timestamp: new Date().toISOString(),
+                                },
+                            );
                             if (typeof onSave === "function") onSave(values);
                             console.log(
                                 "[SETTINGS] Settings saved, closing popup",

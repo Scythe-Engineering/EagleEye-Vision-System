@@ -490,7 +490,7 @@ class Pipeline:
         """
         return self.operations.get(operation_uuid)
 
-    def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> None:
+    def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> str:
         """Update the configuration of multiple operations in the pipeline.
 
         This method allows live updating of operation parameters that are marked as
@@ -500,7 +500,14 @@ class Pipeline:
             operations_config: list of operation configurations, where each config
                 is a dictionary with 'uuid', 'action_name', and 'action_params' keys.
                 Format should match the pipeline configuration JSON format.
+
+        Returns:
+            "applied" if all live updates succeeded, "unsupported" if one or more
+            operations cannot update live, and "failed" if an update errored or an
+            operation was missing.
         """
+        status = "applied"
+
         for operation_config in operations_config:
             action_uuid = operation_config.get("uuid")
             action_name = operation_config.get("action_name")
@@ -522,18 +529,26 @@ class Pipeline:
                                 f"{Colors.GREEN}Updated config for {action_name} ({action_uuid}): {action_params}{Colors.RESET}"
                             )
                     except Exception as e:
+                        status = "failed"
                         if self.logger:
                             self.logger.log(
                                 f"{Colors.RED}Error updating config for {action_name} ({action_uuid}): {e}{Colors.RESET}"
                             )
-                elif debug_mode and self.logger:
+                else:
+                    if status != "failed":
+                        status = "unsupported"
+                    if debug_mode and self.logger:
+                        self.logger.log(
+                            f"{Colors.YELLOW}Operation {action_name} ({action_uuid}) does not support config updates{Colors.RESET}"
+                        )
+            else:
+                status = "failed"
+                if debug_mode and self.logger:
                     self.logger.log(
-                        f"{Colors.YELLOW}Operation {action_name} ({action_uuid}) does not support config updates{Colors.RESET}"
+                        f"{Colors.RED}Operation {action_name} ({action_uuid}) not found in pipeline{Colors.RESET}"
                     )
-            elif debug_mode and self.logger:
-                self.logger.log(
-                    f"{Colors.RED}Operation {action_name} ({action_uuid}) not found in pipeline{Colors.RESET}"
-                )
+
+        return status
 
     def thread_run(self, camera_thread_manager: CameraThreadManager) -> None:
         """Run the pipeline continuously in a thread.
@@ -612,7 +627,9 @@ class Pipeline:
         """
         command_topic = f"{NT_COMMAND_PREFIX}/{self.pipeline_name}/{NT_ACTIVE_COMMAND}"
         try:
-            active_value = bool(self.network_table.getEntry(command_topic).getBoolean(True))
+            active_value = bool(
+                self.network_table.getEntry(command_topic).getBoolean(True)
+            )
         except Exception:
             return True
 

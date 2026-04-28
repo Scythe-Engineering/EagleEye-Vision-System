@@ -45,7 +45,6 @@ class PipelineStore {
             },
             ui: {
                 restartRequired: false,
-                restartRequiredNodes: new Set(),
                 operationErrors: new Map(),
                 downstreamDisabledNodes: new Set(),
                 profilingByPipeline: new Map(),
@@ -295,7 +294,8 @@ class PipelineStore {
     }
 
     updateConnectionWaypoints(connectionKey, customWaypoints) {
-        const connection = this.state.currentPipeline.connections.get(connectionKey);
+        const connection =
+            this.state.currentPipeline.connections.get(connectionKey);
         if (!connection) return false;
 
         connection.customWaypoints = customWaypoints;
@@ -416,27 +416,11 @@ class PipelineStore {
             .filter(Boolean);
     }
 
-    setNodeRestartRequired(identifier, required) {
-        const uuid = this.resolveToUuid(identifier);
-        if (!uuid) return false;
-
-        if (required) {
-            this.state.ui.restartRequiredNodes.add(uuid);
-        } else {
-            this.state.ui.restartRequiredNodes.delete(uuid);
-        }
-
-        const hasAnyRestartRequired =
-            this.state.ui.restartRequiredNodes.size > 0;
-        this.state.ui.restartRequired = hasAnyRestartRequired;
-
+    setRestartRequired(required) {
+        this.state.ui.restartRequired = Boolean(required);
         this.emit("restart:changed", {
-            uuid,
-            required,
-            hasAnyRestartRequired,
+            restartRequired: this.state.ui.restartRequired,
         });
-
-        return true;
     }
 
     isRestartRequired() {
@@ -444,9 +428,7 @@ class PipelineStore {
     }
 
     clearRestartRequired() {
-        this.state.ui.restartRequiredNodes.clear();
-        this.state.ui.restartRequired = false;
-        this.emit("restart:changed", { hasAnyRestartRequired: false });
+        this.setRestartRequired(false);
     }
 
     clearPipeline() {
@@ -476,7 +458,10 @@ class PipelineStore {
         };
 
         this.state.ui.profilingByPipeline.set(pipelineName, copiedSnapshot);
-        this.state.ui.profilingLastUpdateMsByPipeline.set(pipelineName, Date.now());
+        this.state.ui.profilingLastUpdateMsByPipeline.set(
+            pipelineName,
+            Date.now(),
+        );
         this.emit("profiling:updated", {
             pipelineName,
             snapshot: copiedSnapshot,
@@ -499,7 +484,9 @@ class PipelineStore {
     }
 
     getProfilingLastUpdateMs(pipelineName) {
-        return this.state.ui.profilingLastUpdateMsByPipeline.get(pipelineName) || 0;
+        return (
+            this.state.ui.profilingLastUpdateMsByPipeline.get(pipelineName) || 0
+        );
     }
 
     clearProfilingSnapshots() {
@@ -551,7 +538,9 @@ class PipelineStore {
             if (!outgoingConnections.has(connection.fromUuid)) {
                 outgoingConnections.set(connection.fromUuid, []);
             }
-            outgoingConnections.get(connection.fromUuid).push(connection.toUuid);
+            outgoingConnections
+                .get(connection.fromUuid)
+                .push(connection.toUuid);
         }
 
         const queue = Array.from(errorUuids);

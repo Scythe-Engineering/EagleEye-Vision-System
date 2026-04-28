@@ -8,7 +8,11 @@ import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { pipelineHistory } from "./pipelineHistory.js";
-import { showDanger, showWarning } from "../ui/notificationSystem.js";
+import {
+    showDanger,
+    showSuccess,
+    showWarning,
+} from "../ui/notificationSystem.js";
 import { registerSettingsPopup } from "./settingsPopup.js";
 
 registerSettingsPopup();
@@ -32,7 +36,7 @@ let isInitialized = false;
 
 let flowchartRenderer = null;
 
-const restartRequiredOperations = new Map();
+let backendRuntimeId = null;
 const PROFILING_STALE_TIMEOUT_MS = 2000;
 
 let pipelineArea;
@@ -1549,7 +1553,6 @@ async function removeFromPipeline(instanceId) {
 
     console.log("Operation removed from pipeline - requiring backend restart");
     await updateRestartIndicator(true);
-    pipelineStore.clearRestartRequired();
 }
 
 function runPipeline() {
@@ -1558,19 +1561,25 @@ function runPipeline() {
 }
 
 function openOperationSettings(opOrItem) {
-    const title = `${opOrItem.name || opOrItem.id || "Operation"} Settings`;
-    const operationName = opOrItem.name || opOrItem.id;
-    const operationId = opOrItem.operationId || opOrItem.id || opOrItem.name;
-    const operationUuid = opOrItem.uuid || opOrItem.instanceId;
-    const isSecondary = opOrItem.isSecondary || false;
-    const initialValues = opOrItem.config || {};
+    const latestNode =
+        pipelineStore.getNode(opOrItem.instanceId) ||
+        pipelineStore.getNode(opOrItem.uuid) ||
+        null;
+    const settingsItem = latestNode || opOrItem;
+    const title = `${settingsItem.name || settingsItem.id || "Operation"} Settings`;
+    const operationName = settingsItem.name || settingsItem.id;
+    const operationId =
+        settingsItem.operationId || settingsItem.id || settingsItem.name;
+    const operationUuid = settingsItem.uuid || settingsItem.instanceId;
+    const isSecondary = settingsItem.isSecondary || false;
+    const initialValues = { ...(settingsItem.config || {}) };
 
-    if (!opOrItem.originalConfig) {
-        opOrItem.originalConfig = { ...initialValues };
+    if (!settingsItem.originalConfig) {
+        settingsItem.originalConfig = { ...initialValues };
     }
 
     const onSave = (values) => {
-        console.log("Saved settings for", opOrItem, values);
+        console.log("Saved settings for", settingsItem, values);
         const isAutoSaveFlag = values._isAutoSave;
         const requiresRestart = values._requiresRestart;
         console.log("isAutoSave flag:", isAutoSaveFlag);
@@ -1579,19 +1588,29 @@ function openOperationSettings(opOrItem) {
         delete values._isAutoSave;
         delete values._requiresRestart;
 
-        const previousConfig = { ...opOrItem.config };
+        const previousConfig = { ...(settingsItem.config || {}) };
+        if (JSON.stringify(previousConfig) === JSON.stringify(values)) {
+            console.log("Settings unchanged; skipping save notification");
+            return;
+        }
 
         // Update the actual node in PipelineStore, not just the copy
-        const node = pipelineStore.getNode(opOrItem.instanceId);
+        const node =
+            pipelineStore.getNode(settingsItem.instanceId) ||
+            pipelineStore.getNode(settingsItem.uuid);
         if (node) {
-            pipelineStore.updateNodeConfig(opOrItem.instanceId, values);
+            pipelineStore.updateNodeConfig(node.instanceId, values);
             node.requiresRestart = requiresRestart || false;
+            if (opOrItem && opOrItem !== node) {
+                opOrItem.config = { ...values };
+                opOrItem.requiresRestart = node.requiresRestart;
+            }
             console.log("Updated node.config:", node.config);
             console.log("Updated node.requiresRestart:", node.requiresRestart);
             updatePipelineCameraNote();
         } else {
             // Fallback to updating the copy if node not found (shouldn't happen)
-            opOrItem.config = values;
+            settingsItem.config = values;
             opOrItem.requiresRestart = requiresRestart || false;
             console.log("Updated opOrItem.config:", opOrItem.config);
             console.log(
@@ -1601,23 +1620,11 @@ function openOperationSettings(opOrItem) {
             updatePipelineCameraNote();
         }
 
-        console.log("Calling autoSavePipeline...");
-        autoSavePipeline();
-
-        const changedParams = [];
-        for (const [key, value] of Object.entries(values)) {
-            if (JSON.stringify(previousConfig[key]) !== JSON.stringify(value)) {
-                changedParams.push({ paramName: key, value: value });
-            }
-        }
-
-        if (changedParams.length > 0) {
-            for (const { paramName, value } of changedParams) {
-                checkPipelineRestartRequirements(opOrItem, paramName, value);
-            }
-        } else {
-            checkPipelineRestartRequirements();
-        }
+        console.log("Saving pipeline config after settings change...");
+        void autoSavePipelineImpl({
+            showNotification: true,
+            requiresRestart,
+        });
     };
 
     const doOpen = () => {
@@ -1655,7 +1662,7 @@ function updateRunButton() {
     }
 }
 
-async function autoSavePipelineImpl() {
+async function autoSavePipelineImpl(options = {}) {
     const selectedPipeline = getSelectedPipeline();
 
     if (!selectedPipeline) {
@@ -1676,10 +1683,31 @@ async function autoSavePipelineImpl() {
         );
         if (!response.ok)
             throw new Error(`HTTP error! status: ${response.status}`);
-        await response.json();
+        const result = await response.json();
         console.log("Pipeline auto-saved successfully");
+        if (typeof result?.restart_required === "boolean") {
+            applyBackendRestartState(result);
+        }
+        if (options.showNotification) {
+            if (result?.live_update_status === "failed") {
+                showDanger("Operation settings saved, but live apply failed.");
+            } else if (
+                result?.restart_required ||
+                options.requiresRestart ||
+                result?.live_update_status === "unsupported"
+            ) {
+                showWarning(
+                    "Operation settings saved. Restart required to apply.",
+                );
+            } else {
+                showSuccess("Operation settings applied.");
+            }
+        }
     } catch (error) {
         console.error("Failed to auto-save pipeline:", error);
+        if (options.showNotification) {
+            showDanger("Failed to save operation settings.");
+        }
     }
 }
 
@@ -1758,9 +1786,6 @@ async function createNewPipeline() {
         // Save the empty pipeline to backend so it persists
         await autoSavePipelineImpl();
 
-        pipelineStore.clearRestartRequired();
-        await updateRestartIndicator(false);
-
         console.log("New pipeline created:", newPipelineName);
         console.log("Pipeline state:", pipelineStore.getNodes());
         console.log("Selected pipeline:", getSelectedPipeline());
@@ -1807,6 +1832,9 @@ async function deleteCurrentPipeline() {
 
         const result = await response.json();
         console.log("Pipeline deleted from backend:", result);
+        if (typeof result?.restart_required === "boolean") {
+            applyBackendRestartState(result);
+        }
 
         const currentPipelines = pipelineStore.state.pipelines;
         const pipelineIndex = currentPipelines.findIndex(
@@ -1832,9 +1860,6 @@ async function deleteCurrentPipeline() {
         await renderCurrentPipeline();
         updateRunButton();
         updateDeleteButtonVisibility();
-
-        restartRequiredOperations.clear();
-        await updateRestartIndicator(false);
     } catch (error) {
         console.error("Failed to delete pipeline:", error);
         alert(
@@ -1854,23 +1879,36 @@ function updateDeleteButtonVisibility() {
     }
 }
 
-async function updateRestartIndicator(show = false) {
-    try {
-        await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ required: show }),
-        });
-        console.log(
-            `Backend notified: restart ${show ? "required" : "not required"}`,
-        );
-    } catch (error) {
-        showDanger("Failed to notify backend about restart requirement");
-        console.error(
-            "Failed to notify backend about restart requirement:",
-            error,
-        );
+async function updateRestartIndicator(show = false, options = {}) {
+    if (options.syncBackend) {
+        try {
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/set_restart_required`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ required: show }),
+                },
+            );
+            if (response.ok) {
+                const data = await response.json();
+                applyBackendRestartState(data);
+                return;
+            }
+            console.warn(
+                "Failed to update backend restart flag:",
+                response.status,
+            );
+        } catch (error) {
+            showDanger("Failed to notify backend about restart requirement");
+            console.error(
+                "Failed to notify backend about restart requirement:",
+                error,
+            );
+        }
     }
+
+    pipelineStore.setRestartRequired(show);
 
     if (!restartIndicator) return;
 
@@ -1893,6 +1931,14 @@ async function updateRestartIndicator(show = false) {
     }
 }
 
+function applyBackendRestartState(data = {}) {
+    const show = Boolean(data.restart_required);
+    if (typeof data.runtime_id === "string" && data.runtime_id) {
+        backendRuntimeId = data.runtime_id;
+    }
+    updateRestartIndicator(show);
+}
+
 async function handleRestartBackend() {
     try {
         const restartButton = restartIndicator?.querySelector(
@@ -1904,6 +1950,7 @@ async function handleRestartBackend() {
             restartButton.textContent = "Restarting...";
         }
 
+        const previousRuntimeId = backendRuntimeId;
         try {
             await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
                 method: "POST",
@@ -1912,13 +1959,35 @@ async function handleRestartBackend() {
             console.warn("Failed to send restart request:", error);
         }
 
-        console.log("Backend restarted successfully");
-
-        restartRequiredOperations.clear();
-
+        await waitForBackendRuntimeChange(previousRuntimeId);
         globalThis.location.reload();
     } catch (error) {
         console.error("Failed to restart backend:", error);
+    }
+}
+
+async function waitForBackendRuntimeChange(previousRuntimeId) {
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        try {
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/get_restart_required`,
+                {
+                    cache: "no-store",
+                },
+            );
+            if (!response.ok) {
+                continue;
+            }
+            const data = await response.json();
+            if (!previousRuntimeId || data.runtime_id !== previousRuntimeId) {
+                applyBackendRestartState(data);
+                return;
+            }
+        } catch (_error) {
+            // The backend may be between shutdown and startup.
+        }
     }
 }
 
@@ -1930,16 +1999,7 @@ async function checkBackendRestartStatus() {
 
         if (response.ok) {
             const data = await response.json();
-            const restartRequired = data.restart_required || false;
-
-            if (restartRequired) {
-                console.log(
-                    "Backend indicates restart is required - showing indicator",
-                );
-                await updateRestartIndicator(true);
-            } else {
-                console.log("Backend indicates no restart required");
-            }
+            applyBackendRestartState(data);
         } else {
             console.warn(
                 "Failed to get restart status from backend:",
@@ -1956,91 +2016,7 @@ async function checkPipelineRestartRequirements(
     changedParamName = null,
     changedValue = null,
 ) {
-    const restartIndicatorEl = document.getElementById("restartIndicator");
-    if (
-        restartIndicatorEl &&
-        !restartIndicatorEl.classList.contains("hidden") &&
-        restartIndicatorEl.classList.contains("backend-state-warning")
-    ) {
-        return;
-    }
-
-    if (operationItem && changedParamName !== null && changedValue !== null) {
-        await checkSpecificParameterRestart(
-            operationItem,
-            changedParamName,
-            changedValue,
-        );
-    } else if (operationItem) {
-        await checkOperationRestartRequirements(operationItem);
-    }
-
-    const hasRestartRequirements = restartRequiredOperations.size > 0;
-    await updateRestartIndicator(hasRestartRequirements);
-}
-
-async function checkSpecificParameterRestart(
-    operationItem,
-    paramName,
-    currentValue,
-) {
-    try {
-        const isSecondary = operationItem.isSecondary || false;
-        const response = await fetch(
-            `${BACKEND_BASE_URL}/get-operation-config-data/${encodeURIComponent(operationItem.id)}/${isSecondary ? 1 : 0}`,
-        );
-
-        if (response.ok) {
-            const configData = await response.json();
-            const params = configData.parameters || {};
-            const paramDef = params[paramName];
-
-            if (paramDef?.restart_for_change) {
-                const originalValue = operationItem.originalConfig[paramName];
-
-                const requiresRestart =
-                    currentValue !== undefined &&
-                    currentValue !== null &&
-                    originalValue !== undefined &&
-                    originalValue !== null &&
-                    JSON.stringify(currentValue) !==
-                        JSON.stringify(originalValue);
-
-                const instanceId = operationItem.instanceId;
-                if (!restartRequiredOperations.has(instanceId)) {
-                    restartRequiredOperations.set(instanceId, new Set());
-                }
-
-                const paramSet = restartRequiredOperations.get(instanceId);
-                if (requiresRestart) {
-                    paramSet.add(paramName);
-                    console.log(
-                        `Operation ${operationItem.name} parameter ${paramName} requires restart (current: ${JSON.stringify(currentValue)}, original: ${JSON.stringify(originalValue)})`,
-                    );
-                } else {
-                    paramSet.delete(paramName);
-                    if (paramSet.size === 0) {
-                        restartRequiredOperations.delete(instanceId);
-                    }
-                }
-
-                operationItem.requiresRestart = paramSet.size > 0;
-            }
-        }
-    } catch (error) {
-        console.warn(
-            `Failed to check restart requirements for ${operationItem.name} parameter ${paramName}:`,
-            error,
-        );
-    }
-}
-
-async function checkOperationRestartRequirements(operationItem) {
-    for (const [paramName, value] of Object.entries(
-        operationItem.config || {},
-    )) {
-        await checkSpecificParameterRestart(operationItem, paramName, value);
-    }
+    await checkBackendRestartStatus();
 }
 
 async function refreshPipelineCreator() {
@@ -2112,7 +2088,6 @@ async function handleFlowchartPipelineChange(changeEvent) {
         }
         autoSavePipeline();
         await updateRestartIndicator(true);
-        pipelineStore.clearRestartRequired();
         hideAllThreadBadges();
         await postFlowchartStructureRefresh();
     }
@@ -2297,16 +2272,23 @@ export async function initPipelineCreator() {
             target.tagName === "TEXTAREA" ||
             target.tagName === "SELECT" ||
             target.isContentEditable
-        ) return;
+        )
+            return;
 
         const key = event.key.toLowerCase();
-        const isUndo = (event.ctrlKey || event.metaKey) && key === "z" && !event.shiftKey;
-        const isRedo = (event.ctrlKey || event.metaKey) && key === "z" && event.shiftKey;
+        const isUndo =
+            (event.ctrlKey || event.metaKey) && key === "z" && !event.shiftKey;
+        const isRedo =
+            (event.ctrlKey || event.metaKey) && key === "z" && event.shiftKey;
 
         if (!isUndo && !isRedo) return;
 
         // Defer to manualPathCreator's own Ctrl+Z (undo-waypoint) when it is active.
-        if (globalThis.flowchartRenderer?.connections?.manualPathCreator?.isActive) return;
+        if (
+            globalThis.flowchartRenderer?.connections?.manualPathCreator
+                ?.isActive
+        )
+            return;
 
         event.preventDefault();
 

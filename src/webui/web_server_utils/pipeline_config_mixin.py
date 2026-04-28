@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from pathlib import Path
+from copy import deepcopy
 from typing import Any
 
 from flask import request
@@ -17,6 +17,25 @@ from src.webui.web_server_utils.constants import (
 
 
 class PipelineConfigMixin:
+    def _pipeline_config_path(self) -> str:
+        """Return the absolute path to the persisted pipeline config file."""
+        return os.path.join(SRC_DIR, "config", "pipeline_config.json")
+
+    def _load_pipeline_config_file(self) -> dict[str, list[dict[str, Any]]]:
+        """Load the persisted pipeline configuration from disk."""
+        with open(self._pipeline_config_path(), "r") as f:
+            return json.load(f)
+
+    def _get_runtime_pipeline_config_baseline(
+        self,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return the pipeline config snapshot this backend process is running."""
+        baseline = getattr(self, "_runtime_pipeline_config_baseline", None)
+        if baseline is None:
+            baseline = self._load_pipeline_config_file()
+            self._runtime_pipeline_config_baseline = deepcopy(baseline)
+        return baseline
+
     def get_pipeline_names(self) -> list[str]:
         """
         Get the names of all pipelines.
@@ -24,8 +43,7 @@ class PipelineConfigMixin:
         Returns:
             list[str]: The names of all pipelines.
         """
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "r") as f:
-            config = json.load(f)
+        config = self._load_pipeline_config_file()
         return list(config.keys())
 
     def get_pipeline_config_by_name(self, pipeline_name: str) -> list:
@@ -38,11 +56,10 @@ class PipelineConfigMixin:
         Returns:
             list: The config data for the pipeline.
         """
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "r") as f:
-            config = json.load(f)
-            if pipeline_name not in config:
-                return []
-            pipeline_config = config[pipeline_name]
+        config = self._load_pipeline_config_file()
+        if pipeline_name not in config:
+            return []
+        pipeline_config = config[pipeline_name]
 
         return self._reorder_pipeline_config(pipeline_config)
 
@@ -56,9 +73,8 @@ class PipelineConfigMixin:
         Returns:
             tuple[dict, int]: A success or failure message.
         """
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "r") as f:
-            current_config = json.load(f)
-            new_data = request.get_json()
+        current_config = self._load_pipeline_config_file()
+        new_data = request.get_json()
 
         if pipeline_name not in current_config:
             current_config[pipeline_name] = []
@@ -86,15 +102,24 @@ class PipelineConfigMixin:
             updated_operations.append(merged_op)
 
         current_config[pipeline_name] = updated_operations
+        restart_state = self._analyze_pipeline_restart_state(current_config)
+        self.restart_required_for_config = restart_state["restart_required"]
 
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "w") as f:
+        with open(self._pipeline_config_path(), "w") as f:
             json.dump(current_config, f, indent=4)
 
+        live_update_status = None
         pipeline_objects = self.pipeline_objects_callback()
         if pipeline_name in pipeline_objects:
-            pipeline_objects[pipeline_name].update_operations_config(request.get_json())
+            live_update_status = pipeline_objects[
+                pipeline_name
+            ].update_operations_config(request.get_json())
 
-        return {"message": "Pipeline config saved successfully"}, 200
+        return {
+            "message": "Pipeline config saved successfully",
+            "live_update_status": live_update_status,
+            **restart_state,
+        }, 200
 
     def delete_pipeline_by_name(self, pipeline_name: str) -> tuple[dict, int]:
         """
@@ -103,15 +128,128 @@ class PipelineConfigMixin:
         Args:
             pipeline_name (str): The name of the pipeline.
         """
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "r") as f:
-            current_config = json.load(f)
-            if pipeline_name in current_config:
-                del current_config[pipeline_name]
-            else:
-                return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
-        with open(os.path.join(SRC_DIR, "config", "pipeline_config.json"), "w") as f:
+        current_config = self._load_pipeline_config_file()
+        if pipeline_name in current_config:
+            del current_config[pipeline_name]
+        else:
+            return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
+        restart_state = self._analyze_pipeline_restart_state(current_config)
+        self.restart_required_for_config = restart_state["restart_required"]
+        with open(self._pipeline_config_path(), "w") as f:
             json.dump(current_config, f, indent=4)
-        return {"message": "Pipeline deleted successfully"}, 200
+        return {"message": "Pipeline deleted successfully", **restart_state}, 200
+
+    def _analyze_pipeline_restart_state(
+        self, current_config: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, Any]:
+        """Compare current config to the runtime baseline and summarize restart need."""
+        restart_required = self._pipeline_restart_required(
+            self._get_runtime_pipeline_config_baseline(),
+            current_config,
+        )
+
+        return {
+            "restart_required": restart_required,
+            "runtime_id": getattr(self, "runtime_id", ""),
+        }
+
+    def _pipeline_restart_required(
+        self,
+        baseline: dict[str, list[dict[str, Any]]],
+        current_config: dict[str, list[dict[str, Any]]],
+    ) -> bool:
+        """Return True when current config differs from the running baseline."""
+        return self._restart_relevant_config(baseline) != self._restart_relevant_config(
+            current_config
+        )
+
+    def _restart_relevant_config(
+        self, config: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, dict[str, Any]]:
+        """Return only config fields that affect backend restart requirements."""
+        return {
+            pipeline_name: {
+                uuid: self._restart_relevant_operation(operation)
+                for uuid, operation in self._operations_by_uuid(operations).items()
+            }
+            for pipeline_name, operations in config.items()
+        }
+
+    def _operations_by_uuid(
+        self, operations: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Return pipeline operations keyed by UUID, skipping malformed entries."""
+        return {
+            uuid: operation
+            for operation in operations
+            if isinstance(operation, dict)
+            and isinstance((uuid := operation.get("uuid")), str)
+            and uuid
+        }
+
+    def _restart_relevant_operation(self, operation: dict[str, Any]) -> dict[str, Any]:
+        """Return the operation fields that require restart when changed."""
+        action_name = operation.get("action_name")
+        return {
+            "action_name": action_name,
+            "connections": self._canonical_connections(operation),
+            "restart_params": self._restart_required_params(
+                action_name,
+                operation.get("action_params", {}),
+            ),
+        }
+
+    def _canonical_connections(self, operation: dict[str, Any]) -> list[dict[str, Any]]:
+        """Normalize an operation's connections for deterministic equality checks."""
+        connections = operation.get("connections", [])
+        if not isinstance(connections, list):
+            return []
+
+        canonical = []
+        for connection in connections:
+            if not isinstance(connection, dict):
+                continue
+            canonical.append(
+                {
+                    "from_uuid": connection.get("from_uuid"),
+                    "from_port": connection.get("from_port"),
+                    "to_uuid": connection.get("to_uuid"),
+                    "to_port": connection.get("to_port"),
+                    "data_type": connection.get("data_type"),
+                    "is_default": bool(connection.get("is_default", False)),
+                    "custom_waypoints": connection.get("custom_waypoints"),
+                }
+            )
+        return sorted(
+            canonical,
+            key=lambda conn: json.dumps(conn, sort_keys=True, default=str),
+        )
+
+    def _restart_required_params(
+        self,
+        action_name: str | None,
+        action_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return action params marked restart_for_change in config data."""
+        if not action_name:
+            return {}
+
+        config_data = self.get_operation_config_data(action_name, True)
+        if not config_data:
+            config_data = self.get_operation_config_data(action_name, False)
+
+        parameters = config_data.get("parameters", {})
+        if not isinstance(parameters, dict):
+            return {}
+        if not isinstance(action_params, dict):
+            return {}
+
+        return {
+            param_name: value
+            for param_name, value in action_params.items()
+            if isinstance(parameters.get(param_name), dict)
+            and parameters[param_name].get("restart_for_change", False)
+        }
 
     def _reorder_pipeline_config(
         self, pipeline_config: list[dict[str, Any]]

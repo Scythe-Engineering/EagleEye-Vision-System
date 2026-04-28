@@ -20,12 +20,14 @@ from src.webui.web_server_utils.constants import (
 def _request():
     """Return the current Flask request, allowing monkeypatching via web_server.request."""
     import src.webui.web_server as _ws
+
     return _ws.request
 
 
 def _general_conf_path():
     """Return GENERAL_CONF_PATH, allowing monkeypatching via web_server.GENERAL_CONF_PATH."""
     import src.webui.web_server as _ws
+
     return _ws.GENERAL_CONF_PATH
 
 
@@ -39,6 +41,7 @@ class SystemMonitorMixin:
         """
         try:
             import os
+
             os._exit(0)
         except Exception as e:
             self.log(f"Error during shutdown: {e}")
@@ -55,14 +58,23 @@ class SystemMonitorMixin:
         """
         Set the restart required flag.
         """
-        self.restart_required_for_config = True
-        return {"message": "Restart required for config set successfully"}, 200
+        body = _request().get_json(silent=True) or {}
+        required = bool(body.get("required", True))
+        self.restart_required_for_config = required
+        return {
+            "message": "Restart required flag updated",
+            "restart_required": self.restart_required_for_config,
+            "runtime_id": getattr(self, "runtime_id", ""),
+        }, 200
 
     def get_restart_required(self) -> tuple[dict, int]:
         """
         Get the restart required flag.
         """
-        return {"restart_required": self.restart_required_for_config}, 200
+        return {
+            "restart_required": self.restart_required_for_config,
+            "runtime_id": getattr(self, "runtime_id", ""),
+        }, 200
 
     def get_log_messages(self) -> tuple[dict, int]:
         """

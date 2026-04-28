@@ -126,7 +126,9 @@ def test_threaded_wsgi_server_uses_threaded_werkzeug(monkeypatch) -> None:
         def serve_forever(self) -> None:
             served.append(True)
 
-    def _fake_make_server(host: str, port: int, app: Any, threaded: bool) -> _FakeServer:
+    def _fake_make_server(
+        host: str, port: int, app: Any, threaded: bool
+    ) -> _FakeServer:
         calls.append((host, port, app, threaded))
         return _FakeServer()
 
@@ -334,8 +336,8 @@ def test_update_camera_pose_publishes_camera_pose_event() -> None:
     interface.available_cameras = {
         "Front Camera": {"bus_id": "cam0", "name": "Front_Camera"}
     }
-    interface._publish_event = (
-        lambda event_name, payload: published_events.append((event_name, payload))
+    interface._publish_event = lambda event_name, payload: published_events.append(
+        (event_name, payload)
     )
     interface.log = lambda *_args, **_kwargs: None
 
@@ -354,8 +356,8 @@ def test_update_camera_pose_falls_back_to_bus_id_when_name_missing() -> None:
     interface = EagleEyeInterface.__new__(EagleEyeInterface)
     published_events: list[tuple[str, dict[str, Any]]] = []
     interface.available_cameras = {}
-    interface._publish_event = (
-        lambda event_name, payload: published_events.append((event_name, payload))
+    interface._publish_event = lambda event_name, payload: published_events.append(
+        (event_name, payload)
     )
     interface.log = lambda *_args, **_kwargs: None
 
@@ -370,8 +372,8 @@ def test_update_camera_pose_skips_non_finite_values() -> None:
     published_events: list[tuple[str, dict[str, Any]]] = []
     messages: list[str] = []
     interface.available_cameras = {}
-    interface._publish_event = (
-        lambda event_name, payload: published_events.append((event_name, payload))
+    interface._publish_event = lambda event_name, payload: published_events.append(
+        (event_name, payload)
     )
     interface.log = messages.append
 
@@ -418,3 +420,108 @@ def test_gzip_response_optimization_skips_streamed_responses(monkeypatch) -> Non
 
     assert "Content-Encoding" not in optimized.headers
     assert optimized.get_data() == b"x" * 2048
+
+
+def _restart_diff_interface(
+    baseline: dict[str, list[dict[str, Any]]],
+) -> EagleEyeInterface:
+    """Create an interface shell with a supplied runtime config baseline."""
+    interface = EagleEyeInterface.__new__(EagleEyeInterface)
+    interface._runtime_pipeline_config_baseline = baseline
+    interface.runtime_id = "test-runtime"
+    interface.log = lambda *_args, **_kwargs: None
+    return interface
+
+
+def _device_input_operation(
+    *,
+    uuid: str = "op-1",
+    bus_id: str = "0",
+    camera_type: str = "physical",
+    position: dict[str, int] | None = None,
+    connections: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build a minimal device_input operation config for restart diff tests."""
+    return {
+        "action_name": "device_input",
+        "action_params": {"bus_id": bus_id, "camera_type": camera_type},
+        "position": position or {"x": 100, "y": 100},
+        "uuid": uuid,
+        "connections": connections or [],
+    }
+
+
+def test_restart_diff_ignores_operation_position_changes() -> None:
+    baseline = {"Pipeline": [_device_input_operation()]}
+    current = {
+        "Pipeline": [
+            _device_input_operation(position={"x": 400, "y": 250}),
+        ],
+    }
+
+    state = _restart_diff_interface(baseline)._analyze_pipeline_restart_state(current)
+
+    assert state["restart_required"] is False
+
+
+def test_restart_diff_detects_operation_add_remove_and_connection_changes() -> None:
+    baseline = {
+        "Pipeline": [
+            _device_input_operation(
+                uuid="source",
+                connections=[
+                    {
+                        "from_uuid": "source",
+                        "from_port": "frame",
+                        "to_uuid": "sink",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": False,
+                        "custom_waypoints": None,
+                    }
+                ],
+            ),
+            _device_input_operation(uuid="sink"),
+        ],
+    }
+    current = {
+        "Pipeline": [
+            _device_input_operation(
+                uuid="source",
+                connections=[
+                    {
+                        "from_uuid": "source",
+                        "from_port": "frame",
+                        "to_uuid": "new-sink",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": False,
+                        "custom_waypoints": None,
+                    }
+                ],
+            ),
+            _device_input_operation(uuid="new-sink"),
+        ],
+    }
+
+    state = _restart_diff_interface(baseline)._analyze_pipeline_restart_state(current)
+
+    assert state["restart_required"] is True
+
+
+def test_restart_diff_detects_restart_required_config_param_only() -> None:
+    baseline = {"Pipeline": [_device_input_operation(bus_id="0")]}
+    current = {"Pipeline": [_device_input_operation(bus_id="1")]}
+
+    state = _restart_diff_interface(baseline)._analyze_pipeline_restart_state(current)
+
+    assert state["restart_required"] is True
+
+
+def test_restart_diff_ignores_live_updatable_config_param_changes() -> None:
+    baseline = {"Pipeline": [_device_input_operation(camera_type="physical")]}
+    current = {"Pipeline": [_device_input_operation(camera_type="video_file")]}
+
+    state = _restart_diff_interface(baseline)._analyze_pipeline_restart_state(current)
+
+    assert state["restart_required"] is False
