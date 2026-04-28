@@ -21,6 +21,8 @@ def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
         def __init__(self, *args, **kwargs) -> None:
             self.detector_id = FakeDetector.next_id
             FakeDetector.next_id += 1
+            self.tag_detector_ptr = object()
+            self.tag_families = {"tag36h11": object()}
 
         def detect(self, _image):
             if self.detector_id == 0:
@@ -29,7 +31,8 @@ def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
             return []
 
         def __del__(self) -> None:
-            destroyed_ids.append(self.detector_id)
+            if self.tag_detector_ptr is not None:
+                destroyed_ids.append(self.detector_id)
 
     monkeypatch.setattr(apriltag_detector, "Detector", FakeDetector)
 
@@ -57,4 +60,4 @@ def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
     assert not detect_thread.is_alive()
     assert not update_thread.is_alive()
     assert detector.quad_decimate == 1.0
-    assert 0 in destroyed_ids
+    assert 0 not in destroyed_ids

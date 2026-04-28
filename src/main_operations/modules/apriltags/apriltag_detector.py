@@ -1,10 +1,14 @@
 from dataclasses import dataclass
+import logging
+from threading import Lock
 from typing import Optional, cast
 
 import cv2
 import numpy as np
 from pupil_apriltags import Detector, Detection
-from threading import Lock
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,15 +73,51 @@ class AprilTagDetector:
         self.ready = False
         self._detect_lock: Lock = Lock()
 
-        self.detector = Detector(
-            families=self.families,
-            nthreads=self.nthreads,
-            quad_decimate=self.quad_decimate,
-            quad_sigma=self.quad_sigma,
-            refine_edges=self.refine_edges,
-            decode_sharpening=self.decode_sharpening,
+        self.detector = self._create_detector(
+            self.families,
+            self.nthreads,
+            self.quad_decimate,
+            self.quad_sigma,
+            self.refine_edges,
+            self.decode_sharpening,
         )
         self.ready = True
+
+    def _create_detector(
+        self,
+        families: str,
+        nthreads: int,
+        quad_decimate: float,
+        quad_sigma: float,
+        refine_edges: int,
+        decode_sharpening: float,
+    ) -> Detector:
+        """Create the native AprilTag detector with normalized parameters."""
+        return Detector(
+            families=families,
+            nthreads=max(1, int(nthreads)),
+            quad_decimate=max(1.0, float(quad_decimate)),
+            quad_sigma=max(0.0, float(quad_sigma)),
+            refine_edges=int(refine_edges),
+            decode_sharpening=float(decode_sharpening),
+        )
+
+    def _disable_native_destructor(self, detector: Detector) -> None:
+        """Prevent a known unsafe pupil_apriltags destructor path during reconfigure.
+
+        pupil_apriltags.Detector.__del__ releases C pointers. On macOS this has
+        been observed to segfault while replacing a detector from the WebUI config
+        path. The old detector is no longer used after the lock-protected swap, so
+        clearing these attributes lets Python drop the wrapper without entering
+        the crashing native destroy path.
+        """
+        try:
+            if hasattr(detector, "tag_detector_ptr"):
+                detector.tag_detector_ptr = None
+            if hasattr(detector, "tag_families"):
+                detector.tag_families = {}
+        except Exception as exc:
+            logger.warning("Failed to disable old AprilTag detector destructor: %s", exc)
 
     def _preprocess_image(self, image: np.ndarray) -> Optional[np.ndarray]:
         """Preprocess image to grayscale uint8 format.
@@ -111,7 +151,9 @@ class AprilTagDetector:
             return None
 
         # Ensure writable C-contiguous uint8 buffer
-        gray_image = np.require(gray_image, dtype=np.uint8, requirements=["C", "W"]) # type: ignore
+        gray_image = np.require(
+            gray_image, dtype=np.uint8, requirements=["C", "W"]
+        )  # type: ignore
 
         # Check decimated size
         if (
@@ -154,25 +196,31 @@ class AprilTagDetector:
             else decode_sharpening
         )
 
-        new_detector = Detector(
-            families=next_families,
-            nthreads=next_nthreads,
-            quad_decimate=next_quad_decimate,
-            quad_sigma=next_quad_sigma,
-            refine_edges=next_refine_edges,
-            decode_sharpening=next_decode_sharpening,
-        )
+        try:
+            new_detector = self._create_detector(
+                next_families,
+                next_nthreads,
+                next_quad_decimate,
+                next_quad_sigma,
+                next_refine_edges,
+                next_decode_sharpening,
+            )
+        except Exception as exc:
+            logger.exception("Failed to create AprilTag detector with updated parameters")
+            raise ValueError(f"Invalid AprilTag detector configuration: {exc}") from exc
 
         with self._detect_lock:
             self.ready = False
+            old_detector = self.detector
             self.families = next_families
-            self.nthreads = next_nthreads
-            self.quad_decimate = next_quad_decimate
-            self.quad_sigma = next_quad_sigma
-            self.refine_edges = next_refine_edges
-            self.decode_sharpening = next_decode_sharpening
+            self.nthreads = max(1, int(next_nthreads))
+            self.quad_decimate = max(1.0, float(next_quad_decimate))
+            self.quad_sigma = max(0.0, float(next_quad_sigma))
+            self.refine_edges = int(next_refine_edges)
+            self.decode_sharpening = float(next_decode_sharpening)
             self.detector = new_detector
             self.ready = True
+            self._disable_native_destructor(old_detector)
 
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
@@ -187,7 +235,11 @@ class AprilTagDetector:
             if gray_image is None:
                 return None
             with self._detect_lock:
-                detections = cast(list[Detection], self.detector.detect(gray_image))
+                try:
+                    detections = cast(list[Detection], self.detector.detect(gray_image))
+                except Exception as exc:
+                    logger.exception("AprilTag detection failed: %s", exc)
+                    return None
                 return detections
         else:
             detections = []
@@ -196,7 +248,11 @@ class AprilTagDetector:
                 if gray_image is None:
                     continue
                 with self._detect_lock:
-                    detected_tags = self.detector.detect(gray_image)
+                    try:
+                        detected_tags = self.detector.detect(gray_image)
+                    except Exception as exc:
+                        logger.exception("AprilTag detection failed: %s", exc)
+                        continue
                 if isinstance(detected_tags, Detection):
                     detections.append(
                         CustomDetection(
