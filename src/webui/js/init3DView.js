@@ -607,31 +607,9 @@ export function updateDetectedObjects(detections) {
     renderDetectedObjects(detections);
 }
 
-function getCameraListElements() {
-    return {
-        list: document.getElementById("cameraPoseList"),
-        emptyState: document.getElementById("cameraPoseListEmpty"),
-        allCamerasButton: document.getElementById("toggleAllCamerasBtn"),
-    };
-}
-
 function applyRobotModelVisibility() {
     if (robotObject) {
         robotObject.visible = robotModelVisible;
-    }
-}
-
-function updateAllCamerasToggleButton() {
-    const { allCamerasButton } = getCameraListElements();
-    if (!allCamerasButton) {
-        return;
-    }
-    const hasCameras = pendingCameraPoses.size > 0;
-    allCamerasButton.classList.toggle("hidden", !hasCameras);
-    if (hasCameras) {
-        allCamerasButton.textContent = allCameraMarkersVisible
-            ? "Hide cameras"
-            : "Show cameras";
     }
 }
 
@@ -782,44 +760,13 @@ function upsertCameraMarker(cameraPose) {
 }
 
 function pruneStaleCameraPoses(now = Date.now()) {
-    let removedAny = false;
     for (const [cameraBusId, cameraPose] of pendingCameraPoses.entries()) {
         if (now - cameraPose.timestampMs <= cameraPoseStaleTimeoutMs) {
             continue;
         }
         pendingCameraPoses.delete(cameraBusId);
         removeCameraMarker(cameraBusId);
-        removedAny = true;
     }
-
-    if (removedAny) {
-        renderCameraVisibilityList();
-    }
-}
-
-function renderCameraVisibilityList() {
-    const { list, emptyState } = getCameraListElements();
-    if (!list || !emptyState) {
-        return;
-    }
-
-    list.replaceChildren();
-
-    const cameraEntries = Array.from(pendingCameraPoses.values()).sort((left, right) =>
-        getCameraDisplayName(left).localeCompare(getCameraDisplayName(right)),
-    );
-
-    emptyState.classList.toggle("hidden", cameraEntries.length > 0);
-    list.classList.toggle("hidden", cameraEntries.length === 0);
-
-    for (const cameraPose of cameraEntries) {
-        const row = document.createElement("div");
-        row.className = "text-xs text-[#e8e8e8] truncate";
-        row.textContent = getCameraDisplayName(cameraPose);
-        list.appendChild(row);
-    }
-
-    updateAllCamerasToggleButton();
 }
 
 function syncCameraMarkersFromPending() {
@@ -827,7 +774,6 @@ function syncCameraMarkersFromPending() {
     for (const cameraPose of pendingCameraPoses.values()) {
         upsertCameraMarker(cameraPose);
     }
-    renderCameraVisibilityList();
 }
 
 export function updateCameraPose(cameraPoseUpdate) {
@@ -856,7 +802,6 @@ export function updateCameraPose(cameraPoseUpdate) {
 
     pruneStaleCameraPoses(normalizedUpdate.timestampMs);
     upsertCameraMarker(normalizedUpdate);
-    renderCameraVisibilityList();
 }
 
 export async function init3DView(modelUrl, options = {}) {
@@ -869,6 +814,10 @@ export async function init3DView(modelUrl, options = {}) {
     const robotModelToggle = document.getElementById("toggleRobotModelBtn");
     if (robotModelToggle) {
         robotModelVisible = robotModelToggle.checked;
+    }
+    const camerasToggle = document.getElementById("toggleCamerasBtn");
+    if (camerasToggle) {
+        allCameraMarkersVisible = camerasToggle.checked;
     }
     statsDisplay = document.getElementById("statsDisplay");
     statsDisplay.style.position = "absolute";
@@ -1258,18 +1207,17 @@ export async function init3DView(modelUrl, options = {}) {
         globalThis.__eev_robotModelToggleAttached = true;
     }
 
-    if (!globalThis.__eev_allCamerasToggleAttached) {
-        const allCamerasBtn = document.getElementById("toggleAllCamerasBtn");
-        if (allCamerasBtn) {
-            allCamerasBtn.addEventListener("click", () => {
-                allCameraMarkersVisible = !allCameraMarkersVisible;
+    if (!globalThis.__eev_camerasToggleAttached) {
+        const camerasToggleEl = document.getElementById("toggleCamerasBtn");
+        if (camerasToggleEl) {
+            camerasToggleEl.addEventListener("change", (event) => {
+                allCameraMarkersVisible = event.target.checked;
                 for (const marker of cameraMarkers.values()) {
                     marker.visible = allCameraMarkersVisible;
                 }
-                updateAllCamerasToggleButton();
             });
         }
-        globalThis.__eev_allCamerasToggleAttached = true;
+        globalThis.__eev_camerasToggleAttached = true;
     }
 
     let clock = new Clock();

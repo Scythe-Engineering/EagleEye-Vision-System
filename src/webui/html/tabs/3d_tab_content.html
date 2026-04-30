@@ -62,6 +62,15 @@
                 class="accent-[#f9c84a] cursor-pointer"
             />
         </label>
+        <label class="flex justify-between items-center mb-2 cursor-pointer font-bold text-sm">
+            <span>Cameras:</span>
+            <input
+                type="checkbox"
+                id="toggleCamerasBtn"
+                checked
+                class="accent-[#f9c84a] cursor-pointer"
+            />
+        </label>
         <label class="flex justify-between items-center cursor-pointer font-bold text-sm">
             <span>Shadows:</span>
             <input
@@ -71,29 +80,6 @@
                 class="accent-[#f9c84a] cursor-pointer"
             />
         </label>
-
-        <div class="mt-3 pt-3 border-t border-[#414141]">
-            <div class="flex items-center justify-between gap-2 mb-2">
-                <div class="font-bold text-sm">Cameras</div>
-                <button
-                    type="button"
-                    id="toggleAllCamerasBtn"
-                    class="text-xs font-semibold px-2 py-1 rounded border border-[#414141] bg-[#2a2a2a] text-[#f9c84a] hover:bg-[#3a3a3a] hidden"
-                >
-                    Hide cameras
-                </button>
-            </div>
-            <div
-                id="cameraPoseListEmpty"
-                class="text-xs text-[#bcbcbc]"
-            >
-                No active camera poses
-            </div>
-            <div
-                id="cameraPoseList"
-                class="hidden max-h-44 overflow-y-auto pr-1 space-y-1"
-            ></div>
-        </div>
     </div>    
 
     <output
