@@ -1,4 +1,12 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import {
+    closeOnBackdropClick,
+    closeOnEscape,
+    createElement,
+    getOrCreateModalElements,
+    hideModal,
+    showModal,
+} from "../ui/modal.js";
 
 export function registerFileManagerPopup() {
     if (globalThis.FileManagerPopup) {
@@ -8,46 +16,16 @@ export function registerFileManagerPopup() {
     const OVERLAY_ID = "fileManagerOverlay";
     const MODAL_ID = "fileManagerModal";
 
-    function createElement(tag, attrs = {}, children = []) {
-        const el = document.createElement(tag);
-        Object.entries(attrs).forEach(([k, v]) => {
-            if (k === "className") {
-                el.className = v;
-            } else if (k === "text") {
-                el.textContent = v;
-            } else if (k === "html") {
-                el.innerHTML = v;
-            } else if (k.startsWith("on") && typeof v === "function") {
-                el.addEventListener(k.substring(2).toLowerCase(), v);
-            } else if (v !== undefined && v !== null) {
-                el.setAttribute(k, String(v));
-            }
-        });
-        (children || []).forEach((c) => el.appendChild(c));
-        return el;
-    }
-
     function findOverlayElements() {
-        let overlay = document.getElementById(OVERLAY_ID);
-        let modal = document.getElementById(MODAL_ID);
-
-        if (!overlay) {
-            overlay = createElement("div", {
-                id: OVERLAY_ID,
-                className: "fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center",
-            });
-            document.body.appendChild(overlay);
-        }
-
-        if (!modal) {
-            modal = createElement("div", {
-                id: MODAL_ID,
-                className: "bg-[#1a1a1a] rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col",
-            });
-            overlay.appendChild(modal);
-        }
-
-        return { overlay, modal };
+        return getOrCreateModalElements({
+            overlayId: OVERLAY_ID,
+            modalId: MODAL_ID,
+            overlayClassName:
+                "fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center",
+            overlayStyle: null,
+            modalClassName:
+                "bg-[#1a1a1a] rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col",
+        });
     }
 
     let currentOperationName = null;
@@ -61,11 +39,17 @@ export function registerFileManagerPopup() {
 
         try {
             const response = await fetch(
-                `${BACKEND_BASE_URL}/get-operation-files/${encodeURIComponent(currentOperationName)}/${encodeURIComponent(currentParameterName)}`
+                `${BACKEND_BASE_URL}/get-operation-files/${encodeURIComponent(currentOperationName)}/${encodeURIComponent(currentParameterName)}`,
             );
             if (response.ok) {
                 const data = await response.json();
-                filesList = data.file_details || data.files.map(f => ({ filename: f, size: 0, modified: 0 }));
+                filesList =
+                    data.file_details ||
+                    data.files.map((f) => ({
+                        filename: f,
+                        size: 0,
+                        modified: 0,
+                    }));
                 renderFileList();
             } else {
                 console.error("Failed to fetch files");
@@ -80,7 +64,9 @@ export function registerFileManagerPopup() {
         const k = 1024;
         const sizes = ["B", "KB", "MB", "GB"];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + " " + sizes[i];
+        return (
+            Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i]
+        );
     }
 
     function formatDate(timestamp) {
@@ -90,7 +76,9 @@ export function registerFileManagerPopup() {
     }
 
     function renderFileList() {
-        const fileListContainer = document.getElementById("fileManagerFileList");
+        const fileListContainer = document.getElementById(
+            "fileManagerFileList",
+        );
         if (!fileListContainer) return;
 
         fileListContainer.innerHTML = "";
@@ -106,7 +94,8 @@ export function registerFileManagerPopup() {
 
         filesList.forEach((file) => {
             const fileRow = createElement("div", {
-                className: "flex items-center justify-between p-3 border-b border-[#414141] hover:bg-[#2a2a2a]",
+                className:
+                    "flex items-center justify-between p-3 border-b border-[#414141] hover:bg-[#2a2a2a]",
             });
 
             const fileInfo = createElement("div", {
@@ -132,7 +121,8 @@ export function registerFileManagerPopup() {
 
             const selectButton = createElement("button", {
                 type: "button",
-                className: "px-3 py-1 bg-[#f9c845] text-[#232323] rounded hover:bg-[#d4a83a] text-sm",
+                className:
+                    "px-3 py-1 bg-[#f9c845] text-[#232323] rounded hover:bg-[#d4a83a] text-sm",
                 text: "Select",
                 onclick: () => {
                     if (onFileSelectedCallback) {
@@ -144,10 +134,15 @@ export function registerFileManagerPopup() {
 
             const deleteButton = createElement("button", {
                 type: "button",
-                className: "px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm",
+                className:
+                    "px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm",
                 text: "Delete",
                 onclick: () => {
-                    if (confirm(`Are you sure you want to delete "${file.filename}"?`)) {
+                    if (
+                        confirm(
+                            `Are you sure you want to delete "${file.filename}"?`,
+                        )
+                    ) {
                         deleteFile(file.filename);
                     }
                 },
@@ -168,7 +163,7 @@ export function registerFileManagerPopup() {
         try {
             const response = await fetch(
                 `${BACKEND_BASE_URL}/delete-operation-file/${encodeURIComponent(currentOperationName)}/${encodeURIComponent(currentParameterName)}/${encodeURIComponent(filename)}`,
-                { method: "DELETE" }
+                { method: "DELETE" },
             );
 
             if (response.ok) {
@@ -181,7 +176,9 @@ export function registerFileManagerPopup() {
                 }
             } else {
                 const error = await response.json();
-                alert(`Failed to delete file: ${error.error || "Unknown error"}`);
+                alert(
+                    `Failed to delete file: ${error.error || "Unknown error"}`,
+                );
             }
         } catch (error) {
             console.error("Error deleting file:", error);
@@ -201,7 +198,7 @@ export function registerFileManagerPopup() {
                 {
                     method: "POST",
                     body: formData,
-                }
+                },
             );
 
             if (response.ok) {
@@ -215,7 +212,9 @@ export function registerFileManagerPopup() {
                 }
             } else {
                 const error = await response.json();
-                alert(`Failed to upload file: ${error.error || "Unknown error"}`);
+                alert(
+                    `Failed to upload file: ${error.error || "Unknown error"}`,
+                );
             }
         } catch (error) {
             console.error("Error uploading file:", error);
@@ -254,7 +253,8 @@ export function registerFileManagerPopup() {
         });
 
         const uploadSection = createElement("div", {
-            className: "mb-6 p-4 border border-[#414141] rounded-lg bg-[#232323]",
+            className:
+                "mb-6 p-4 border border-[#414141] rounded-lg bg-[#232323]",
         });
 
         const uploadLabel = createElement("label", {
@@ -265,7 +265,8 @@ export function registerFileManagerPopup() {
         const fileInput = createElement("input", {
             type: "file",
             id: "fileManagerFileInput",
-            className: "w-full text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#f9c845] file:text-[#232323] hover:file:bg-[#d4a83a]",
+            className:
+                "w-full text-white file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#f9c845] file:text-[#232323] hover:file:bg-[#d4a83a]",
         });
 
         fileInput.addEventListener("change", (e) => {
@@ -290,7 +291,8 @@ export function registerFileManagerPopup() {
 
         const fileListContainer = createElement("div", {
             id: "fileManagerFileList",
-            className: "border border-[#414141] rounded-lg bg-[#232323] max-h-96 overflow-y-auto",
+            className:
+                "border border-[#414141] rounded-lg bg-[#232323] max-h-96 overflow-y-auto",
         });
 
         fileListSection.appendChild(fileListLabel);
@@ -305,7 +307,8 @@ export function registerFileManagerPopup() {
 
         const cancelButton = createElement("button", {
             type: "button",
-            className: "px-4 py-2 bg-[#414141] text-white rounded hover:bg-[#515151]",
+            className:
+                "px-4 py-2 bg-[#414141] text-white rounded hover:bg-[#515151]",
             text: "Close",
             onclick: close,
         });
@@ -319,14 +322,16 @@ export function registerFileManagerPopup() {
 
     function init() {
         const { overlay } = findOverlayElements();
-        overlay.addEventListener("click", (e) => {
-            if (e.target.id === OVERLAY_ID) {
-                close();
-            }
-        });
+        closeOnBackdropClick(overlay, close);
+        closeOnEscape(overlay, close);
     }
 
-    function open(operationName, parameterName, currentValueParam, onFileSelected) {
+    function open(
+        operationName,
+        parameterName,
+        currentValueParam,
+        onFileSelected,
+    ) {
         currentOperationName = operationName;
         currentParameterName = parameterName;
         currentValue = currentValueParam;
@@ -336,12 +341,12 @@ export function registerFileManagerPopup() {
         fetchFiles();
 
         const { overlay } = findOverlayElements();
-        overlay.classList.remove("hidden");
+        showModal(overlay);
     }
 
     function close() {
         const { overlay } = findOverlayElements();
-        overlay.classList.add("hidden");
+        hideModal(overlay);
         currentOperationName = null;
         currentParameterName = null;
         currentValue = null;

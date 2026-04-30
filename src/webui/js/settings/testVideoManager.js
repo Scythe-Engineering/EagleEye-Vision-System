@@ -1,5 +1,17 @@
 import { BACKEND_BASE_URL } from "../config.js";
-import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
+import {
+    closeOnBackdropClick,
+    closeOnEscape,
+    createElement,
+    getOrCreateModalElements,
+    hideModal,
+    showModal,
+} from "../ui/modal.js";
+import {
+    showDanger,
+    showSuccess,
+    showWarning,
+} from "../ui/notificationSystem.js";
 
 const OVERLAY_ID = "testVideoManagerOverlay";
 const MODAL_ID = "testVideoManagerModal";
@@ -8,49 +20,13 @@ let videos = [];
 let restartRequired = false;
 let initialized = false;
 
-function createElement(tag, attrs = {}, children = []) {
-    const el = document.createElement(tag);
-    Object.entries(attrs).forEach(([key, value]) => {
-        if (key === "className") {
-            el.className = value;
-        } else if (key === "text") {
-            el.textContent = value;
-        } else if (key === "html") {
-            el.innerHTML = value;
-        } else if (key.startsWith("on") && typeof value === "function") {
-            el.addEventListener(key.substring(2).toLowerCase(), value);
-        } else if (value !== undefined && value !== null) {
-            el.setAttribute(key, String(value));
-        }
-    });
-    children.forEach((child) => el.appendChild(child));
-    return el;
-}
-
 function getOverlayElements() {
-    let overlay = document.getElementById(OVERLAY_ID);
-    let modal = document.getElementById(MODAL_ID);
-
-    if (!overlay) {
-        overlay = createElement("div", {
-            id: OVERLAY_ID,
-            className:
-                "fixed inset-0 z-50 hidden flex items-center justify-center",
-            style: "background-color: rgba(0, 0, 0, 0.25); backdrop-filter: blur(6px);",
-        });
-        document.body.appendChild(overlay);
-    }
-
-    if (!modal) {
-        modal = createElement("div", {
-            id: MODAL_ID,
-            className:
-                "bg-[#1a1a1a] rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
-        });
-        overlay.appendChild(modal);
-    }
-
-    return { overlay, modal };
+    return getOrCreateModalElements({
+        overlayId: OVERLAY_ID,
+        modalId: MODAL_ID,
+        modalClassName:
+            "bg-[#1a1a1a] rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
+    });
 }
 
 function formatFileSize(bytes) {
@@ -82,7 +58,9 @@ async function fetchJson(path, options = {}) {
         payload = {};
     }
     if (!response.ok) {
-        const error = new Error(payload.error || `Request failed: ${response.status}`);
+        const error = new Error(
+            payload.error || `Request failed: ${response.status}`,
+        );
         error.status = response.status;
         error.payload = payload;
         throw error;
@@ -102,7 +80,9 @@ async function markRestartRequired() {
         });
     } catch (error) {
         console.warn("Failed to mark backend restart required:", error);
-        showWarning("Restart is required, but the backend flag was not updated.");
+        showWarning(
+            "Restart is required, but the backend flag was not updated.",
+        );
     }
 }
 
@@ -376,13 +356,13 @@ function render() {
 function open() {
     const { overlay } = getOverlayElements();
     render();
-    overlay.classList.remove("hidden");
+    showModal(overlay);
     loadVideos();
 }
 
 function close() {
     const { overlay } = getOverlayElements();
-    overlay.classList.add("hidden");
+    hideModal(overlay);
 }
 
 export function initializeTestVideoManager() {
@@ -392,11 +372,8 @@ export function initializeTestVideoManager() {
     initialized = true;
 
     const { overlay } = getOverlayElements();
-    overlay.addEventListener("click", (event) => {
-        if (event.target.id === OVERLAY_ID) {
-            close();
-        }
-    });
+    closeOnBackdropClick(overlay, close);
+    closeOnEscape(overlay, close);
 
     const manageButton = document.getElementById("manageTestVideosBtn");
     if (manageButton) {
