@@ -52,6 +52,7 @@ export class InteractiveGrid {
         this.redrawTimer = null;
         this.lastRedrawRequestTime = 0;
         this.redrawThrottleMs = options.redrawThrottleMs || 33;
+        this.needsRedraw = false;
         this.init();
     }
 
@@ -95,6 +96,7 @@ export class InteractiveGrid {
         this.canvas.style.height = `${rect.height}px`;
 
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.requestRedraw();
     }
 
     setupEventListeners() {
@@ -555,15 +557,22 @@ export class InteractiveGrid {
     }
 
     startAnimation() {
-        this.needsRedraw = true;
-        const animate = () => {
-            if (this.needsRedraw) {
-                this.draw();
-                this.needsRedraw = false;
+        this.requestRedraw();
+    }
+
+    scheduleDraw() {
+        if (this.animationFrame) {
+            return;
+        }
+
+        this.animationFrame = requestAnimationFrame(() => {
+            this.animationFrame = null;
+            if (!this.needsRedraw) {
+                return;
             }
-            this.animationFrame = requestAnimationFrame(animate);
-        };
-        animate();
+            this.draw();
+            this.needsRedraw = false;
+        });
     }
 
     requestRedraw() {
@@ -573,6 +582,7 @@ export class InteractiveGrid {
         if (elapsed >= this.redrawThrottleMs) {
             this.lastRedrawRequestTime = now;
             this.needsRedraw = true;
+            this.scheduleDraw();
             return;
         }
 
@@ -584,6 +594,7 @@ export class InteractiveGrid {
             this.redrawTimer = null;
             this.lastRedrawRequestTime = performance.now();
             this.needsRedraw = true;
+            this.scheduleDraw();
         }, this.redrawThrottleMs - elapsed);
     }
 

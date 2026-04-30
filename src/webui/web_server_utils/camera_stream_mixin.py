@@ -9,6 +9,7 @@ import numpy as np
 from flask import Response
 
 from src.webui.web_server_utils.constants import (
+    VIEW_STREAM_FPS,
     VIEW_STREAM_JPEG_QUALITY,
     no_image,
     no_image_jpeg_bytes,
@@ -133,7 +134,7 @@ class CameraStreamMixin:
 
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
-            time.sleep(max((1 / 120) - (time.time() - time_start), 0))
+            time.sleep(max((1 / VIEW_STREAM_FPS) - (time.time() - time_start), 0))
 
     def _resize_view_stream_frame(self, frame: np.ndarray) -> np.ndarray:
         """Resize a frame for the Views tab stream only."""

@@ -45,6 +45,7 @@ let animationStarted = false;
 let animationFrameId = null;
 let resizeHandler = null;
 let detectedObjectsGroup = null;
+let detectedObjectsFrameId = null;
 let cameraMarkersGroup = null;
 let pendingDetectedObjects = null;
 const pendingCameraPoses = new Map();
@@ -441,6 +442,13 @@ function stopAnimationLoop() {
     }
 }
 
+function cancelPendingDetectedObjectRender() {
+    if (detectedObjectsFrameId !== null) {
+        cancelAnimationFrame(detectedObjectsFrameId);
+        detectedObjectsFrameId = null;
+    }
+}
+
 function disposeRenderer() {
     if (!renderer) {
         return;
@@ -480,6 +488,7 @@ function teardown3DView({ invalidateLoads = true } = {}) {
     }
 
     stopAnimationLoop();
+    cancelPendingDetectedObjectRender();
     controls?.dispose();
     controls = null;
     activeDracoLoader?.dispose();
@@ -696,7 +705,14 @@ function renderDetectedObjects(detections) {
 
 export function updateDetectedObjects(detections) {
     pendingDetectedObjects = detections;
-    renderDetectedObjects(detections);
+    if (detectedObjectsFrameId !== null) {
+        return;
+    }
+
+    detectedObjectsFrameId = requestAnimationFrame(() => {
+        detectedObjectsFrameId = null;
+        renderDetectedObjects(pendingDetectedObjects);
+    });
 }
 
 function applyRobotModelVisibility() {
@@ -1059,7 +1075,7 @@ export async function init3DView(modelUrl, options = {}) {
 
     renderer = new WebGLRenderer({
         antialias: true,
-        powerPreference: "high-performance",
+        powerPreference: "default",
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.shadowMap.enabled = true;
@@ -1088,8 +1104,8 @@ export async function init3DView(modelUrl, options = {}) {
     directionalLight.castShadow = true;
     directionalLight.shadow.bias = -0.0005;
     directionalLight.shadow.normalBias = -0.0005;
-    directionalLight.shadow.mapSize.width = 1024 * 3;
-    directionalLight.shadow.mapSize.height = 1024 * 3;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
     directionalLight.shadow.camera.left = -300 * scale;
     directionalLight.shadow.camera.right = 300 * scale;
     directionalLight.shadow.camera.top = 150 * scale;

@@ -1,5 +1,9 @@
 import { BACKEND_BASE_URL } from "../config.js";
-import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
+import {
+    showDanger,
+    showSuccess,
+    showWarning,
+} from "../ui/notificationSystem.js";
 import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
@@ -24,8 +28,11 @@ const INPUT_ID_BY_KEY = {
 let initialized = false;
 let currentCameraBusId = "";
 let poseVizState = null;
+let poseVizRenderFrame = null;
 
 const DEG_TO_RAD = Math.PI / 180;
+const POSE_VIZ_MAX_FPS = 30;
+const POSE_VIZ_FRAME_MS = 1000 / POSE_VIZ_MAX_FPS;
 
 function getElement(id) {
     return document.getElementById(id);
@@ -61,6 +68,7 @@ function createLabelSprite(text, color = "#f9c845") {
 
 function initCameraPoseVisualization() {
     if (poseVizState) {
+        startCameraPoseVisualizationLoop();
         return;
     }
 
@@ -77,8 +85,11 @@ function initCameraPoseVisualization() {
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100);
     camera.position.set(1.2, 1.0, 1.2);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(globalThis.devicePixelRatio || 1);
+    const renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference: "default",
+    });
+    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 1.5));
     renderer.setSize(width, height);
     container.appendChild(renderer.domElement);
 
@@ -101,7 +112,11 @@ function initCameraPoseVisualization() {
     const robotGroup = new THREE.Group();
     const chassis = new THREE.Mesh(
         new THREE.BoxGeometry(0.72, 0.12, 0.72),
-        new THREE.MeshStandardMaterial({ color: 0x4a5568, metalness: 0.2, roughness: 0.7 }),
+        new THREE.MeshStandardMaterial({
+            color: 0x4a5568,
+            metalness: 0.2,
+            roughness: 0.7,
+        }),
     );
     chassis.position.y = 0.06;
     robotGroup.add(chassis);
@@ -170,18 +185,43 @@ function initCameraPoseVisualization() {
         controls,
         cameraMarkerGroup,
         frameHandle: 0,
+        lastFrameMs: 0,
     };
 
-    const renderFrame = () => {
+    poseVizRenderFrame = (timestampMs = performance.now()) => {
         if (!poseVizState) {
             return;
         }
+
+        const utilsView = getElement("view-utils");
+        if (utilsView?.classList.contains("hidden")) {
+            poseVizState.frameHandle = 0;
+            return;
+        }
+
+        if (timestampMs - poseVizState.lastFrameMs < POSE_VIZ_FRAME_MS) {
+            poseVizState.frameHandle =
+                globalThis.requestAnimationFrame(poseVizRenderFrame);
+            return;
+        }
+
+        poseVizState.lastFrameMs = timestampMs;
         poseVizState.controls.update();
         poseVizState.renderer.render(poseVizState.scene, poseVizState.camera);
-        poseVizState.frameHandle = globalThis.requestAnimationFrame(renderFrame);
+        poseVizState.frameHandle =
+            globalThis.requestAnimationFrame(poseVizRenderFrame);
     };
 
-    renderFrame();
+    startCameraPoseVisualizationLoop();
+}
+
+function startCameraPoseVisualizationLoop() {
+    if (!poseVizState || poseVizState.frameHandle || !poseVizRenderFrame) {
+        return;
+    }
+
+    poseVizState.frameHandle =
+        globalThis.requestAnimationFrame(poseVizRenderFrame);
 }
 
 function resizeCameraPoseVisualization() {
@@ -201,18 +241,29 @@ function updateCameraPoseVisualization() {
         return;
     }
 
-    const xOffset = Number.parseFloat(getElement("utils-x-offset")?.value ?? "0");
-    const yOffset = Number.parseFloat(getElement("utils-y-offset")?.value ?? "0");
-    const zOffset = Number.parseFloat(getElement("utils-z-offset")?.value ?? "0");
+    const xOffset = Number.parseFloat(
+        getElement("utils-x-offset")?.value ?? "0",
+    );
+    const yOffset = Number.parseFloat(
+        getElement("utils-y-offset")?.value ?? "0",
+    );
+    const zOffset = Number.parseFloat(
+        getElement("utils-z-offset")?.value ?? "0",
+    );
     const yawDegrees = Number.parseFloat(getElement("utils-yaw")?.value ?? "0");
-    const pitchDegrees = Number.parseFloat(getElement("utils-pitch")?.value ?? "0");
-    const rollDegrees = Number.parseFloat(getElement("utils-roll")?.value ?? "0");
+    const pitchDegrees = Number.parseFloat(
+        getElement("utils-pitch")?.value ?? "0",
+    );
+    const rollDegrees = Number.parseFloat(
+        getElement("utils-roll")?.value ?? "0",
+    );
 
     const x = Number.isFinite(xOffset) ? xOffset : 0;
     const y = Number.isFinite(yOffset) ? yOffset : 0;
     const z = Number.isFinite(zOffset) ? zOffset : 0;
     const yaw = (Number.isFinite(yawDegrees) ? yawDegrees : 0) * DEG_TO_RAD;
-    const pitch = (Number.isFinite(pitchDegrees) ? pitchDegrees : 0) * DEG_TO_RAD;
+    const pitch =
+        (Number.isFinite(pitchDegrees) ? pitchDegrees : 0) * DEG_TO_RAD;
     const roll = (Number.isFinite(rollDegrees) ? rollDegrees : 0) * DEG_TO_RAD;
 
     // Map robot convention (x forward, y left, z up) -> Three.js (x right, y up, z depth).
@@ -289,7 +340,10 @@ async function fetchJson(path, options = {}) {
     }
 
     if (!response.ok) {
-        const errorMessage = data?.error || data?.message || `Request failed: ${response.status}`;
+        const errorMessage =
+            data?.error ||
+            data?.message ||
+            `Request failed: ${response.status}`;
         throw new Error(errorMessage);
     }
 
@@ -326,12 +380,19 @@ async function loadCameraList() {
             select.appendChild(option);
         });
 
-        if (!currentCameraBusId || !cameras.some((camera) => String(camera.bus_id) === currentCameraBusId)) {
+        if (
+            !currentCameraBusId ||
+            !cameras.some(
+                (camera) => String(camera.bus_id) === currentCameraBusId,
+            )
+        ) {
             currentCameraBusId = String(cameras[0].bus_id);
         }
 
         select.value = currentCameraBusId;
-        const selected = cameras.find((camera) => String(camera.bus_id) === currentCameraBusId);
+        const selected = cameras.find(
+            (camera) => String(camera.bus_id) === currentCameraBusId,
+        );
         setCameraMeta(selected || null);
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -345,10 +406,14 @@ async function loadCameraConfig(cameraBusId) {
     }
 
     try {
-        const payload = await fetchJson(`/camera-config/${encodeURIComponent(cameraBusId)}`);
+        const payload = await fetchJson(
+            `/camera-config/${encodeURIComponent(cameraBusId)}`,
+        );
         setExtrinsicsInputs(payload?.extrinsics || {});
         if (payload?.intrinsics_exists) {
-            setIntrinsicsStatus(`Current intrinsics: ${payload.intrinsics_path || "intrinsics.json"}`);
+            setIntrinsicsStatus(
+                `Current intrinsics: ${payload.intrinsics_path || "intrinsics.json"}`,
+            );
         } else {
             setIntrinsicsStatus("No intrinsics file currently set.");
         }
@@ -364,11 +429,14 @@ async function saveExtrinsics() {
     }
 
     try {
-        await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/extrinsics`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(getExtrinsicsPayload()),
-        });
+        await fetchJson(
+            `/camera-config/${encodeURIComponent(currentCameraBusId)}/extrinsics`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(getExtrinsicsPayload()),
+            },
+        );
         showSuccess("Camera extrinsics saved");
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -395,10 +463,13 @@ async function uploadIntrinsicsFile(file) {
     try {
         const formData = new FormData();
         formData.append("file", file);
-        await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`, {
-            method: "POST",
-            body: formData,
-        });
+        await fetchJson(
+            `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
+            {
+                method: "POST",
+                body: formData,
+            },
+        );
         showSuccess("Intrinsics file uploaded");
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -413,9 +484,12 @@ async function deleteIntrinsics() {
     }
 
     try {
-        await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`, {
-            method: "DELETE",
-        });
+        await fetchJson(
+            `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
+            {
+                method: "DELETE",
+            },
+        );
         showSuccess("Intrinsics file deleted");
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -455,6 +529,7 @@ function setupDropzone() {
 
 export function initCameraConfigUtils() {
     if (initialized) {
+        startCameraPoseVisualizationLoop();
         return;
     }
 
@@ -476,7 +551,8 @@ export function initCameraConfigUtils() {
     cameraSelect.addEventListener("change", () => {
         currentCameraBusId = cameraSelect.value;
         void loadCameraConfig(currentCameraBusId);
-        const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.text || "";
+        const selectedText =
+            cameraSelect.options[cameraSelect.selectedIndex]?.text || "";
         setCameraMeta(
             currentCameraBusId
                 ? {
