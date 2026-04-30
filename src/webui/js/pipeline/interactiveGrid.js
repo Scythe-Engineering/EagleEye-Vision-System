@@ -49,6 +49,9 @@ export class InteractiveGrid {
         this.maxOpacity = 0.7;
 
         this.animationFrame = null;
+        this.redrawTimer = null;
+        this.lastRedrawRequestTime = 0;
+        this.redrawThrottleMs = options.redrawThrottleMs || 33;
         this.init();
     }
 
@@ -78,7 +81,7 @@ export class InteractiveGrid {
             width: rect.width,
             height: rect.height,
             left: rect.left,
-            top: rect.top
+            top: rect.top,
         };
     }
 
@@ -119,7 +122,11 @@ export class InteractiveGrid {
      * Update the viewport transform state from FlowchartCanvas
      */
     updateViewport(translateX, translateY, scale) {
-        if (this.translateX !== translateX || this.translateY !== translateY || this.scale !== scale) {
+        if (
+            this.translateX !== translateX ||
+            this.translateY !== translateY ||
+            this.scale !== scale
+        ) {
             this.translateX = translateX;
             this.translateY = translateY;
             this.scale = scale;
@@ -331,7 +338,8 @@ export class InteractiveGrid {
      */
     calculateDotProperties(worldX, worldY) {
         // Get base properties from cache or calculation
-        const { size: baseSize, opacity: baseOpacity } = this.calculateBaseDotProperties(worldX, worldY);
+        const { size: baseSize, opacity: baseOpacity } =
+            this.calculateBaseDotProperties(worldX, worldY);
 
         // If base opacity is 0 and mouse is far, we can skip
         const mouseWorld = this.screenToWorld(
@@ -514,7 +522,9 @@ export class InteractiveGrid {
             Math.ceil(bottomRight.y / crossSpacing) * crossSpacing;
 
         for (
-            let worldX = crossStartX; worldX <= crossEndX; worldX += crossSpacing
+            let worldX = crossStartX;
+            worldX <= crossEndX;
+            worldX += crossSpacing
         ) {
             for (
                 let worldY = crossStartY;
@@ -557,12 +567,33 @@ export class InteractiveGrid {
     }
 
     requestRedraw() {
-        this.needsRedraw = true;
+        const now = performance.now();
+        const elapsed = now - this.lastRedrawRequestTime;
+
+        if (elapsed >= this.redrawThrottleMs) {
+            this.lastRedrawRequestTime = now;
+            this.needsRedraw = true;
+            return;
+        }
+
+        if (this.redrawTimer) {
+            return;
+        }
+
+        this.redrawTimer = setTimeout(() => {
+            this.redrawTimer = null;
+            this.lastRedrawRequestTime = performance.now();
+            this.needsRedraw = true;
+        }, this.redrawThrottleMs - elapsed);
     }
 
     destroy() {
         if (this.animationFrame) {
             cancelAnimationFrame(this.animationFrame);
+        }
+        if (this.redrawTimer) {
+            clearTimeout(this.redrawTimer);
+            this.redrawTimer = null;
         }
         this.canvas?.remove();
     }

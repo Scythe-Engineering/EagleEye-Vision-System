@@ -284,6 +284,10 @@ export class FlowchartRenderer {
 
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
+        this.pendingPositionFrame = null;
+        this.pendingDragNodeIds = new Set();
+        this.lastLayoutChromeUpdateMs = 0;
+        this.lastHighlightedInputPort = null;
 
         this.init();
     }
@@ -719,7 +723,11 @@ export class FlowchartRenderer {
         }
 
         const changedNodeIds = new Set([node.instanceId]);
-        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
+        this.connections.updateAllConnections(
+            this.nodes,
+            changedNodeIds,
+            false,
+        );
         return true;
     }
 
@@ -758,9 +766,11 @@ export class FlowchartRenderer {
             clearTimeout(this.positionChangeDebounce);
             this.positionChangeDebounce = null;
         }
-
-        const changedNodeIds = new Set([node.instanceId]);
-        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
+        if (this.pendingPositionFrame) {
+            cancelAnimationFrame(this.pendingPositionFrame);
+            this.pendingPositionFrame = null;
+            this.pendingDragNodeIds.clear();
+        }
 
         this.connections.connections.forEach((connection) => {
             if (
@@ -770,6 +780,13 @@ export class FlowchartRenderer {
                 delete connection.lastPosKey;
             }
         });
+
+        const changedNodeIds = new Set([node.instanceId]);
+        this.connections.updateAllConnections(
+            this.nodes,
+            changedNodeIds,
+            false,
+        );
 
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map((n) => ({
@@ -791,11 +808,28 @@ export class FlowchartRenderer {
     }
 
     handleNodePositionChange(node, position) {
-        const changedNodeIds = new Set([node.instanceId]);
-        this.connections.updateAllConnections(this.nodes, changedNodeIds, true);
+        this.pendingDragNodeIds.add(node.instanceId);
 
-        if (!this.positionChangeDebounce) {
+        if (!this.pendingPositionFrame) {
+            this.pendingPositionFrame = requestAnimationFrame(() => {
+                const changedNodeIds = new Set(this.pendingDragNodeIds);
+                this.pendingDragNodeIds.clear();
+                this.pendingPositionFrame = null;
+                this.connections.updateAllConnections(
+                    this.nodes,
+                    changedNodeIds,
+                    true,
+                );
+            });
+        }
+
+        const now = performance.now();
+        if (
+            !this.positionChangeDebounce &&
+            now - this.lastLayoutChromeUpdateMs > 90
+        ) {
             this.positionChangeDebounce = setTimeout(() => {
+                this.lastLayoutChromeUpdateMs = performance.now();
                 if (this.minimap) {
                     const nodeDataList = Array.from(this.nodes.values()).map(
                         (n) => ({
@@ -813,7 +847,7 @@ export class FlowchartRenderer {
                 this.updateGridOperationPositions();
                 this.updateIslandBlocks();
                 this.positionChangeDebounce = null;
-            }, 16);
+            }, 90);
         }
     }
 
@@ -1053,16 +1087,19 @@ export class FlowchartRenderer {
                 .elementFromPoint(e.clientX, e.clientY)
                 ?.closest(".port-connector");
             if (target && target.dataset.portType === "input") {
-                target.style.backgroundColor = "#f9c845";
-                target.style.transform = "scale(1.3)";
-            } else {
-                // Reset other ports (simple way)
-                document.querySelectorAll(".input-connector").forEach((p) => {
-                    if (p !== target) {
-                        p.style.backgroundColor = "#404040";
-                        p.style.transform = "scale(1)";
+                if (this.lastHighlightedInputPort !== target) {
+                    if (this.lastHighlightedInputPort) {
+                        this.lastHighlightedInputPort.style.backgroundColor =
+                            "#404040";
+                        this.lastHighlightedInputPort.style.transform =
+                            "scale(1)";
                     }
-                });
+                    this.lastHighlightedInputPort = target;
+                    target.style.backgroundColor = "#f9c845";
+                    target.style.transform = "scale(1.3)";
+                }
+            } else {
+                this.clearHighlightedInputPort();
             }
         };
 
@@ -1102,11 +1139,7 @@ export class FlowchartRenderer {
                 }
             }
 
-            // Reset visual feedback
-            document.querySelectorAll(".input-connector").forEach((p) => {
-                p.style.backgroundColor = "#404040";
-                p.style.transform = "scale(1)";
-            });
+            this.clearHighlightedInputPort();
 
             globalThis.removeEventListener("mousemove", onMouseMove);
             globalThis.removeEventListener("mouseup", onMouseUp);
@@ -1208,6 +1241,16 @@ export class FlowchartRenderer {
             this.connectingState.temp.remove();
             this.connectingState = null;
         }
+        this.clearHighlightedInputPort();
+    }
+
+    clearHighlightedInputPort() {
+        if (!this.lastHighlightedInputPort) {
+            return;
+        }
+        this.lastHighlightedInputPort.style.backgroundColor = "#404040";
+        this.lastHighlightedInputPort.style.transform = "scale(1)";
+        this.lastHighlightedInputPort = null;
     }
 
     handleNodeRemove(instanceId) {

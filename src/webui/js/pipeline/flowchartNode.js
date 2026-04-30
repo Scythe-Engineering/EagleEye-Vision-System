@@ -45,6 +45,8 @@ export class FlowchartNode {
         this.configDataLoaded = false;
         this.threadInfo = null;
         this.profilingInfo = null;
+        this.dragContext = null;
+        this.cachedElementWidth = 200;
     }
 
     buildIndexedPortName(baseName, index) {
@@ -524,6 +526,7 @@ export class FlowchartNode {
         this.applyStyles();
         this.renderContent();
         this.setupDragListeners();
+        this.cachedElementWidth = this.element.offsetWidth || 200;
 
         return this.element;
     }
@@ -769,6 +772,8 @@ export class FlowchartNode {
         this.setupButtonListeners();
         this.cachePortElements();
         this.applyIslandInactiveState();
+        this.cachedElementWidth =
+            this.element.offsetWidth || this.cachedElementWidth;
     }
 
     setIslandInactive(isInactive) {
@@ -1112,8 +1117,19 @@ export class FlowchartNode {
         // We assume the canvas instance is available via some global or we can find it
         // For now we'll stick to DOM inspection but make it more robust
 
-        const scale = this.getCanvasScale();
+        const viewport = this.element.closest("#flowchartViewport");
+        const scale = this.getCanvasScale(viewport);
         const rect = this.element.getBoundingClientRect();
+        const containerRect = viewport?.parentElement?.getBoundingClientRect();
+        const translate = this.getCanvasTranslate(viewport);
+
+        this.dragContext = {
+            viewport,
+            scale,
+            translate,
+            containerLeft: containerRect?.left ?? 0,
+            containerTop: containerRect?.top ?? 0,
+        };
 
         this.dragOffsetX = (event.clientX - rect.left) / scale;
         this.dragOffsetY = (event.clientY - rect.top) / scale;
@@ -1130,20 +1146,17 @@ export class FlowchartNode {
         const handleDragMove = (e) => {
             if (!this.isDragging) return;
 
-            const scale = this.getCanvasScale();
-            const viewport = this.element.closest("#flowchartViewport");
-            if (!viewport) return;
-
-            const containerRect =
-                viewport.parentElement.getBoundingClientRect();
-            const translate = this.getCanvasTranslate();
+            const context = this.dragContext;
+            if (!context?.viewport) return;
 
             // Calculate position in world coordinates
             let worldX =
-                (e.clientX - containerRect.left - translate.x) / scale -
+                (e.clientX - context.containerLeft - context.translate.x) /
+                    context.scale -
                 this.dragOffsetX;
             let worldY =
-                (e.clientY - containerRect.top - translate.y) / scale -
+                (e.clientY - context.containerTop - context.translate.y) /
+                    context.scale -
                 this.dragOffsetY;
 
             // Snap to grid
@@ -1169,6 +1182,7 @@ export class FlowchartNode {
             if (!this.isDragging) return;
 
             this.isDragging = false;
+            this.dragContext = null;
             this.element.style.zIndex = "10";
             this.element.style.cursor = "move";
             this.updateNodeHoverChrome();
@@ -1188,8 +1202,8 @@ export class FlowchartNode {
         event.stopPropagation();
     }
 
-    getCanvasScale() {
-        const viewport = this.element.closest("#flowchartViewport");
+    getCanvasScale(viewport = null) {
+        viewport = viewport || this.element.closest("#flowchartViewport");
         if (!viewport) return 1;
 
         const transform = viewport.style.transform;
@@ -1197,8 +1211,8 @@ export class FlowchartNode {
         return scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1;
     }
 
-    getCanvasTranslate() {
-        const viewport = this.element.closest("#flowchartViewport");
+    getCanvasTranslate(viewport = null) {
+        viewport = viewport || this.element.closest("#flowchartViewport");
         if (!viewport) return { x: 0, y: 0 };
 
         const transform = viewport.style.transform;
@@ -1218,15 +1232,11 @@ export class FlowchartNode {
         const port = this.inputPorts.get(portName);
         if (!port) return null;
 
-        const portRect = port.getBoundingClientRect();
-        const nodeRect = this.element.getBoundingClientRect();
-        const scale = this.getCanvasScale();
+        const portCenterY = port.offsetTop + port.offsetHeight / 2;
 
         return {
             x: this.position.x,
-            y:
-                this.position.y +
-                (portRect.top - nodeRect.top + portRect.height / 2) / scale,
+            y: this.position.y + portCenterY,
         };
     }
 
@@ -1234,15 +1244,11 @@ export class FlowchartNode {
         const port = this.outputPorts.get(portName);
         if (!port) return null;
 
-        const portRect = port.getBoundingClientRect();
-        const nodeRect = this.element.getBoundingClientRect();
-        const scale = this.getCanvasScale();
+        const portCenterY = port.offsetTop + port.offsetHeight / 2;
 
         return {
-            x: this.position.x + this.element.offsetWidth,
-            y:
-                this.position.y +
-                (portRect.top - nodeRect.top + portRect.height / 2) / scale,
+            x: this.position.x + this.cachedElementWidth,
+            y: this.position.y + portCenterY,
         };
     }
 

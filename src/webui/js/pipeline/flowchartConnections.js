@@ -463,7 +463,7 @@ export class FlowchartConnections {
         fromPortName,
         toNode,
         toPortName,
-        skipCache = false,
+        skipLabelUpdate = false,
     ) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -473,13 +473,11 @@ export class FlowchartConnections {
 
         if (!fromPos || !toPos) return;
 
-        if (!skipCache) {
-            const posKey = `${fromPos.x},${fromPos.y},${toPos.x},${toPos.y}`;
-            if (connection.lastPosKey === posKey) {
-                return;
-            }
-            connection.lastPosKey = posKey;
+        const posKey = `${fromPos.x},${fromPos.y},${toPos.x},${toPos.y}`;
+        if (connection.lastPosKey === posKey) {
+            return;
         }
+        connection.lastPosKey = posKey;
 
         let pathD;
         if (
@@ -519,7 +517,9 @@ export class FlowchartConnections {
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
 
-        this.updateLabel(connection);
+        if (!skipLabelUpdate) {
+            this.updateLabel(connection);
+        }
     }
 
     calculateOrthogonalPath(from, to) {
@@ -663,7 +663,11 @@ export class FlowchartConnections {
         connection.hitArea.setAttribute("d", pathData);
     }
 
-    updateAllConnections(nodeMap, changedNodeIds = null, skipCache = false) {
+    updateAllConnections(
+        nodeMap,
+        changedNodeIds = null,
+        skipLabelUpdate = false,
+    ) {
         for (const [connectionId, connection] of this.connections) {
             if (
                 changedNodeIds &&
@@ -683,7 +687,7 @@ export class FlowchartConnections {
                     connection.fromPortName,
                     toNode,
                     connection.toPortName,
-                    skipCache,
+                    skipLabelUpdate,
                 );
             }
         }

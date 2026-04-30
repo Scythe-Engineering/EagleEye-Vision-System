@@ -298,6 +298,9 @@ window.onload = async () => {
     }
 
     const socket = globalThis.socket;
+    const recentProfilingUpdateKeys = new Map();
+    const PROFILING_DEDUPE_WINDOW_MS = 1000;
+
     const handleProfilingUpdatePayload = (data) => {
         try {
             const parsedData =
@@ -313,6 +316,22 @@ window.onload = async () => {
             if (!hasRequiredFields) {
                 return;
             }
+
+            const updateKey = `${parsedData.pipeline_name}:${parsedData.frame_seq}:${parsedData.timestamp_ms}`;
+            const now = Date.now();
+            const lastSeen = recentProfilingUpdateKeys.get(updateKey);
+            if (lastSeen && now - lastSeen < PROFILING_DEDUPE_WINDOW_MS) {
+                return;
+            }
+            recentProfilingUpdateKeys.set(updateKey, now);
+            if (recentProfilingUpdateKeys.size > 100) {
+                for (const [key, seenAt] of recentProfilingUpdateKeys) {
+                    if (now - seenAt > PROFILING_DEDUPE_WINDOW_MS) {
+                        recentProfilingUpdateKeys.delete(key);
+                    }
+                }
+            }
+
             globalThis.pipelineCreator?.handleProfilingUpdate?.(parsedData);
         } catch (err) {
             console.warn("Failed to parse profiling_update event payload", err);

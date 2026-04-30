@@ -86,6 +86,11 @@ let profilingDetailsAverageCheckbox;
  */
 let profilingAverageAccumulator = null;
 let profilingStaleIntervalId = null;
+let profilingUiFrameId = null;
+let pendingProfilingSnapshot = null;
+let profilingDetailsRefreshTimerId = null;
+let pendingProfilingDetailsSnapshot = undefined;
+const PROFILING_DETAILS_REFRESH_MS = 250;
 
 let pipelineErrorPopup;
 const operationErrorsByUuid = new Map();
@@ -693,6 +698,25 @@ function refreshProfilingDetailsPopupIfVisible(snapshot) {
         : "Profiling details";
 }
 
+function scheduleProfilingDetailsRefresh(snapshot) {
+    pendingProfilingDetailsSnapshot = snapshot;
+    if (
+        !profilingDetailsOverlay ||
+        profilingDetailsOverlay.classList.contains("hidden")
+    ) {
+        return;
+    }
+    if (profilingDetailsRefreshTimerId) {
+        return;
+    }
+    profilingDetailsRefreshTimerId = setTimeout(() => {
+        profilingDetailsRefreshTimerId = null;
+        const latestSnapshot = pendingProfilingDetailsSnapshot;
+        pendingProfilingDetailsSnapshot = undefined;
+        refreshProfilingDetailsPopupIfVisible(latestSnapshot);
+    }, PROFILING_DETAILS_REFRESH_MS);
+}
+
 function profilingDetailsOnKeydown(event) {
     if (event.key === "Escape") {
         event.preventDefault();
@@ -763,7 +787,20 @@ function applyProfilingSnapshot(snapshot) {
 
     renderExecutionTimestepsPanel(snapshot);
     renderExecutionSummary(snapshot);
-    refreshProfilingDetailsPopupIfVisible(snapshot);
+    scheduleProfilingDetailsRefresh(snapshot);
+}
+
+function scheduleProfilingUiApply(snapshot) {
+    pendingProfilingSnapshot = snapshot;
+    if (profilingUiFrameId) {
+        return;
+    }
+    profilingUiFrameId = requestAnimationFrame(() => {
+        profilingUiFrameId = null;
+        const latestSnapshot = pendingProfilingSnapshot;
+        pendingProfilingSnapshot = null;
+        applyProfilingSnapshot(latestSnapshot);
+    });
 }
 
 function applySelectedPipelineProfiling() {
@@ -2222,7 +2259,7 @@ export async function initPipelineCreator() {
             if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
                 return;
             }
-            applyProfilingSnapshot(snapshot);
+            scheduleProfilingUiApply(snapshot);
         },
     );
 
