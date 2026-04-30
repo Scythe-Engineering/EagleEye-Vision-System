@@ -9,12 +9,22 @@
     <div class="relative flex-1 overflow-hidden flex flex-col mb-5">
         <div
             id="cameraList"
-            class="camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] flex-1 text-base grid overflow-y-auto m-0 p-2.5"
+            class="eagle-scrollbar camera-list text-[rgb(204,204,204)] grid-cols-[1fr] gap-[15px] flex-1 text-base grid overflow-y-auto m-0 p-2.5"
         ></div>
-        <div 
-            id="cameraListBottomBlur" 
+        <div
+            id="cameraListBottomBlur"
             class="absolute bottom-0 left-0 right-2 h-10 pointer-events-none opacity-0 transition-opacity duration-300 z-20"
-            style="background: linear-gradient(to top, rgb(27, 27, 27) 10%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); -webkit-mask-image: linear-gradient(to top, black, transparent); mask-image: linear-gradient(to top, black, transparent);"
+            style="
+                background: linear-gradient(
+                    to top,
+                    rgb(27, 27, 27) 10%,
+                    transparent
+                );
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+                -webkit-mask-image: linear-gradient(to top, black, transparent);
+                mask-image: linear-gradient(to top, black, transparent);
+            "
         ></div>
     </div>
 </div>

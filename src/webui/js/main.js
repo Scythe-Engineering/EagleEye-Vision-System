@@ -6,7 +6,11 @@ import {
     loadSettings,
     renderNetworkTableStatus,
 } from "./settings/settingsHandler.js";
-import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
+import {
+    initializeTerminalHandlers,
+    handleLogUpdate,
+    refreshLogMessages,
+} from "./settings/terminalHandler.js";
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
 import { initializeNetworkManager } from "./settings/networkManager.js";
@@ -16,9 +20,15 @@ import {
     updateCameraPose,
 } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
-import { showSuccess, showWarning, showDanger, clearAll } from "./ui/notificationSystem.js";
+import {
+    showSuccess,
+    showWarning,
+    showDanger,
+    clearAll,
+} from "./ui/notificationSystem.js";
 import { createSystemStatusModule } from "./system/systemStatus.js";
 import { createStatusIconController } from "./ui/statusIcon.js";
+import { initializeTooltips } from "./ui/tooltip.js";
 import {
     setBackendConnected,
     setNetworkTablesConnected,
@@ -74,6 +84,8 @@ async function refreshPipelineCreator() {
 }
 
 window.onload = async () => {
+    const destroyTooltips = initializeTooltips();
+
     await populateFieldDropdown();
     setupSidebar();
     setupCameraFeedHandlers();
@@ -94,6 +106,7 @@ window.onload = async () => {
     });
 
     window.addEventListener("beforeunload", () => {
+        destroyTooltips();
         unsubscribeConnectionStatus();
         faviconController.destroy();
     });
@@ -105,7 +118,9 @@ window.onload = async () => {
         });
     }
 
-    const testNotificationsBtn = document.getElementById("testNotificationsBtn");
+    const testNotificationsBtn = document.getElementById(
+        "testNotificationsBtn",
+    );
     if (testNotificationsBtn) {
         testNotificationsBtn.addEventListener("click", () => {
             showSuccess("This is a success notification!");
@@ -285,7 +300,8 @@ window.onload = async () => {
     const socket = globalThis.socket;
     const handleProfilingUpdatePayload = (data) => {
         try {
-            const parsedData = typeof data === "string" ? JSON.parse(data) : data;
+            const parsedData =
+                typeof data === "string" ? JSON.parse(data) : data;
             const hasRequiredFields =
                 typeof parsedData?.pipeline_name === "string" &&
                 Number.isFinite(parsedData?.frame_seq) &&
@@ -325,7 +341,9 @@ window.onload = async () => {
             handleProfilingUpdateFromSocket;
         socket.on("profiling_update", globalThis.profilingUpdateSocketHandler);
     } else {
-        console.warn("Socket.IO client unavailable for profiling_update events");
+        console.warn(
+            "Socket.IO client unavailable for profiling_update events",
+        );
     }
 
     es.addEventListener("system_status", (e) => {
@@ -333,9 +351,7 @@ window.onload = async () => {
             const data = JSON.parse(e.data);
             systemStatusModule.render(data);
             renderNetworkTableStatus(data.network_table);
-            setNetworkTablesConnected(
-                data?.network_table?.connected === true,
-            );
+            setNetworkTablesConnected(data?.network_table?.connected === true);
         } catch (err) {
             console.warn("Failed to parse SSE system_status event", err);
         }

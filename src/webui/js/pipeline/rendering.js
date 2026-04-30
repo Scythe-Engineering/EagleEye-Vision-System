@@ -6,46 +6,23 @@ import { FlowchartMinimap } from "./flowchartMinimap.js";
 import { findCycles, findUnreachableIslands } from "./graphUtils.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { prefetchConfigs } from "./operationConfigCache.js";
-
-let descriptionPopup = null;
+import { hideTooltip, showTooltip } from "../ui/tooltip.js";
 
 export function createDescriptionPopup() {
-    if (descriptionPopup) return;
-
-    descriptionPopup = document.createElement("div");
-    descriptionPopup.id = "description-popup";
-    descriptionPopup.className =
-        "fixed z-50 bg-[#232323] border-2 border-[#f9c845] rounded-lg p-3 shadow-lg max-w-xs pointer-events-none opacity-0 transition-opacity duration-200";
-    descriptionPopup.style.fontSize = "0.875rem";
-    descriptionPopup.style.lineHeight = "1.25rem";
-    descriptionPopup.style.boxShadow =
-        "4px 4px 12px rgba(0,0,0,0.45), 8px 8px 20px rgba(0,0,0,0.25), 2px 2px 6px rgba(249,196,69,0.06)";
-
-    document.body.appendChild(descriptionPopup);
+    // Kept for existing callers; tooltips are lazily created by the shared UI helper.
 }
 
 export function showDescriptionPopup(name, description, event) {
-    if (!descriptionPopup) createDescriptionPopup();
-
-    descriptionPopup.innerHTML = `
-        <div class="text-[#f9c845] font-semibold text-sm mb-2 border-b border-[#404040] pb-2">${escapeHtml(name)}</div>
-        <div class="text-white text-xs">${escapeHtml(description)}</div>
-    `;
-
-    const mouseX = event.clientX;
-    const mouseY = event.clientY;
-
-    descriptionPopup.style.left = mouseX + 10 + "px";
-    descriptionPopup.style.top = mouseY + 10 + "px";
-
-    descriptionPopup.classList.remove("opacity-0");
-    descriptionPopup.classList.add("opacity-100");
+    showTooltip(event.currentTarget, {
+        html: `
+            <div class="text-[#f9c845] font-semibold text-sm mb-2 border-b border-[#404040] pb-2">${escapeHtml(name)}</div>
+            <div class="text-white text-xs">${escapeHtml(description)}</div>
+        `,
+    });
 }
 
 export function hideDescriptionPopup() {
-    if (!descriptionPopup) return;
-    descriptionPopup.classList.remove("opacity-100");
-    descriptionPopup.classList.add("opacity-0");
+    hideTooltip();
 }
 
 export function addHoverListeners(element, name, description) {
@@ -53,15 +30,8 @@ export function addHoverListeners(element, name, description) {
         showDescriptionPopup(name, description, e);
     });
 
-    element.addEventListener("mousemove", (e) => {
-        if (descriptionPopup?.classList.contains("opacity-100")) {
-            descriptionPopup.style.left = e.clientX + 10 + "px";
-            descriptionPopup.style.top = e.clientY + 10 + "px";
-        }
-    });
-
     element.addEventListener("mouseleave", () => {
-        hideDescriptionPopup();
+        hideTooltip(element);
     });
 }
 
@@ -1456,7 +1426,7 @@ export class FlowchartRenderer {
             islandLayer.innerHTML = "";
         }
         this.islandBlocks = [];
-        this.hideIslandTooltip();
+        hideTooltip();
     }
 
     updateIslandBlocks() {
@@ -1570,85 +1540,23 @@ export class FlowchartRenderer {
         });
         dot.textContent = "i";
 
-        const showTooltip = () => {
-            this.showIslandTooltip(dot, message);
+        const showInfoTooltip = () => {
+            dot.dataset.tooltip = message;
+            dot.dataset.tooltipPlacement = "top";
+            showTooltip(dot);
         };
-        const hideTooltip = () => {
-            this.hideIslandTooltip();
+        const hideInfoTooltip = () => {
+            hideTooltip(dot);
         };
 
-        dot.addEventListener("mouseenter", showTooltip);
-        dot.addEventListener("mouseleave", hideTooltip);
+        dot.addEventListener("mouseenter", showInfoTooltip);
+        dot.addEventListener("mouseleave", hideInfoTooltip);
         dot.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (this.islandTooltipAnchor === dot) {
-                hideTooltip();
-            } else {
-                showTooltip();
-            }
+            showInfoTooltip();
         });
 
         return dot;
-    }
-
-    ensureIslandTooltip() {
-        if (this.islandTooltip?.isConnected) {
-            return this.islandTooltip;
-        }
-
-        const tooltip = document.createElement("div");
-        tooltip.className = "pipeline-island-tooltip";
-        Object.assign(tooltip.style, {
-            position: "fixed",
-            width: "260px",
-            padding: "8px 10px",
-            borderRadius: "8px",
-            border: "1px solid rgba(249, 200, 69, 0.6)",
-            background: "rgba(35, 35, 35, 0.98)",
-            color: "#f1f1f1",
-            fontSize: "12px",
-            fontWeight: "500",
-            lineHeight: "1.3",
-            textAlign: "left",
-            pointerEvents: "none",
-            opacity: "0",
-            transform: "translateY(-3px)",
-            transition: "opacity 120ms ease, transform 120ms ease",
-            boxShadow: "0 8px 18px rgba(0, 0, 0, 0.35)",
-            zIndex: "9999",
-        });
-        document.body.appendChild(tooltip);
-        this.islandTooltip = tooltip;
-        return tooltip;
-    }
-
-    showIslandTooltip(anchor, message) {
-        const tooltip = this.ensureIslandTooltip();
-        tooltip.textContent = message;
-
-        const anchorRect = anchor.getBoundingClientRect();
-        const margin = 8;
-        const tooltipWidth = 260;
-        const left = Math.min(
-            Math.max(anchorRect.left, margin),
-            window.innerWidth - tooltipWidth - margin,
-        );
-        const top = Math.max(anchorRect.top - 4, margin);
-
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
-        tooltip.style.opacity = "1";
-        tooltip.style.transform = "translateY(-100%)";
-        this.islandTooltipAnchor = anchor;
-    }
-
-    hideIslandTooltip() {
-        if (!this.islandTooltip) {
-            return;
-        }
-        this.islandTooltip.style.opacity = "0";
-        this.islandTooltip.style.transform = "translateY(-3px)";
-        this.islandTooltipAnchor = null;
     }
 }

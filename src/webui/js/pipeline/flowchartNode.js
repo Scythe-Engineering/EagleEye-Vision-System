@@ -37,6 +37,7 @@ export class FlowchartNode {
         this.onPortClick = options.onPortClick || null;
 
         this.isDragging = false;
+        this.isHovered = false;
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
         this.gridSpacing = options.gridSpacing || 20;
@@ -539,21 +540,71 @@ export class FlowchartNode {
             pointerEvents: "auto", // Ensure the node itself is interactable
         });
 
+        const applyDefaultNodeChrome = () => {
+            this.element.style.borderColor = "#404040";
+            this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        };
+
+        const applyHoveredNodeChrome = () => {
+            this.element.style.borderColor = "#f9c845";
+            this.element.style.boxShadow =
+                "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
+        };
+
         this.element.addEventListener("mouseenter", () => {
+            this.isHovered = true;
             if (!this.isDragging) {
-                this.element.style.borderColor = "#f9c845";
-                this.element.style.boxShadow =
-                    "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
+                applyHoveredNodeChrome();
             }
         });
 
-        this.element.addEventListener("mouseleave", () => {
-            if (!this.isDragging) {
-                this.element.style.borderColor = "#404040";
-                this.element.style.boxShadow =
-                    "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        this.element.addEventListener("mouseleave", (event) => {
+            if (
+                event.relatedTarget &&
+                this.element.contains(event.relatedTarget)
+            ) {
+                return;
             }
+
+            requestAnimationFrame(() => {
+                if (this.element.matches(":hover")) {
+                    this.isHovered = true;
+                    if (!this.isDragging) {
+                        applyHoveredNodeChrome();
+                    }
+                    return;
+                }
+
+                this.isHovered = false;
+                if (!this.isDragging) {
+                    applyDefaultNodeChrome();
+                }
+            });
         });
+    }
+
+    updateNodeHoverChrome() {
+        if (!this.element || this.isDragging) {
+            return;
+        }
+
+        if (this.isHovered || this.element.matches(":hover")) {
+            this.element.style.borderColor = "#f9c845";
+            this.element.style.boxShadow =
+                "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
+        } else {
+            this.element.style.borderColor = "#404040";
+            this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        }
+    }
+
+    resetNodeChrome() {
+        if (this.element) {
+            this.isHovered = this.element.matches(":hover");
+            if (!this.isDragging) {
+                this.updateNodeHoverChrome();
+            }
+        }
     }
 
     renderContent() {
@@ -1120,8 +1171,7 @@ export class FlowchartNode {
             this.isDragging = false;
             this.element.style.zIndex = "10";
             this.element.style.cursor = "move";
-            this.element.style.borderColor = "#404040";
-            this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+            this.updateNodeHoverChrome();
 
             document.removeEventListener("mousemove", handleDragMove);
             document.removeEventListener("mouseup", handleDragEnd);
@@ -1301,8 +1351,7 @@ export class FlowchartNode {
             this.element.style.boxShadow =
                 "0 0 0 2px rgba(255,92,92,0.35), 4px 4px 12px rgba(0, 0, 0, 0.5)";
         } else if (!this.isDragging) {
-            this.element.style.borderColor = "#404040";
-            this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+            this.updateNodeHoverChrome();
         }
 
         if (nodeIcon) {

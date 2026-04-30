@@ -16,7 +16,7 @@
             </h2>
             <form
                 id="settingsForm"
-                class="flex-1 min-h-0 overflow-y-auto pr-5 -mr-3 [&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded"
+                class="eagle-scrollbar flex-1 min-h-0 overflow-y-auto pr-5 -mr-3 [&>fieldset]:bg-[#1E1E1E] [&>fieldset]:border-2 [&>fieldset]:border-[#414141] [&>fieldset]:mb-4 [&>fieldset]:p-4 [&>fieldset]:rounded-[15px] [&_legend]:font-bold [&_legend]:px-2 [&_legend]:text-yellow-400 [&_input]:bg-[#2a2a2a] [&_input]:border-2 [&_input]:border-[#414141] [&_input]:text-[#f9c84a] [&_input]:accent-[#f9c84a] [&_input]:mr-2 [&_label]:flex [&_label]:justify-between [&_label]:items-center [&_label]:mb-2 [&_label]:text-sm [&_input[type='text'],&_input[type='number']]:w-3/5 [&_input[type='text'],&_input[type='number']]:p-1 [&_input[type='text'],&_input[type='number']]:border [&_input[type='text'],&_input[type='number']]:rounded"
             >
                 <fieldset style="box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4)">
                     <legend>General</legend>
@@ -162,11 +162,7 @@
                 </div>
                 <div
                     id="logsOutput"
-                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
-                    style="
-                        scrollbar-width: thin;
-                        scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
-                    "
+                    class="eagle-scrollbar flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
                 >
                     <div class="text-yellow-400">[INFO] System initialized</div>
                     <div class="text-gray-400">[DEBUG] Waiting for logs...</div>
@@ -204,11 +200,7 @@
                 </div>
                 <div
                     id="terminalOutput"
-                    class="flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
-                    style="
-                        scrollbar-width: thin;
-                        scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
-                    "
+                    class="eagle-scrollbar flex-1 p-4 overflow-y-auto font-mono text-xs text-gray-300 bg-[#0a0a0a]"
                 >
                     <div class="text-green-400">pi@eagleeye:~$</div>
                 </div>
