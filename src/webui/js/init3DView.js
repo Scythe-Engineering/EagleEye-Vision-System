@@ -32,7 +32,7 @@ import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
 import { BACKEND_BASE_URL } from "./config.js";
 import { position3DToFieldSpaceVector } from "./utils/fieldSpaceTransforms.js";
 
-let renderer, scene, camera, directionalLight;
+let renderer, scene, camera, directionalLight, controls;
 let shadowsEnabled = true;
 let gamePiecesVisible = true;
 let statsDisplay;
@@ -42,6 +42,8 @@ let robotObject = null;
 let fieldObject = null;
 let robotAxes = null;
 let animationStarted = false;
+let animationFrameId = null;
+let resizeHandler = null;
 let detectedObjectsGroup = null;
 let cameraMarkersGroup = null;
 let pendingDetectedObjects = null;
@@ -60,6 +62,7 @@ let lastRobotTransformMatrix = null;
 let currentFieldScaleFactor = 1;
 let currentFieldYear = null;
 let currentFieldFilename = null;
+let activeDracoLoader = null;
 
 let maxFPS = 30;
 let interval = 1 / maxFPS;
@@ -227,6 +230,18 @@ function getLoadingElements() {
     };
 }
 
+function hideLoadingOverlay() {
+    const { overlay, progress } = getLoadingElements();
+    if (overlay) {
+        overlay.classList.add("hidden");
+        overlay.setAttribute("aria-busy", "false");
+    }
+    if (progress) {
+        progress.value = 0;
+        progress.removeAttribute("aria-valuetext");
+    }
+}
+
 function createLoadingTracker(token) {
     const pendingTasks = new Map();
     const taskProgress = new Map();
@@ -313,6 +328,10 @@ function createLoadingTracker(token) {
 }
 
 function updateStats() {
+    if (!scene || !statsDisplay) {
+        return;
+    }
+
     const currentTime = performance.now();
     frameCount++;
     if (currentTime - lastTime >= 1000) {
@@ -412,6 +431,79 @@ function removeAndDisposeObject(object) {
     }
     object.parent?.remove(object);
     disposeObject(object);
+}
+
+function stopAnimationLoop() {
+    animationStarted = false;
+    if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+}
+
+function disposeRenderer() {
+    if (!renderer) {
+        return;
+    }
+
+    renderer.dispose();
+    renderer.forceContextLoss?.();
+
+    if (renderer.domElement?.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+    }
+
+    renderer = null;
+}
+
+function disposeSceneObjects() {
+    if (!scene) {
+        return;
+    }
+
+    clearDetectedObjectsGroup();
+    clearCameraMarkersGroup();
+
+    while (scene.children.length > 0) {
+        const child = scene.children[0];
+        scene.remove(child);
+        disposeObject(child);
+    }
+
+    scene.clear();
+    scene = null;
+}
+
+function teardown3DView({ invalidateLoads = true } = {}) {
+    if (invalidateLoads) {
+        currentLoadToken += 1;
+    }
+
+    stopAnimationLoop();
+    controls?.dispose();
+    controls = null;
+    activeDracoLoader?.dispose();
+    activeDracoLoader = null;
+    disposeSceneObjects();
+    disposeRenderer();
+    hideLoadingOverlay();
+
+    camera = null;
+    directionalLight = null;
+    robotObject = null;
+    fieldObject = null;
+    robotAxes = null;
+    detectedObjectsGroup = null;
+    cameraMarkersGroup = null;
+    gamePieceObjects = [];
+    gamePieces = [];
+    currentRobotLoader = null;
+    currentRobotFile = null;
+    lastRobotTransformMatrix = null;
+}
+
+export function dispose3DView() {
+    teardown3DView();
 }
 
 function clearDetectedObjectsGroup() {
@@ -807,6 +899,7 @@ export function updateCameraPose(cameraPoseUpdate) {
 export async function init3DView(modelUrl, options = {}) {
     const loadToken = currentLoadToken + 1;
     currentLoadToken = loadToken;
+    teardown3DView({ invalidateLoads: false });
     const loadingTracker = createLoadingTracker(loadToken);
     loadingTracker.start("setup", "3D controls");
 
@@ -820,12 +913,14 @@ export async function init3DView(modelUrl, options = {}) {
         allCameraMarkersVisible = camerasToggle.checked;
     }
     statsDisplay = document.getElementById("statsDisplay");
-    statsDisplay.style.position = "absolute";
-    statsDisplay.style.bottom = "10px";
-    statsDisplay.style.right = "10px";
-    statsDisplay.style.color = "#f9c84a";
-    statsDisplay.style.fontSize = "1rem";
-    statsDisplay.style.zIndex = "10";
+    if (statsDisplay) {
+        statsDisplay.style.position = "absolute";
+        statsDisplay.style.bottom = "10px";
+        statsDisplay.style.right = "10px";
+        statsDisplay.style.color = "#f9c84a";
+        statsDisplay.style.fontSize = "1rem";
+        statsDisplay.style.zIndex = "10";
+    }
 
     const scale = 40;
     currentFieldScaleFactor = normalizeAssetScale(options.fieldScale);
@@ -833,48 +928,10 @@ export async function init3DView(modelUrl, options = {}) {
     currentFieldFilename = options.fieldFilename || null;
 
     await populateRobotDropdown();
-    loadingTracker.finish("setup");
-
-    // Clear and destroy existing scene if it exists
-    if (scene) {
-        clearDetectedObjectsGroup();
-        clearCameraMarkersGroup();
-        // Remove all objects from the scene
-        while (scene.children.length > 0) {
-            const child = scene.children[0];
-            scene.remove(child);
-            disposeObject(child);
-        }
-
-        // Clear the scene
-        scene.clear();
-        scene = null;
-        robotObject = null;
-        fieldObject = null;
-        detectedObjectsGroup = null;
-        cameraMarkersGroup = null;
-        gamePieceObjects = [];
-        gamePieces = [];
-
-        // Dispose and cleanup existing WebGLRenderer to prevent context leaks
-        if (renderer) {
-            // Force WebGL context loss if method exists
-            if (renderer.forceContextLoss) {
-                renderer.forceContextLoss();
-            }
-
-            // Dispose of the renderer
-            renderer.dispose();
-
-            // Remove canvas element from DOM
-            if (renderer.domElement && renderer.domElement.parentNode) {
-                renderer.domElement.parentNode.removeChild(renderer.domElement);
-            }
-
-            // Null out renderer reference
-            renderer = null;
-        }
+    if (loadToken !== currentLoadToken) {
+        return;
     }
+    loadingTracker.finish("setup");
 
     scene = new Scene();
     detectedObjectsGroup = new Group();
@@ -890,6 +947,7 @@ export async function init3DView(modelUrl, options = {}) {
 
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath(`${BACKEND_BASE_URL}/draco/gltf/`);
+    activeDracoLoader = dracoLoader;
     const resolvedModelUrl = buildBackendAssetUrl(modelUrl);
 
     scene.background = new Color(0x222222);
@@ -911,7 +969,6 @@ export async function init3DView(modelUrl, options = {}) {
         }
 
         currentRobotFile = robotFile;
-        lastRobotTransformMatrix = null;
         applyRobotScaleFactor(scaleFactor);
         console.log("Loading robot:", robotFile);
         loadingTracker.start("robot", "robot model");
@@ -962,11 +1019,7 @@ export async function init3DView(modelUrl, options = {}) {
                     loadingTracker.finish("robot");
                 },
                 (event) => {
-                    loadingTracker.progress(
-                        "robot",
-                        event.loaded,
-                        event.total,
-                    );
+                    loadingTracker.progress("robot", event.loaded, event.total);
                 },
                 (error) => {
                     loadingTracker.fail(
@@ -1026,7 +1079,7 @@ export async function init3DView(modelUrl, options = {}) {
     );
     container.appendChild(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
+    controls = new OrbitControls(camera, renderer.domElement);
 
     scene.add(new AmbientLight(0xffffff, 0.2));
 
@@ -1220,7 +1273,7 @@ export async function init3DView(modelUrl, options = {}) {
         globalThis.__eev_camerasToggleAttached = true;
     }
 
-    let clock = new Clock();
+    const clock = new Clock();
     let delta = 0;
 
     function startAnimationLoop() {
@@ -1230,7 +1283,13 @@ export async function init3DView(modelUrl, options = {}) {
 
         if (animationStarted && isViewVisible) return;
 
-        if (isViewVisible) {
+        if (
+            isViewVisible &&
+            loadToken === currentLoadToken &&
+            renderer &&
+            scene &&
+            camera
+        ) {
             animationStarted = true;
             animate();
         }
@@ -1241,8 +1300,14 @@ export async function init3DView(modelUrl, options = {}) {
         const isViewVisible =
             container && !container.classList.contains("hidden");
 
-        if (isViewVisible) {
-            requestAnimationFrame(animate);
+        if (
+            isViewVisible &&
+            loadToken === currentLoadToken &&
+            renderer &&
+            scene &&
+            camera
+        ) {
+            animationFrameId = requestAnimationFrame(animate);
 
             delta += clock.getDelta();
 
@@ -1253,26 +1318,32 @@ export async function init3DView(modelUrl, options = {}) {
                 delta = delta % interval;
             }
         } else {
-            animationStarted = false;
+            stopAnimationLoop();
         }
     }
 
-    if (!globalThis.__eev_resizeAttached) {
-        const onResize = () => {
-            const width = container.clientWidth;
-            const height = container.clientHeight;
+    if (!resizeHandler) {
+        resizeHandler = () => {
+            const activeContainer = document.getElementById("view-3d");
+            if (!activeContainer || !camera || !renderer) {
+                return;
+            }
+            const width = activeContainer.clientWidth;
+            const height = activeContainer.clientHeight;
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
             renderer.setSize(width, height);
         };
-        globalThis.addEventListener("resize", onResize);
-        globalThis.__eev_resizeAttached = true;
+        globalThis.addEventListener("resize", resizeHandler);
     }
 
     if (!globalThis.__eev_shadowToggleAttached) {
         document
             .getElementById("toggleShadowBtn")
             .addEventListener("change", (event) => {
+                if (!scene || !directionalLight || !renderer) {
+                    return;
+                }
                 shadowsEnabled = event.target.checked;
                 scene.traverse((object) => {
                     if (object.isMesh && !object.excludeFromShadowToggle) {
@@ -1425,10 +1496,8 @@ export async function init3DView(modelUrl, options = {}) {
 }
 
 export function updateRobotTransform(transformMatrix) {
+    lastRobotTransformMatrix = transformMatrix.clone();
     if (robotObject) {
-        lastRobotTransformMatrix = transformMatrix.clone();
         refreshRobotMatrix();
-    } else {
-        console.warn("Robot not initialized yet");
     }
 }

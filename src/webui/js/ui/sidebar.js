@@ -1,4 +1,4 @@
-import { init3DView } from "../init3DView.js";
+import { dispose3DView, init3DView } from "../init3DView.js";
 import { loadSettings } from "../settings/settingsHandler.js";
 import {
     pauseCameraFeeds,
@@ -34,13 +34,27 @@ class ViewManager {
         this.controls = document.querySelectorAll(
             "#fieldDropdown, #robotDropdown, #viewToggles",
         );
+        this.activeViewId = null;
     }
 
     activateView(targetViewId) {
+        if (
+            this.activeViewId === targetViewId &&
+            targetViewId === VIEWS.THREE_D
+        ) {
+            return;
+        }
+        if (
+            this.activeViewId === VIEWS.THREE_D &&
+            targetViewId !== VIEWS.THREE_D
+        ) {
+            dispose3DView();
+        }
         this.updateActiveSidebarItem(targetViewId);
         this.showTargetView(targetViewId);
         this.toggleControlsVisibility(targetViewId);
         this.handleViewSpecificBehavior(targetViewId);
+        this.activeViewId = targetViewId;
     }
 
     updateActiveSidebarItem(targetViewId) {
