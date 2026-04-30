@@ -9,6 +9,7 @@ import {
 import { initializeTerminalHandlers, handleLogUpdate, refreshLogMessages } from "./settings/terminalHandler.js";
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
+import { initializeNetworkManager } from "./settings/networkManager.js";
 import {
     updateRobotTransform,
     updateDetectedObjects,
@@ -79,6 +80,7 @@ window.onload = async () => {
     initializeTerminalHandlers();
     initializeTestVideoManager();
     initializeAssetFileManager();
+    initializeNetworkManager();
     saveSettings();
 
     const systemStatusModule = createSystemStatusModule();

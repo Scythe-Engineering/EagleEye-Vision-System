@@ -39,19 +39,22 @@
 
 /* Scrollbar styling for rounded containers */
 #pipelineArea::-webkit-scrollbar,
-#operationsList::-webkit-scrollbar {
+#operationsList::-webkit-scrollbar,
+#settingsForm::-webkit-scrollbar {
     width: 12px;
     background: transparent;
 }
 
 #pipelineArea::-webkit-scrollbar-track,
-#operationsList::-webkit-scrollbar-track {
+#operationsList::-webkit-scrollbar-track,
+#settingsForm::-webkit-scrollbar-track {
     background: transparent;
     border-radius: 0 15px 15px 0;
 }
 
 #pipelineArea::-webkit-scrollbar-thumb,
-#operationsList::-webkit-scrollbar-thumb {
+#operationsList::-webkit-scrollbar-thumb,
+#settingsForm::-webkit-scrollbar-thumb {
     background: rgba(65, 65, 65, 0.6);
     border-radius: 6px;
     border: 2px solid transparent;
@@ -59,14 +62,16 @@
 }
 
 #pipelineArea::-webkit-scrollbar-thumb:hover,
-#operationsList::-webkit-scrollbar-thumb:hover {
+#operationsList::-webkit-scrollbar-thumb:hover,
+#settingsForm::-webkit-scrollbar-thumb:hover {
     background: rgba(65, 65, 65, 0.8);
     background-clip: padding-box;
 }
 
 /* Firefox scrollbar styling */
 #pipelineArea,
-#operationsList {
+#operationsList,
+#settingsForm {
     scrollbar-width: thin;
     scrollbar-color: rgba(65, 65, 65, 0.6) transparent;
 }

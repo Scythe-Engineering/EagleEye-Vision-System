@@ -1,0 +1,404 @@
+import { BACKEND_BASE_URL } from "../config.js";
+import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
+
+const OVERLAY_ID = "networkManagerOverlay";
+const MODAL_ID = "networkManagerModal";
+
+let initialized = false;
+let networks = [];
+let loading = false;
+let activeRequestSsid = "";
+let networkManagerAvailable = false;
+
+function createElement(tag, attrs = {}, children = []) {
+    const el = document.createElement(tag);
+    Object.entries(attrs).forEach(([key, value]) => {
+        if (key === "className") {
+            el.className = value;
+        } else if (key === "text") {
+            el.textContent = value;
+        } else if (key === "html") {
+            el.innerHTML = value;
+        } else if (key.startsWith("on") && typeof value === "function") {
+            el.addEventListener(key.substring(2).toLowerCase(), value);
+        } else if (value !== undefined && value !== null) {
+            el.setAttribute(key, String(value));
+        }
+    });
+    children.forEach((child) => el.appendChild(child));
+    return el;
+}
+
+function getOverlayElements() {
+    let overlay = document.getElementById(OVERLAY_ID);
+    let modal = document.getElementById(MODAL_ID);
+
+    if (!overlay) {
+        overlay = createElement("div", {
+            id: OVERLAY_ID,
+            className:
+                "fixed inset-0 z-50 hidden flex items-center justify-center",
+            style: "background-color: rgba(0, 0, 0, 0.25); backdrop-filter: blur(6px);",
+        });
+        document.body.appendChild(overlay);
+    }
+
+    if (!modal) {
+        modal = createElement("div", {
+            id: MODAL_ID,
+            className:
+                "bg-[#1a1a1a] rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
+        });
+        overlay.appendChild(modal);
+    }
+
+    return { overlay, modal };
+}
+
+async function fetchJson(path, options = {}) {
+    const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (!response.ok) {
+        const error = new Error(
+            payload.error || `Request failed: ${response.status}`,
+        );
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+    return payload;
+}
+
+function signalLabel(signal) {
+    if (!Number.isFinite(signal)) {
+        return "Unknown";
+    }
+    if (signal >= 75) {
+        return "Strong";
+    }
+    if (signal >= 45) {
+        return "Good";
+    }
+    return "Weak";
+}
+
+function networkNeedsPassword(network) {
+    const security = String(network.security || "").toLowerCase();
+    return security !== "" && security !== "open" && security !== "--";
+}
+
+async function loadNetworks() {
+    if (!networkManagerAvailable) {
+        showWarning("Network Manager requires Linux.");
+        return;
+    }
+
+    loading = true;
+    render();
+
+    try {
+        const payload = await fetchJson("/wifi-networks");
+        networks = Array.isArray(payload.networks) ? payload.networks : [];
+    } catch (error) {
+        console.error("Failed to load WiFi networks:", error);
+        networks = [];
+        showDanger(error.payload?.error || "Failed to load WiFi networks");
+    } finally {
+        loading = false;
+        render();
+    }
+}
+
+async function connectNetwork(network, passwordInput) {
+    const password = passwordInput?.value || "";
+    activeRequestSsid = network.ssid;
+    render();
+
+    try {
+        await fetchJson("/wifi-networks/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                ssid: network.ssid,
+                password,
+            }),
+        });
+        showSuccess(`Connected to ${network.ssid}.`);
+        await loadNetworks();
+    } catch (error) {
+        console.error("Failed to connect WiFi network:", error);
+        showDanger(error.payload?.error || "Failed to connect WiFi network");
+    } finally {
+        activeRequestSsid = "";
+        render();
+    }
+}
+
+async function disconnectNetwork(network) {
+    const shouldDisconnect = globalThis.confirm(
+        `Disconnect from "${network.ssid}"? Network access to this device may be interrupted.`,
+    );
+    if (!shouldDisconnect) {
+        return;
+    }
+
+    activeRequestSsid = network.ssid;
+    render();
+
+    try {
+        await fetchJson("/wifi-networks/disconnect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ssid: network.ssid }),
+        });
+        showWarning(`Disconnected from ${network.ssid}.`);
+        await loadNetworks();
+    } catch (error) {
+        console.error("Failed to disconnect WiFi network:", error);
+        showDanger(error.payload?.error || "Failed to disconnect WiFi network");
+    } finally {
+        activeRequestSsid = "";
+        render();
+    }
+}
+
+function renderNetworkRows(container) {
+    container.innerHTML = "";
+
+    if (loading) {
+        container.appendChild(
+            createElement("div", {
+                className: "text-center text-[#ac8a2f] py-8",
+                text: "Scanning for WiFi networks...",
+            }),
+        );
+        return;
+    }
+
+    if (networks.length === 0) {
+        container.appendChild(
+            createElement("div", {
+                className: "text-center text-[#ac8a2f] py-8",
+                text: "No WiFi networks found.",
+            }),
+        );
+        return;
+    }
+
+    networks.forEach((network) => {
+        const passwordInput = createElement("input", {
+            type: "password",
+            placeholder: "Password",
+            autocomplete: "current-password",
+            className:
+                "w-40 bg-[#101010] text-white text-sm px-3 py-2 rounded border border-[#414141] focus:border-[#f9c845] focus:outline-none disabled:opacity-50",
+        });
+        passwordInput.disabled =
+            network.connected || !networkNeedsPassword(network);
+
+        const isBusy = activeRequestSsid === network.ssid;
+        const actionButton = network.connected
+            ? createElement("button", {
+                  type: "button",
+                  className:
+                      "w-28 px-3 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 text-sm disabled:opacity-60",
+                  text: isBusy ? "Working..." : "Disconnect",
+                  disabled: isBusy ? "disabled" : undefined,
+                  onclick: () => disconnectNetwork(network),
+              })
+            : createElement("button", {
+                  type: "button",
+                  className:
+                      "w-28 px-3 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a] hover:border-[#f9c845] text-sm disabled:opacity-60",
+                  text: isBusy ? "Working..." : "Connect",
+                  disabled: isBusy ? "disabled" : undefined,
+                  onclick: () => connectNetwork(network, passwordInput),
+              });
+
+        const statusBadge = createElement("span", {
+            className: network.connected
+                ? "rounded-full border border-emerald-500/40 bg-emerald-900/30 px-2 py-1 text-xs font-semibold text-emerald-200"
+                : "rounded-full border border-gray-500/40 bg-gray-800/40 px-2 py-1 text-xs font-semibold text-gray-200",
+            text: network.connected ? "Connected" : "Available",
+        });
+
+        const info = createElement("div", { className: "flex-1 min-w-0" }, [
+            createElement("div", {
+                className: "text-white font-medium truncate",
+                text: network.ssid,
+                title: network.ssid,
+            }),
+            createElement("div", {
+                className: "text-xs text-[#ac8a2f] mt-1",
+                text: `${signalLabel(network.signal)} signal (${network.signal ?? 0}%) | ${network.security || "Open"}`,
+            }),
+        ]);
+
+        const controls = createElement(
+            "div",
+            {
+                className:
+                    "flex flex-wrap items-center justify-end gap-2 shrink-0",
+            },
+            [statusBadge, passwordInput, actionButton],
+        );
+
+        container.appendChild(
+            createElement(
+                "div",
+                {
+                    className:
+                        "flex items-center justify-between gap-3 p-3 border-b border-[#414141] hover:bg-[#232323]",
+                },
+                [info, controls],
+            ),
+        );
+    });
+}
+
+function render() {
+    const { modal } = getOverlayElements();
+    modal.innerHTML = "";
+
+    const closeButton = createElement("button", {
+        type: "button",
+        className: "absolute top-4 right-4 text-[#ac8a2f] hover:text-white",
+        text: "x",
+        onclick: close,
+        style: "font-size: 1.5rem; line-height: 1;",
+    });
+
+    const refreshButton = createElement("button", {
+        type: "button",
+        className:
+            "px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a] hover:border-[#f9c845] disabled:opacity-60",
+        text: loading ? "Scanning..." : "Refresh",
+        disabled: loading ? "disabled" : undefined,
+        onclick: loadNetworks,
+    });
+
+    const header = createElement(
+        "div",
+        {
+            className: "p-6 border-b border-[#414141] relative",
+        },
+        [
+            createElement("h2", {
+                className: "text-xl font-bold text-[#f9c845]",
+                text: "Network Manager",
+            }),
+            createElement("p", {
+                className: "text-sm text-gray-300 mt-2",
+                text: "Manage WiFi networks visible to the backend host.",
+            }),
+            closeButton,
+        ],
+    );
+
+    const listContainer = createElement("div", {
+        id: "networkManagerList",
+        className:
+            "border border-[#414141] rounded-lg bg-[#1f1f1f] max-h-[55vh] overflow-y-auto",
+    });
+
+    const body = createElement(
+        "div",
+        {
+            className: "p-6 flex-1 overflow-y-auto",
+        },
+        [listContainer],
+    );
+
+    const footer = createElement(
+        "div",
+        {
+            className: "p-6 border-t border-[#414141] flex justify-end gap-3",
+        },
+        [
+            refreshButton,
+            createElement("button", {
+                type: "button",
+                className:
+                    "px-4 py-2 bg-[#414141] text-white rounded-md hover:bg-[#515151]",
+                text: "Close",
+                onclick: close,
+            }),
+        ],
+    );
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    modal.appendChild(footer);
+    renderNetworkRows(listContainer);
+}
+
+function open() {
+    if (!networkManagerAvailable) {
+        showWarning("Network Manager requires Linux.");
+        return;
+    }
+
+    const { overlay } = getOverlayElements();
+    render();
+    overlay.classList.remove("hidden");
+    loadNetworks();
+}
+
+function close() {
+    const { overlay } = getOverlayElements();
+    overlay.classList.add("hidden");
+}
+
+function setManageButtonAvailability(status) {
+    const manageButton = document.getElementById("manageNetworksBtn");
+    if (!manageButton) {
+        return;
+    }
+
+    networkManagerAvailable = status?.available === true;
+    manageButton.disabled = !networkManagerAvailable;
+    manageButton.title = networkManagerAvailable ? "" : "Requires Linux";
+}
+
+async function loadNetworkManagerStatus() {
+    try {
+        const payload = await fetchJson("/wifi-networks/status");
+        setManageButtonAvailability(payload);
+    } catch (error) {
+        console.error("Failed to load Network Manager status:", error);
+        setManageButtonAvailability({ available: false });
+    }
+}
+
+export function initializeNetworkManager() {
+    if (initialized) {
+        return;
+    }
+    initialized = true;
+
+    const { overlay } = getOverlayElements();
+    overlay.addEventListener("click", (event) => {
+        if (event.target.id === OVERLAY_ID) {
+            close();
+        }
+    });
+
+    const manageButton = document.getElementById("manageNetworksBtn");
+    if (manageButton) {
+        setManageButtonAvailability({ available: false });
+        manageButton.addEventListener("click", open);
+    }
+    loadNetworkManagerStatus();
+
+    globalThis.NetworkManager = {
+        open,
+        close,
+        loadNetworks,
+        loadNetworkManagerStatus,
+    };
+}

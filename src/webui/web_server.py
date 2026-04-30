@@ -64,6 +64,7 @@ __all__ = [
 from src.webui.web_server_utils.asset_manager_mixin import AssetManagerMixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
+from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
 from src.webui.web_server_utils.system_monitor_mixin import SystemMonitorMixin
@@ -78,6 +79,7 @@ class EagleEyeInterface(
     AssetManagerMixin,
     CameraConfigMixin,
     CameraStreamMixin,
+    NetworkManagerMixin,
     OperationConfigMixin,
     PipelineConfigMixin,
     SystemMonitorMixin,
@@ -342,6 +344,30 @@ class EagleEyeInterface(
             "delete_test_video",
             self.delete_test_video,
             methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/wifi-networks",
+            "get_wifi_networks",
+            self.get_wifi_networks,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/wifi-networks/status",
+            "network_manager_status",
+            self.network_manager_status,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/wifi-networks/connect",
+            "connect_wifi_network",
+            self.connect_wifi_network,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/wifi-networks/disconnect",
+            "disconnect_wifi_network",
+            self.disconnect_wifi_network,
+            methods=["POST"],
         )
         self.app.add_url_rule(
             "/camera-config/cameras",
