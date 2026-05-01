@@ -62,6 +62,7 @@ __all__ = [
     "WEB_SERVER_PORT",
 ]
 from src.webui.web_server_utils.asset_manager_mixin import AssetManagerMixin
+from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
@@ -77,6 +78,7 @@ src_path = SRC_DIR
 
 class EagleEyeInterface(
     AssetManagerMixin,
+    CameraCalibrationMixin,
     CameraConfigMixin,
     CameraStreamMixin,
     NetworkManagerMixin,
@@ -398,6 +400,54 @@ class EagleEyeInterface(
             "delete_camera_intrinsics",
             self.delete_camera_intrinsics,
             methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/feed",
+            "calibration_feed",
+            self.calibration_feed,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/capture",
+            "capture_calibration_frame",
+            self.capture_calibration_frame,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/auto-detect-size",
+            "auto_detect_calibration_size",
+            self.auto_detect_calibration_size,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/frames",
+            "get_calibration_frames",
+            self.get_calibration_frames,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/frames/<int:frame_index>",
+            "get_calibration_frame_image",
+            self.get_calibration_frame_image,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/frames/<int:frame_index>",
+            "delete_calibration_frame",
+            self.delete_calibration_frame,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/reset",
+            "reset_calibration_frames",
+            self.reset_calibration_frames,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/calibration/run",
+            "run_camera_calibration",
+            self.run_camera_calibration,
+            methods=["POST"],
         )
         self.app.add_url_rule(
             "/feed/<string:camera_name>",
