@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -51,85 +54,8 @@ class SystemMonitorMixin:
         """
         Restart the backend.
         """
-        import threading
-        import time
-        def _delayed_restart():
-            time.sleep(1)
-            if callable(getattr(self, "restart_callback", None)):
-                self.restart_callback()
-        threading.Thread(target=_delayed_restart, daemon=True).start()
-        return {"message": "Backend restart initiated"}, 200
-
-    def update_system(self) -> tuple[dict, int]:
-        """
-        Trigger a system update via git pull and backend restart.
-        """
-        self.log("System update requested via WebUI.")
-        
-        def _update_and_restart():
-            import subprocess
-            import os
-            import time
-            try:
-                # Check for internet access by pinging github.com
-                self.log("Checking for internet connectivity...")
-                ping_cmd = ["ping", "-c", "1", "-W", "3", "github.com"]
-                if os.name == 'nt':
-                    ping_cmd = ["ping", "-n", "1", "-w", "3000", "github.com"]
-                    
-                ping_result = subprocess.run(ping_cmd, capture_output=True, timeout=5)
-                if ping_result.returncode != 0:
-                    self.log("Error: No internet access to github.com. Aborting update.")
-                    return
-
-                # Stash changes, pull, then try to reapply stash for local config
-                self.log("Stashing local changes...")
-                subprocess.run(["git", "stash"], cwd=os.getcwd(), check=True, capture_output=True, text=True, timeout=30)
-                
-                self.log("Pulling latest from git...")
-                pull_result = subprocess.run(["git", "pull"], cwd=os.getcwd(), check=True, capture_output=True, text=True, timeout=60)
-                self.log(f"Git pull output: {pull_result.stdout}")
-                
-                self.log("Attempting to restore local configurations...")
-                # We do stash pop, but it may fail if there are conflicts. We don't check=True here so it doesn't abort restart
-                subprocess.run(["git", "stash", "pop"], cwd=os.getcwd(), capture_output=True, text=True, timeout=30)
-                
-                if os.name != 'nt':
-                    self.log("Running apt-get update...")
-                    apt_env = os.environ.copy()
-                    apt_env["DEBIAN_FRONTEND"] = "noninteractive"
-                    
-                    update_result = subprocess.run(
-                        ["sudo", "-E", "apt-get", "update", "-y"],
-                        env=apt_env, check=True, capture_output=True, text=True, timeout=120
-                    )
-                    self.log(f"apt-get update output: {update_result.stdout}")
-                    
-                    self.log("Running apt-get upgrade...")
-                    upgrade_result = subprocess.run(
-                        ["sudo", "-E", "apt-get", "upgrade", "-y"],
-                        env=apt_env, check=True, capture_output=True, text=True, timeout=300
-                    )
-                    self.log(f"apt-get upgrade output: {upgrade_result.stdout}")
-                
-            except subprocess.TimeoutExpired as e:
-                self.log(f"Git operation timed out: {str(e)}")
-            except subprocess.CalledProcessError as e:
-                error_msg = e.stderr if hasattr(e, 'stderr') else str(e)
-                if isinstance(error_msg, bytes):
-                    error_msg = error_msg.decode(errors='replace')
-                self.log(f"Git operation failed: {error_msg}")
-                # We continue to restart even if update fails to ensure system recovers
-                
-            if callable(getattr(self, "restart_callback", None)):
-                time.sleep(1)
-                self.restart_callback()
-                
-        # Start in background so we can return response immediately
-        import threading
-        threading.Thread(target=_update_and_restart, daemon=True).start()
-        
-        return {"message": "System update initiated"}, 200
+        self.restart_callback()
+        return {"message": "Backend restarted successfully"}, 200
 
     def set_restart_required(self) -> tuple[dict, int]:
         """
@@ -152,6 +78,107 @@ class SystemMonitorMixin:
             "restart_required": self.restart_required_for_config,
             "runtime_id": getattr(self, "runtime_id", ""),
         }, 200
+
+    def _has_active_wifi_connection(self) -> bool:
+        try:
+            if not hasattr(self, "_run_nmcli"):
+                return False
+            result = self._run_nmcli(
+                ["-t", "-f", "TYPE,STATE", "device", "status"],
+                timeout=5.0,
+            )
+            if result.returncode != 0:
+                return False
+            for line in result.stdout.splitlines():
+                parts = line.split(":")
+                if len(parts) >= 2 and parts[0] == "wifi" and parts[1] == "connected":
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _has_internet_access(self) -> bool:
+        try:
+            socket.create_connection(("github.com", 443), timeout=3.0).close()
+            return True
+        except OSError:
+            return False
+
+    def system_update_status(self) -> tuple[dict, int]:
+        """Return whether system update can run over WiFi with internet."""
+        if not self._has_active_wifi_connection():
+            return {
+                "available": False,
+                "reason": "Connect to a WiFi network before updating.",
+            }, 200
+
+        if not self._has_internet_access():
+            return {
+                "available": False,
+                "reason": "Connected WiFi network does not appear to have internet access.",
+            }, 200
+
+        return {"available": True, "reason": "WiFi internet access available."}, 200
+
+    def _repo_root(self) -> Path:
+        return Path(__file__).resolve().parents[3]
+
+    def _run_update_command(self, command: list[str], timeout: float) -> str:
+        result = subprocess.run(
+            command,
+            cwd=self._repo_root(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = "\n".join(
+            part.strip() for part in [result.stdout, result.stderr] if part.strip()
+        )
+        if result.returncode != 0:
+            raise RuntimeError(output or f"Command failed: {' '.join(command)}")
+        return output
+
+    def run_system_update(self) -> tuple[dict, int]:
+        """Run git pull and apt package updates before the frontend restarts backend."""
+        status_payload, _ = self.system_update_status()
+        if not status_payload.get("available"):
+            return {"error": status_payload.get("reason", "WiFi internet required")}, 400
+
+        output_parts: list[str] = []
+        try:
+            output_parts.append("$ git pull")
+            output_parts.append(self._run_update_command(["git", "pull"], timeout=120.0))
+            output_parts.append("$ sudo apt update")
+            output_parts.append(
+                self._run_update_command(["sudo", "apt", "update"], timeout=300.0)
+            )
+            output_parts.append("$ sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y")
+            output_parts.append(
+                self._run_update_command(
+                    [
+                        "sudo",
+                        "env",
+                        "DEBIAN_FRONTEND=noninteractive",
+                        "apt",
+                        "upgrade",
+                        "-y",
+                    ],
+                    timeout=1800.0,
+                )
+            )
+        except subprocess.TimeoutExpired as error:
+            message = f"Update command timed out: {' '.join(error.cmd)}"
+            self.log(message)
+            return {"error": message, "output": "\n".join(output_parts)}, 504
+        except Exception as error:
+            message = str(error)
+            self.log(f"System update failed: {message}")
+            return {"error": message, "output": "\n".join(output_parts)}, 500
+
+        output = "\n".join(part for part in output_parts if part)
+        self.log("System update completed successfully")
+        return {"success": True, "output": output}, 200
 
     def get_log_messages(self) -> tuple[dict, int]:
         """
@@ -221,21 +248,6 @@ class SystemMonitorMixin:
             tuple[dict, int]: Dictionary containing system metrics.
         """
         payload = self._build_system_status_payload()
-        
-        # Check internet connectivity asynchronously or use cached value to avoid blocking
-        # But for an endpoint this is fine to do quickly
-        import subprocess
-        import os
-        ping_cmd = ["ping", "-c", "1", "-W", "1", "github.com"]
-        if os.name == 'nt':
-            ping_cmd = ["ping", "-n", "1", "-w", "1000", "github.com"]
-            
-        try:
-            ping_result = subprocess.run(ping_cmd, capture_output=True)
-            payload["internet_connected"] = (ping_result.returncode == 0)
-        except Exception:
-            payload["internet_connected"] = False
-            
         return payload, 200
 
     def _system_status_loop(self) -> None:

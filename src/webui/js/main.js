@@ -14,6 +14,7 @@ import {
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
 import { initializeNetworkManager } from "./settings/networkManager.js";
+import { initializeSystemUpdateManager } from "./settings/systemUpdateManager.js";
 import {
     updateRobotTransform,
     updateDetectedObjects,
@@ -93,6 +94,7 @@ window.onload = async () => {
     initializeTestVideoManager();
     initializeAssetFileManager();
     initializeNetworkManager();
+    initializeSystemUpdateManager();
     saveSettings();
 
     const systemStatusModule = createSystemStatusModule();

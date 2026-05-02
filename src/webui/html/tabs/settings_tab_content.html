@@ -53,6 +53,18 @@
                         </button>
                     </label>
                     <label>
+                        <span>System Update:</span>
+                        <button
+                            type="button"
+                            id="updateSystemBtn"
+                            class="px-3 py-1 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-sm font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#2a2a2a] disabled:hover:border-[#414141]"
+                            disabled
+                            title="Checking WiFi internet access..."
+                        >
+                            Update System
+                        </button>
+                    </label>
+                    <label>
                         <span>Test Videos:</span>
                         <button
                             type="button"
@@ -125,14 +137,6 @@
                     class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200"
                 >
                     Save Settings
-                </button>
-                <button
-                    type="button"
-                    id="updateSystemBtn"
-                    class="block w-full p-2.5 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] cursor-pointer text-base font-semibold hover:bg-[#3a3a3a] hover:border-[#f9c845] transition-colors duration-200 mt-3 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#2a2a2a] disabled:hover:border-[#414141]"
-                    onclick="showUpdateConfirmation()"
-                >
-                    Update System
                 </button>
                 <button
                     type="button"

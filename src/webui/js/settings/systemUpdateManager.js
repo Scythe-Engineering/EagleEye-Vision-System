@@ -1,0 +1,244 @@
+import { BACKEND_BASE_URL } from "../config.js";
+import {
+    closeOnBackdropClick,
+    closeOnEscape,
+    createElement,
+    getOrCreateModalElements,
+    hideModal,
+    showModal,
+} from "../ui/modal.js";
+import { showDanger } from "../ui/notificationSystem.js";
+
+const OVERLAY_ID = "systemUpdateOverlay";
+const MODAL_ID = "systemUpdateModal";
+
+let initialized = false;
+let statusTimer = null;
+let updateAvailable = false;
+let updating = false;
+let statusReason = "Checking update availability...";
+
+function getOverlayElements() {
+    return getOrCreateModalElements({
+        overlayId: OVERLAY_ID,
+        modalId: MODAL_ID,
+        modalClassName:
+            "bg-[#1a1a1a] rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
+    });
+}
+
+async function fetchJson(path, options = {}) {
+    const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (!response.ok) {
+        const error = new Error(
+            payload.error || payload.message || `Request failed: ${response.status}`,
+        );
+        error.payload = payload;
+        error.status = response.status;
+        throw error;
+    }
+    return payload;
+}
+
+function close() {
+    if (updating) {
+        return;
+    }
+    hideModal(getOverlayElements().overlay);
+}
+
+function setButtonState() {
+    const button = document.getElementById("updateSystemBtn");
+    if (!button) {
+        return;
+    }
+
+    button.disabled = updating || !updateAvailable;
+    button.title = updateAvailable
+        ? "Pull code updates, install apt upgrades, and restart the backend"
+        : statusReason;
+    button.textContent = updating ? "Updating..." : "Update System";
+}
+
+async function refreshUpdateStatus() {
+    if (updating) {
+        return;
+    }
+
+    try {
+        const payload = await fetchJson("/system-update/status");
+        updateAvailable = payload.available === true;
+        statusReason = payload.reason || "Update requires WiFi with internet access";
+    } catch (error) {
+        updateAvailable = false;
+        statusReason = error.payload?.error || "Unable to check WiFi internet access";
+    }
+    setButtonState();
+}
+
+function renderConfirm() {
+    const { overlay, modal } = getOverlayElements();
+    modal.innerHTML = "";
+
+    const cancelButton = createElement("button", {
+        type: "button",
+        className:
+            "px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a]",
+        text: "Cancel",
+        onclick: close,
+    });
+    const confirmButton = createElement("button", {
+        type: "button",
+        className:
+            "px-4 py-2 bg-red-900 text-white rounded-md border border-red-700 hover:bg-red-800",
+        text: "Update and Restart",
+        onclick: runUpdate,
+    });
+
+    modal.appendChild(
+        createElement("div", { className: "p-6" }, [
+            createElement("h3", {
+                className: "text-xl font-bold text-yellow-400 mb-3",
+                text: "Update System",
+            }),
+            createElement("p", {
+                className: "text-gray-200 mb-2",
+                text: "This will restart the system. Are you sure?",
+            }),
+            createElement("p", {
+                className: "text-sm text-gray-400 mb-6",
+                text: "The backend will run git pull, apt update, and non-interactive apt upgrade before restarting.",
+            }),
+            createElement("div", { className: "flex justify-end gap-3" }, [
+                cancelButton,
+                confirmButton,
+            ]),
+        ]),
+    );
+    showModal(overlay);
+}
+
+function renderProgress(message, detail = "") {
+    const { modal } = getOverlayElements();
+    modal.innerHTML = "";
+    modal.appendChild(
+        createElement("div", { className: "p-6" }, [
+            createElement("h3", {
+                className: "text-xl font-bold text-yellow-400 mb-4",
+                text: "Updating System",
+            }),
+            createElement("div", {
+                className: "mb-3 text-gray-200",
+                text: message,
+            }),
+            createElement("div", {
+                className: "h-3 w-full overflow-hidden rounded-full bg-[#2a2a2a] border border-[#414141]",
+                html: '<div class="h-full w-1/3 rounded-full bg-yellow-400 animate-pulse"></div>',
+            }),
+            createElement("pre", {
+                className:
+                    "mt-4 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141]",
+                text: detail,
+            }),
+        ]),
+    );
+}
+
+function renderError(message) {
+    const { modal } = getOverlayElements();
+    modal.innerHTML = "";
+    modal.appendChild(
+        createElement("div", { className: "p-6" }, [
+            createElement("h3", {
+                className: "text-xl font-bold text-red-300 mb-3",
+                text: "Update Failed",
+            }),
+            createElement("pre", {
+                className:
+                    "max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-sm text-red-100 border border-red-700/60 mb-5",
+                text: message,
+            }),
+            createElement("div", { className: "flex justify-end" }, [
+                createElement("button", {
+                    type: "button",
+                    className:
+                        "px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a]",
+                    text: "Close",
+                    onclick: close,
+                }),
+            ]),
+        ]),
+    );
+}
+
+async function runUpdate() {
+    updating = true;
+    setButtonState();
+    renderProgress("Checking WiFi internet access...");
+
+    try {
+        const status = await fetchJson("/system-update/status");
+        if (status.available !== true) {
+            throw new Error(status.reason || "WiFi internet access is required.");
+        }
+
+        renderProgress("Pulling latest changes and installing apt upgrades...");
+        const updateResult = await fetchJson("/system-update/run", { method: "POST" });
+        renderProgress("Restarting backend...", updateResult.output || "Update completed.");
+
+        try {
+            await fetchJson("/restart-backend", { method: "POST" });
+        } catch (error) {
+            console.warn("Restart request failed or connection closed:", error);
+        }
+
+        setTimeout(() => {
+            globalThis.location.reload();
+        }, 2500);
+    } catch (error) {
+        updating = false;
+        const message = error.payload?.error || error.payload?.output || error.message || "Update failed";
+        renderError(message);
+        setButtonState();
+    }
+}
+
+export function initializeSystemUpdateManager() {
+    if (initialized) {
+        return;
+    }
+    initialized = true;
+
+    const button = document.getElementById("updateSystemBtn");
+    if (!button) {
+        return;
+    }
+
+    button.addEventListener("click", () => {
+        if (!button.disabled) {
+            renderConfirm();
+        } else if (statusReason) {
+            showDanger(statusReason);
+        }
+    });
+
+    const { overlay } = getOverlayElements();
+    closeOnBackdropClick(overlay, close);
+    closeOnEscape(overlay, close);
+
+    setButtonState();
+    refreshUpdateStatus();
+    statusTimer = setInterval(refreshUpdateStatus, 30000);
+
+    window.addEventListener("beforeunload", () => {
+        if (statusTimer) {
+            clearInterval(statusTimer);
+        }
+    });
+}

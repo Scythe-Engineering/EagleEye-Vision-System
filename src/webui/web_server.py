@@ -602,9 +602,15 @@ class EagleEyeInterface(
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/update-system",
-            "update_system",
-            self.update_system,
+            "/system-update/status",
+            "system_update_status",
+            self.system_update_status,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/system-update/run",
+            "run_system_update",
+            self.run_system_update,
             methods=["POST"],
         )
         self.app.add_url_rule(
