@@ -75,7 +75,31 @@
                 </nav>
             </div>
         </div>
-
+        
+        <div id="partials-container"></div>
+        <script>
+            (async function loadPartials() {
+                const container = document.getElementById('partials-container');
+                try {
+                    const response = await fetch('/html/partials/update_modal.html');
+                    if (!response.ok) {
+                        throw new Error(`Failed to load partial: ${response.status} ${response.statusText}`);
+                    }
+                    const htmlText = await response.text();
+                    
+                    const template = document.createElement('template');
+                    template.innerHTML = htmlText;
+                    
+                    container.appendChild(template.content);
+                    document.dispatchEvent(new CustomEvent('partials-loaded'));
+                } catch (error) {
+                    console.error('Error loading update modal partial:', error);
+                    container.innerText = 'Failed to load update modal.';
+                    document.dispatchEvent(new CustomEvent('partials-loaded'));
+                }
+            })();
+        </script>
+        
         <script type="module" src="/js/main.js"></script>
     </body>
 </html>

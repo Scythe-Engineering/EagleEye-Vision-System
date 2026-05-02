@@ -61,6 +61,17 @@ async function loadNetworkTableStatus() {
         const status = await response.json();
         renderNetworkTableStatus(status.network_table);
         setNetworkTablesConnected(status?.network_table?.connected === true);
+        
+        const updateSystemBtn = document.getElementById("updateSystemBtn");
+        if (updateSystemBtn) {
+            if (status.internet_connected === true) {
+                updateSystemBtn.disabled = false;
+                updateSystemBtn.title = "Update System";
+            } else {
+                updateSystemBtn.disabled = true;
+                updateSystemBtn.title = "No internet access available";
+            }
+        }
     } catch (error) {
         console.error("Error loading NetworkTables status:", error);
         renderNetworkTableStatus(null);
@@ -158,3 +169,69 @@ export function saveSettings() {
         }
     });
 }
+
+window.showUpdateConfirmation = function() {
+    const modal = document.getElementById('updateModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+};
+
+window.closeUpdateModal = function() {
+    const modal = document.getElementById('updateModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+};
+
+window.startSystemUpdate = async function() {
+    const content = document.getElementById('updateModalContent');
+    const progress = document.getElementById('updateModalProgress');
+    const actions = document.getElementById('updateModalActions');
+    
+    if (content) content.classList.add('hidden');
+    if (progress) progress.classList.remove('hidden');
+    if (actions) actions.classList.add('hidden');
+    
+    try {
+        const response = await fetch(`${BACKEND_BASE_URL}/update-system`, {
+            method: 'POST',
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Polling loop to wait for backend to come back up
+        const MAX_RETRIES = 400; // Up to 400 seconds
+        const checkBackend = async (attempt) => {
+            if (attempt >= MAX_RETRIES) {
+                console.error("Backend failed to come back online after update.");
+                alert("Update completed, but the system is taking too long to restart. Please refresh manually.");
+                window.closeUpdateModal();
+                if (content) content.classList.remove('hidden');
+                if (progress) progress.classList.add('hidden');
+                if (actions) actions.classList.remove('hidden');
+                return;
+            }
+            try {
+                const checkResponse = await fetch(`${BACKEND_BASE_URL}/get-system-status`, { method: "GET" });
+                if (checkResponse.ok) {
+                    window.location.reload();
+                    return;
+                }
+            } catch (e) {
+                // Network error, backend is likely down. We will retry.
+            }
+            setTimeout(() => checkBackend(attempt + 1), 1000);
+        };
+        setTimeout(() => checkBackend(0), 3000); // Give it some time to go down
+    } catch (error) {
+        console.error("Error updating system:", error);
+        alert("Failed to initiate system update.");
+        window.closeUpdateModal();
+        if (content) content.classList.remove('hidden');
+        if (progress) progress.classList.add('hidden');
+        if (actions) actions.classList.remove('hidden');
+    }
+};

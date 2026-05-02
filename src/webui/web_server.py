@@ -602,6 +602,12 @@ class EagleEyeInterface(
             methods=["POST"],
         )
         self.app.add_url_rule(
+            "/update-system",
+            "update_system",
+            self.update_system,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
             "/start-visualize/<string:pipeline_name>/<string:operation_uuid>",
             "start_visualize",
             self.start_visualize,
