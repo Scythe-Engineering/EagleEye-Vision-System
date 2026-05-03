@@ -21,6 +21,13 @@ function formatInteger(value) {
     return `${Math.round(value)}`;
 }
 
+function formatTemperature(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        return DEFAULT_TEXT;
+    }
+    return `${value.toFixed(1)} °C`;
+}
+
 function resolveStatusText(status) {
     if (typeof status === "string" && status.trim().length > 0) {
         return status;
@@ -115,6 +122,7 @@ function renderPipelines(container, pipelines) {
 export function createSystemStatusModule() {
     const cpuPercent = document.getElementById("systemCpuPercent");
     const cpuDetail = document.getElementById("systemCpuDetail");
+    const cpuTemperature = document.getElementById("systemCpuTemperature");
     const memoryPercent = document.getElementById("systemMemoryPercent");
     const memoryDetail = document.getElementById("systemMemoryDetail");
     const storagePercent = document.getElementById("systemStoragePercent");
@@ -143,6 +151,11 @@ export function createSystemStatusModule() {
             if (cpuDetail) {
                 cpuDetail.textContent = `Cores: ${resolveStatusText(
                     formatInteger(data.cpu?.cores),
+                )}`;
+            }
+            if (cpuTemperature) {
+                cpuTemperature.textContent = `Temp: ${resolveStatusText(
+                    formatTemperature(data.cpu?.temperature_c),
                 )}`;
             }
 

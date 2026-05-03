@@ -281,6 +281,7 @@ class SystemMonitorMixin:
             cpu_payload = {
                 "percent": float(psutil.cpu_percent(interval=None)),
                 "cores": int(psutil.cpu_count(logical=True) or 0),
+                "temperature_c": self._read_cpu_temperature_c(psutil),
                 "status": "ok",
             }
             memory = psutil.virtual_memory()
@@ -314,6 +315,46 @@ class SystemMonitorMixin:
             "pipelines": pipeline_payload,
             "network_table": network_table_payload,
         }
+
+    def _read_cpu_temperature_c(self, psutil_module: Any) -> float | None:
+        """Read CPU temperature in Celsius, preferring Linux thermal sensors."""
+        try:
+            thermal_zones = sorted(Path("/sys/class/thermal").glob("thermal_zone*/temp"))
+            temperatures: list[float] = []
+            for temp_path in thermal_zones:
+                try:
+                    raw_value = temp_path.read_text(encoding="utf-8").strip()
+                    value = float(raw_value)
+                    if value > 1000:
+                        value /= 1000.0
+                    if 0.0 < value < 150.0:
+                        temperatures.append(value)
+                except Exception:
+                    continue
+            if temperatures:
+                return max(temperatures)
+        except Exception:
+            pass
+
+        try:
+            sensors_temperatures = getattr(psutil_module, "sensors_temperatures", None)
+            if sensors_temperatures is None:
+                return None
+            readings = sensors_temperatures(fahrenheit=False)
+            temperatures = []
+            for entries in readings.values():
+                for entry in entries:
+                    current = getattr(entry, "current", None)
+                    if isinstance(current, (int, float)) and 0.0 < float(current) < 150.0:
+                        label = str(getattr(entry, "label", "") or "").lower()
+                        if "cpu" in label or "core" in label or not label:
+                            temperatures.append(float(current))
+            if temperatures:
+                return max(temperatures)
+        except Exception:
+            pass
+
+        return None
 
     def _build_network_table_status(self) -> dict[str, Any]:
         """
