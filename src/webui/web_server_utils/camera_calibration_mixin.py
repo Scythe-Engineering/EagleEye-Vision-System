@@ -75,12 +75,11 @@ class CameraCalibrationMixin:
         cols = int(source.get("cols", 9))
         rows = int(source.get("rows", 6))
         square_size = float(source.get("square_size", 0.025))
-        auto_detect = str(source.get("auto_detect", "false")).lower() == "true"
         if cols <= 2 or rows <= 2:
             raise ValueError("Checkerboard rows and columns must be greater than 2")
         if square_size <= 0:
             raise ValueError("Square size must be greater than 0")
-        return cols, rows, square_size, auto_detect
+        return cols, rows, square_size, False
 
     def _live_view_resolution_from_request(self) -> tuple[int | None, int | None]:
         width = int(request.args.get("live_width", 0) or 0)
@@ -102,148 +101,6 @@ class CameraCalibrationMixin:
             return frame
         target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
         return cv2.resize(frame, target_size, interpolation=cv2.INTER_AREA)
-
-    def _find_adaptive_checkerboard(
-        self,
-        frame: np.ndarray,
-        cols: int,
-        rows: int,
-        auto_detect: bool,
-        previous_size: tuple[int, int] | None = None,
-    ):
-        if not auto_detect:
-            found, corners, image_size = self._find_checkerboard(frame, cols, rows)
-            return found, corners, image_size, cols, rows
-
-        found, corners, image_size, detected_cols, detected_rows = self._find_checkerboard_auto(
-            frame, previous_size
-        )
-        if found:
-            return found, corners, image_size, detected_cols, detected_rows
-        return False, None, frame.shape[1::-1], cols, rows
-
-    def _find_checkerboard_size_candidates_geometric(
-        self, gray: np.ndarray, min_size: int = 5, max_size: int = 20
-    ) -> list[tuple[int, int]]:
-        detector_width = 640
-        scale = min(1.0, detector_width / max(gray.shape[1], 1))
-        small = cv2.resize(gray, None, fx=scale, fy=scale) if scale < 1.0 else gray
-        small = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(small)
-        corners = cv2.goodFeaturesToTrack(
-            small,
-            maxCorners=800,
-            qualityLevel=0.01,
-            minDistance=4,
-            blockSize=5,
-            useHarrisDetector=True,
-            k=0.04,
-        )
-        if corners is None or len(corners) < min_size * min_size:
-            return []
-
-        points = corners.reshape(-1, 2).astype(np.float32)
-        center = points.mean(axis=0)
-        _, _, vt = np.linalg.svd(points - center, full_matrices=False)
-        axes = vt[:2]
-        projected = (points - center) @ axes.T
-
-        def cluster_count(values: np.ndarray) -> int | None:
-            values = np.sort(values)
-            gaps = np.diff(values)
-            positive_gaps = gaps[gaps > 2]
-            if len(positive_gaps) == 0:
-                return None
-            step = float(np.median(positive_gaps))
-            if step <= 2:
-                return None
-            bins: dict[int, int] = {}
-            origin = float(values[0])
-            for value in values:
-                index = int(round((float(value) - origin) / step))
-                if abs((origin + index * step) - float(value)) <= step * 0.35:
-                    bins[index] = bins.get(index, 0) + 1
-            occupied = [index for index, count in bins.items() if count >= 2]
-            if not occupied:
-                return None
-            return max(occupied) - min(occupied) + 1
-
-        a = cluster_count(projected[:, 0])
-        b = cluster_count(projected[:, 1])
-        if a is None or b is None:
-            return []
-
-        candidates: list[tuple[int, int]] = []
-        for cols, rows in ((a, b), (b, a)):
-            if min_size <= cols <= max_size and min_size <= rows <= max_size:
-                candidates.append((int(cols), int(rows)))
-                # Include one-off neighbors because Harris clustering can include
-                # or miss an edge line; exact OpenCV verification filters them.
-                for dc, dr in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    candidate = (int(cols + dc), int(rows + dr))
-                    if (
-                        min_size <= candidate[0] <= max_size
-                        and min_size <= candidate[1] <= max_size
-                        and candidate not in candidates
-                    ):
-                        candidates.append(candidate)
-        return sorted(candidates, key=lambda size: size[0] * size[1], reverse=True)
-
-    def _find_checkerboard_size_candidates_sb(
-        self, gray: np.ndarray, max_size: int = 20
-    ) -> list[tuple[int, int]]:
-        if not hasattr(cv2, "findChessboardCornersSBWithMeta"):
-            return []
-        flags = (
-            cv2.CALIB_CB_NORMALIZE_IMAGE
-            | cv2.CALIB_CB_LARGER
-            | cv2.CALIB_CB_EXHAUSTIVE
-        )
-        candidates: set[tuple[int, int]] = set()
-        # CALIB_CB_LARGER can under-report from a tiny 3x3 seed on some images.
-        # Probe a few progressively larger seeds, then verify only the resulting
-        # likely sizes with the exact SB detector.
-        seed_sizes = [(3, 3), (5, 5), (7, 7), (9, 6), (6, 9), (7, 10), (10, 7)]
-        for seed_size in seed_sizes:
-            try:
-                ok, _, meta = cv2.findChessboardCornersSBWithMeta(
-                    gray, seed_size, flags
-                )
-            except cv2.error:
-                continue
-            if not ok or meta is None:
-                continue
-            rows, cols = meta.shape[:2]
-            if 2 < cols <= max_size and 2 < rows <= max_size:
-                candidates.add((cols, rows))
-        return sorted(candidates, key=lambda size: size[0] * size[1], reverse=True)
-
-    def _find_checkerboard_auto(
-        self, frame: np.ndarray, previous_size: tuple[int, int] | None = None
-    ):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        image_size = gray.shape[::-1]
-        candidates = self._find_checkerboard_size_candidates_geometric(gray)
-        for candidate in self._find_checkerboard_size_candidates_sb(gray):
-            if candidate not in candidates:
-                candidates.append(candidate)
-
-        expanded_candidates: list[tuple[int, int]] = []
-        for candidate in sorted(candidates, key=lambda size: size[0] * size[1], reverse=True):
-            if candidate not in expanded_candidates:
-                expanded_candidates.append(candidate)
-            swapped = (candidate[1], candidate[0])
-            if swapped not in expanded_candidates:
-                expanded_candidates.append(swapped)
-        if previous_size:
-            previous = (int(previous_size[0]), int(previous_size[1]))
-            if previous not in expanded_candidates:
-                expanded_candidates.append(previous)
-
-        for candidate_cols, candidate_rows in expanded_candidates[:12]:
-            found, corners = self._find_checkerboard_sb_gray(gray, candidate_cols, candidate_rows)
-            if found:
-                return True, corners, image_size, candidate_cols, candidate_rows
-        return False, None, image_size, None, None
 
     def _find_checkerboard_sb_gray(self, gray: np.ndarray, cols: int, rows: int):
         if cols <= 2 or rows <= 2 or not hasattr(cv2, "findChessboardCornersSB"):
@@ -271,26 +128,14 @@ class CameraCalibrationMixin:
         cols: int,
         rows: int,
         count: int,
-        auto_detect: bool = False,
-        previous_size: tuple[int, int] | None = None,
     ) -> tuple[np.ndarray, tuple[int, int] | None]:
         output = frame.copy()
-        found, corners, _, detected_cols, detected_rows = self._find_adaptive_checkerboard(
-            frame, cols, rows, auto_detect, previous_size
-        )
-        draw_size = (detected_cols, detected_rows)
-        checking_size = draw_size
+        found, corners, _, = self._find_checkerboard(frame, cols, rows)
+        draw_size = (cols, rows)
         if found:
             cv2.drawChessboardCorners(output, draw_size, corners, found)
 
-        if auto_detect:
-            detection_text = (
-                f"Checkerboard {draw_size[0]}x{draw_size[1]} detected"
-                if found
-                else f"Auto checking {checking_size[0]}x{checking_size[1]} | No checkerboard"
-            )
-        else:
-            detection_text = f"Checkerboard {draw_size[0]}x{draw_size[1]} detected" if found else "No checkerboard"
+        detection_text = f"Checkerboard {draw_size[0]}x{draw_size[1]} detected" if found else "No checkerboard"
         text = f"{detection_text} | Frames: {count}/10"
         cv2.putText(
             output,
@@ -308,7 +153,6 @@ class CameraCalibrationMixin:
         camera_bus_id: str,
         cols: int,
         rows: int,
-        auto_detect: bool,
         live_width: int | None,
         live_height: int | None,
     ) -> Generator[bytes, Any, Any]:
@@ -318,7 +162,6 @@ class CameraCalibrationMixin:
             with self._calibration_lock():
                 session = self._calibration_sessions().setdefault(str(camera_bus_id), {"frames": []})
                 count = len(session.get("frames", []))
-                previous_size = session.get("auto_detect_size")
             if resolved_camera_name is None:
                 jpeg = no_image_jpeg_bytes
             else:
@@ -334,15 +177,7 @@ class CameraCalibrationMixin:
                         jpeg = no_image_jpeg_bytes
                     else:
                         frame = self._resize_for_live_view(frame, live_width, live_height)
-                        frame, detected_size = self._draw_detection(
-                            frame, cols, rows, count, auto_detect, previous_size
-                        )
-                        if auto_detect and detected_size is not None:
-                            with self._calibration_lock():
-                                session = self._calibration_sessions().setdefault(
-                                    str(camera_bus_id), {"frames": []}
-                                )
-                                session["auto_detect_size"] = detected_size
+                        frame, _ = self._draw_detection(frame, cols, rows, count)
                         ok, enc = cv2.imencode(
                             ".jpg",
                             frame,
@@ -354,79 +189,27 @@ class CameraCalibrationMixin:
 
     def calibration_feed(self, camera_bus_id: str) -> Response:
         try:
-            cols, rows, _, auto_detect = self._checkerboard_params_from_request()
+            cols, rows, _, _ = self._checkerboard_params_from_request()
             live_width, live_height = self._live_view_resolution_from_request()
         except ValueError:
-            cols, rows, auto_detect = 9, 6, False
+            cols, rows = 9, 6
             live_width, live_height = None, None
         return Response(
             self._calibration_feed_generator(
-                camera_bus_id, cols, rows, auto_detect, live_width, live_height
+                camera_bus_id, cols, rows, live_width, live_height
             ),
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
 
-    def auto_detect_calibration_size(self, camera_bus_id: str) -> tuple[dict, int]:
-        data = request.get_json(silent=True) if request.method == "POST" else {}
-        target_count = int(data.get("frames", 5)) if isinstance(data, dict) else 5
-        target_count = max(1, min(target_count, 10))
-        last_size = None
-        stable_count = 0
-        attempts = 0
-        max_attempts = max(target_count * 20, 60)
-        while attempts < max_attempts:
-            attempts += 1
-            frame = self._latest_camera_frame(camera_bus_id)
-            if frame is None:
-                return {"error": "No frame available for selected camera"}, 404
-            found, _, _, detected_cols, detected_rows = self._find_checkerboard_auto(frame)
-            if found and detected_cols and detected_rows:
-                detected_size = (int(detected_cols), int(detected_rows))
-                if detected_size == last_size:
-                    stable_count += 1
-                else:
-                    last_size = detected_size
-                    stable_count = 1
-                if stable_count >= target_count:
-                    with self._calibration_lock():
-                        session = self._calibration_sessions().setdefault(
-                            str(camera_bus_id), {"frames": []}
-                        )
-                        session["auto_detect_size"] = detected_size
-                    return {
-                        "success": True,
-                        "cols": detected_size[0],
-                        "rows": detected_size[1],
-                        "stable_count": stable_count,
-                        "attempts": attempts,
-                    }, 200
-            else:
-                last_size = None
-                stable_count = 0
-            time.sleep(max(1 / VIEW_STREAM_FPS, 0.02))
-        return {"error": "Could not detect a stable checkerboard size"}, 400
-
     def capture_calibration_frame(self, camera_bus_id: str) -> tuple[dict, int]:
         try:
-            cols, rows, square_size, auto_detect = self._checkerboard_params_from_request()
+            cols, rows, square_size, _ = self._checkerboard_params_from_request()
         except ValueError as error:
             return {"error": str(error)}, 400
         frame = self._latest_camera_frame(camera_bus_id)
         if frame is None:
             return {"error": "No frame available for selected camera"}, 404
-        previous_size = None
-        if auto_detect:
-            with self._calibration_lock():
-                previous_size = (
-                    self._calibration_sessions()
-                    .get(str(camera_bus_id), {})
-                    .get("auto_detect_size")
-                )
-        found, corners, _, detected_cols, detected_rows = self._find_adaptive_checkerboard(
-            frame, cols, rows, auto_detect, previous_size
-        )
-        if auto_detect and found:
-            cols, rows = detected_cols, detected_rows
+        found, corners, _ = self._find_checkerboard(frame, cols, rows)
         if not found or corners is None:
             return {"error": "Checkerboard was not detected"}, 400
         with self._calibration_lock():
@@ -434,8 +217,6 @@ class CameraCalibrationMixin:
                 str(camera_bus_id), {"frames": []}
             )
             session.update({"cols": cols, "rows": rows, "square_size": square_size})
-            if auto_detect:
-                session["auto_detect_size"] = (cols, rows)
             session["frames"].append({"frame": frame, "corners": corners, "cols": cols, "rows": rows})
             count = len(session["frames"])
         return {"success": True, "frame_count": count, "frame_index": count - 1, "cols": cols, "rows": rows, "recommended_count": 10}, 200
@@ -472,9 +253,9 @@ class CameraCalibrationMixin:
         self, camera_bus_id: str, frame_index: int
     ) -> Response | tuple[dict, int]:
         try:
-            cols, rows, _, auto_detect = self._checkerboard_params_from_request()
+            cols, rows, _, _ = self._checkerboard_params_from_request()
         except ValueError:
-            cols, rows, auto_detect = 9, 6, False
+            cols, rows = 9, 6
         with self._calibration_lock():
             frames = (
                 self._calibration_sessions()
@@ -484,7 +265,7 @@ class CameraCalibrationMixin:
             if frame_index < 0 or frame_index >= len(frames):
                 return {"error": "Frame index out of range"}, 404
             frame = frames[frame_index]["frame"].copy()
-        output, _ = self._draw_detection(frame, cols, rows, len(frames), auto_detect=auto_detect)
+        output, _ = self._draw_detection(frame, cols, rows, len(frames))
         ok, enc = cv2.imencode(".jpg", output, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
         return Response(enc.tobytes() if ok else no_image_jpeg_bytes, mimetype="image/jpeg")
 
@@ -510,7 +291,7 @@ class CameraCalibrationMixin:
 
     def run_camera_calibration(self, camera_bus_id: str) -> tuple[dict, int]:
         try:
-            cols, rows, square_size, auto_detect = self._checkerboard_params_from_request()
+            cols, rows, square_size, _ = self._checkerboard_params_from_request()
         except ValueError as error:
             return {"error": str(error)}, 400
         config = self._resolve_camera_config(camera_bus_id)
@@ -524,11 +305,6 @@ class CameraCalibrationMixin:
             )
         if len(frames) < 3:
             return {"error": "At least 3 captured frames are required"}, 400
-
-        if auto_detect:
-            first = frames[0]
-            if isinstance(first, dict) and first.get("cols") and first.get("rows"):
-                cols, rows = int(first["cols"]), int(first["rows"])
 
         objp = np.zeros((rows * cols, 3), np.float32)
         objp[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square_size

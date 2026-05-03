@@ -414,12 +414,6 @@ class EagleEyeInterface(
             methods=["POST"],
         )
         self.app.add_url_rule(
-            "/camera-config/<string:camera_bus_id>/calibration/auto-detect-size",
-            "auto_detect_calibration_size",
-            self.auto_detect_calibration_size,
-            methods=["POST"],
-        )
-        self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>/calibration/frames",
             "get_calibration_frames",
             self.get_calibration_frames,

@@ -488,7 +488,6 @@ function calibrationPayload() {
         cols: Number.parseInt(getElement("utilsCalibrationCols")?.value || "9", 10),
         rows: Number.parseInt(getElement("utilsCalibrationRows")?.value || "6", 10),
         square_size: Number.parseFloat(getElement("utilsCalibrationSquareSize")?.value || "0.025"),
-        auto_detect: false,
     };
 }
 
@@ -521,7 +520,6 @@ function updateCalibrationFeed() {
         cols: String(payload.cols),
         rows: String(payload.rows),
         square_size: String(payload.square_size),
-        auto_detect: String(payload.auto_detect),
         ...calibrationLiveResolutionParams(),
         t: String(Date.now()),
     });
@@ -639,29 +637,6 @@ function closeCalibrationModal() {
     if (img) img.src = "";
 }
 
-async function autoDetectCalibrationSize() {
-    if (!currentCameraBusId || !calibrationModalOpen) return;
-    setCalibrationBusy(true);
-    const button = getElement("utilsCalibrationAutoDetectBtn");
-    if (button) button.textContent = "Detecting size...";
-    try {
-        const result = await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/auto-detect-size`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frames: 5 }),
-        });
-        getElement("utilsCalibrationCols").value = String(result.cols);
-        getElement("utilsCalibrationRows").value = String(result.rows);
-        showSuccess(`Detected checkerboard size: ${result.cols}x${result.rows}`);
-        updateCalibrationFeed();
-    } catch (error) {
-        showDanger(`Auto-detect failed: ${error.message}`);
-    } finally {
-        if (button) button.textContent = "Auto-detect checkerboard size";
-        setCalibrationBusy(false);
-    }
-}
-
 async function captureCalibrationFrame() {
     if (!currentCameraBusId || !calibrationModalOpen) return;
     try {
@@ -700,8 +675,8 @@ async function runCalibration() {
             body: JSON.stringify(calibrationPayload()),
         });
         showSuccess(`Calibration saved. Reprojection error: ${result.reprojection_error?.toFixed?.(4) ?? result.reprojection_error}`);
+        closeCalibrationModal();
         await loadCameraConfig(currentCameraBusId);
-        await refreshCalibrationFrames();
     } catch (error) {
         showDanger(`Calibration failed: ${error.message}`);
     } finally {
@@ -829,7 +804,6 @@ export function initCameraConfigUtils() {
     getElement("utilsCalibrationCaptureBtn")?.addEventListener("click", () => void captureCalibrationFrame());
     getElement("utilsCalibrationResetBtn")?.addEventListener("click", () => void resetCalibrationFrames());
     getElement("utilsCalibrationRunBtn")?.addEventListener("click", () => void runCalibration());
-    getElement("utilsCalibrationAutoDetectBtn")?.addEventListener("click", () => void autoDetectCalibrationSize());
     window.addEventListener("resize", drawCalibrationHistoryCanvas);
     [
         "utilsCalibrationCols",
