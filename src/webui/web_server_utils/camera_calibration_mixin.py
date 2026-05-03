@@ -82,6 +82,27 @@ class CameraCalibrationMixin:
             raise ValueError("Square size must be greater than 0")
         return cols, rows, square_size, auto_detect
 
+    def _live_view_resolution_from_request(self) -> tuple[int | None, int | None]:
+        width = int(request.args.get("live_width", 0) or 0)
+        height = int(request.args.get("live_height", 0) or 0)
+        if width <= 0 or height <= 0:
+            return None, None
+        return max(160, min(width, 4096)), max(120, min(height, 2160))
+
+    def _resize_for_live_view(
+        self, frame: np.ndarray, live_width: int | None, live_height: int | None
+    ) -> np.ndarray:
+        if live_width is None or live_height is None:
+            return frame
+        height, width = frame.shape[:2]
+        if width <= 0 or height <= 0:
+            return frame
+        scale = min(live_width / width, live_height / height)
+        if scale >= 0.999:
+            return frame
+        target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        return cv2.resize(frame, target_size, interpolation=cv2.INTER_AREA)
+
     def _find_adaptive_checkerboard(
         self,
         frame: np.ndarray,
@@ -283,7 +304,13 @@ class CameraCalibrationMixin:
         return output, draw_size if found else None
 
     def _calibration_feed_generator(
-        self, camera_bus_id: str, cols: int, rows: int, auto_detect: bool
+        self,
+        camera_bus_id: str,
+        cols: int,
+        rows: int,
+        auto_detect: bool,
+        live_width: int | None,
+        live_height: int | None,
     ) -> Generator[bytes, Any, Any]:
         resolved_camera_name = self._camera_name_for_bus_id(camera_bus_id)
         while True:
@@ -306,6 +333,7 @@ class CameraCalibrationMixin:
                     if frame is None:
                         jpeg = no_image_jpeg_bytes
                     else:
+                        frame = self._resize_for_live_view(frame, live_width, live_height)
                         frame, detected_size = self._draw_detection(
                             frame, cols, rows, count, auto_detect, previous_size
                         )
@@ -327,10 +355,14 @@ class CameraCalibrationMixin:
     def calibration_feed(self, camera_bus_id: str) -> Response:
         try:
             cols, rows, _, auto_detect = self._checkerboard_params_from_request()
+            live_width, live_height = self._live_view_resolution_from_request()
         except ValueError:
             cols, rows, auto_detect = 9, 6, False
+            live_width, live_height = None, None
         return Response(
-            self._calibration_feed_generator(camera_bus_id, cols, rows, auto_detect),
+            self._calibration_feed_generator(
+                camera_bus_id, cols, rows, auto_detect, live_width, live_height
+            ),
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
 

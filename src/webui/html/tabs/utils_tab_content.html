@@ -190,6 +190,18 @@
                         <label class="text-sm text-[#f9c845]">Rows<input id="utilsCalibrationRows" type="number" min="3" max="20" value="6" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
                         <label class="text-sm text-[#f9c845]">Square m<input id="utilsCalibrationSquareSize" type="number" min="0.0001" step="0.001" value="0.025" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
                     </div>
+                    <label class="block text-sm text-[#f9c845]">
+                        Live View Resolution
+                        <select id="utilsCalibrationLiveResolution" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1">
+                            <option value="full">Full resolution</option>
+                            <option value="1920x1080">1920x1080</option>
+                            <option value="1280x720" selected>1280x720</option>
+                            <option value="960x540">960x540</option>
+                            <option value="640x360">640x360</option>
+                            <option value="320x240">320x240</option>
+                        </select>
+                        <span class="mt-1 block text-xs text-[#ac8a2f]">Only affects the live preview. Captures always use full camera resolution.</span>
+                    </label>
                     <p id="utilsCalibrationStatus" class="text-sm text-[#ac8a2f]">0 frames captured.</p>
                     <div class="flex flex-wrap gap-2">
                         <button id="utilsCalibrationCaptureBtn" type="button" class="px-3 py-2 bg-[#232323] text-[#f9c845] rounded-md border border-[#414141]">Capture</button>

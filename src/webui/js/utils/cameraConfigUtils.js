@@ -500,6 +500,18 @@ function setCalibrationBusy(isBusy) {
     });
 }
 
+function calibrationLiveResolutionParams() {
+    const value = getElement("utilsCalibrationLiveResolution")?.value || "1280x720";
+    if (value === "full") {
+        return {};
+    }
+    const [width, height] = value.split("x").map((part) => Number.parseInt(part, 10));
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return {};
+    }
+    return { live_width: String(width), live_height: String(height) };
+}
+
 function updateCalibrationFeed() {
     const img = getElement("utilsCalibrationFeed");
     if (!img || !currentCameraBusId || !calibrationModalOpen) return;
@@ -510,6 +522,7 @@ function updateCalibrationFeed() {
         rows: String(payload.rows),
         square_size: String(payload.square_size),
         auto_detect: String(payload.auto_detect),
+        ...calibrationLiveResolutionParams(),
         t: String(Date.now()),
     });
     img.src = `${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(calibrationCameraId)}/calibration/feed?${params}`;
@@ -818,7 +831,12 @@ export function initCameraConfigUtils() {
     getElement("utilsCalibrationRunBtn")?.addEventListener("click", () => void runCalibration());
     getElement("utilsCalibrationAutoDetectBtn")?.addEventListener("click", () => void autoDetectCalibrationSize());
     window.addEventListener("resize", drawCalibrationHistoryCanvas);
-    ["utilsCalibrationCols", "utilsCalibrationRows", "utilsCalibrationSquareSize"].forEach((id) => {
+    [
+        "utilsCalibrationCols",
+        "utilsCalibrationRows",
+        "utilsCalibrationSquareSize",
+        "utilsCalibrationLiveResolution",
+    ].forEach((id) => {
         getElement(id)?.addEventListener("change", updateCalibrationFeed);
     });
     document.addEventListener("keydown", (event) => {
