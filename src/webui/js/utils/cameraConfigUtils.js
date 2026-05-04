@@ -485,9 +485,10 @@ async function uploadIntrinsicsFile(file) {
 
 function calibrationPayload() {
     return {
-        cols: Number.parseInt(getElement("utilsCalibrationCols")?.value || "9", 10),
-        rows: Number.parseInt(getElement("utilsCalibrationRows")?.value || "6", 10),
-        square_size: Number.parseFloat(getElement("utilsCalibrationSquareSize")?.value || "0.025"),
+        squares_x: Number.parseInt(getElement("utilsCalibrationSquaresX")?.value || "11", 10),
+        squares_y: Number.parseInt(getElement("utilsCalibrationSquaresY")?.value || "8", 10),
+        square_size: Number.parseFloat(getElement("utilsCalibrationSquareSize")?.value || "0.015"),
+        marker_size: Number.parseFloat(getElement("utilsCalibrationMarkerSize")?.value || "0.011"),
     };
 }
 
@@ -517,9 +518,10 @@ function updateCalibrationFeed() {
     const calibrationCameraId = currentCalibrationStreamName || currentCameraBusId;
     const payload = calibrationPayload();
     const params = new URLSearchParams({
-        cols: String(payload.cols),
-        rows: String(payload.rows),
+        squares_x: String(payload.squares_x),
+        squares_y: String(payload.squares_y),
         square_size: String(payload.square_size),
+        marker_size: String(payload.marker_size),
         ...calibrationLiveResolutionParams(),
         t: String(Date.now()),
     });
@@ -645,9 +647,9 @@ async function captureCalibrationFrame() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(calibrationPayload()),
         });
-        if (result?.cols && result?.rows) {
-            getElement("utilsCalibrationCols").value = String(result.cols);
-            getElement("utilsCalibrationRows").value = String(result.rows);
+        if (result?.squares_x && result?.squares_y) {
+            getElement("utilsCalibrationSquaresX").value = String(result.squares_x);
+            getElement("utilsCalibrationSquaresY").value = String(result.squares_y);
         }
         showSuccess("Calibration frame captured");
         await refreshCalibrationFrames(result?.frame_index ?? null);
@@ -806,9 +808,10 @@ export function initCameraConfigUtils() {
     getElement("utilsCalibrationRunBtn")?.addEventListener("click", () => void runCalibration());
     window.addEventListener("resize", drawCalibrationHistoryCanvas);
     [
-        "utilsCalibrationCols",
-        "utilsCalibrationRows",
+        "utilsCalibrationSquaresX",
+        "utilsCalibrationSquaresY",
         "utilsCalibrationSquareSize",
+        "utilsCalibrationMarkerSize",
         "utilsCalibrationLiveResolution",
     ].forEach((id) => {
         getElement(id)?.addEventListener("change", updateCalibrationFeed);
