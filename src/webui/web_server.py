@@ -316,12 +316,17 @@ class EagleEyeInterface(
         self.app.add_url_rule(
             "/background.webp",
             "background",
-            lambda: send_from_directory(str(STATIC_DIR), "background.webp"),
+            lambda: send_from_directory(str(Path(__file__).resolve().parent / "assets"), "background.webp"),
         )
         self.app.add_url_rule(
             "/assets/<path:filename>",
             "webui_assets",
             self.serve_webui_asset,
+        )
+        self.app.add_url_rule(
+            "/.well-known/appspecific/com.chrome.devtools.json",
+            "chrome_devtools_probe",
+            lambda: ("", 204),
         )
         self.app.add_url_rule(
             "/get-available-cameras",
