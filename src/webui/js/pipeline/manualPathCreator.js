@@ -31,6 +31,7 @@ export class ManualPathCreator {
         this.boundHandleMouseDown = this.handleMouseDown.bind(this);
         this.boundHandleMouseUp = this.handleMouseUp.bind(this);
         this.boundHandlePanMove = this.handlePanMove.bind(this);
+        this.boundHandleBackendDisconnected = this.cancel.bind(this);
 
         this.isPanning = false;
         this.panStartX = 0;
@@ -190,6 +191,10 @@ export class ManualPathCreator {
         });
         this.overlay.addEventListener("mousedown", this.boundHandleMouseDown);
         globalThis.addEventListener("keydown", this.boundHandleKeyDown);
+        document.addEventListener(
+            "backend-disconnected",
+            this.boundHandleBackendDisconnected,
+        );
     }
 
     detachEventListeners() {
@@ -210,6 +215,10 @@ export class ManualPathCreator {
             );
         }
         globalThis.removeEventListener("keydown", this.boundHandleKeyDown);
+        document.removeEventListener(
+            "backend-disconnected",
+            this.boundHandleBackendDisconnected,
+        );
         globalThis.removeEventListener("mousemove", this.boundHandlePanMove);
         globalThis.removeEventListener("mouseup", this.boundHandleMouseUp);
     }

@@ -802,6 +802,7 @@ export function initCameraConfigUtils() {
         void deleteIntrinsics();
     });
 
+    document.addEventListener("backend-disconnected", closeCalibrationModal);
     getElement("utilsCalibrationCloseBtn")?.addEventListener("click", closeCalibrationModal);
     getElement("utilsCalibrationCaptureBtn")?.addEventListener("click", () => void captureCalibrationFrame());
     getElement("utilsCalibrationResetBtn")?.addEventListener("click", () => void resetCalibrationFrames());

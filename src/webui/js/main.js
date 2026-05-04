@@ -136,6 +136,7 @@ window.onload = async () => {
     }
 
     const showConnectionLostOverlay = () => {
+        document.dispatchEvent(new CustomEvent("backend-disconnected"));
         const overlay = document.getElementById("connection-lost-overlay");
         if (overlay) {
             overlay.classList.remove("hidden");

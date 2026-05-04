@@ -5,6 +5,26 @@ const DEFAULT_OVERLAY_STYLE =
 const DEFAULT_MODAL_CLASS =
     "bg-[#1a1a1a] rounded-lg shadow-xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]";
 
+const managedModalOverlays = new Set();
+
+function registerManagedModalOverlay(overlay) {
+    if (!overlay) {
+        return;
+    }
+    overlay.dataset.backendModalOverlay = "true";
+    managedModalOverlays.add(overlay);
+}
+
+export function closeAllManagedModals() {
+    for (const overlay of managedModalOverlays) {
+        hideModal(overlay);
+    }
+}
+
+if (typeof document !== "undefined") {
+    document.addEventListener("backend-disconnected", closeAllManagedModals);
+}
+
 export function createElement(tag, attrs = {}, children = []) {
     const el = document.createElement(tag);
     Object.entries(attrs).forEach(([key, value]) => {
@@ -42,6 +62,7 @@ export function getOrCreateModalElements({
         });
         document.body.appendChild(overlay);
     }
+    registerManagedModalOverlay(overlay);
 
     if (!modal) {
         modal = createElement("div", {
@@ -55,6 +76,7 @@ export function getOrCreateModalElements({
 }
 
 export function showModal(overlay) {
+    registerManagedModalOverlay(overlay);
     overlay?.classList.remove("hidden");
 }
 

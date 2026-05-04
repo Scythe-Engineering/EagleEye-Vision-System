@@ -2203,6 +2203,11 @@ export async function initPipelineCreator() {
         "profilingDetailsAverageCheckbox",
     );
 
+    document.addEventListener(
+        "backend-disconnected",
+        closeProfilingDetailsPopup,
+    );
+
     if (profilingDetailsBackdrop) {
         profilingDetailsBackdrop.addEventListener("click", () => {
             closeProfilingDetailsPopup();
