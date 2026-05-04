@@ -3,10 +3,20 @@ import { pipelineStore } from "../PipelineStore.js";
 import { creatorContext } from "./context.js";
 import { getSelectedPipeline } from "./stateHelpers.js";
 
+/**
+ * Manages pipeline operation error state, highlighting, and tooltip UI in the creator.
+ */
+
 const operationErrorsByUuid = new Map();
 const downstreamErrorUuids = new Set();
 let pipelineErrorPopup;
 
+/**
+ * Extracts missing argument names from a Python-style error message.
+ *
+ * @param {string} message - The error message to inspect.
+ * @returns {string[]|null} The parsed argument names, or null if none are found.
+ */
 function extractMissingArgumentNames(message) {
     if (!message) return null;
     const match = message.match(/missing\s+\d+\s+required positional arguments?:\s*(.+)$/i);
@@ -19,6 +29,12 @@ function extractMissingArgumentNames(message) {
     return parts.length > 0 ? parts : null;
 }
 
+/**
+ * Builds the HTML content for the pipeline error popup.
+ *
+ * @param {object} errorRecord - The error record to render.
+ * @returns {string} HTML markup for the popup.
+ */
 function buildPipelineErrorPopupContent(errorRecord) {
     const message = errorRecord?.message || "Unknown error";
     const missingArgs = extractMissingArgumentNames(message);
@@ -41,6 +57,11 @@ function buildPipelineErrorPopupContent(errorRecord) {
     `;
 }
 
+/**
+ * Creates or returns the shared pipeline error popup element.
+ *
+ * @returns {HTMLDivElement} The popup element.
+ */
 function ensurePipelineErrorPopup() {
     if (pipelineErrorPopup) return pipelineErrorPopup;
     pipelineErrorPopup = document.createElement("div");
@@ -58,6 +79,13 @@ function ensurePipelineErrorPopup() {
     return pipelineErrorPopup;
 }
 
+/**
+ * Positions the error popup near the given screen coordinates.
+ *
+ * @param {HTMLElement} popup - The popup element to position.
+ * @param {number} anchorX - The anchor X coordinate.
+ * @param {number} anchorY - The anchor Y coordinate.
+ */
 function positionPipelineErrorPopup(popup, anchorX, anchorY) {
     const margin = 12;
     const offset = 12;
@@ -72,6 +100,12 @@ function positionPipelineErrorPopup(popup, anchorX, anchorY) {
     popup.style.top = `${clampedTop}px`;
 }
 
+/**
+ * Displays the pipeline error popup for the given error record.
+ *
+ * @param {object} errorRecord - The error record to display.
+ * @param {MouseEvent} event - The mouse event providing popup coordinates.
+ */
 function showPipelineErrorPopup(errorRecord, event) {
     const popup = ensurePipelineErrorPopup();
     popup.innerHTML = buildPipelineErrorPopupContent(errorRecord);
@@ -80,12 +114,18 @@ function showPipelineErrorPopup(errorRecord, event) {
     popup.classList.add("opacity-100");
 }
 
+/**
+ * Hides the shared pipeline error popup.
+ */
 function hidePipelineErrorPopup() {
     if (!pipelineErrorPopup) return;
     pipelineErrorPopup.classList.remove("opacity-100");
     pipelineErrorPopup.classList.add("opacity-0");
 }
 
+/**
+ * Computes the set of downstream operation UUIDs affected by current errors.
+ */
 function computeDownstreamErrorUuids() {
     downstreamErrorUuids.clear();
     const errorUuids = new Set(operationErrorsByUuid.keys());
@@ -110,6 +150,12 @@ function computeDownstreamErrorUuids() {
     }
 }
 
+/**
+ * Updates the node error icon visibility and tooltip bindings.
+ *
+ * @param {object} node - The flowchart node to update.
+ * @param {object|null} errorRecord - The error record for the node.
+ */
 function applyFlowchartNodeErrorIcon(node, errorRecord) {
     const element = node.element;
     if (!element) return;
@@ -142,6 +188,13 @@ function applyFlowchartNodeErrorIcon(node, errorRecord) {
     }
 }
 
+/**
+ * Applies error styling directly to a node when custom node APIs are unavailable.
+ *
+ * @param {object} node - The flowchart node to update.
+ * @param {object|null} errorRecord - The error record for the node.
+ * @param {boolean} isDownstream - Whether the node is downstream of an error.
+ */
 function applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream) {
     const element = node.element;
     if (!element) return;
@@ -195,6 +248,9 @@ function applyFlowchartNodeErrorFallback(node, errorRecord, isDownstream) {
     }
 }
 
+/**
+ * Applies error and downstream highlighting across all flowchart nodes.
+ */
 function applyPipelineErrorHighlights() {
     computeDownstreamErrorUuids();
     const flowchartRenderer = creatorContext.flowchartRenderer;
@@ -212,6 +268,11 @@ function applyPipelineErrorHighlights() {
     }
 }
 
+/**
+ * Handles incoming operation error updates and refreshes pipeline highlighting.
+ *
+ * @param {object} payload - The error update payload.
+ */
 function handleOperationErrorUpdate(payload) {
     if (!payload) return;
     const selectedPipeline = getSelectedPipeline();

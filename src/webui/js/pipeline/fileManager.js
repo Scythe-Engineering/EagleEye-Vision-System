@@ -1,3 +1,4 @@
+// File manager popup for listing, uploading, selecting, and deleting operation files.
 import { BACKEND_BASE_URL } from "../config.js";
 import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
@@ -9,6 +10,10 @@ import {
     showModal,
 } from "../ui/modal.js";
 
+/**
+ * Registers and returns the singleton file manager popup instance.
+ * @returns {{init: Function, open: Function, close: Function}}
+ */
 export function registerFileManagerPopup() {
     if (globalThis.FileManagerPopup) {
         return globalThis.FileManagerPopup;
@@ -17,6 +22,10 @@ export function registerFileManagerPopup() {
     const OVERLAY_ID = "fileManagerOverlay";
     const MODAL_ID = "fileManagerModal";
 
+    /**
+     * Gets or creates the overlay and modal elements used by the popup.
+     * @returns {{overlay: HTMLElement, modal: HTMLElement}}
+     */
     function findOverlayElements() {
         return getOrCreateModalElements({
             overlayId: OVERLAY_ID,
@@ -35,6 +44,10 @@ export function registerFileManagerPopup() {
     let onFileSelectedCallback = null;
     let filesList = [];
 
+    /**
+     * Loads the files for the current operation and parameter.
+     * @returns {Promise<void>}
+     */
     async function fetchFiles() {
         if (!currentOperationName || !currentParameterName) return;
 
@@ -60,6 +73,11 @@ export function registerFileManagerPopup() {
         }
     }
 
+    /**
+     * Formats a byte count into a human-readable file size.
+     * @param {number} bytes
+     * @returns {string}
+     */
     function formatFileSize(bytes) {
         if (bytes === 0) return "0 B";
         const k = 1024;
@@ -70,12 +88,20 @@ export function registerFileManagerPopup() {
         );
     }
 
+    /**
+     * Formats a Unix timestamp into a locale string.
+     * @param {number} timestamp
+     * @returns {string}
+     */
     function formatDate(timestamp) {
         if (!timestamp) return "Unknown";
         const date = new Date(timestamp * 1000);
         return date.toLocaleString();
     }
 
+    /**
+     * Renders the current file list into the modal.
+     */
     function renderFileList() {
         const fileListContainer = document.getElementById(
             "fileManagerFileList",
@@ -160,6 +186,11 @@ export function registerFileManagerPopup() {
         });
     }
 
+    /**
+     * Deletes the specified file for the current operation and parameter.
+     * @param {string} filename
+     * @returns {Promise<void>}
+     */
     async function deleteFile(filename) {
         if (!currentOperationName || !currentParameterName) return;
 
@@ -189,6 +220,11 @@ export function registerFileManagerPopup() {
         }
     }
 
+    /**
+     * Uploads a file for the current operation and parameter.
+     * @param {File} file
+     * @returns {Promise<void>}
+     */
     async function uploadFile(file) {
         if (!currentOperationName || !currentParameterName) return;
 
@@ -225,6 +261,9 @@ export function registerFileManagerPopup() {
         }
     }
 
+    /**
+     * Renders the popup contents.
+     */
     function render() {
         const { overlay, modal } = findOverlayElements();
 
@@ -323,12 +362,22 @@ export function registerFileManagerPopup() {
         modal.appendChild(footer);
     }
 
+    /**
+     * Initializes backdrop and escape handling for the popup.
+     */
     function init() {
         const { overlay } = findOverlayElements();
         closeOnBackdropClick(overlay, close);
         closeOnEscape(overlay, close);
     }
 
+    /**
+     * Opens the popup for a specific operation parameter.
+     * @param {string} operationName
+     * @param {string} parameterName
+     * @param {*} currentValueParam
+     * @param {Function} onFileSelected
+     */
     function open(
         operationName,
         parameterName,
@@ -347,6 +396,9 @@ export function registerFileManagerPopup() {
         showModal(overlay);
     }
 
+    /**
+     * Closes the popup and clears its state.
+     */
     function close() {
         const { overlay } = findOverlayElements();
         hideModal(overlay);

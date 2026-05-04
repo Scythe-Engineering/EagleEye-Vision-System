@@ -1,4 +1,8 @@
 import { BACKEND_BASE_URL } from "../config.js";
+
+/**
+ * Manages the test video modal UI, uploads, deletions, and backend restart prompts.
+ */
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -21,6 +25,9 @@ let videos = [];
 let restartRequired = false;
 let initialized = false;
 
+/**
+ * Gets or creates the modal overlay and dialog elements for the test video manager.
+ */
 function getOverlayElements() {
     return getOrCreateModalElements({
         overlayId: OVERLAY_ID,
@@ -30,6 +37,9 @@ function getOverlayElements() {
     });
 }
 
+/**
+ * Formats a byte count into a human-readable file size string.
+ */
 function formatFileSize(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) {
         return "0 B";
@@ -43,6 +53,9 @@ function formatFileSize(bytes) {
     return `${Math.round((bytes / Math.pow(unitSize, unitIndex)) * 100) / 100} ${units[unitIndex]}`;
 }
 
+/**
+ * Formats a Unix timestamp into a localized date string.
+ */
 function formatDate(timestamp) {
     if (!Number.isFinite(timestamp)) {
         return "Unknown";
@@ -50,6 +63,9 @@ function formatDate(timestamp) {
     return new Date(timestamp * 1000).toLocaleString();
 }
 
+/**
+ * Fetches JSON from the backend and throws a normalized error on failure.
+ */
 async function fetchJson(path, options = {}) {
     const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
     let payload = {};
@@ -69,6 +85,9 @@ async function fetchJson(path, options = {}) {
     return payload;
 }
 
+/**
+ * Marks the UI and backend as requiring a restart.
+ */
 async function markRestartRequired() {
     restartRequired = true;
     render();
@@ -87,6 +106,9 @@ async function markRestartRequired() {
     }
 }
 
+/**
+ * Requests a backend restart and reloads the page shortly after.
+ */
 async function restartBackend(button = null) {
     if (button) {
         button.disabled = true;
@@ -106,6 +128,9 @@ async function restartBackend(button = null) {
     }
 }
 
+/**
+ * Loads the current test video list from the backend.
+ */
 async function loadVideos() {
     try {
         const payload = await fetchJson("/test-videos");
@@ -117,6 +142,9 @@ async function loadVideos() {
     }
 }
 
+/**
+ * Uploads a test video, optionally overwriting an existing file.
+ */
 async function uploadVideo(file, overwrite = false) {
     const formData = new FormData();
     formData.append("file", file);
@@ -151,6 +179,9 @@ async function uploadVideo(file, overwrite = false) {
     }
 }
 
+/**
+ * Deletes a test video, optionally forcing removal when referenced.
+ */
 async function deleteVideo(filename, force = false) {
     const forceQuery = force ? "?force=true" : "";
 
@@ -186,6 +217,9 @@ async function deleteVideo(filename, force = false) {
     }
 }
 
+/**
+ * Renders the test video list into the provided container.
+ */
 function renderVideoRows(container) {
     container.innerHTML = "";
 
@@ -258,6 +292,9 @@ function renderVideoRows(container) {
     });
 }
 
+/**
+ * Renders the test video manager modal contents.
+ */
 function render() {
     const { modal } = getOverlayElements();
     modal.innerHTML = "";
@@ -363,6 +400,9 @@ function render() {
     renderVideoRows(listContainer);
 }
 
+/**
+ * Opens the test video manager modal and loads the latest videos.
+ */
 function open() {
     const { overlay } = getOverlayElements();
     render();
@@ -370,11 +410,17 @@ function open() {
     loadVideos();
 }
 
+/**
+ * Closes the test video manager modal.
+ */
 function close() {
     const { overlay } = getOverlayElements();
     hideModal(overlay);
 }
 
+/**
+ * Initializes event wiring and global access for the test video manager.
+ */
 export function initializeTestVideoManager() {
     if (initialized) {
         return;

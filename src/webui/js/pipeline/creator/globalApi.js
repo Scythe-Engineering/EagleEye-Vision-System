@@ -1,3 +1,11 @@
+// Exposes the pipeline creator API on globalThis for legacy UI consumers.
+
+/**
+ * Registers the pipeline creator globals on `globalThis.pipelineCreator`.
+ *
+ * @param {Object} dependencies - Pipeline creator functions and state accessors.
+ * @returns {void}
+ */
 export function registerPipelineCreatorGlobalApi({
     autoSavePipeline,
     updateRestartIndicator,

@@ -1,9 +1,15 @@
 /**
- * Utility functions for the pipeline creator
+ * Shared utility helpers used by the pipeline UI.
  */
 
 // --- Helpers
 
+/**
+ * Escapes HTML special characters in a string.
+ *
+ * @param {any} s - The value to escape.
+ * @returns {string} The escaped string.
+ */
 export function escapeHtml(s) {
     return String(s).replace(
         /[&<>"']/g,
@@ -18,6 +24,12 @@ export function escapeHtml(s) {
     );
 }
 
+/**
+ * Generates a short unique identifier string.
+ *
+ * @param {string} [prefix=""] - Optional prefix for the identifier.
+ * @returns {string} The generated identifier.
+ */
 export function uid(prefix = "") {
     return `${prefix}${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
 }

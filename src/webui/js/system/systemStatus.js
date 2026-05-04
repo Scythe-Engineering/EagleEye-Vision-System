@@ -1,5 +1,14 @@
+/**
+ * System status UI helpers for formatting and rendering health metrics.
+ */
 const DEFAULT_TEXT = "N/A";
 
+/**
+ * Format a numeric value as a percentage string.
+ *
+ * @param {number} value - Percentage value.
+ * @returns {string}
+ */
 function formatPercent(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         return DEFAULT_TEXT;
@@ -7,6 +16,13 @@ function formatPercent(value) {
     return `${value.toFixed(1)}%`;
 }
 
+/**
+ * Format a numeric value with a unit suffix.
+ *
+ * @param {number} value - Numeric value.
+ * @param {string} unit - Unit label.
+ * @returns {string}
+ */
 function formatNumber(value, unit) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         return DEFAULT_TEXT;
@@ -14,6 +30,12 @@ function formatNumber(value, unit) {
     return `${value.toFixed(1)} ${unit}`;
 }
 
+/**
+ * Format a numeric value as a whole number string.
+ *
+ * @param {number} value - Numeric value.
+ * @returns {string}
+ */
 function formatInteger(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         return DEFAULT_TEXT;
@@ -21,6 +43,12 @@ function formatInteger(value) {
     return `${Math.round(value)}`;
 }
 
+/**
+ * Format a numeric temperature value in Celsius.
+ *
+ * @param {number} value - Temperature in Celsius.
+ * @returns {string}
+ */
 function formatTemperature(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         return DEFAULT_TEXT;
@@ -28,6 +56,12 @@ function formatTemperature(value) {
     return `${value.toFixed(1)} °C`;
 }
 
+/**
+ * Resolve a status value to display text.
+ *
+ * @param {string} status - Status text.
+ * @returns {string}
+ */
 function resolveStatusText(status) {
     if (typeof status === "string" && status.trim().length > 0) {
         return status;
@@ -35,6 +69,12 @@ function resolveStatusText(status) {
     return DEFAULT_TEXT;
 }
 
+/**
+ * Clamp a numeric percentage for dial rendering.
+ *
+ * @param {number} value - Percentage value.
+ * @returns {number|null}
+ */
 function toDialPercent(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
         return null;
@@ -42,6 +82,14 @@ function toDialPercent(value) {
     return Math.min(100, Math.max(0, value));
 }
 
+/**
+ * Update a dial SVG element and its label.
+ *
+ * @param {Element|null} dial - Dial element.
+ * @param {Element|null} label - Label element.
+ * @param {number|null} percent - Percent value to render.
+ * @returns {void}
+ */
 function setDial(dial, label, percent) {
     if (!dial || !label) {
         return;
@@ -55,6 +103,12 @@ function setDial(dial, label, percent) {
     label.textContent = `${percent.toFixed(0)}%`;
 }
 
+/**
+ * Normalize pipeline data for rendering.
+ *
+ * @param {Array} pipelines - Raw pipeline list.
+ * @returns {Array<{name: string, active: boolean}>}
+ */
 function normalizePipelineList(pipelines) {
     if (!Array.isArray(pipelines)) {
         return [];
@@ -67,6 +121,13 @@ function normalizePipelineList(pipelines) {
         }));
 }
 
+/**
+ * Render the pipeline list into the provided container.
+ *
+ * @param {Element|null} container - Target container.
+ * @param {Array<{name: string, active: boolean}>} pipelines - Pipelines to render.
+ * @returns {void}
+ */
 function renderPipelines(container, pipelines) {
     if (!container) {
         return;
@@ -119,6 +180,11 @@ function renderPipelines(container, pipelines) {
     container.appendChild(fragment);
 }
 
+/**
+ * Create the system status module instance.
+ *
+ * @returns {{render: function(Object): void}}
+ */
 export function createSystemStatusModule() {
     const cpuPercent = document.getElementById("systemCpuPercent");
     const cpuDetail = document.getElementById("systemCpuDetail");
@@ -137,6 +203,12 @@ export function createSystemStatusModule() {
     const pipelineCount = document.getElementById("systemPipelineCount");
 
     return {
+/**
+         * Render system status data into the module UI.
+         *
+         * @param {Object} data - System status payload.
+         * @returns {void}
+         */
         render(data) {
             if (!data || typeof data !== "object") {
                 return;

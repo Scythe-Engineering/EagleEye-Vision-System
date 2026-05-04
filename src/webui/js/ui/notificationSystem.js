@@ -1,3 +1,4 @@
+// Manages toast notification creation, stacking, dismissal, and visibility in the web UI.
 const activeNotifications = [];
 const MAX_VISIBLE_NOTIFICATIONS = 4;
 const STACK_OFFSET = 8;
@@ -10,6 +11,11 @@ const NOTIFICATION_AUTO_DISMISS_MS = {
 /** @type {Map<string, ReturnType<typeof setTimeout>>} */
 const notificationDismissTimeouts = new Map();
 
+/**
+ * Clears the auto-dismiss timeout for a notification, if one exists.
+ *
+ * @param {string} notificationId - The notification element ID.
+ */
 function clearNotificationDismissTimeout(notificationId) {
     const timeoutId = notificationDismissTimeouts.get(notificationId);
     if (timeoutId !== undefined) {
@@ -18,14 +24,27 @@ function clearNotificationDismissTimeout(notificationId) {
     }
 }
 
+/**
+ * Gets the DOM element that contains all notifications.
+ *
+ * @returns {HTMLElement | null} The notification container element, or null if missing.
+ */
 function getNotificationContainer() {
     return document.getElementById("notification-container");
 }
 
+/**
+ * Gets the "Clear All" button element.
+ *
+ * @returns {HTMLElement | null} The clear-all button element, or null if missing.
+ */
 function getClearAllButton() {
     return document.getElementById("clearAllNotificationsBtn");
 }
 
+/**
+ * Updates the visibility of the "Clear All" button based on active notifications.
+ */
 function updateClearAllButtonVisibility() {
     const clearAllButton = getClearAllButton();
     if (clearAllButton) {
@@ -37,6 +56,9 @@ function updateClearAllButtonVisibility() {
     }
 }
 
+/**
+ * Recomputes notification stack positions, transforms, opacity, and z-index.
+ */
 function updateNotificationPositions() {
     const notificationContainer = getNotificationContainer();
     if (!notificationContainer) return;
@@ -83,6 +105,11 @@ function updateNotificationPositions() {
     }
 }
 
+/**
+ * Removes a notification from the stack and cleans up its DOM element.
+ *
+ * @param {string} notificationId - The notification element ID.
+ */
 function removeNotification(notificationId) {
     clearNotificationDismissTimeout(notificationId);
     const index = activeNotifications.indexOf(notificationId);
@@ -107,6 +134,13 @@ function removeNotification(notificationId) {
     updateClearAllButtonVisibility();
 }
 
+/**
+ * Creates a DOM element for a notification toast.
+ *
+ * @param {"success" | "warning" | "danger"} type - Notification type.
+ * @param {string} message - Notification message content.
+ * @returns {HTMLDivElement | null} The created notification element, or null if type is invalid.
+ */
 function createNotificationElement(type, message) {
     const notificationId = `toast-${type}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     
@@ -203,6 +237,12 @@ function createNotificationElement(type, message) {
     return notificationDiv;
 }
 
+/**
+ * Shows a notification toast of the given type.
+ *
+ * @param {"success" | "warning" | "danger"} type - Notification type.
+ * @param {string} message - Notification message content.
+ */
 function showNotification(type, message) {
     const notificationContainer = getNotificationContainer();
     if (!notificationContainer) {
@@ -239,18 +279,36 @@ function showNotification(type, message) {
     updateClearAllButtonVisibility();
 }
 
+/**
+ * Shows a success notification.
+ *
+ * @param {string} message - Notification message content.
+ */
 export function showSuccess(message) {
     showNotification("success", message);
 }
 
+/**
+ * Shows a warning notification.
+ *
+ * @param {string} message - Notification message content.
+ */
 export function showWarning(message) {
     showNotification("warning", message);
 }
 
+/**
+ * Shows a danger/error notification.
+ *
+ * @param {string} message - Notification message content.
+ */
 export function showDanger(message) {
     showNotification("danger", message);
 }
 
+/**
+ * Clears all active notifications with a staggered removal animation.
+ */
 export function clearAll() {
     const notificationsToRemove = [...activeNotifications];
     // Remove from oldest to newest visually, or newest to oldest

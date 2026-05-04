@@ -1,8 +1,16 @@
+/**
+ * Controller for opening and saving operation settings popups.
+ */
 export function createOperationSettingsController({
     pipelineStore,
     updatePipelineCameraNote,
     autoSavePipeline,
 }) {
+    /**
+     * Opens the settings UI for the provided operation or pipeline item.
+     *
+     * @param {object} opOrItem - Operation or item to edit.
+     */
     return function openOperationSettings(opOrItem) {
         const latestNode =
             pipelineStore.getNode(opOrItem.instanceId) ||
@@ -21,6 +29,11 @@ export function createOperationSettingsController({
             settingsItem.originalConfig = { ...initialValues };
         }
 
+        /**
+         * Persists updated settings from the popup.
+         *
+         * @param {object} values - Settings values submitted by the popup.
+         */
         const onSave = (values) => {
             console.log("Saved settings for", settingsItem, values);
             const isAutoSaveFlag = values._isAutoSave;
@@ -71,6 +84,9 @@ export function createOperationSettingsController({
             });
         };
 
+        /**
+         * Opens the settings popup with the current operation data.
+         */
         const doOpen = () => {
             try {
                 globalThis.SettingsPopup.open({

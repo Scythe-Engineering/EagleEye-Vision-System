@@ -1,8 +1,14 @@
 /**
- * FlowchartMinimap - Navigation minimap component for flowchart canvas
+ * Flowchart minimap component responsible for rendering navigation, viewport, and node overview for the flowchart canvas.
  */
 
 export class FlowchartMinimap {
+    /**
+     * Creates a new FlowchartMinimap instance.
+     *
+     * @param {object} canvas - Canvas/controller providing viewport and sizing APIs.
+     * @param {object} [options={}] - Configuration options for sizing and colors.
+     */
     constructor(canvas, options = {}) {
         this.canvas = canvas;
         this.width = options.width || 180;
@@ -37,6 +43,9 @@ export class FlowchartMinimap {
         this.init();
     }
 
+    /**
+     * Builds the DOM structure and initializes event handlers.
+     */
     init() {
         this.element = document.createElement("div");
         this.element.id = "flowchartMinimap";
@@ -163,6 +172,9 @@ export class FlowchartMinimap {
         this.updateMinimapRect();
     }
 
+    /**
+     * Updates the cached minimap bounds from the canvas element.
+     */
     updateMinimapRect() {
         const rect = this.canvasElement.getBoundingClientRect();
         this.minimapRect = {
@@ -173,6 +185,9 @@ export class FlowchartMinimap {
         };
     }
 
+    /**
+     * Synchronizes the canvas backing store with its displayed size and device pixel ratio.
+     */
     syncCanvasResolution() {
         const canvasElement = this.canvasElement;
         const devicePixelRatio = window.devicePixelRatio || 1;
@@ -189,6 +204,9 @@ export class FlowchartMinimap {
         this.viewHeight = cssHeight;
     }
 
+    /**
+     * Registers resize and pointer event listeners for the minimap controls.
+     */
     setupEventListeners() {
         const resizeObserver = new ResizeObserver(() => {
             this.syncCanvasResolution();
@@ -226,6 +244,11 @@ export class FlowchartMinimap {
         });
     }
 
+    /**
+     * Handles minimap mouse press and initiates drag navigation.
+     *
+     * @param {MouseEvent} event - Mouse press event.
+     */
     handleMouseDown(event) {
         this.isDragging = true;
         this.navigateToPosition(event);
@@ -233,16 +256,29 @@ export class FlowchartMinimap {
         event.stopPropagation();
     }
 
+    /**
+     * Handles minimap drag movement.
+     *
+     * @param {MouseEvent} event - Mouse move event.
+     */
     handleMouseMove(event) {
         if (!this.isDragging) return;
         this.navigateToPosition(event);
         event.preventDefault();
     }
 
+    /**
+     * Ends minimap dragging.
+     */
     handleMouseUp() {
         this.isDragging = false;
     }
 
+    /**
+     * Maps a minimap pointer position to the canvas viewport and recenters the main view.
+     *
+     * @param {MouseEvent} event - Mouse event containing the minimap coordinates.
+     */
     navigateToPosition(event) {
         const rect = this.minimapRect;
         const clickX = event.clientX - rect.left;
@@ -269,6 +305,11 @@ export class FlowchartMinimap {
         });
     }
 
+    /**
+     * Computes the transform used to map world coordinates into minimap coordinates.
+     *
+     * @returns {{scale: number, offsetX: number, offsetY: number}} The computed transform.
+     */
     calculateTransform() {
         const viewWidth = this.viewWidth;
         const viewHeight = this.viewHeight;
@@ -287,6 +328,11 @@ export class FlowchartMinimap {
         return { scale, offsetX, offsetY };
     }
 
+    /**
+     * Replaces the displayed node data and refreshes world bounds.
+     *
+     * @param {Array<object>} nodeDataList - List of node model objects.
+     */
     updateNodes(nodeDataList) {
         this.nodes = nodeDataList.map((node) => ({
             id: node.instanceId,
@@ -300,11 +346,19 @@ export class FlowchartMinimap {
         this.render();
     }
 
+    /**
+     * Replaces the displayed connection data and refreshes the minimap.
+     *
+     * @param {Array<object>} connectionsData - List of connection model objects.
+     */
     updateConnections(connectionsData) {
         this.connections = connectionsData;
         this.render();
     }
 
+    /**
+     * Calculates world bounds that contain all nodes with padding.
+     */
     calculateWorldBounds() {
         if (this.nodes.length === 0) {
             this.worldBounds = { minX: -500, minY: -400, maxX: 500, maxY: 400 };
@@ -342,6 +396,9 @@ export class FlowchartMinimap {
         };
     }
 
+    /**
+     * Clears and redraws the minimap contents and viewport overlay.
+     */
     render() {
         const vw = this.viewWidth;
         const vh = this.viewHeight;
@@ -356,6 +413,9 @@ export class FlowchartMinimap {
         this.updateViewportRect();
     }
 
+    /**
+     * Renders the minimap background grid.
+     */
     renderGrid() {
         const { scale, offsetX, offsetY } = this.calculateTransform();
         const gridSpacing = 100;
@@ -390,6 +450,9 @@ export class FlowchartMinimap {
         }
     }
 
+    /**
+     * Renders node rectangles onto the minimap.
+     */
     renderNodes() {
         const { scale, offsetX, offsetY } = this.calculateTransform();
 
@@ -414,6 +477,9 @@ export class FlowchartMinimap {
         this.ctx.shadowBlur = 0;
     }
 
+    /**
+     * Renders connection lines between nodes onto the minimap.
+     */
     renderConnections() {
         const { scale, offsetX, offsetY } = this.calculateTransform();
 
@@ -455,6 +521,9 @@ export class FlowchartMinimap {
         });
     }
 
+    /**
+     * Updates the visible viewport rectangle to match the main canvas view.
+     */
     updateViewportRect() {
         const viewportState = this.canvas.getViewportState();
         const containerRect = this.canvas.containerRect;
@@ -489,10 +558,20 @@ export class FlowchartMinimap {
         this.viewportRect.style.height = `${Math.min(vh - sizePadding - clampedRectY, rectHeight)}px`;
     }
 
+    /**
+     * Responds to external viewport changes by refreshing the viewport overlay.
+     *
+     * @param {object} viewportState - Current viewport state.
+     */
     onViewportChange(viewportState) {
         this.updateViewportRect();
     }
 
+    /**
+     * Attaches the minimap to a DOM container.
+     *
+     * @param {HTMLElement} container - Container element to append into.
+     */
     attachTo(container) {
         container.appendChild(this.element);
         container.appendChild(this.showButton);
@@ -501,6 +580,9 @@ export class FlowchartMinimap {
         this.render();
     }
 
+    /**
+     * Makes the minimap visible.
+     */
     show() {
         this.isVisible = true;
         this.contentContainer.style.display = "block";
@@ -515,6 +597,9 @@ export class FlowchartMinimap {
         }, 300);
     }
 
+    /**
+     * Hides the minimap and reveals the compact show button.
+     */
     hide() {
         this.isVisible = false;
         this.element.style.opacity = "0";
@@ -532,6 +617,9 @@ export class FlowchartMinimap {
         }, 300);
     }
 
+    /**
+     * Toggles the minimap visibility state.
+     */
     toggle() {
         if (this.isVisible) {
             this.hide();
@@ -540,6 +628,12 @@ export class FlowchartMinimap {
         }
     }
 
+    /**
+     * Updates the minimap dimensions and redraws it.
+     *
+     * @param {number} width - New minimap width.
+     * @param {number} height - New minimap height.
+     */
     setSize(width, height) {
         this.width = width;
         this.height = height;
@@ -549,6 +643,9 @@ export class FlowchartMinimap {
         this.render();
     }
 
+    /**
+     * Removes the minimap DOM elements from the document.
+     */
     destroy() {
         this.element?.remove();
         this.showButton?.remove();

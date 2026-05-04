@@ -1,3 +1,4 @@
+// Profiling controller: manages profiling snapshot rendering, overlays, and UI state.
 import { escapeHtml } from "../utils.js";
 import { pipelineStore } from "../PipelineStore.js";
 import { creatorContext } from "./context.js";
@@ -37,6 +38,9 @@ let pendingProfilingDetailsSnapshot = undefined;
  * } | null}
  */
 
+/**
+ * Hides all profiling badges currently shown on flowchart nodes.
+ */
 function hideAllProfilingBadges() {
     const flowchartRenderer = creatorContext.flowchartRenderer;
     if (!flowchartRenderer) {
@@ -47,6 +51,12 @@ function hideAllProfilingBadges() {
     }
 }
 
+/**
+ * Returns the color assigned to a profiling thread number.
+ *
+ * @param {number|string} threadNumber
+ * @returns {string}
+ */
 function getProfilingThreadColor(threadNumber) {
     const threadColors = [
         "#ff6b6b",
@@ -67,6 +77,13 @@ function getProfilingThreadColor(threadNumber) {
     return threadColors[(normalizedThread - 1) % threadColors.length];
 }
 
+/**
+ * Collects all operations for a timestep and summarizes thread participation and total time.
+ *
+ * @param {Object<string, Object>} operationsByUuid
+ * @param {number} timestep
+ * @returns {{threadsSorted: number[], sumMs: number}}
+ */
 function analyzeTimestepOperations(operationsByUuid, timestep) {
     const presentThreads = new Set();
     let sumMs = 0;
@@ -88,6 +105,14 @@ function analyzeTimestepOperations(operationsByUuid, timestep) {
     return { threadsSorted, sumMs };
 }
 
+/**
+ * Builds the SVG badge used to visualize timestep thread participation.
+ *
+ * @param {number[]} threadsSorted
+ * @param {number} timestep
+ * @param {number} size
+ * @returns {string}
+ */
 function buildTimestepThreadBadgeSvg(threadsSorted, timestep, size) {
     const dim = Number.isFinite(size) && size > 8 ? size : 22;
     const cx = dim / 2;
@@ -135,6 +160,11 @@ function buildTimestepThreadBadgeSvg(threadsSorted, timestep, size) {
     return `${svgOpen}<g><title>${tipAll}</title>${paths.join("")}</g>${mask}${textEl}</svg>`;
 }
 
+/**
+ * Renders the timestep breakdown panel in the profiling sidebar.
+ *
+ * @param {Object|null} snapshot
+ */
 function renderExecutionTimestepsPanel(snapshot) {
     if (!creatorContext.elements.executionTimestepsList) return;
     const executionTimestepsList = creatorContext.elements.executionTimestepsList;
@@ -166,6 +196,11 @@ function renderExecutionTimestepsPanel(snapshot) {
         .join("");
 }
 
+/**
+ * Renders the compact execution summary block.
+ *
+ * @param {Object|null} snapshot
+ */
 function renderExecutionSummary(snapshot) {
     if (!creatorContext.elements.executionSummaryContent) return;
     const executionSummaryContent = creatorContext.elements.executionSummaryContent;
@@ -179,6 +214,12 @@ function renderExecutionSummary(snapshot) {
         <div class="text-[#9ad1a8]">FPS: ${estimatedFps.toFixed(1)}</div>`;
 }
 
+/**
+ * Returns a colored swatch HTML snippet for a thread label.
+ *
+ * @param {number|string} thread
+ * @returns {string}
+ */
 function profilingThreadSwatchHtml(thread) {
     const t = Number(thread);
     const color = getProfilingThreadColor(t);
@@ -186,10 +227,18 @@ function profilingThreadSwatchHtml(thread) {
     return `<span class="inline-flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-white/10" style="background-color:${color}"></span><span class="text-[#ddd]">${label}</span></span>`;
 }
 
+/**
+ * Clears the cumulative average accumulator.
+ */
 function clearProfilingAverageState() {
     profilingAverageAccumulator = null;
 }
 
+/**
+ * Ensures the cumulative average accumulator matches the current pipeline.
+ *
+ * @param {string} pipelineName
+ */
 function ensureProfilingAverageAccumulator(pipelineName) {
     if (
         !profilingAverageAccumulator ||
@@ -205,6 +254,12 @@ function ensureProfilingAverageAccumulator(pipelineName) {
     }
 }
 
+/**
+ * Merges a profiling snapshot into the cumulative average accumulator.
+ *
+ * @param {Object} snapshot
+ * @param {string} pipelineName
+ */
 function mergeProfilingSnapshotIntoAverage(snapshot, pipelineName) {
     ensureProfilingAverageAccumulator(pipelineName);
     const a = profilingAverageAccumulator;
@@ -256,6 +311,12 @@ function mergeProfilingSnapshotIntoAverage(snapshot, pipelineName) {
     a.snapshotCount += 1;
 }
 
+/**
+ * Builds a snapshot that represents the current cumulative average view.
+ *
+ * @param {Object} latest
+ * @returns {Object}
+ */
 function buildProfilingAverageDisplaySnapshot(latest) {
     const a = profilingAverageAccumulator;
     if (!a || a.snapshotCount <= 0) return latest;
@@ -293,6 +354,14 @@ function buildProfilingAverageDisplaySnapshot(latest) {
     };
 }
 
+/**
+ * Builds the HTML content for the profiling details popup.
+ *
+ * @param {Object|null} snapshot
+ * @param {string} pipelineName
+ * @param {{cumulativeAverage?: boolean, mergeCount?: number}} [hint={}]
+ * @returns {string}
+ */
 function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
     if (!snapshot) {
         return `<p class="text-[#888] text-sm leading-relaxed">No profiling snapshot is stored yet for <span class="text-[#f9c845]">${escapeHtml(pipelineName)}</span>. Run the pipeline and wait for updates over SSE.</p>`;
@@ -398,11 +467,17 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
             }
             parts.push(`</tbody></table></div>`);
         }
+
     }
 
     return parts.join("");
 }
 
+/**
+ * Refreshes the profiling details popup if it is currently visible.
+ *
+ * @param {Object|null|undefined} snapshot
+ */
 function refreshProfilingDetailsPopupIfVisible(snapshot) {
     if (!creatorContext.elements.profilingDetailsOverlay || creatorContext.elements.profilingDetailsOverlay.classList.contains("hidden")) {
         return;
@@ -431,6 +506,11 @@ function refreshProfilingDetailsPopupIfVisible(snapshot) {
     creatorContext.elements.profilingDetailsTitle.textContent = selected?.name ? `Profiling — ${selected.name}` : "Profiling details";
 }
 
+/**
+ * Schedules a throttled refresh of the profiling details popup.
+ *
+ * @param {Object|null} snapshot
+ */
 function scheduleProfilingDetailsRefresh(snapshot) {
     pendingProfilingDetailsSnapshot = snapshot;
     if (!creatorContext.elements.profilingDetailsOverlay || creatorContext.elements.profilingDetailsOverlay.classList.contains("hidden")) {
@@ -445,6 +525,11 @@ function scheduleProfilingDetailsRefresh(snapshot) {
     }, PROFILING_DETAILS_REFRESH_MS);
 }
 
+/**
+ * Handles keydown events for the profiling details popup.
+ *
+ * @param {KeyboardEvent} event
+ */
 function profilingDetailsOnKeydown(event) {
     if (event.key === "Escape") {
         event.preventDefault();
@@ -452,6 +537,9 @@ function profilingDetailsOnKeydown(event) {
     }
 }
 
+/**
+ * Closes the profiling details popup.
+ */
 function closeProfilingDetailsPopup() {
     if (!creatorContext.elements.profilingDetailsOverlay || creatorContext.elements.profilingDetailsOverlay.classList.contains("hidden")) {
         return;
@@ -462,6 +550,9 @@ function closeProfilingDetailsPopup() {
     document.removeEventListener("keydown", profilingDetailsOnKeydown, true);
 }
 
+/**
+ * Opens the profiling details popup for the selected pipeline.
+ */
 function openProfilingDetailsPopup() {
     const selected = getSelectedPipeline();
     if (!selected?.name) {
@@ -477,6 +568,9 @@ function openProfilingDetailsPopup() {
     refreshProfilingDetailsPopupIfVisible(undefined);
 }
 
+/**
+ * Clears all profiling UI regions.
+ */
 function clearProfilingUI() {
     hideAllProfilingBadges();
     renderExecutionTimestepsPanel(null);
@@ -484,6 +578,11 @@ function clearProfilingUI() {
     refreshProfilingDetailsPopupIfVisible(null);
 }
 
+/**
+ * Applies a profiling snapshot to the current UI.
+ *
+ * @param {Object|null} snapshot
+ */
 function applyProfilingSnapshot(snapshot) {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline || !snapshot) {
@@ -511,6 +610,11 @@ function applyProfilingSnapshot(snapshot) {
     scheduleProfilingDetailsRefresh(snapshot);
 }
 
+/**
+ * Queues an animation-frame update for applying a profiling snapshot.
+ *
+ * @param {Object|null} snapshot
+ */
 function scheduleProfilingUiApply(snapshot) {
     pendingProfilingSnapshot = snapshot;
     if (profilingUiFrameId) return;
@@ -522,6 +626,9 @@ function scheduleProfilingUiApply(snapshot) {
     });
 }
 
+/**
+ * Applies the current selected pipeline's stored profiling snapshot, if any.
+ */
 function applySelectedPipelineProfiling() {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
@@ -536,6 +643,11 @@ function applySelectedPipelineProfiling() {
     applyProfilingSnapshot(snapshot);
 }
 
+/**
+ * Stores an incoming profiling update payload in the pipeline store.
+ *
+ * @param {Object} payload
+ */
 function handleProfilingUpdate(payload) {
     if (!payload || typeof payload.pipeline_name !== "string") {
         return;
@@ -543,6 +655,9 @@ function handleProfilingUpdate(payload) {
     pipelineStore.setProfilingSnapshot(payload);
 }
 
+/**
+ * Clears stale profiling UI for the selected pipeline if updates have timed out.
+ */
 function checkAndClearStaleProfiling() {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {

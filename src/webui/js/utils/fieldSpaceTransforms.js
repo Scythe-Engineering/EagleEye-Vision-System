@@ -1,9 +1,16 @@
 import { Matrix4, Vector3 } from "three";
 
+// Utilities for converting camera and position data into field-space units.
 export const FIELD_CENTER_X_METERS = 8.774125;
 export const FIELD_CENTER_Y_METERS = 4.025901;
 export const METERS_TO_VIEW_UNITS = 1000;
 
+/**
+ * Converts a 4x4 camera pose matrix into field-space coordinates.
+ *
+ * @param {number[][]} transformMatrix - 4x4 transform matrix in source space.
+ * @returns {Matrix4|null} The converted field-space matrix, or null for invalid input.
+ */
 export function cameraPoseToFieldSpaceMatrix(transformMatrix) {
     if (
         !Array.isArray(transformMatrix) ||
@@ -43,6 +50,12 @@ export function cameraPoseToFieldSpaceMatrix(transformMatrix) {
     return resultMatrix;
 }
 
+/**
+ * Converts a 3D position into a field-space vector.
+ *
+ * @param {number[]} position3D - [x, y, z] position in meters.
+ * @returns {Vector3|null} The converted field-space vector, or null for invalid input.
+ */
 export function position3DToFieldSpaceVector(position3D) {
     if (
         !Array.isArray(position3D) ||

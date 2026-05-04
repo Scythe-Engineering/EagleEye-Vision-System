@@ -13,6 +13,9 @@ import {
 import { confirmDialog } from "../ui/confirmationDialog.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
 
+/**
+ * Manages the asset file modal for uploading, listing, deleting, and scaling 3D assets.
+ */
 const OVERLAY_ID = "assetFileManagerOverlay";
 const MODAL_ID = "assetFileManagerModal";
 const SCALE_POPUP_ID = "assetScalePopup";
@@ -38,6 +41,11 @@ let fieldFiles = [];
 let selectedFieldYear = "";
 let selectedFieldApriltagMapFile = null;
 
+/**
+ * Gets or creates the modal overlay and container elements used by the asset manager.
+ *
+ * @returns {{overlay: HTMLElement, modal: HTMLElement}}
+ */
 function getOverlayElements() {
     return getOrCreateModalElements({
         overlayId: OVERLAY_ID,
@@ -47,6 +55,12 @@ function getOverlayElements() {
     });
 }
 
+/**
+ * Formats a byte size into a human-readable string.
+ *
+ * @param {number} bytes
+ * @returns {string}
+ */
 function formatFileSize(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) {
         return "0 B";
@@ -60,6 +74,12 @@ function formatFileSize(bytes) {
     return `${Math.round((bytes / Math.pow(unitSize, unitIndex)) * 100) / 100} ${units[unitIndex]}`;
 }
 
+/**
+ * Formats a Unix timestamp into a localized date string.
+ *
+ * @param {number} timestamp
+ * @returns {string}
+ */
 function formatDate(timestamp) {
     if (!Number.isFinite(timestamp)) {
         return "Unknown";
@@ -67,17 +87,34 @@ function formatDate(timestamp) {
     return new Date(timestamp * 1000).toLocaleString();
 }
 
+/**
+ * Normalizes a scale value to a positive finite number.
+ *
+ * @param {number|string} scale
+ * @returns {number}
+ */
 function normalizeScale(scale) {
     const numericScale = Number.parseFloat(scale);
     return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
 }
 
+/**
+ * Formats a scale value for display.
+ *
+ * @param {number|string} scale
+ * @returns {string}
+ */
 function formatScale(scale) {
     return normalizeScale(scale).toLocaleString(undefined, {
         maximumFractionDigits: 6,
     });
 }
 
+/**
+ * Reads the currently selected field year from the UI.
+ *
+ * @returns {string}
+ */
 function getCurrentFieldYear() {
     const yearSelect = document.getElementById("yearSelect");
     if (yearSelect && yearSelect.selectedIndex > 0) {
@@ -86,6 +123,12 @@ function getCurrentFieldYear() {
     return "";
 }
 
+/**
+ * Builds the API endpoint for saving a file scale.
+ *
+ * @param {Object} file
+ * @returns {string}
+ */
 function scaleEndpoint(file) {
     if (activeType === "robot") {
         return `${ASSET_TYPES.robot.endpoint}/${encodeURIComponent(file.filename)}/scale`;
@@ -94,11 +137,21 @@ function scaleEndpoint(file) {
     return `${ASSET_TYPES.field.endpoint}/${encodeURIComponent(file.year)}/${encodeURIComponent(file.filename)}/scale`;
 }
 
+/**
+ * Checks whether the 3D view is currently visible.
+ *
+ * @returns {boolean}
+ */
 function is3DViewActive() {
     const view = document.getElementById("view-3d");
     return Boolean(view && !view.classList.contains("hidden"));
 }
 
+/**
+ * Computes the field years that should be available in the year selector.
+ *
+ * @returns {string[]}
+ */
 function getSelectableFieldYears() {
     const uploadedYears = fieldFiles
         .map((file) => String(file.year))
@@ -120,6 +173,9 @@ function getSelectableFieldYears() {
     return years;
 }
 
+/**
+ * Ensures the selected field year is valid for the current file set.
+ */
 function normalizeSelectedFieldYear() {
     const selectableYears = getSelectableFieldYears();
     if (selectableYears.includes(selectedFieldYear)) {
@@ -138,6 +194,13 @@ function normalizeSelectedFieldYear() {
         "";
 }
 
+/**
+ * Fetches JSON from the backend and throws on non-OK responses.
+ *
+ * @param {string} path
+ * @param {RequestInit} [options={}]
+ * @returns {Promise<Object>}
+ */
 async function fetchJson(path, options = {}) {
     const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
     let payload = {};
@@ -157,6 +220,9 @@ async function fetchJson(path, options = {}) {
     return payload;
 }
 
+/**
+ * Loads robot and field asset metadata from the backend and re-renders the UI.
+ */
 async function loadAssets() {
     try {
         const [robotPayload, fieldPayload] = await Promise.all([
@@ -185,6 +251,11 @@ async function loadAssets() {
     }
 }
 
+/**
+ * Refreshes the 3D asset dropdowns to reflect the current asset selection.
+ *
+ * @param {string|null} [selectedFilename=null]
+ */
 async function refresh3DAssetDropdowns(selectedFilename = null) {
     if (activeType === "robot") {
         await populateRobotDropdown(selectedFilename);
@@ -198,6 +269,12 @@ async function refresh3DAssetDropdowns(selectedFilename = null) {
     });
 }
 
+/**
+ * Uploads a robot or field asset file.
+ *
+ * @param {File} file
+ * @param {boolean} [overwrite=false]
+ */
 async function uploadAsset(file, overwrite = false) {
     const formData = new FormData();
     formData.append("file", file);
@@ -241,6 +318,11 @@ async function uploadAsset(file, overwrite = false) {
     }
 }
 
+/**
+ * Deletes the specified asset file.
+ *
+ * @param {Object} file
+ */
 async function deleteAsset(file) {
     const path =
         activeType === "robot"
@@ -260,6 +342,13 @@ async function deleteAsset(file) {
     }
 }
 
+/**
+ * Saves the scale for an asset and applies it in the 3D view.
+ *
+ * @param {Object} file
+ * @param {number} scale
+ * @returns {Promise<boolean>}
+ */
 async function saveAssetScale(file, scale) {
     try {
         const payload = await fetchJson(scaleEndpoint(file), {
@@ -291,6 +380,11 @@ async function saveAssetScale(file, scale) {
     }
 }
 
+/**
+ * Opens the scale editor popup for a given asset.
+ *
+ * @param {Object} file
+ */
 function openScalePopup(file) {
     const existingPopup = document.getElementById(SCALE_POPUP_ID);
     if (existingPopup) {
@@ -415,6 +509,11 @@ function openScalePopup(file) {
     input.select();
 }
 
+/**
+ * Renders the asset-type tab controls.
+ *
+ * @returns {HTMLElement}
+ */
 function renderTabs() {
     return createElement(
         "div",
@@ -438,6 +537,11 @@ function renderTabs() {
     );
 }
 
+/**
+ * Renders the upload controls for the active asset type.
+ *
+ * @returns {HTMLElement}
+ */
 function renderUploadControls() {
     const controls = [];
 
@@ -530,6 +634,11 @@ function renderUploadControls() {
     );
 }
 
+/**
+ * Renders the asset list rows into the given container.
+ *
+ * @param {HTMLElement} container
+ */
 function renderFileRows(container) {
     container.innerHTML = "";
 
@@ -637,6 +746,9 @@ function renderFileRows(container) {
     });
 }
 
+/**
+ * Renders the asset manager modal contents.
+ */
 function render() {
     const { modal } = getOverlayElements();
     modal.innerHTML = "";
@@ -715,6 +827,9 @@ function render() {
     renderFileRows(listContainer);
 }
 
+/**
+ * Opens the asset manager modal and loads the latest assets.
+ */
 function open() {
     const { overlay } = getOverlayElements();
     selectedFieldYear =
@@ -727,11 +842,17 @@ function open() {
     loadAssets();
 }
 
+/**
+ * Closes the asset manager modal.
+ */
 function close() {
     const { overlay } = getOverlayElements();
     hideModal(overlay);
 }
 
+/**
+ * Initializes the asset file manager once and wires its UI events.
+ */
 export function initializeAssetFileManager() {
     if (initialized) {
         return;

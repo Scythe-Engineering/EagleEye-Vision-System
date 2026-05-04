@@ -1,10 +1,16 @@
 /**
- * FlowchartCanvas - Simplified canvas with just a grid for dropping nodes
+ * Flowchart canvas viewport and interaction helpers.
  */
 
 import { InteractiveGrid } from "./interactiveGrid.js";
 
 export class FlowchartCanvas {
+    /**
+     * Create a new flowchart canvas bound to a container element.
+     *
+     * @param {HTMLElement} containerElement - Host container for the canvas.
+     * @param {Object} [options={}] - Initialization options.
+     */
     constructor(containerElement, options = {}) {
         this.container = containerElement;
         this.gridSpacing = options.gridSpacing || 20;
@@ -23,6 +29,9 @@ export class FlowchartCanvas {
         this.init();
     }
 
+    /**
+     * Initialize the DOM layers and interaction handlers.
+     */
     init() {
         this.container.innerHTML = "";
         this.container.style.position = "relative";
@@ -106,6 +115,9 @@ export class FlowchartCanvas {
         this.setupPanZoom();
     }
 
+    /**
+     * Refresh the cached container bounds.
+     */
     updateContainerRect() {
         const rect = this.container.getBoundingClientRect();
         this.containerRect = {
@@ -116,6 +128,9 @@ export class FlowchartCanvas {
         };
     }
 
+    /**
+     * Set up panning, zooming, and view reset interactions.
+     */
     setupPanZoom() {
         let isPanning = false;
         let startX, startY;
@@ -206,12 +221,18 @@ export class FlowchartCanvas {
         });
     }
 
+    /**
+     * Apply the current viewport transform and notify listeners.
+     */
     updateTransform() {
         this.viewport.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
         this.updateGrid();
         this.onViewportChange(this.getViewportState());
     }
 
+    /**
+     * Synchronize the interactive grid with the current viewport.
+     */
     updateGrid() {
         // Update the interactive grid with current viewport state
         if (this.interactiveGrid) {
@@ -239,6 +260,13 @@ export class FlowchartCanvas {
         return this.interactiveGrid;
     }
 
+    /**
+     * Convert screen coordinates to world coordinates.
+     *
+     * @param {number} screenX - Screen X coordinate.
+     * @param {number} screenY - Screen Y coordinate.
+     * @returns {{x: number, y: number}} World coordinates.
+     */
     screenToWorld(screenX, screenY) {
         const rect = this.containerRect;
 
@@ -248,6 +276,13 @@ export class FlowchartCanvas {
         return { x: worldX, y: worldY };
     }
 
+    /**
+     * Snap a 2D position to the grid.
+     *
+     * @param {number} x - X coordinate.
+     * @param {number} y - Y coordinate.
+     * @returns {{x: number, y: number}} Snapped coordinates.
+     */
     snapPositionToGrid(x, y) {
         return {
             x: Math.round(x / this.gridSpacing) * this.gridSpacing,
@@ -255,22 +290,48 @@ export class FlowchartCanvas {
         };
     }
 
+    /**
+     * Snap a scalar value to the grid.
+     *
+     * @param {number} value - Value to snap.
+     * @returns {number} Snapped value.
+     */
     snapToGrid(value) {
         return Math.round(value / this.gridSpacing) * this.gridSpacing;
     }
 
+    /**
+     * Get the nodes layer element.
+     *
+     * @returns {HTMLDivElement} Nodes layer element.
+     */
     getNodesLayer() {
         return this.nodesLayer;
     }
 
+    /**
+     * Get the connections layer element.
+     *
+     * @returns {SVGSVGElement} Connections layer element.
+     */
     getConnectionsLayer() {
         return this.connectionsLayer;
     }
 
+    /**
+     * Get the island layer element.
+     *
+     * @returns {HTMLDivElement} Island layer element.
+     */
     getIslandLayer() {
         return this.islandLayer;
     }
 
+    /**
+     * Get the current viewport state.
+     *
+     * @returns {{scale: number, translateX: number, translateY: number}} Viewport state.
+     */
     getViewportState() {
         return {
             scale: this.scale,
@@ -279,6 +340,11 @@ export class FlowchartCanvas {
         };
     }
 
+    /**
+     * Set the viewport state.
+     *
+     * @param {{scale: number, translateX: number, translateY: number}} state - Viewport state.
+     */
     setViewportState(state) {
         this.scale = state.scale;
         this.translateX = state.translateX;
@@ -286,18 +352,32 @@ export class FlowchartCanvas {
         this.updateTransform();
     }
 
+    /**
+     * Toggle placeholder visibility for interaction gating.
+     *
+     * @param {boolean} isVisible - Whether the placeholder is visible.
+     */
     setPlaceholderVisible(isVisible) {
         this.placeholderVisible = isVisible;
     }
 
+    /**
+     * Fit the viewport to the content.
+     */
     fitToContent() {
         this.resetViewport();
     }
 
+    /**
+     * Reset the current view.
+     */
     resetView() {
         this.resetViewport();
     }
 
+    /**
+     * Reset the viewport transform to its default state.
+     */
     resetViewport() {
         this.translateX = 0;
         this.translateY = 0;

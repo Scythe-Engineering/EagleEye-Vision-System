@@ -7,12 +7,21 @@ import {
     showModal,
 } from "./modal.js";
 
+/**
+ * Confirmation dialog UI helpers for rendering and controlling the modal.
+ */
+
 const OVERLAY_ID = "confirmationDialogOverlay";
 const MODAL_ID = "confirmationDialogModal";
 
 let initialized = false;
 let activeResolve = null;
 
+/**
+ * Returns the shared overlay and modal elements used by the confirmation dialog.
+ *
+ * @returns {{overlay: HTMLElement, modal: HTMLElement}}
+ */
 function getDialogElements() {
     return getOrCreateModalElements({
         overlayId: OVERLAY_ID,
@@ -22,6 +31,11 @@ function getDialogElements() {
     });
 }
 
+/**
+ * Resolves the active confirmation promise and hides the dialog.
+ *
+ * @param {boolean} value - The result to resolve with.
+ */
 function resolveDialog(value) {
     if (activeResolve) {
         activeResolve(value);
@@ -30,6 +44,9 @@ function resolveDialog(value) {
     hideModal(getDialogElements().overlay);
 }
 
+/**
+ * Attaches one-time dismissal handlers for the confirmation dialog.
+ */
 function initializeDialog() {
     if (initialized) {
         return;
@@ -40,6 +57,12 @@ function initializeDialog() {
     initialized = true;
 }
 
+/**
+ * Normalizes a string or array input into a list of non-empty trimmed lines.
+ *
+ * @param {string|string[]} value - The input value to normalize.
+ * @returns {string[]}
+ */
 function normalizeLines(value) {
     if (Array.isArray(value)) {
         return value.filter(Boolean);
@@ -50,6 +73,18 @@ function normalizeLines(value) {
         .filter(Boolean);
 }
 
+/**
+ * Displays a confirmation dialog and resolves with the user's choice.
+ *
+ * @param {Object} [options={}] - Dialog options.
+ * @param {string} [options.title="Confirm Action"] - Dialog title.
+ * @param {string|string[]} [options.message="Are you sure?"] - Main message content.
+ * @param {string|string[]} [options.detail=""] - Additional detail content.
+ * @param {string} [options.confirmText="Confirm"] - Confirm button label.
+ * @param {string} [options.cancelText="Cancel"] - Cancel button label.
+ * @param {string} [options.variant="danger"] - Visual variant.
+ * @returns {Promise<boolean>} Resolves true when confirmed, false otherwise.
+ */
 export function confirmDialog({
     title = "Confirm Action",
     message = "Are you sure?",

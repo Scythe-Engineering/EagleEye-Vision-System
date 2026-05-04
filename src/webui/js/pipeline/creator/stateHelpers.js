@@ -1,18 +1,42 @@
 import { creatorContext } from "./context.js";
 import { pipelineStore } from "../PipelineStore.js";
 
+/**
+ * Helpers for reading pipeline creator state and deriving UI display values.
+ */
+
+/**
+ * Returns the current operations list from the pipeline store.
+ *
+ * @returns {Array}
+ */
 export function getOperations() {
     return pipelineStore.state.operations;
 }
 
+/**
+ * Returns the nodes prepared for renderer consumption.
+ *
+ * @returns {Array}
+ */
 export function getPipeline() {
     return pipelineStore.getNodesForRenderer();
 }
 
+/**
+ * Returns the full pipeline collection from the store.
+ *
+ * @returns {Array}
+ */
 export function getPipelines() {
     return pipelineStore.state.pipelines;
 }
 
+/**
+ * Returns the pipeline matching the current pipeline name, or null.
+ *
+ * @returns {Object|null}
+ */
 export function getSelectedPipeline() {
     const pipelineName = pipelineStore.state.currentPipeline?.pipelineName;
     if (!pipelineName) {
@@ -24,6 +48,11 @@ export function getSelectedPipeline() {
     return selectedPipeline ?? null;
 }
 
+/**
+ * Returns nodes whose normalized operation id is device_input.
+ *
+ * @returns {Array}
+ */
 export function getDeviceInputNodes() {
     return pipelineStore.getNodes().filter((node) => {
         return (
@@ -33,6 +62,11 @@ export function getDeviceInputNodes() {
     });
 }
 
+/**
+ * Returns unique bus IDs from device input nodes.
+ *
+ * @returns {Array<string>}
+ */
 export function getDeviceInputBusIds() {
     const busIds = new Set();
     pipelineStore.getNodes().forEach((node) => {
@@ -49,6 +83,12 @@ export function getDeviceInputBusIds() {
     return Array.from(busIds);
 }
 
+/**
+ * Formats the camera note text and title for a list of bus IDs.
+ *
+ * @param {Array<string>} busIds
+ * @returns {{ text: string, title: string }}
+ */
 export function formatPipelineCameraNote(busIds) {
     if (busIds.length === 0) {
         return { text: "No camera bus IDs configured", title: "" };
@@ -69,6 +109,9 @@ export function formatPipelineCameraNote(busIds) {
     };
 }
 
+/**
+ * Updates the pipeline camera note element from the current bus IDs.
+ */
 export function updatePipelineCameraNote() {
     const pipelineCameraNote = creatorContext.elements.pipelineCameraNote;
     if (!pipelineCameraNote) {

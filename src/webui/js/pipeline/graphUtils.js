@@ -1,3 +1,4 @@
+// Utilities for analyzing pipeline graphs used by the web UI.
 /**
  * Graph utilities for cycle detection in pipeline connections
  */
@@ -39,6 +40,14 @@ export function findCycles(nodes, connections) {
     const cycleConnectionIds = new Set();
 
     // DFS for cycle detection - returns array of nodes in current path
+    /**
+     * Traverses the graph depth-first to identify and mark cycle edges.
+     * @param {string} nodeId - Current node instance ID.
+     * @param {Set<string>} visited - Nodes already visited in this traversal.
+     * @param {Set<string>} recStack - Nodes currently in the recursion stack.
+     * @param {Array<string>} path - Ordered path of nodes from the DFS root.
+     * @returns {boolean} True when a cycle is found in this branch.
+     */
     function dfs(nodeId, visited, recStack, path) {
         visited.add(nodeId);
         recStack.add(nodeId);

@@ -1,7 +1,11 @@
+// Tracks pipeline edits and provides undo/redo history for the web UI.
 const MAX_HISTORY_SIZE = 20;
 const HISTORY_DEBOUNCE_MS = 300;
 
 class PipelineHistory {
+    /**
+     * Create a new pipeline history manager.
+     */
     constructor() {
         this.undoStack = [];
         this.redoStack = [];
@@ -50,6 +54,9 @@ class PipelineHistory {
         });
     }
 
+    /**
+     * Clear history state and refresh the captured snapshot.
+     */
     _resetHistory() {
         this.undoStack = [];
         this.redoStack = [];
@@ -58,6 +65,11 @@ class PipelineHistory {
         this._updateButtons();
     }
 
+    /**
+     * Capture the current pipeline state as a serializable snapshot.
+     *
+     * @returns {{nodes: Array, connections: Array}|null}
+     */
     _captureState() {
         if (!this.pipelineStore) return null;
 
@@ -87,10 +99,20 @@ class PipelineHistory {
         return { nodes, connections };
     }
 
+    /**
+     * Compare two snapshots for structural equality.
+     *
+     * @param {*} a
+     * @param {*} b
+     * @returns {boolean}
+     */
     _snapshotsEqual(a, b) {
         return JSON.stringify(a) === JSON.stringify(b);
     }
 
+    /**
+     * Debounce a history commit for the latest pipeline change.
+     */
     _scheduleCommit() {
         if (this.isApplyingHistory) return;
 
@@ -98,6 +120,9 @@ class PipelineHistory {
         this.commitTimer = setTimeout(() => this._commitCurrentChange(), HISTORY_DEBOUNCE_MS);
     }
 
+    /**
+     * Commit the current pipeline state into undo history if it changed.
+     */
     _commitCurrentChange() {
         this.commitTimer = null;
         if (this.isApplyingHistory) return;
@@ -110,6 +135,11 @@ class PipelineHistory {
         }
     }
 
+    /**
+     * Push a snapshot onto the undo stack and clear redo history.
+     *
+     * @param {*} snapshot
+     */
     _pushToUndo(snapshot) {
         if (!snapshot) return;
         this.undoStack.push(snapshot);
@@ -120,17 +150,28 @@ class PipelineHistory {
         this.redoStack = [];
     }
 
+    /**
+     * Cancel any pending debounced history commit.
+     */
     _cancelPendingCommit() {
         clearTimeout(this.commitTimer);
         this.commitTimer = null;
     }
 
+    /**
+     * Immediately process a pending commit if one exists.
+     */
     _flushPendingCommit() {
         if (!this.commitTimer) return;
         clearTimeout(this.commitTimer);
         this._commitCurrentChange();
     }
 
+    /**
+     * Restore a previously captured snapshot into the pipeline.
+     *
+     * @param {*} snapshot
+     */
     async _applySnapshot(snapshot) {
         this._cancelPendingCommit();
         this.isApplyingHistory = true;
@@ -148,14 +189,27 @@ class PipelineHistory {
         this.currentSnapshot = this._captureState();
     }
 
+    /**
+     * Determine whether an undo action is available.
+     *
+     * @returns {boolean}
+     */
     canUndo() {
         return this.undoStack.length > 0;
     }
 
+    /**
+     * Determine whether a redo action is available.
+     *
+     * @returns {boolean}
+     */
     canRedo() {
         return this.redoStack.length > 0;
     }
 
+    /**
+     * Undo the most recent committed change.
+     */
     async undo() {
         this._flushPendingCommit();
         if (!this.canUndo() || this.isApplyingHistory) return;
@@ -167,6 +221,9 @@ class PipelineHistory {
         this._updateButtons();
     }
 
+    /**
+     * Redo the most recently undone change.
+     */
     async redo() {
         this._flushPendingCommit();
         if (!this.canRedo() || this.isApplyingHistory) return;
@@ -178,12 +235,21 @@ class PipelineHistory {
         this._updateButtons();
     }
 
+    /**
+     * Bind the undo and redo buttons used by the UI.
+     *
+     * @param {HTMLElement|null} undoButton
+     * @param {HTMLElement|null} redoButton
+     */
     setButtons(undoButton, redoButton) {
         this.undoButton = undoButton;
         this.redoButton = redoButton;
         this._updateButtons();
     }
 
+    /**
+     * Update button enabled/disabled state to match history availability.
+     */
     _updateButtons() {
         const canUndo = this.canUndo();
         const canRedo = this.canRedo();

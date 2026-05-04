@@ -1,3 +1,4 @@
+// Shared state container for the pipeline creator UI.
 export const creatorContext = {
     isInitialized: false,
     flowchartRenderer: null,

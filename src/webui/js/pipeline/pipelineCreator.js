@@ -1,3 +1,4 @@
+// Coordinates pipeline creator initialization, wiring, and UI event setup.
 import { createDescriptionPopup } from "./rendering.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { creatorContext } from "./creator/context.js";
@@ -57,6 +58,9 @@ registerSettingsPopup();
 
 let isInitialized = false;
 
+/**
+ * Binds profiling details popup controls and backend disconnect handling.
+ */
 function bindProfilingDetailsControls() {
     const { elements } = creatorContext;
 
@@ -77,6 +81,9 @@ function bindProfilingDetailsControls() {
     });
 }
 
+/**
+ * Initializes the pipeline creator UI, controllers, and event listeners.
+ */
 export async function initPipelineCreator() {
     if (isInitialized) return;
 

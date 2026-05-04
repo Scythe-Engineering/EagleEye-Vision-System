@@ -1,3 +1,4 @@
+// Utilities for camera configuration UI, including intrinsics, extrinsics, and calibration flows.
 import { BACKEND_BASE_URL } from "../config.js";
 import {
     showDanger,
@@ -38,10 +39,21 @@ const DEG_TO_RAD = Math.PI / 180;
 const POSE_VIZ_MAX_FPS = 30;
 const POSE_VIZ_FRAME_MS = 1000 / POSE_VIZ_MAX_FPS;
 
+/**
+ * Returns a DOM element by id.
+ * @param {string} id - Element id.
+ * @returns {HTMLElement | null}
+ */
 function getElement(id) {
     return document.getElementById(id);
 }
 
+/**
+ * Creates a text sprite label for the 3D view.
+ * @param {string} text - Label text.
+ * @param {string} [color="#f9c845"] - Text color.
+ * @returns {THREE.Sprite | null}
+ */
 function createLabelSprite(text, color = "#f9c845") {
     const canvas = document.createElement("canvas");
     canvas.width = 256;
@@ -70,6 +82,9 @@ function createLabelSprite(text, color = "#f9c845") {
     return sprite;
 }
 
+/**
+ * Initializes the 3D camera pose visualization.
+ */
 function initCameraPoseVisualization() {
     if (poseVizState) {
         startCameraPoseVisualizationLoop();
@@ -219,6 +234,9 @@ function initCameraPoseVisualization() {
     startCameraPoseVisualizationLoop();
 }
 
+/**
+ * Starts the pose visualization animation loop if needed.
+ */
 function startCameraPoseVisualizationLoop() {
     if (!poseVizState || poseVizState.frameHandle || !poseVizRenderFrame) {
         return;
@@ -228,6 +246,9 @@ function startCameraPoseVisualizationLoop() {
         globalThis.requestAnimationFrame(poseVizRenderFrame);
 }
 
+/**
+ * Resizes the pose visualization renderer to match its container.
+ */
 function resizeCameraPoseVisualization() {
     if (!poseVizState) {
         return;
@@ -240,6 +261,9 @@ function resizeCameraPoseVisualization() {
     poseVizState.renderer.setSize(width, height);
 }
 
+/**
+ * Updates the pose visualization from the current extrinsics inputs.
+ */
 function updateCameraPoseVisualization() {
     if (!poseVizState) {
         return;
@@ -291,6 +315,10 @@ function updateCameraPoseVisualization() {
     poseVizState.cameraMarkerGroup.quaternion.copy(orientation);
 }
 
+/**
+ * Builds the extrinsics payload from the current form inputs.
+ * @returns {{pitch: number, yaw: number, roll: number, x_offset: number, y_offset: number, z_offset: number}}
+ */
 function getExtrinsicsPayload() {
     const payload = {};
     EXTRINSICS_KEYS.forEach((key) => {
@@ -301,6 +329,10 @@ function getExtrinsicsPayload() {
     return payload;
 }
 
+/**
+ * Populates extrinsics inputs from a config object.
+ * @param {Object} extrinsics - Extrinsics values.
+ */
 function setExtrinsicsInputs(extrinsics = {}) {
     EXTRINSICS_KEYS.forEach((key) => {
         const input = getElement(INPUT_ID_BY_KEY[key]);
@@ -313,6 +345,10 @@ function setExtrinsicsInputs(extrinsics = {}) {
     updateCameraPoseVisualization();
 }
 
+/**
+ * Updates the intrinsics status text.
+ * @param {string} text - Status message.
+ */
 function setIntrinsicsStatus(text) {
     const status = getElement("utilsIntrinsicsStatus");
     if (status) {
@@ -320,6 +356,10 @@ function setIntrinsicsStatus(text) {
     }
 }
 
+/**
+ * Updates the selected camera metadata display.
+ * @param {{name: string, bus_id: string} | null} camera - Selected camera.
+ */
 function setCameraMeta(camera) {
     const meta = getElement("utilsCameraMeta");
     if (!meta) {
@@ -334,6 +374,12 @@ function setCameraMeta(camera) {
     meta.textContent = `Selected: ${camera.name} (bus_id: ${camera.bus_id})`;
 }
 
+/**
+ * Fetches JSON from the backend and throws on HTTP errors.
+ * @param {string} path - Backend path.
+ * @param {RequestInit} [options={}] - Fetch options.
+ * @returns {Promise<any>}
+ */
 async function fetchJson(path, options = {}) {
     const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
     let data = null;
@@ -354,6 +400,9 @@ async function fetchJson(path, options = {}) {
     return data;
 }
 
+/**
+ * Loads the available cameras into the selector.
+ */
 async function loadCameraList() {
     const select = getElement("utilsCameraSelect");
     if (!select) {
@@ -406,6 +455,10 @@ async function loadCameraList() {
     }
 }
 
+/**
+ * Loads the config for a specific camera bus id.
+ * @param {string} cameraBusId - Camera bus id.
+ */
 async function loadCameraConfig(cameraBusId) {
     if (!cameraBusId) {
         return;
@@ -428,6 +481,9 @@ async function loadCameraConfig(cameraBusId) {
     }
 }
 
+/**
+ * Saves the current extrinsics for the selected camera.
+ */
 async function saveExtrinsics() {
     if (!currentCameraBusId) {
         showWarning("Select a camera first");
@@ -450,6 +506,10 @@ async function saveExtrinsics() {
     }
 }
 
+/**
+ * Uploads an intrinsics JSON file for the selected camera.
+ * @param {File} file - Intrinsics file.
+ */
 async function uploadIntrinsicsFile(file) {
     if (!currentCameraBusId) {
         showWarning("Select a camera first");
@@ -483,6 +543,10 @@ async function uploadIntrinsicsFile(file) {
     }
 }
 
+/**
+ * Builds the calibration payload from the calibration form inputs.
+ * @returns {{squares_x: number, squares_y: number, square_size: number, marker_size: number}}
+ */
 function calibrationPayload() {
     return {
         squares_x: Number.parseInt(getElement("utilsCalibrationSquaresX")?.value || "11", 10),
@@ -492,6 +556,10 @@ function calibrationPayload() {
     };
 }
 
+/**
+ * Toggles calibration UI busy state.
+ * @param {boolean} isBusy - Whether calibration is in progress.
+ */
 function setCalibrationBusy(isBusy) {
     getElement("utilsCalibrationProgress")?.classList.toggle("hidden", !isBusy);
     ["utilsCalibrationCaptureBtn", "utilsCalibrationResetBtn", "utilsCalibrationRunBtn"].forEach((id) => {
@@ -500,6 +568,10 @@ function setCalibrationBusy(isBusy) {
     });
 }
 
+/**
+ * Converts the live resolution selector into backend query params.
+ * @returns {Object}
+ */
 function calibrationLiveResolutionParams() {
     const value = getElement("utilsCalibrationLiveResolution")?.value || "1280x720";
     if (value === "full") {
@@ -512,6 +584,9 @@ function calibrationLiveResolutionParams() {
     return { live_width: String(width), live_height: String(height) };
 }
 
+/**
+ * Refreshes the calibration feed image URL.
+ */
 function updateCalibrationFeed() {
     const img = getElement("utilsCalibrationFeed");
     if (!img || !currentCameraBusId || !calibrationModalOpen) return;
@@ -528,6 +603,9 @@ function updateCalibrationFeed() {
     img.src = `${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(calibrationCameraId)}/calibration/feed?${params}`;
 }
 
+/**
+ * Renders the captured calibration corners history canvas.
+ */
 function drawCalibrationHistoryCanvas() {
     const canvas = getElement("utilsCalibrationHistoryCanvas");
     const empty = getElement("utilsCalibrationHistoryEmpty");
@@ -567,11 +645,19 @@ function drawCalibrationHistoryCanvas() {
     }
 }
 
+/**
+ * Selects a calibration frame for display.
+ * @param {number | null} index - Frame index.
+ */
 function showCalibrationFrame(index) {
     selectedCalibrationFrameIndex = index;
     drawCalibrationHistoryCanvas();
 }
 
+/**
+ * Refreshes the captured calibration frames list and canvas.
+ * @param {number | null} [preferredIndex=selectedCalibrationFrameIndex] - Preferred frame index.
+ */
 async function refreshCalibrationFrames(preferredIndex = selectedCalibrationFrameIndex) {
     if (!currentCameraBusId) return;
     const payload = await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames`);
@@ -610,6 +696,9 @@ async function refreshCalibrationFrames(preferredIndex = selectedCalibrationFram
     drawCalibrationHistoryCanvas();
 }
 
+/**
+ * Opens the calibration modal for the selected camera.
+ */
 async function openCalibrationModal() {
     const selectedBusId = getElement("utilsCameraSelect")?.value;
     if (!selectedBusId) {
@@ -629,6 +718,9 @@ async function openCalibrationModal() {
     await refreshCalibrationFrames();
 }
 
+/**
+ * Closes the calibration modal and clears its state.
+ */
 function closeCalibrationModal() {
     calibrationModalOpen = false;
     calibrationHistoryFrames = [];
@@ -639,6 +731,9 @@ function closeCalibrationModal() {
     if (img) img.src = "";
 }
 
+/**
+ * Captures a calibration frame from the backend.
+ */
 async function captureCalibrationFrame() {
     if (!currentCameraBusId || !calibrationModalOpen) return;
     try {
@@ -659,6 +754,9 @@ async function captureCalibrationFrame() {
     }
 }
 
+/**
+ * Resets stored calibration frames on the backend.
+ */
 async function resetCalibrationFrames() {
     if (!currentCameraBusId) return;
     await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/reset`, { method: "POST" });
@@ -667,6 +765,9 @@ async function resetCalibrationFrames() {
     updateCalibrationFeed();
 }
 
+/**
+ * Runs calibration and saves the resulting intrinsics.
+ */
 async function runCalibration() {
     if (!currentCameraBusId) return;
     setCalibrationBusy(true);
@@ -686,6 +787,9 @@ async function runCalibration() {
     }
 }
 
+/**
+ * Deletes the selected camera's intrinsics file.
+ */
 async function deleteIntrinsics() {
     if (!currentCameraBusId) {
         showWarning("Select a camera first");
@@ -706,6 +810,9 @@ async function deleteIntrinsics() {
     }
 }
 
+/**
+ * Sets up drag-and-drop handling for intrinsics upload.
+ */
 function setupDropzone() {
     const dropzone = getElement("utilsIntrinsicsDropzone");
     if (!dropzone) {
@@ -736,6 +843,9 @@ function setupDropzone() {
     });
 }
 
+/**
+ * Initializes the camera configuration utilities UI.
+ */
 export function initCameraConfigUtils() {
     if (initialized) {
         startCameraPoseVisualizationLoop();
@@ -842,6 +952,9 @@ export function initCameraConfigUtils() {
     initialized = true;
 }
 
+/**
+ * Refreshes the camera configuration utilities UI state.
+ */
 export function refreshCameraConfigUtils() {
     resizeCameraPoseVisualization();
     void loadCameraList();

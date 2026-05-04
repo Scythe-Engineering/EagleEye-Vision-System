@@ -1,3 +1,6 @@
+/**
+ * Controls backend restart state for the pipeline creator UI.
+ */
 import { creatorContext } from "./context.js";
 import {
     getRestartRequired,
@@ -7,6 +10,13 @@ import {
 import { hideAllProfilingBadges } from "./profilingController.js";
 import { showDanger } from "../../ui/notificationSystem.js";
 
+/**
+ * Updates the restart indicator UI and optionally syncs the state to the backend.
+ *
+ * @param {boolean} show - Whether the restart warning should be shown.
+ * @param {Object} options - Optional behavior flags.
+ * @param {boolean} [options.syncBackend=false] - Whether to persist the state to the backend.
+ */
 async function updateRestartIndicator(show = false, options = {}) {
     const restartIndicator = creatorContext.elements.restartIndicator;
     if (options.syncBackend) {
@@ -45,6 +55,11 @@ async function updateRestartIndicator(show = false, options = {}) {
     }
 }
 
+/**
+ * Applies backend restart metadata to the local UI context.
+ *
+ * @param {Object} data - Backend restart response data.
+ */
 function applyBackendRestartState(data = {}) {
     const show = Boolean(data.restart_required);
     if (typeof data.runtime_id === "string" && data.runtime_id) {
@@ -53,6 +68,9 @@ function applyBackendRestartState(data = {}) {
     updateRestartIndicator(show);
 }
 
+/**
+ * Requests a backend restart and waits for the runtime to change before reloading.
+ */
 async function handleRestartBackend() {
     try {
         const restartButton = creatorContext.elements.restartIndicator?.querySelector(
@@ -78,6 +96,11 @@ async function handleRestartBackend() {
     }
 }
 
+/**
+ * Waits until the backend runtime ID changes or the timeout elapses.
+ *
+ * @param {string|undefined|null} previousRuntimeId - Runtime ID observed before the restart.
+ */
 async function waitForBackendRuntimeChange(previousRuntimeId) {
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
@@ -94,6 +117,9 @@ async function waitForBackendRuntimeChange(previousRuntimeId) {
     }
 }
 
+/**
+ * Fetches and applies the current backend restart status.
+ */
 async function checkBackendRestartStatus() {
     try {
         const data = await getRestartRequired();
@@ -103,6 +129,13 @@ async function checkBackendRestartStatus() {
     }
 }
 
+/**
+ * Checks whether the current pipeline operation requires a backend restart.
+ *
+ * @param {*} operationItem - The pipeline operation being evaluated.
+ * @param {string|null} changedParamName - The changed parameter name.
+ * @param {*} changedValue - The changed parameter value.
+ */
 async function checkPipelineRestartRequirements(
     operationItem = null,
     changedParamName = null,

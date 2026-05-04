@@ -1,3 +1,6 @@
+/**
+ * Renders and updates the web UI status icon favicon.
+ */
 const ICON_SIZE = 64;
 const ICON_CENTER = ICON_SIZE / 2;
 const ICON_RADIUS = 28;
@@ -17,6 +20,11 @@ const STATUS_COLORS = {
     disconnected: "#ff4d4d",
 };
 
+/**
+ * Creates the offscreen canvas used for favicon rendering.
+ *
+ * @returns {{ canvas: HTMLCanvasElement, context: CanvasRenderingContext2D }}
+ */
 function createCanvasSurface() {
     const canvas = document.createElement("canvas");
     canvas.width = ICON_SIZE;
@@ -30,6 +38,12 @@ function createCanvasSurface() {
     return { canvas, context };
 }
 
+/**
+ * Loads an image from a URL for use as the base favicon layer.
+ *
+ * @param {string} url
+ * @returns {Promise<HTMLImageElement>}
+ */
 function loadImage(url) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -40,6 +54,14 @@ function loadImage(url) {
     });
 }
 
+/**
+ * Draws a rounded arc indicator on the favicon canvas.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {string} color
+ * @param {number} startAngle
+ * @param {number} endAngle
+ */
 function drawArc(context, color, startAngle, endAngle) {
     context.strokeStyle = color;
     context.lineWidth = ICON_STROKE_WIDTH;
@@ -49,6 +71,12 @@ function drawArc(context, color, startAngle, endAngle) {
     context.stroke();
 }
 
+/**
+ * Draws the compact connected-state dot indicator.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {string} color
+ */
 function drawConnectedDot(context, color) {
     context.fillStyle = color;
     context.beginPath();
@@ -62,6 +90,13 @@ function drawConnectedDot(context, color) {
     context.fill();
 }
 
+/**
+ * Draws the connected-state indicator animation.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {string} color
+ * @param {number} elapsedMs
+ */
 function drawConnectedIndicator(context, color, elapsedMs) {
     if (elapsedMs < CONNECTED_RING_HOLD_MS) {
         drawArc(context, color, 0, Math.PI * 2);
@@ -87,12 +122,28 @@ function drawConnectedIndicator(context, color, elapsedMs) {
     );
 }
 
+/**
+ * Draws the rotating ring used for partial and disconnected states.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {string} color
+ * @param {number} timestampMs
+ */
 function drawAnimatedRing(context, color, timestampMs) {
     const phase = (timestampMs % RING_ROTATION_PERIOD_MS) / RING_ROTATION_PERIOD_MS;
     const baseAngle = -Math.PI / 2 + phase * Math.PI * 2;
     drawArc(context, color, baseAngle, baseAngle + RING_SWEEP_RADIANS);
 }
 
+/**
+ * Renders a single favicon frame for the current status.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {HTMLImageElement|null} image
+ * @param {string} status
+ * @param {number} timestampMs
+ * @param {number} connectedStartedAtMs
+ */
 function renderFrame(context, image, status, timestampMs, connectedStartedAtMs) {
     context.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
 
@@ -116,6 +167,12 @@ function renderFrame(context, image, status, timestampMs, connectedStartedAtMs) 
     drawAnimatedRing(context, ringColor, timestampMs);
 }
 
+/**
+ * Creates a controller that manages status-icon rendering and updates.
+ *
+ * @param {{ targetLink?: HTMLAnchorElement|null, baseIconUrl?: string|null }} options
+ * @returns {{ setStatus(status: string): void, destroy(): void }}
+ */
 export function createStatusIconController({ targetLink, baseIconUrl }) {
     const { canvas, context } = createCanvasSurface();
     let destroyed = false;
@@ -127,6 +184,12 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
     let baseImageReady = false;
     let targetHref = targetLink?.href ?? null;
 
+/**
+     * Checks whether the connected transition animation has finished.
+     *
+     * @param {number} timestampMs
+     * @returns {boolean}
+     */
     function isConnectedTransitionComplete(timestampMs) {
         return (
             currentStatus === "connected" &&
@@ -135,6 +198,9 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         );
     }
 
+/**
+     * Syncs the rendered canvas to the target link href.
+     */
     function syncTargetLink() {
         if (!targetLink) {
             return;
@@ -146,6 +212,11 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         }
     }
 
+/**
+     * Renders the current state and schedules the next frame if needed.
+     *
+     * @param {number} [timestampMs=performance.now()]
+     */
     function render(timestampMs = performance.now()) {
         if (destroyed || !baseImageReady) {
             return;
@@ -174,6 +245,9 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         }
     }
 
+/**
+     * Cancels any pending animation frame.
+     */
     function stopAnimation() {
         if (animationFrameId !== null) {
             cancelAnimationFrame(animationFrameId);
@@ -181,6 +255,9 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         }
     }
 
+/**
+     * Schedules the next animation frame if one is not already pending.
+     */
     function scheduleAnimation() {
         if (destroyed || animationFrameId !== null) {
             return;
@@ -192,6 +269,9 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         });
     }
 
+/**
+     * Loads the base icon image and triggers the first render.
+     */
     function resolveBaseImage() {
         if (!baseIconUrl) {
             baseImageReady = true;
@@ -216,6 +296,11 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
             });
     }
 
+/**
+     * Updates the current status and restarts rendering when needed.
+     *
+     * @param {string} nextStatus
+     */
     function setStatus(nextStatus) {
         if (
             nextStatus !== "connected" &&
@@ -238,6 +323,9 @@ export function createStatusIconController({ targetLink, baseIconUrl }) {
         render();
     }
 
+/**
+     * Tears down the controller and restores the original link href.
+     */
     function destroy() {
         destroyed = true;
         stopAnimation();

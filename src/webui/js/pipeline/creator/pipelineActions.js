@@ -1,3 +1,4 @@
+// Pipeline creator actions: loading, rendering, selection, and persistence.
 import { renderOperations } from "../rendering.js";
 import { pipelineStore } from "../PipelineStore.js";
 import { confirmDialog } from "../../ui/confirmationDialog.js";
@@ -21,6 +22,11 @@ import { applySelectedPipelineProfiling } from "./profilingController.js";
 import { postFlowchartStructureRefresh } from "./flowchartController.js";
 import { updatePipelineCameraNote } from "./stateHelpers.js";
 
+/**
+ * Populate the pipeline select dropdown from the current pipeline list.
+ *
+ * @param {string|null} selectedPipelineName - Pipeline name to preselect.
+ */
 function populatePipelineDropdown(selectedPipelineName = null) {
     const pipelineSelect = creatorContext.elements.pipelineSelect;
     if (!pipelineSelect) return;
@@ -74,6 +80,11 @@ function populatePipelineDropdown(selectedPipelineName = null) {
     }
 }
 
+/**
+ * Handle changes to the selected pipeline and sync UI state.
+ *
+ * @param {{loadPipelineIntoBuilder?: Function}} options - Selection handlers.
+ */
 async function handlePipelineSelection({ loadPipelineIntoBuilder }) {
     const pipelineSelect = creatorContext.elements.pipelineSelect;
     const selectedValue = pipelineSelect?.value;
@@ -92,6 +103,12 @@ async function handlePipelineSelection({ loadPipelineIntoBuilder }) {
     updateDeleteButtonVisibility();
 }
 
+/**
+ * Load a pipeline configuration into the builder state.
+ *
+ * @param {string} pipelineName - Pipeline identifier to load.
+ * @param {{renderCurrentPipeline?: Function}} [options={}] - Optional render callback.
+ */
 async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } = {}) {
     try {
         const operations = getOperations();
@@ -118,6 +135,11 @@ async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } =
     }
 }
 
+/**
+ * Render the current pipeline into the flowchart view.
+ *
+ * @param {Object} [_options={}] - Unused options placeholder.
+ */
 async function renderCurrentPipeline({}) {
     const flowchartRenderer = creatorContext.flowchartRenderer;
     if (!flowchartRenderer) return;
@@ -130,6 +152,11 @@ async function renderCurrentPipeline({}) {
     await postFlowchartStructureRefresh();
 }
 
+/**
+ * Auto-load the selected pipeline when the creator is initialized.
+ *
+ * @param {{loadPipelineIntoBuilder?: Function}} options - Auto-fill callbacks.
+ */
 async function checkAndTriggerAutoFill({ loadPipelineIntoBuilder }) {
     try {
         const pipelines = getPipelines();
@@ -154,11 +181,19 @@ async function checkAndTriggerAutoFill({ loadPipelineIntoBuilder }) {
     }
 }
 
+/**
+ * Update the run button enabled state based on whether nodes exist.
+ */
 function updateRunButton() {
     const runButton = creatorContext.elements.runButton;
     if (runButton) runButton.disabled = pipelineStore.getNodes().length === 0;
 }
 
+/**
+ * Persist the current pipeline configuration to the backend.
+ *
+ * @param {{showNotification?: boolean, requiresRestart?: boolean}} [options={}] - Save options.
+ */
 async function autoSavePipelineImpl(options = {}) {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
@@ -197,8 +232,19 @@ async function autoSavePipelineImpl(options = {}) {
     }
 }
 
+/**
+ * Convenience wrapper for auto-saving the current pipeline.
+ *
+ * @param {object} [options={}] - Auto-save options.
+ * @returns {Promise<*|null>} Save result or null on failure.
+ */
 const autoSavePipeline = (options = {}) => autoSavePipelineImpl(options);
 
+/**
+ * Create a new pipeline, optionally overwriting an existing one.
+ *
+ * @param {{renderCurrentPipeline?: Function, updateDeleteButtonVisibility?: Function, autoSavePipeline?: Function}} options - Creation callbacks.
+ */
 async function createNewPipeline({
     renderCurrentPipeline,
     updateDeleteButtonVisibility,
@@ -257,6 +303,11 @@ async function createNewPipeline({
     }
 }
 
+/**
+ * Delete the currently selected pipeline after confirmation.
+ *
+ * @param {{renderCurrentPipeline?: Function, updateDeleteButtonVisibility?: Function, updateRunButton?: Function}} options - Deletion callbacks.
+ */
 async function deleteCurrentPipeline({
     renderCurrentPipeline,
     updateDeleteButtonVisibility,
@@ -301,6 +352,9 @@ async function deleteCurrentPipeline({
     }
 }
 
+/**
+ * Toggle delete button visibility based on whether a pipeline is selected.
+ */
 function updateDeleteButtonVisibility() {
     const deletePipelineButton = creatorContext.elements.deletePipelineButton;
     if (!deletePipelineButton) return;
@@ -308,6 +362,11 @@ function updateDeleteButtonVisibility() {
     deletePipelineButton.classList.toggle("hidden", !selectedPipeline);
 }
 
+/**
+ * Refresh pipeline creator data and re-render the UI after reconnecting.
+ *
+ * @param {{openOperationSettings?: Function, handleDragStartWithLogging?: Function, checkBackendRestartStatus?: Function, loadPipelineIntoBuilder?: Function}} options - Refresh callbacks.
+ */
 async function refreshPipelineCreator({
     openOperationSettings,
     handleDragStartWithLogging,
@@ -341,6 +400,9 @@ async function refreshPipelineCreator({
     }
 }
 
+/**
+ * Trigger the pipeline run action for the current configuration.
+ */
 function runPipeline() {
     console.log("Running pipeline:", getPipeline());
     alert("Pipeline run! Check console for details.");

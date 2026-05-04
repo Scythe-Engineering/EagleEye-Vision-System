@@ -1,5 +1,11 @@
+// Selects and caches DOM nodes for the pipeline creator UI.
 import { creatorContext } from "./context.js";
 
+/**
+ * Caches DOM elements used by the pipeline creator UI.
+ *
+ * @returns {object} The cached elements collection.
+ */
 export function cachePipelineCreatorElements() {
     const { elements } = creatorContext;
 

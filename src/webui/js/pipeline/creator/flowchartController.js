@@ -1,3 +1,4 @@
+// Coordinates flowchart updates, node changes, and related UI refreshes in the pipeline creator.
 import { FlowchartRenderer } from "../rendering.js";
 import { handleDragStart } from "../dragDrop.js";
 import { confirmDialog } from "../../ui/confirmationDialog.js";
@@ -11,6 +12,15 @@ import { applySelectedPipelineProfiling, clearProfilingUI } from "./profilingCon
 import { updatePipelineCameraNote } from "./stateHelpers.js";
 import { updateRestartIndicator } from "./restartController.js";
 
+/**
+ * Starts a drag operation while logging diagnostic details.
+ *
+ * @param {DragEvent} event - The drag event.
+ * @param {object} item - The dragged item.
+ * @param {number|null} [fromIndex=null] - Source index, if any.
+ * @param {any} [collection=null] - Source collection, if any.
+ * @returns {any} The underlying drag-start handler result.
+ */
 function handleDragStartWithLogging(event, item, fromIndex = null, collection = null) {
     console.log("[PIPELINE] Drag start initiated", {
         draggedElement: event.target,
@@ -21,6 +31,9 @@ function handleDragStartWithLogging(event, item, fromIndex = null, collection = 
     return handleDragStart(event, item, collection, fromIndex);
 }
 
+/**
+ * Hides thread badges for all rendered nodes.
+ */
 function hideAllThreadBadges() {
     const flowchartRenderer = creatorContext.flowchartRenderer;
     if (!flowchartRenderer) return;
@@ -29,11 +42,19 @@ function hideAllThreadBadges() {
     }
 }
 
+/**
+ * Hides thread badges and clears profiling UI.
+ */
 function hideAllThreadAndProfilingBadges() {
     hideAllThreadBadges();
     clearProfilingUI();
 }
 
+/**
+ * Fetches thread information for the selected pipeline and updates node badges.
+ *
+ * @returns {Promise<void>}
+ */
 async function fetchAndUpdateThreadInfo() {
     const selectedPipeline = getSelectedPipeline();
     const flowchartRenderer = creatorContext.flowchartRenderer;
@@ -61,6 +82,11 @@ async function fetchAndUpdateThreadInfo() {
     }
 }
 
+/**
+ * Refreshes flowchart-related overlays after structural pipeline changes.
+ *
+ * @returns {Promise<void>}
+ */
 async function postFlowchartStructureRefresh() {
     applyPipelineErrorHighlights();
     await fetchAndUpdateThreadInfo();
@@ -68,6 +94,12 @@ async function postFlowchartStructureRefresh() {
     updatePipelineCameraNote();
 }
 
+/**
+ * Removes a pipeline node and refreshes related UI state.
+ *
+ * @param {string|number} instanceId - The node instance identifier.
+ * @returns {Promise<void>}
+ */
 async function removeFromPipeline(instanceId) {
     const removedNode = pipelineStore.getNode(instanceId);
     const deviceInputCountBefore = getDeviceInputNodes().length;
@@ -108,6 +140,17 @@ async function removeFromPipeline(instanceId) {
     await updateRestartIndicator(true);
 }
 
+/**
+ * Applies a flowchart-driven pipeline change.
+ *
+ * @param {object} changeEvent - The change payload.
+ * @param {object} [options={}] - Change handlers and callbacks.
+ * @param {Function} [options.autoSavePipeline] - Saves the pipeline automatically.
+ * @param {Function} [options.renderCurrentPipeline] - Unused rendering callback.
+ * @param {Function} [options.updateRunButton] - Updates the run button state.
+ * @param {Function} [options.onCreatePipeline] - Creates a pipeline when needed.
+ * @returns {Promise<void>}
+ */
 async function handleFlowchartPipelineChange(changeEvent, { autoSavePipeline, renderCurrentPipeline, updateRunButton, onCreatePipeline } = {}) {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
@@ -140,6 +183,12 @@ async function handleFlowchartPipelineChange(changeEvent, { autoSavePipeline, re
     }
 }
 
+/**
+ * Initializes the flowchart renderer for the pipeline creator.
+ *
+ * @param {object} params - Renderer setup parameters.
+ * @returns {FlowchartRenderer|null}
+ */
 function initFlowchartRenderer({ openOperationSettings, updateRunButton, removeFromPipeline, autoSavePipeline, onPipelineChange }) {
     const flowchartCanvas = creatorContext.elements.flowchartCanvas;
     if (!flowchartCanvas) {

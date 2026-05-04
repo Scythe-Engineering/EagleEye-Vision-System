@@ -1,6 +1,14 @@
+// Central store for pipeline state, nodes, connections, and related UI events.
 import { uid } from "./utils.js";
 
 class PipelineNode {
+    /**
+     * Create a pipeline node from operation metadata.
+     *
+     * @param {Object} operationData Operation metadata.
+     * @param {string|null} [existingUuid=null] Optional existing node UUID.
+     * @param {{x: number, y: number}|null} [existingPosition=null] Optional existing position.
+     */
     constructor(operationData, existingUuid = null, existingPosition = null) {
         this.uuid = existingUuid || uid("op-");
         this.operationId = operationData.id;
@@ -22,6 +30,11 @@ class PipelineNode {
             .slice(2, 11)}`;
     }
 
+    /**
+     * Serialize the node for persistence.
+     *
+     * @returns {Object} Serialized node data.
+     */
     toJSON() {
         return {
             action_name: this.operationId,
@@ -33,6 +46,9 @@ class PipelineNode {
 }
 
 class PipelineStore {
+    /**
+     * Initialize the pipeline store and its in-memory state.
+     */
     constructor() {
         this.state = {
             cameras: [],
@@ -62,6 +78,13 @@ class PipelineStore {
         this.pendingAutoSave = false;
     }
 
+    /**
+     * Subscribe to store events.
+     *
+     * @param {string} event Event name.
+     * @param {Function} callback Listener callback.
+     * @returns {Function} Unsubscribe function.
+     */
     subscribe(event, callback) {
         if (!this.listeners.has(event)) {
             this.listeners.set(event, new Set());
@@ -76,6 +99,12 @@ class PipelineStore {
         };
     }
 
+    /**
+     * Emit a store event to listeners.
+     *
+     * @param {string} event Event name.
+     * @param {*} data Event payload.
+     */
     emit(event, data) {
         const callbacks = this.listeners.get(event);
         if (callbacks) {
@@ -92,6 +121,11 @@ class PipelineStore {
         }
     }
 
+    /**
+     * Replace the available operations list.
+     *
+     * @param {Array<Object>} operations Operation definitions.
+     */
     setOperations(operations) {
         this.state.operations = operations;
         this.operationLookup.clear();
@@ -105,31 +139,63 @@ class PipelineStore {
         this.emit("operations:loaded", operations);
     }
 
+    /**
+     * Set the available cameras.
+     *
+     * @param {Array<Object>} cameras Camera definitions.
+     */
     setCameras(cameras) {
         this.state.cameras = cameras;
         this.emit("cameras:loaded", cameras);
     }
 
+    /**
+     * Set the available pipelines.
+     *
+     * @param {Array<Object>} pipelines Pipeline definitions.
+     */
     setPipelines(pipelines) {
         this.state.pipelines = pipelines;
         this.emit("pipelines:loaded", pipelines);
     }
 
+    /**
+     * Select the active camera.
+     *
+     * @param {string|null} cameraName Camera name.
+     */
     setCurrentCamera(cameraName) {
         this.state.currentPipeline.cameraName = cameraName;
         this.emit("camera:selected", cameraName);
     }
 
+    /**
+     * Select the active pipeline.
+     *
+     * @param {string|null} pipelineName Pipeline name.
+     */
     setCurrentPipeline(pipelineName) {
         this.state.currentPipeline.pipelineName = pipelineName;
         this.emit("pipeline:selected", pipelineName);
     }
 
+    /**
+     * Normalize an operation identifier for lookup.
+     *
+     * @param {string} id Operation identifier.
+     * @returns {string} Normalized identifier.
+     */
     normalizeOperationId(id) {
         if (!id) return "";
         return id.replace(/\.py$/, "").toLowerCase().replace(/\s+/g, "_");
     }
 
+    /**
+     * Find an operation by its action name.
+     *
+     * @param {string} actionName Action name.
+     * @returns {Object|null} Matching operation.
+     */
     findOperation(actionName) {
         const normalized = this.normalizeOperationId(actionName);
         return (
@@ -139,6 +205,14 @@ class PipelineStore {
         );
     }
 
+    /**
+     * Add a node to the current pipeline.
+     *
+     * @param {Object} operationData Node operation data.
+     * @param {{x: number, y: number}|null} [position=null] Node position.
+     * @param {string|null} [existingUuid=null] Optional UUID to reuse.
+     * @returns {PipelineNode|null} Created node.
+     */
     addNode(operationData, position = null, existingUuid = null) {
         const operation = this.findOperation(operationData.id);
         if (!operation) {
@@ -165,6 +239,12 @@ class PipelineStore {
         return node;
     }
 
+    /**
+     * Remove a node and its attached connections.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @returns {boolean} True when removed.
+     */
     removeNode(identifier) {
         const uuid = this.resolveToUuid(identifier);
         if (!uuid) {
@@ -203,6 +283,13 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Update a node's position.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @param {{x: number, y: number}} position New position.
+     * @returns {boolean} True when updated.
+     */
     updateNodePosition(identifier, position) {
         const uuid = this.resolveToUuid(identifier);
         if (!uuid) return false;
@@ -216,6 +303,13 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Update a node's configuration.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @param {Object} config New configuration object.
+     * @returns {boolean} True when updated.
+     */
     updateNodeConfig(identifier, config) {
         const uuid = this.resolveToUuid(identifier);
         if (!uuid) return false;
@@ -233,6 +327,18 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Add a connection between two nodes.
+     *
+     * @param {string} fromId Source node UUID or instance ID.
+     * @param {string} fromPort Source port.
+     * @param {string} toId Target node UUID or instance ID.
+     * @param {string} toPort Target port.
+     * @param {string|null} [dataType=null] Connection data type.
+     * @param {boolean} [isDefault=false] Whether this is the default connection.
+     * @param {Array|null} [customWaypoints=null] Optional custom waypoints.
+     * @returns {string|null} Connection key.
+     */
     addConnection(
         fromId,
         fromPort,
@@ -294,6 +400,13 @@ class PipelineStore {
         return connectionKey;
     }
 
+    /**
+     * Update connection waypoints.
+     *
+     * @param {string} connectionKey Connection key.
+     * @param {Array|null} customWaypoints New waypoint list.
+     * @returns {boolean} True when updated.
+     */
     updateConnectionWaypoints(connectionKey, customWaypoints) {
         const connection =
             this.state.currentPipeline.connections.get(connectionKey);
@@ -313,6 +426,12 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Remove a connection.
+     *
+     * @param {string} connectionKey Connection key.
+     * @returns {boolean} True when removed.
+     */
     removeConnection(connectionKey) {
         if (!this.state.currentPipeline.connections.has(connectionKey)) {
             return false;
@@ -333,6 +452,12 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Toggle a connection's default state.
+     *
+     * @param {string} connectionKey Connection key.
+     * @returns {boolean} True when toggled.
+     */
     toggleConnectionDefault(connectionKey) {
         const connection =
             this.state.currentPipeline.connections.get(connectionKey);
@@ -356,6 +481,12 @@ class PipelineStore {
         return true;
     }
 
+    /**
+     * Resolve an identifier to a node UUID.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @returns {string|null} UUID.
+     */
     resolveToUuid(identifier) {
         if (this.state.currentPipeline.nodes.has(identifier)) {
             return identifier;
@@ -364,19 +495,41 @@ class PipelineStore {
         return this.instanceIdToUuid.get(identifier) || null;
     }
 
+    /**
+     * Resolve a UUID to an instance ID.
+     *
+     * @param {string} uuid Node UUID.
+     * @returns {string|null} Instance ID.
+     */
     resolveToInstanceId(uuid) {
         return this.uuidToInstanceId.get(uuid) || null;
     }
 
+    /**
+     * Get a node by UUID or instance ID.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @returns {PipelineNode|null} Node.
+     */
     getNode(identifier) {
         const uuid = this.resolveToUuid(identifier);
         return uuid ? this.state.currentPipeline.nodes.get(uuid) : null;
     }
 
+    /**
+     * Get all nodes in the current pipeline.
+     *
+     * @returns {Array<PipelineNode>} Nodes.
+     */
     getNodes() {
         return Array.from(this.state.currentPipeline.nodes.values());
     }
 
+    /**
+     * Get nodes formatted for the renderer.
+     *
+     * @returns {Array<Object>} Renderer node data.
+     */
     getNodesForRenderer() {
         return this.getNodes().map((node) => ({
             ...node,
@@ -385,10 +538,20 @@ class PipelineStore {
         }));
     }
 
+    /**
+     * Get all current connections.
+     *
+     * @returns {Array<Object>} Connections.
+     */
     getConnections() {
         return Array.from(this.state.currentPipeline.connections.values());
     }
 
+    /**
+     * Get connections formatted for the renderer.
+     *
+     * @returns {Array<Object>} Renderer connection data.
+     */
     getConnectionsForRenderer() {
         return this.getConnections()
             .map((conn) => {
@@ -417,6 +580,11 @@ class PipelineStore {
             .filter(Boolean);
     }
 
+    /**
+     * Set whether the pipeline requires a restart.
+     *
+     * @param {boolean} required Restart flag.
+     */
     setRestartRequired(required) {
         this.state.ui.restartRequired = Boolean(required);
         this.emit("restart:changed", {
@@ -424,14 +592,25 @@ class PipelineStore {
         });
     }
 
+    /**
+     * Check whether the pipeline requires a restart.
+     *
+     * @returns {boolean} Restart flag.
+     */
     isRestartRequired() {
         return this.state.ui.restartRequired;
     }
 
+    /**
+     * Clear the restart-required flag.
+     */
     clearRestartRequired() {
         this.setRestartRequired(false);
     }
 
+    /**
+     * Clear the current pipeline state.
+     */
     clearPipeline() {
         this.state.currentPipeline.nodes.clear();
         this.state.currentPipeline.connections.clear();
@@ -444,6 +623,11 @@ class PipelineStore {
         this.emit("pipeline:cleared");
     }
 
+    /**
+     * Store a profiling snapshot for a pipeline.
+     *
+     * @param {Object} snapshot Profiling snapshot.
+     */
     setProfilingSnapshot(snapshot) {
         const pipelineName = snapshot?.pipeline_name;
         if (!pipelineName || typeof pipelineName !== "string") {
@@ -469,6 +653,12 @@ class PipelineStore {
         });
     }
 
+    /**
+     * Retrieve a profiling snapshot for a pipeline.
+     *
+     * @param {string} pipelineName Pipeline name.
+     * @returns {Object|null} Profiling snapshot.
+     */
     getProfilingSnapshot(pipelineName) {
         const snapshot = this.state.ui.profilingByPipeline.get(pipelineName);
         if (!snapshot) {
@@ -484,18 +674,32 @@ class PipelineStore {
         };
     }
 
+    /**
+     * Get the last profiling update timestamp.
+     *
+     * @param {string} pipelineName Pipeline name.
+     * @returns {number} Update time in ms.
+     */
     getProfilingLastUpdateMs(pipelineName) {
         return (
             this.state.ui.profilingLastUpdateMsByPipeline.get(pipelineName) || 0
         );
     }
 
+    /**
+     * Clear all profiling snapshots.
+     */
     clearProfilingSnapshots() {
         this.state.ui.profilingByPipeline.clear();
         this.state.ui.profilingLastUpdateMsByPipeline.clear();
         this.emit("profiling:cleared", {});
     }
 
+    /**
+     * Set operation errors and recompute downstream disabled nodes.
+     *
+     * @param {Array<Object>} errors Error records.
+     */
     setOperationErrors(errors) {
         const errorMap = new Map();
         (errors || []).forEach((errorRecord) => {
@@ -511,20 +715,36 @@ class PipelineStore {
         });
     }
 
+    /**
+     * Clear all operation errors.
+     */
     clearOperationErrors() {
         this.state.ui.operationErrors = new Map();
         this.state.ui.downstreamDisabledNodes.clear();
         this.emit("operation-errors:changed", { errors: [] });
     }
 
+    /**
+     * Get the current operation errors.
+     *
+     * @returns {Array<Object>} Error records.
+     */
     getOperationErrors() {
         return Array.from(this.state.ui.operationErrors.values());
     }
 
+    /**
+     * Get the set of downstream disabled node UUIDs.
+     *
+     * @returns {Set<string>} Disabled node UUIDs.
+     */
     getDownstreamDisabledNodes() {
         return new Set(this.state.ui.downstreamDisabledNodes);
     }
 
+    /**
+     * Recompute nodes disabled by upstream operation errors.
+     */
     updateDownstreamDisabledNodes() {
         const disabledNodes = new Set();
         const errorUuids = new Set(this.state.ui.operationErrors.keys());
@@ -563,6 +783,12 @@ class PipelineStore {
         this.state.ui.downstreamDisabledNodes = disabledNodes;
     }
 
+    /**
+     * Load pipeline data into the store.
+     *
+     * @param {Array<Object>} configItems Serialized node config items.
+     * @param {Array<Object>} [connectionsData=[]] Serialized connection items.
+     */
     loadPipelineData(configItems, connectionsData = []) {
         this.clearPipeline();
 
@@ -604,6 +830,11 @@ class PipelineStore {
         });
     }
 
+    /**
+     * Export the current pipeline to config format.
+     *
+     * @returns {Array<Object>} Serialized pipeline config.
+     */
     exportToConfig() {
         const nodes = this.getNodes();
         const config = [];

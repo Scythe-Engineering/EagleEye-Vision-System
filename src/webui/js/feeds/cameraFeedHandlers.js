@@ -1,5 +1,9 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
+/**
+ * Camera feed UI helpers for loading, pausing, resuming, and refreshing feeds.
+ */
+
 const EMPTY_IMAGE_SRC =
     "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 
@@ -8,15 +12,32 @@ let cameraListPollIntervalId = null;
 let cameraFetchFn = null;
 let cameraListFetchController = null;
 
+/**
+ * Returns whether the camera view panel is currently visible.
+ *
+ * @returns {boolean}
+ */
 function isCameraViewActive() {
     const cameraView = document.getElementById("view-views");
     return Boolean(cameraView && !cameraView.classList.contains("hidden"));
 }
 
+/**
+ * Builds the backend feed URL for a camera name.
+ *
+ * @param {string} cameraName
+ * @returns {string}
+ */
 function buildCameraFeedSrc(cameraName) {
     return `${BACKEND_BASE_URL}/feed/${cameraName.replaceAll(" ", "_")}`;
 }
 
+/**
+ * Replaces a camera image with a placeholder and preserves its source.
+ *
+ * @param {HTMLImageElement | null | undefined} img
+ * @returns {void}
+ */
 function stopCameraImage(img) {
     if (!img) {
         return;
@@ -32,6 +53,11 @@ function stopCameraImage(img) {
     }
 }
 
+/**
+ * Sets up camera feed list rendering and related UI behavior.
+ *
+ * @returns {void}
+ */
 export function setupCameraFeedHandlers() {
     const cameraList = document.getElementById("cameraList");
     const noCamerasMessage = document.getElementById("noCamerasMessage");
@@ -180,6 +206,11 @@ export function setupCameraFeedHandlers() {
     fetchAndUpdateCameras();
 }
 
+/**
+ * Pauses all visible camera feeds and stops any in-flight camera list fetch.
+ *
+ * @returns {void}
+ */
 export function pauseCameraFeeds() {
     cameraFeedsPaused = true;
     if (cameraListPollIntervalId !== null) {
@@ -197,6 +228,11 @@ export function pauseCameraFeeds() {
     }
 }
 
+/**
+ * Resumes camera feeds from their paused state.
+ *
+ * @returns {void}
+ */
 export function resumeCameraFeeds() {
     cameraFeedsPaused = false;
 
@@ -215,6 +251,11 @@ export function resumeCameraFeeds() {
     }
 }
 
+/**
+ * Refreshes the available camera list.
+ *
+ * @returns {void}
+ */
 export function refreshCameraFeeds() {
     if (typeof cameraFetchFn === "function") {
         cameraFetchFn();

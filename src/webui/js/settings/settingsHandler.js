@@ -1,6 +1,13 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { setNetworkTablesConnected } from "../ui/connectionStatus.js";
 
+// Handles loading, rendering, and saving settings for the web UI.
+
+/**
+ * Render the NetworkTables connection status badge in the settings UI.
+ *
+ * @param {object|null} status - NetworkTables status payload.
+ */
 export function renderNetworkTableStatus(status) {
     const badge = document.getElementById("networkTableStatusBadge");
     const dot = document.getElementById("networkTableStatusDot");
@@ -45,6 +52,9 @@ export function renderNetworkTableStatus(status) {
     text.textContent = "Unknown";
 }
 
+/**
+ * Load the current NetworkTables status from the backend and update the UI.
+ */
 async function loadNetworkTableStatus() {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/get-system-status`, {
@@ -68,6 +78,9 @@ async function loadNetworkTableStatus() {
     }
 }
 
+/**
+ * Load general settings from the backend and populate the settings form.
+ */
 export async function loadSettings() {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/get-general-conf`, {
@@ -103,13 +116,19 @@ export async function loadSettings() {
     await loadNetworkTableStatus();
 }
 
+/**
+ * Wire up the save button to persist settings changes.
+ */
 export function saveSettings() {
     const saveSettingsBtn = document.getElementById("saveSettingsBtn");
     if (!saveSettingsBtn) {
         return;
     }
 
-    saveSettingsBtn.addEventListener("click", async () => {
+    /**
+     * Validate and submit the current settings form values.
+     */
+    const handleSaveClick = async () => {
         const robotAddressInput = document.getElementById("robotAddressInput");
         const viewStreamDownscaleInput = document.getElementById(
             "viewStreamDownscaleInput",
@@ -156,5 +175,7 @@ export function saveSettings() {
             console.error("Error saving settings:", error);
             alert("An error occurred while saving settings.");
         }
-    });
+    };
+
+    saveSettingsBtn.addEventListener("click", handleSaveClick);
 }

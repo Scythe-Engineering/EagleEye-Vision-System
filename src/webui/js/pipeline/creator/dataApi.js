@@ -1,6 +1,16 @@
 import { BACKEND_BASE_URL } from "../../config.js";
 import { showDanger } from "../../ui/notificationSystem.js";
 
+/**
+ * Data access helpers for the pipeline creator UI.
+ */
+
+/**
+ * Convert a backend operation name into a title-cased display name.
+ *
+ * @param {string} name - Raw operation name.
+ * @returns {string} Title-cased display name.
+ */
 function toTitleCaseName(name) {
     return String(name)
         .replaceAll(".py", "")
@@ -8,6 +18,12 @@ function toTitleCaseName(name) {
         .replaceAll(/\b\w/g, (l) => l.toUpperCase());
 }
 
+/**
+ * Fetch available operations and store them in the pipeline store.
+ *
+ * @param {object} pipelineStore - Store used to persist operations.
+ * @returns {Promise<Array<object>>} Resolved operations list.
+ */
 export async function fetchAvailableOperations(pipelineStore) {
     try {
         const response = await fetch(
@@ -42,6 +58,12 @@ export async function fetchAvailableOperations(pipelineStore) {
     }
 }
 
+/**
+ * Fetch available cameras and store them in the pipeline store.
+ *
+ * @param {object} pipelineStore - Store used to persist cameras.
+ * @returns {Promise<Array<object>>} Resolved cameras list.
+ */
 export async function fetchAvailableCameras(pipelineStore) {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/get-available-cameras`);
@@ -76,6 +98,12 @@ export async function fetchAvailableCameras(pipelineStore) {
     }
 }
 
+/**
+ * Fetch pipeline names and store them in the pipeline store.
+ *
+ * @param {object} pipelineStore - Store used to persist pipelines.
+ * @returns {Promise<Array<object>>} Resolved pipelines list.
+ */
 export async function fetchPipelines(pipelineStore) {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/get-pipeline-names`);
@@ -100,6 +128,12 @@ export async function fetchPipelines(pipelineStore) {
     }
 }
 
+/**
+ * Fetch the configuration for a single pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name to load.
+ * @returns {Promise<Array|object>} Pipeline configuration payload.
+ */
 export async function fetchPipelineConfig(pipelineName) {
     try {
         const response = await fetch(
@@ -118,6 +152,13 @@ export async function fetchPipelineConfig(pipelineName) {
     }
 }
 
+/**
+ * Save a pipeline configuration to the backend.
+ *
+ * @param {string} pipelineName - Pipeline name to save.
+ * @param {object|Array} pipelineConfig - Configuration payload.
+ * @returns {Promise<object>} Backend response payload.
+ */
 export async function savePipelineConfig(pipelineName, pipelineConfig) {
     const response = await fetch(
         `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(pipelineName)}`,
@@ -133,6 +174,12 @@ export async function savePipelineConfig(pipelineName, pipelineConfig) {
     return response.json();
 }
 
+/**
+ * Delete a pipeline configuration from the backend.
+ *
+ * @param {string} pipelineName - Pipeline name to delete.
+ * @returns {Promise<object>} Backend response payload.
+ */
 export async function deletePipelineConfig(pipelineName) {
     const response = await fetch(
         `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(pipelineName)}`,
@@ -147,6 +194,12 @@ export async function deletePipelineConfig(pipelineName) {
     return response.json();
 }
 
+/**
+ * Fetch thread information for a pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name to inspect.
+ * @returns {Promise<object>} Thread info payload.
+ */
 export async function fetchPipelineThreadInfo(pipelineName) {
     const response = await fetch(
         `${BACKEND_BASE_URL}/get-pipeline-thread-info/${encodeURIComponent(pipelineName)}`,
@@ -157,6 +210,11 @@ export async function fetchPipelineThreadInfo(pipelineName) {
     return response.json();
 }
 
+/**
+ * Fetch the backend restart-required flag.
+ *
+ * @returns {Promise<object>} Restart-required payload.
+ */
 export async function getRestartRequired() {
     const response = await fetch(`${BACKEND_BASE_URL}/get_restart_required`);
     if (!response.ok) {
@@ -165,6 +223,12 @@ export async function getRestartRequired() {
     return response.json();
 }
 
+/**
+ * Update the backend restart-required flag.
+ *
+ * @param {boolean} required - Whether a restart is required.
+ * @returns {Promise<object>} Backend response payload.
+ */
 export async function setRestartRequired(required) {
     const response = await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
         method: "POST",
@@ -177,6 +241,11 @@ export async function setRestartRequired(required) {
     return response.json();
 }
 
+/**
+ * Request a backend restart.
+ *
+ * @returns {Promise<object>} Backend response payload.
+ */
 export async function restartBackend() {
     const response = await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
         method: "POST",

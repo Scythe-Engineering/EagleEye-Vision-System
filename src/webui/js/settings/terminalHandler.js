@@ -1,7 +1,13 @@
 import { buildBackendUrl } from "../config.js";
 
+/**
+ * Handles terminal controls and log display interactions in the settings UI.
+ */
 let logsLoaded = false;
 
+/**
+ * Wire up terminal and log-related UI event handlers.
+ */
 export function initializeTerminalHandlers() {
     const terminalPanel = document.getElementById("terminalPanel");
     const settingsPanel = document.getElementById("settingsPanel");
@@ -18,30 +24,48 @@ export function initializeTerminalHandlers() {
     }
 
     if (clearLogsBtn) {
-        clearLogsBtn.addEventListener("click", function () {
-            if (logsOutput) {
-                logsOutput.innerHTML = "";
-                appendToLogs(
-                    "Logs cleared (display only - backend logs preserved)",
-                    "INFO",
-                );
-            }
-        });
+        clearLogsBtn.addEventListener(
+            "click",
+            /**
+             * Clear the visible logs without affecting backend storage.
+             */
+            function () {
+                if (logsOutput) {
+                    logsOutput.innerHTML = "";
+                    appendToLogs(
+                        "Logs cleared (display only - backend logs preserved)",
+                        "INFO",
+                    );
+                }
+            },
+        );
     }
 
     if (clearTerminalBtn) {
-        clearTerminalBtn.addEventListener("click", function () {
-            if (terminalOutput) {
-                terminalOutput.innerHTML =
-                    '<div class="text-green-400">pi@eagleeye:~$ </div>';
-            }
-        });
+        clearTerminalBtn.addEventListener(
+            "click",
+            /**
+             * Reset the terminal output to its default prompt.
+             */
+            function () {
+                if (terminalOutput) {
+                    terminalOutput.innerHTML =
+                        '<div class="text-green-400">pi@eagleeye:~$ </div>';
+                }
+            },
+        );
     }
 
     if (downloadLogsBtn) {
-        downloadLogsBtn.addEventListener("click", function () {
-            downloadLogFile();
-        });
+        downloadLogsBtn.addEventListener(
+            "click",
+            /**
+             * Trigger the log file download action.
+             */
+            function () {
+                downloadLogFile();
+            },
+        );
     }
 
     if (sendCommandBtn) {
@@ -49,14 +73,25 @@ export function initializeTerminalHandlers() {
     }
 
     if (terminalInput) {
-        terminalInput.addEventListener("keypress", function (event) {
-            if (event.key === "Enter") {
-                sendTerminalCommand();
-            }
-        });
+        terminalInput.addEventListener(
+            "keypress",
+            /**
+             * Submit the terminal command when Enter is pressed.
+             *
+             * @param {KeyboardEvent} event - Keypress event.
+             */
+            function (event) {
+                if (event.key === "Enter") {
+                    sendTerminalCommand();
+                }
+            },
+        );
     }
 }
 
+/**
+ * Send the current terminal input to the backend for execution.
+ */
 function sendTerminalCommand() {
     const terminalInput = document.getElementById("terminalInput");
     const terminalOutput = document.getElementById("terminalOutput");
@@ -94,6 +129,13 @@ function sendTerminalCommand() {
     }
 }
 
+/**
+ * Append one or more lines of terminal output with styling for the given type.
+ *
+ * @param {HTMLElement} terminalOutput - Terminal output container element.
+ * @param {string} text - Text to append.
+ * @param {"command"|"error"|"output"} type - Output styling type.
+ */
 function appendToTerminal(terminalOutput, text, type) {
     const lines = text.split("\n");
     for (const line of lines) {
@@ -114,6 +156,9 @@ function appendToTerminal(terminalOutput, text, type) {
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
+/**
+ * Load log messages from the backend once per page lifecycle.
+ */
 async function loadLogMessages() {
     if (logsLoaded) return;
 
@@ -137,6 +182,12 @@ async function loadLogMessages() {
     }
 }
 
+/**
+ * Convert ANSI color escape sequences into styled text segments.
+ *
+ * @param {string} text - Text potentially containing ANSI escape codes.
+ * @returns {{text: string, color: string}[]} Parsed text segments.
+ */
 function parseAnsiColors(text) {
     const ansiRegex = /\u001b\[([0-9;]+)m/g;
     const colorMap = {
@@ -178,6 +229,11 @@ function parseAnsiColors(text) {
     return segments.length > 0 ? segments : [{ text, color: "text-gray-300" }];
 }
 
+/**
+ * Append a single log message to the logs output area.
+ *
+ * @param {string} message - Log message content.
+ */
 function appendLogMessage(message) {
     const logsOutput = document.getElementById("logsOutput");
     if (!logsOutput) return;
@@ -198,6 +254,11 @@ function appendLogMessage(message) {
     logsOutput.scrollTop = logsOutput.scrollHeight;
 }
 
+/**
+ * Append incoming log updates to the logs output.
+ *
+ * @param {{messages?: string[]}} data - Log update payload.
+ */
 export function handleLogUpdate(data) {
     if (data.messages && Array.isArray(data.messages)) {
         for (const message of data.messages) {
@@ -206,6 +267,9 @@ export function handleLogUpdate(data) {
     }
 }
 
+/**
+ * Clear and reload the current log messages.
+ */
 export function refreshLogMessages() {
     logsLoaded = false;
     const logsOutput = document.getElementById("logsOutput");
@@ -215,6 +279,9 @@ export function refreshLogMessages() {
     }
 }
 
+/**
+ * Download the backend log file to the user's device.
+ */
 function downloadLogFile() {
     fetch(buildBackendUrl("/download-log-file"))
         .then((response) => {
@@ -244,6 +311,12 @@ function downloadLogFile() {
         });
 }
 
+/**
+ * Append a formatted message to the logs output area.
+ *
+ * @param {string} message - Log message content.
+ * @param {"INFO"|"ERROR"|"WARNING"|"DEBUG"} [level="INFO"] - Log severity level.
+ */
 export function appendToLogs(message, level = "INFO") {
     const logsOutput = document.getElementById("logsOutput");
     if (logsOutput) {

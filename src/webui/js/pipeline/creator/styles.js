@@ -1,5 +1,9 @@
+// Injects the pipeline creator's shared stylesheet once into the document.
 let creatorStylesInjected = false;
 
+/**
+ * Ensures the pipeline creator styles are added to the document only once.
+ */
 export function ensurePipelineCreatorStyles() {
     if (creatorStylesInjected || document.getElementById("pipeline-creator-styles")) {
         creatorStylesInjected = true;
