@@ -8,6 +8,7 @@ import { debounce, escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
 import { pipelineStore } from "./PipelineStore.js";
 import { pipelineHistory } from "./pipelineHistory.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     showDanger,
     showSuccess,
@@ -1760,11 +1761,14 @@ async function createNewPipeline() {
     const pipelines = getPipelines();
     const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
     if (existingPipeline) {
-        if (
-            !confirm(
-                `Pipeline "${newPipelineName}" already exists. Do you want to overwrite it?`,
-            )
-        ) {
+        const shouldOverwrite = await confirmDialog({
+            title: "Overwrite Pipeline?",
+            message: `Pipeline "${newPipelineName}" already exists.`,
+            detail: "Do you want to overwrite it?",
+            confirmText: "Overwrite",
+            variant: "warning",
+        });
+        if (!shouldOverwrite) {
             return;
         }
     }
@@ -1845,9 +1849,12 @@ async function deleteCurrentPipeline() {
 
     const pipelineToDelete = selectedPipeline;
 
-    const confirmed = confirm(
-        `Are you sure you want to delete the pipeline "${pipelineToDelete.displayName}"?\n\nThis action cannot be undone.`,
-    );
+    const confirmed = await confirmDialog({
+        title: "Delete Pipeline?",
+        message: `Delete the pipeline "${pipelineToDelete.displayName}"?`,
+        detail: "This action cannot be undone.",
+        confirmText: "Delete Pipeline",
+    });
 
     if (!confirmed) {
         return;
@@ -2097,9 +2104,13 @@ async function handleFlowchartPipelineChange(changeEvent) {
     const selectedPipeline = getSelectedPipeline();
 
     if (!selectedPipeline) {
-        const shouldCreate = confirm(
-            "You need to create a pipeline before adding operations. Would you like to create a new pipeline now?",
-        );
+        const shouldCreate = await confirmDialog({
+            title: "Create Pipeline?",
+            message: "You need to create a pipeline before adding operations.",
+            detail: "Would you like to create a new pipeline now?",
+            confirmText: "Create Pipeline",
+            variant: "warning",
+        });
         if (!shouldCreate) {
             return;
         }

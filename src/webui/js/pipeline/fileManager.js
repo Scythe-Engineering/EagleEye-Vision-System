@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -137,12 +138,14 @@ export function registerFileManagerPopup() {
                 className:
                     "px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm",
                 text: "Delete",
-                onclick: () => {
-                    if (
-                        confirm(
-                            `Are you sure you want to delete "${file.filename}"?`,
-                        )
-                    ) {
+                onclick: async () => {
+                    const shouldDelete = await confirmDialog({
+                        title: "Delete Operation File?",
+                        message: `Delete "${file.filename}"?`,
+                        detail: "This action cannot be undone.",
+                        confirmText: "Delete",
+                    });
+                    if (shouldDelete) {
                         deleteFile(file.filename);
                     }
                 },

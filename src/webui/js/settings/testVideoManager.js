@@ -7,6 +7,7 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     showDanger,
     showSuccess,
@@ -133,9 +134,12 @@ async function uploadVideo(file, overwrite = false) {
         await loadVideos();
     } catch (error) {
         if (error.status === 409 && error.payload?.requires_overwrite) {
-            const shouldOverwrite = globalThis.confirm(
-                `"${error.payload.filename}" already exists. Replace it?`,
-            );
+            const shouldOverwrite = await confirmDialog({
+                title: "Replace Test Video?",
+                message: `"${error.payload.filename}" already exists. Replace it?`,
+                confirmText: "Replace",
+                variant: "warning",
+            });
             if (shouldOverwrite) {
                 await uploadVideo(file, true);
             }
@@ -165,9 +169,12 @@ async function deleteVideo(filename, force = false) {
                 references.length > 0
                     ? `\n\nReferenced by: ${references.join(", ")}`
                     : "";
-            const shouldDelete = globalThis.confirm(
-                `"${filename}" is used by configured pipelines.${referenceText}\n\nDelete it anyway?`,
-            );
+            const shouldDelete = await confirmDialog({
+                title: "Delete Referenced Video?",
+                message: `"${filename}" is used by configured pipelines.${referenceText}`,
+                detail: "Delete it anyway?",
+                confirmText: "Delete Anyway",
+            });
             if (shouldDelete) {
                 await deleteVideo(filename, true);
             }
@@ -225,10 +232,13 @@ function renderVideoRows(container) {
             className:
                 "px-3 py-1 bg-red-700 text-white rounded-md hover:bg-red-600 text-sm disabled:opacity-60",
             text: "Delete",
-            onclick: () => {
-                const shouldDelete = globalThis.confirm(
-                    `Delete "${video.filename}"?`,
-                );
+            onclick: async () => {
+                const shouldDelete = await confirmDialog({
+                    title: "Delete Test Video?",
+                    message: `Delete "${video.filename}"?`,
+                    detail: "This action cannot be undone.",
+                    confirmText: "Delete",
+                });
                 if (shouldDelete) {
                     deleteVideo(video.filename);
                 }

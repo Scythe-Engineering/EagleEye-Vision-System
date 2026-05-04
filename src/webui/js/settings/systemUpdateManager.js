@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -82,46 +83,17 @@ async function refreshUpdateStatus() {
     setButtonState();
 }
 
-function renderConfirm() {
-    const { overlay, modal } = getOverlayElements();
-    modal.innerHTML = "";
-
-    const cancelButton = createElement("button", {
-        type: "button",
-        className:
-            "px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a]",
-        text: "Cancel",
-        onclick: close,
+async function renderConfirm() {
+    const confirmed = await confirmDialog({
+        title: "Update System?",
+        message: "This will restart the system. Are you sure?",
+        detail: "The backend will run git pull, apt update, and non-interactive apt upgrade before restarting.",
+        confirmText: "Update and Restart",
+        variant: "warning",
     });
-    const confirmButton = createElement("button", {
-        type: "button",
-        className:
-            "px-4 py-2 bg-red-900 text-white rounded-md border border-red-700 hover:bg-red-800",
-        text: "Update and Restart",
-        onclick: runUpdate,
-    });
-
-    modal.appendChild(
-        createElement("div", { className: "p-6" }, [
-            createElement("h3", {
-                className: "text-xl font-bold text-yellow-400 mb-3",
-                text: "Update System",
-            }),
-            createElement("p", {
-                className: "text-gray-200 mb-2",
-                text: "This will restart the system. Are you sure?",
-            }),
-            createElement("p", {
-                className: "text-sm text-gray-400 mb-6",
-                text: "The backend will run git pull, apt update, and non-interactive apt upgrade before restarting.",
-            }),
-            createElement("div", { className: "flex justify-end gap-3" }, [
-                cancelButton,
-                confirmButton,
-            ]),
-        ]),
-    );
-    showModal(overlay);
+    if (confirmed) {
+        runUpdate();
+    }
 }
 
 function renderProgress(message, detail = "") {

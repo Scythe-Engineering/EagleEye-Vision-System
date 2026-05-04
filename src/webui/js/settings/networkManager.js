@@ -7,6 +7,7 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     showDanger,
     showSuccess,
@@ -116,9 +117,13 @@ async function connectNetwork(network, passwordInput) {
 }
 
 async function disconnectNetwork(network) {
-    const shouldDisconnect = globalThis.confirm(
-        `Disconnect from "${network.ssid}"? Network access to this device may be interrupted.`,
-    );
+    const shouldDisconnect = await confirmDialog({
+        title: "Disconnect WiFi?",
+        message: `Disconnect from "${network.ssid}"?`,
+        detail: "Network access to this device may be interrupted.",
+        confirmText: "Disconnect",
+        variant: "warning",
+    });
     if (!shouldDisconnect) {
         return;
     }

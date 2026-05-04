@@ -10,6 +10,7 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
 
 const OVERLAY_ID = "assetFileManagerOverlay";
@@ -223,9 +224,12 @@ async function uploadAsset(file, overwrite = false) {
         await refresh3DAssetDropdowns(payload.file?.filename || file.name);
     } catch (error) {
         if (error.status === 409 && error.payload?.requires_overwrite) {
-            const shouldOverwrite = globalThis.confirm(
-                `"${error.payload.filename}" already exists. Replace it?`,
-            );
+            const shouldOverwrite = await confirmDialog({
+                title: "Replace 3D Asset?",
+                message: `"${error.payload.filename}" already exists. Replace it?`,
+                confirmText: "Replace",
+                variant: "warning",
+            });
             if (shouldOverwrite) {
                 await uploadAsset(file, true);
             }
@@ -607,10 +611,13 @@ function renderFileRows(container) {
             className:
                 "px-3 py-1 bg-red-700 text-white rounded-md hover:bg-red-600 text-sm",
             text: "Delete",
-            onclick: () => {
-                const shouldDelete = globalThis.confirm(
-                    `Delete "${file.filename}"?`,
-                );
+            onclick: async () => {
+                const shouldDelete = await confirmDialog({
+                    title: "Delete 3D Asset?",
+                    message: `Delete "${file.filename}"?`,
+                    detail: "This action cannot be undone.",
+                    confirmText: "Delete",
+                });
                 if (shouldDelete) {
                     deleteAsset(file);
                 }
