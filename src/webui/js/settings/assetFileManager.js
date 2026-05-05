@@ -343,22 +343,24 @@ async function deleteAsset(file) {
 }
 
 /**
- * Saves the scale for an asset and applies it in the 3D view.
+ * Saves viewer settings for an asset and applies them in the 3D view.
  *
  * @param {Object} file
  * @param {number} scale
+ * @param {{x:number,y:number,z:number}} rotationOffset
  * @returns {Promise<boolean>}
  */
-async function saveAssetScale(file, scale) {
+async function saveAssetScale(file, scale, rotationOffset = { x: 0, y: 0, z: 0 }) {
     try {
         const payload = await fetchJson(scaleEndpoint(file), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ scale }),
+            body: JSON.stringify({ scale, rotation_offset: rotationOffset }),
         });
         const savedScale = normalizeScale(payload.file?.scale ?? scale);
+        const savedRotationOffset = payload.file?.rotation_offset ?? rotationOffset;
         showSuccess(
             `${activeType === "robot" ? "Robot" : "Field"} scale saved.`,
         );
@@ -369,6 +371,7 @@ async function saveAssetScale(file, scale) {
                 filename: file.filename,
             },
             savedScale,
+            savedRotationOffset,
         );
         await loadAssets();
         await refresh3DAssetDropdowns(file.filename);
@@ -419,6 +422,19 @@ function openScalePopup(file) {
         className:
             "bg-[#2a2a2a] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:border-[#f9c845]",
     });
+    const rotationInputs = Object.fromEntries(
+        ["x", "y", "z"].map((axis) => [
+            axis,
+            createElement("input", {
+                name: `rotation_${axis}`,
+                type: "number",
+                step: "any",
+                value: file.rotation_offset?.[axis] ?? 0,
+                className:
+                    "bg-[#2a2a2a] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:border-[#f9c845]",
+            }),
+        ]),
+    );
 
     const form = createElement(
         "form",
@@ -432,7 +448,16 @@ function openScalePopup(file) {
                     if (!Number.isFinite(scale) || scale <= 0) {
                         throw new Error("Scale must be a positive number.");
                     }
-                    const saved = await saveAssetScale(file, scale);
+                    const rotationOffset = Object.fromEntries(
+                        Object.entries(rotationInputs).map(([axis, rotationInput]) => {
+                            const value = Number.parseFloat(rotationInput.value);
+                            if (!Number.isFinite(value)) {
+                                throw new Error(`Rotation ${axis.toUpperCase()} must be a number.`);
+                            }
+                            return [axis, value];
+                        }),
+                    );
+                    const saved = await saveAssetScale(file, scale, rotationOffset);
                     if (saved) {
                         popup.remove();
                     }
@@ -450,11 +475,11 @@ function openScalePopup(file) {
                 [
                     createElement("h3", {
                         className: "text-xl font-bold text-[#f9c845]",
-                        text: `Scale ${file.filename}`,
+                        text: `Settings ${file.filename}`,
                     }),
                     createElement("p", {
                         className: "text-sm text-gray-300 mt-2",
-                        text: "Enter a positive scale factor.",
+                        text: "Enter scale and field rotation offsets in degrees.",
                     }),
                     closeButton,
                 ],
@@ -476,6 +501,23 @@ function openScalePopup(file) {
                             input,
                         ],
                     ),
+                    ...(activeType === "field"
+                        ? Object.entries(rotationInputs).map(([axis, rotationInput]) =>
+                              createElement(
+                                  "label",
+                                  {
+                                      className:
+                                          "flex flex-col gap-2 text-sm text-[#f9c845] font-medium",
+                                  },
+                                  [
+                                      createElement("span", {
+                                          text: `Rotation ${axis.toUpperCase()} offset (degrees)`,
+                                      }),
+                                      rotationInput,
+                                  ],
+                              ),
+                          )
+                        : []),
                 ],
             ),
             createElement(

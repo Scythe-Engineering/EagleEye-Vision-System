@@ -29,6 +29,7 @@ import {
     Group,
     Sprite,
     SpriteMaterial,
+    MathUtils,
 } from "three";
 import { OrbitControls } from "OrbitControls";
 import { DRACOLoader } from "DRACOLoader";
@@ -65,6 +66,7 @@ let currentRobotFile = null;
 let currentRobotScaleFactor = 1;
 let lastRobotTransformMatrix = null;
 let currentFieldScaleFactor = 1;
+let currentFieldRotationOffset = { x: 0, y: 0, z: 0 };
 let currentFieldYear = null;
 let currentFieldFilename = null;
 let activeDracoLoader = null;
@@ -144,6 +146,31 @@ function normalizeAssetScale(scale) {
     return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
 }
 
+function normalizeRotationOffset(rotationOffset) {
+    const rotation = { x: 0, y: 0, z: 0 };
+    for (const axis of Object.keys(rotation)) {
+        const value = Number.parseFloat(rotationOffset?.[axis]);
+        rotation[axis] = Number.isFinite(value) ? value : 0;
+    }
+    return rotation;
+}
+
+function applyFieldTransform(model) {
+    if (!model) {
+        return;
+    }
+    model.rotation.set(
+        Math.PI / 2 + MathUtils.degToRad(currentFieldRotationOffset.x),
+        MathUtils.degToRad(currentFieldRotationOffset.y),
+        MathUtils.degToRad(currentFieldRotationOffset.z),
+    );
+    model.scale.set(
+        currentFieldScaleFactor,
+        currentFieldScaleFactor,
+        currentFieldScaleFactor,
+    );
+}
+
 /**
  * Recomputes the robot scale matrix from the current robot scale factor.
  */
@@ -215,20 +242,10 @@ function applyRobotScaleFactor(scale) {
  */
 function applyFieldScaleFactor(scale) {
     currentFieldScaleFactor = normalizeAssetScale(scale);
-    if (fieldObject) {
-        fieldObject.scale.set(
-            currentFieldScaleFactor,
-            currentFieldScaleFactor,
-            currentFieldScaleFactor,
-        );
-    }
+    applyFieldTransform(fieldObject);
 
     for (const gamePieceObject of gamePieceObjects) {
-        gamePieceObject.scale.set(
-            currentFieldScaleFactor,
-            currentFieldScaleFactor,
-            currentFieldScaleFactor,
-        );
+        applyFieldTransform(gamePieceObject);
     }
 
     if (renderer?.shadowMap) {
@@ -240,7 +257,7 @@ function applyFieldScaleFactor(scale) {
  * Applies a scale update to the currently loaded 3D asset when it matches the active asset.
  */
 
-export function apply3DAssetScale(assetType, asset, scale) {
+export function apply3DAssetScale(assetType, asset, scale, rotationOffset = null) {
     if (assetType === "robot" && asset?.filename === currentRobotFile) {
         applyRobotScaleFactor(scale);
         return;
@@ -251,6 +268,7 @@ export function apply3DAssetScale(assetType, asset, scale) {
         asset?.year === currentFieldYear &&
         asset?.filename === currentFieldFilename
     ) {
+        currentFieldRotationOffset = normalizeRotationOffset(rotationOffset || currentFieldRotationOffset);
         applyFieldScaleFactor(scale);
     }
 }
@@ -1102,6 +1120,7 @@ export async function init3DView(modelUrl, options = {}) {
 
     const scale = 40;
     currentFieldScaleFactor = normalizeAssetScale(options.fieldScale);
+    currentFieldRotationOffset = normalizeRotationOffset(options.fieldRotationOffset);
     currentFieldYear = options.fieldYear || null;
     currentFieldFilename = options.fieldFilename || null;
 
@@ -1305,12 +1324,7 @@ export async function init3DView(modelUrl, options = {}) {
                 center: modelCenter,
             });
 
-            model.rotation.x = Math.PI / 2;
-            model.scale.set(
-                currentFieldScaleFactor,
-                currentFieldScaleFactor,
-                currentFieldScaleFactor,
-            );
+            applyFieldTransform(model);
 
             model.traverse((child) => {
                 if (child.isMesh) {
@@ -1400,13 +1414,8 @@ export async function init3DView(modelUrl, options = {}) {
                     }
                     const model = gltf.scene;
 
-                    model.rotation.x = Math.PI / 2;
                     gamePieceObjects.push(model);
-                    model.scale.set(
-                        currentFieldScaleFactor,
-                        currentFieldScaleFactor,
-                        currentFieldScaleFactor,
-                    );
+                    applyFieldTransform(model);
 
                     model.traverse((child) => {
                         if (child.isMesh) {

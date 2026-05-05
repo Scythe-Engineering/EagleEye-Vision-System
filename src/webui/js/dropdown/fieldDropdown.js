@@ -18,6 +18,7 @@ function createFieldRecord(year, filename) {
         filename,
         scale: 1,
         url: `/assets/fields/${year}/field_files/${filename}`,
+        rotation_offset: { x: 0, y: 0, z: 0 },
         game_piece_urls: [
             `/assets/fields/${year}/game_pieces/FE-${year}-GP.glb`,
         ],
@@ -74,6 +75,7 @@ function normalizeFieldRecord(record) {
     return {
         ...record,
         scale: normalizeScale(record.scale),
+        rotation_offset: record.rotation_offset || { x: 0, y: 0, z: 0 },
         url:
             record.url ||
             `/assets/fields/${record.year}/field_files/${record.filename}`,
@@ -167,6 +169,7 @@ export function getSelectedFieldModel() {
             gamePieceUrls: fieldRecord.game_piece_urls,
             aprilTagMapUrl: fieldRecord.apriltag_map_url,
             fieldScale: fieldRecord.scale,
+            fieldRotationOffset: fieldRecord.rotation_offset,
             fieldYear: fieldRecord.year,
             fieldFilename: fieldRecord.filename,
         };
@@ -177,6 +180,7 @@ export function getSelectedFieldModel() {
         gamePieceUrls: undefined,
         aprilTagMapUrl: undefined,
         fieldScale: 1,
+        fieldRotationOffset: { x: 0, y: 0, z: 0 },
         fieldYear: yearSelect.value,
         fieldFilename: fileSelect.value,
     };
@@ -224,6 +228,7 @@ function loadSelectedField(yearSelect, fileSelect) {
         gamePieceUrls: fieldModel.gamePieceUrls,
         aprilTagMapUrl: fieldModel.aprilTagMapUrl,
         fieldScale: fieldModel.fieldScale,
+        fieldRotationOffset: fieldModel.fieldRotationOffset,
         fieldYear: fieldModel.fieldYear,
         fieldFilename: fieldModel.fieldFilename,
     });

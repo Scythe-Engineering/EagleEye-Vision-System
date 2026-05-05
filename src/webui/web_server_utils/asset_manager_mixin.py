@@ -17,7 +17,9 @@ def _request():
 
 from src.webui.web_server_utils.constants import (
     APRILTAG_MAP_EXTENSIONS,
+    ASSET_ROTATION_OFFSET_KEY,
     ASSET_SCALE_KEY,
+    DEFAULT_ASSET_ROTATION_OFFSET,
     DEFAULT_ASSET_SCALE,
     FIELD_APRILTAG_MAP_DIR_NAME,
     FIELD_ASSET_DIR_NAME,
@@ -184,14 +186,35 @@ class AssetManagerMixin:
 
         return scale
 
-    def _save_asset_scale(self, file_path: Path, scale: float) -> None:
-        """Persist a positive scale factor for a model asset."""
+    def _asset_rotation_offset(self, file_path: Path) -> dict[str, float]:
+        """Return saved model rotation offsets in degrees."""
+        raw_rotation = self._read_asset_metadata(file_path).get(
+            ASSET_ROTATION_OFFSET_KEY, {}
+        )
+        if not isinstance(raw_rotation, dict):
+            raw_rotation = {}
+
+        rotation = DEFAULT_ASSET_ROTATION_OFFSET.copy()
+        for axis in rotation:
+            try:
+                value = float(raw_rotation.get(axis, rotation[axis]))
+            except (TypeError, ValueError):
+                value = rotation[axis]
+            rotation[axis] = value if np.isfinite(value) else rotation[axis]
+        return rotation
+
+    def _save_asset_settings(
+        self, file_path: Path, scale: float, rotation_offset: dict[str, float] | None = None
+    ) -> None:
+        """Persist viewer settings for a model asset."""
         metadata = self._read_asset_metadata(file_path)
         metadata[ASSET_SCALE_KEY] = scale
+        if rotation_offset is not None:
+            metadata[ASSET_ROTATION_OFFSET_KEY] = rotation_offset
         self._write_asset_metadata(file_path, metadata)
 
-    def _asset_scale_from_request(self) -> float:
-        """Parse and validate an asset scale value from JSON or form data."""
+    def _asset_settings_from_request(self) -> tuple[float, dict[str, float]]:
+        """Parse and validate model viewer settings from JSON or form data."""
         req = _request()
         payload: dict[str, Any] = {}
         get_json = getattr(req, "get_json", None)
@@ -209,12 +232,26 @@ class AssetManagerMixin:
         if not np.isfinite(scale) or scale <= 0:
             raise ValueError("Scale must be a positive number")
 
-        return scale
+        raw_rotation = payload.get(ASSET_ROTATION_OFFSET_KEY, {})
+        if not isinstance(raw_rotation, dict):
+            raw_rotation = {}
+        rotation = DEFAULT_ASSET_ROTATION_OFFSET.copy()
+        for axis in rotation:
+            try:
+                value = float(raw_rotation.get(axis, req.form.get(f"rotation_{axis}", 0)))
+            except (TypeError, ValueError):
+                raise ValueError(f"Rotation {axis.upper()} must be a number") from None
+            if not np.isfinite(value):
+                raise ValueError(f"Rotation {axis.upper()} must be a finite number")
+            rotation[axis] = value
+
+        return scale, rotation
 
     def _robot_file_detail(self, file_path: Path) -> dict[str, Any]:
         """Return robot GLB metadata including saved scale."""
         detail = self._asset_file_details(file_path)
         detail[ASSET_SCALE_KEY] = self._asset_scale(file_path)
+        detail[ASSET_ROTATION_OFFSET_KEY] = self._asset_rotation_offset(file_path)
         return detail
 
     def _webui_asset_url(self, relative_path: Path) -> str:
@@ -292,6 +329,7 @@ class AssetManagerMixin:
         detail["asset_path"] = relative_path.as_posix()
         detail["url"] = self._webui_asset_url(relative_path)
         detail[ASSET_SCALE_KEY] = self._asset_scale(file_path)
+        detail[ASSET_ROTATION_OFFSET_KEY] = self._asset_rotation_offset(file_path)
         detail["game_pieces"] = game_pieces
         detail["game_piece_urls"] = [game_piece["url"] for game_piece in game_pieces]
         apriltag_map = self._field_apriltag_map_detail(file_path.name, year)
@@ -421,8 +459,8 @@ class AssetManagerMixin:
             if not file_path.is_file():
                 return {"error": "File not found"}, 404
 
-            scale = self._asset_scale_from_request()
-            self._save_asset_scale(file_path, scale)
+            scale, rotation_offset = self._asset_settings_from_request()
+            self._save_asset_settings(file_path, scale, rotation_offset)
             self.log(f"Saved robot file scale {scale} for {safe_filename}")
 
             return {
@@ -574,8 +612,8 @@ class AssetManagerMixin:
             if not file_path.is_file():
                 return {"error": "File not found"}, 404
 
-            scale = self._asset_scale_from_request()
-            self._save_asset_scale(file_path, scale)
+            scale, rotation_offset = self._asset_settings_from_request()
+            self._save_asset_settings(file_path, scale, rotation_offset)
             self.log(
                 f"Saved field file scale {scale} for {safe_year}/{safe_filename}"
             )
