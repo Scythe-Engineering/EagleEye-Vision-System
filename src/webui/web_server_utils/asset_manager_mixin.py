@@ -15,6 +15,7 @@ def _request():
     import src.webui.web_server as _ws
     return _ws.request
 
+from src.webui.web_server_utils.apriltag_map_sanitizer import sanitize_apriltag_map_file
 from src.webui.web_server_utils.constants import (
     APRILTAG_MAP_EXTENSIONS,
     ASSET_ROTATION_OFFSET_KEY,
@@ -351,6 +352,12 @@ class AssetManagerMixin:
             / f"{Path(field_filename).stem}{map_extension}"
         )
         upload.save(str(map_path))
+        fixes = sanitize_apriltag_map_file(map_path)
+        if fixes:
+            self.log(
+                f"Auto-fixed {fixes} invalid AprilTag map transform values in "
+                f"{map_filename}"
+            )
 
     def _overwrite_requested(self) -> bool:
         """Return whether a multipart upload explicitly requested overwrite."""

@@ -7,6 +7,7 @@ from typing import Any, List
 
 from flask import request
 
+from src.webui.web_server_utils.apriltag_map_sanitizer import sanitize_apriltag_map_file
 from src.webui.web_server_utils.constants import SRC_DIR
 
 
@@ -497,6 +498,14 @@ class OperationConfigMixin:
             file_path = parameter_dir / file.filename
 
             file.save(str(file_path))
+            if parameter_name == "apriltag_map_path":
+                fixes = sanitize_apriltag_map_file(file_path)
+                if fixes:
+                    self.log(
+                        f"Auto-fixed {fixes} invalid AprilTag map transform values in "
+                        f"{file.filename}"
+                    )
+
             self.log(
                 f"Uploaded file {file.filename} for {operation_name}/{parameter_name}"
             )
