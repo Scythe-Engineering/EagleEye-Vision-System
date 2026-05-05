@@ -18,6 +18,7 @@ import {
     CylinderGeometry,
     TextureLoader,
     CanvasTexture,
+    Box3,
     Matrix4,
     NearestFilter,
     Vector3,
