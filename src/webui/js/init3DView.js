@@ -169,6 +169,14 @@ function applyFieldTransform(model) {
         currentFieldScaleFactor,
         currentFieldScaleFactor,
     );
+    model.updateMatrix();
+    model.updateMatrixWorld(true);
+}
+
+function renderOnce() {
+    if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+    }
 }
 
 /**
@@ -270,6 +278,7 @@ export function apply3DAssetScale(assetType, asset, scale, rotationOffset = null
     ) {
         currentFieldRotationOffset = normalizeRotationOffset(rotationOffset || currentFieldRotationOffset);
         applyFieldScaleFactor(scale);
+        renderOnce();
     }
 }
 

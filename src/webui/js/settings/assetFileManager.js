@@ -105,9 +105,7 @@ function normalizeScale(scale) {
  * @returns {string}
  */
 function formatScale(scale) {
-    return normalizeScale(scale).toLocaleString(undefined, {
-        maximumFractionDigits: 6,
-    });
+    return String(normalizeScale(scale));
 }
 
 /**
