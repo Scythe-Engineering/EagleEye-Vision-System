@@ -122,14 +122,38 @@ def generate_all_pipelines(
     Returns:
         Dictionary mapping pipeline names to Pipeline objects.
     """
-    if pipeline_config is None:
-        with open(
-            os.path.join(str(current_path.parent), "pipeline_config.json"), "r"
-        ) as f:
+    config_path = (
+        os.path.join(str(current_path.parent), "pipeline_config.json")
+        if pipeline_config is None
+        else pipeline_config
+    )
+    try:
+        with open(config_path, "r") as f:
             config_data = json.load(f)
-    else:
-        with open(pipeline_config, "r") as f:
-            config_data = json.load(f)
+    except json.JSONDecodeError:
+        logger.log(
+            f"{Colors.RED}Invalid pipeline config JSON in {config_path}: "
+            f"{traceback.format_exc()}{Colors.RESET}"
+        )
+        if web_interface:
+            try:
+                web_interface.publish_operation_errors(
+                    {
+                        "pipeline_name": "Pipeline Config",
+                        "errors": [
+                            {
+                                "uuid": "pipeline_config::json_decode",
+                                "name": "Pipeline Config",
+                                "message": traceback.format_exc().strip(),
+                                "last_seen_ts": time.time(),
+                                "count": 1,
+                            }
+                        ],
+                    }
+                )
+            except Exception:
+                pass
+        return {}
 
     # Replace placeholders in the configuration data
     config_data = replace_values(config_data)

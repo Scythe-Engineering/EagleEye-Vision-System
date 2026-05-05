@@ -1211,7 +1211,15 @@ export function registerSettingsPopup() {
             }
         };
 
-        input.addEventListener("input", updateIndicator);
+        input.addEventListener("input", () => {
+            input.setCustomValidity("");
+            if (input.validity?.rangeOverflow) {
+                input.setCustomValidity(`${name} must be <= ${def.max}`);
+            } else if (input.validity?.rangeUnderflow) {
+                input.setCustomValidity(`${name} must be >= ${def.min}`);
+            }
+            updateIndicator();
+        });
         input.addEventListener("change", updateIndicator);
 
         const wrapper = createElement("div", { className: "mb-4" }, [
@@ -1326,6 +1334,17 @@ export function registerSettingsPopup() {
 
         // Function to trigger auto-save
         const triggerAutoSave = () => {
+            const invalidInput = Array.from(
+                modalBody.querySelectorAll("input, select"),
+            ).find(
+                (input) =>
+                    typeof input.checkValidity === "function" &&
+                    !input.checkValidity(),
+            );
+            if (invalidInput) {
+                invalidInput.reportValidity();
+                return;
+            }
             console.log("[SETTINGS] Auto-save triggered", {
                 operationName: config?.operationName || "unknown",
                 timestamp: new Date().toISOString(),

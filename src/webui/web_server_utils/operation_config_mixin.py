@@ -301,6 +301,37 @@ class OperationConfigMixin:
         config_data["dynamic_group"] = normalized_group
         return config_data
 
+    def _validate_numeric_operation_params(
+        self, operation_name: str, action_params: dict[str, Any], config_def: dict[str, Any]
+    ) -> list[str]:
+        """Validate numeric operation parameters against config definition bounds."""
+        errors: list[str] = []
+        for param, definition in (config_def.get("parameters") or {}).items():
+            if not isinstance(definition, dict) or param not in action_params:
+                continue
+            param_type = definition.get("type")
+            if param_type not in {"int", "float"}:
+                continue
+            value = action_params[param]
+            if isinstance(value, bool):
+                errors.append(f"{param} must be a {param_type}, not a boolean")
+                continue
+            try:
+                numeric_value = int(value) if param_type == "int" else float(value)
+            except (TypeError, ValueError):
+                errors.append(f"{param} must be a valid {param_type}")
+                continue
+            if param_type == "int" and float(numeric_value) != float(value):
+                errors.append(f"{param} must be an integer")
+                continue
+            minimum = definition.get("min")
+            maximum = definition.get("max")
+            if isinstance(minimum, (int, float)) and numeric_value < minimum:
+                errors.append(f"{param} must be >= {minimum}")
+            if isinstance(maximum, (int, float)) and numeric_value > maximum:
+                errors.append(f"{param} must be <= {maximum}")
+        return errors
+
     def _reorder_operation_params(
         self, operation_name: str, action_params: dict[str, Any]
     ) -> dict[str, Any]:
@@ -320,6 +351,15 @@ class OperationConfigMixin:
                 config_def = self.get_operation_config_data(operation_name, False)
 
             if config_def and "parameters" in config_def:
+                validation_errors = self._validate_numeric_operation_params(
+                    operation_name, action_params, config_def
+                )
+                if validation_errors:
+                    raise ValueError(
+                        f"Invalid configuration for {operation_name}: "
+                        + "; ".join(validation_errors)
+                    )
+
                 param_order = list(config_def["parameters"].keys())
                 reordered_params = {}
                 for param in param_order:
@@ -329,6 +369,8 @@ class OperationConfigMixin:
                     if param not in reordered_params:
                         reordered_params[param] = value
                 return reordered_params
+        except ValueError:
+            raise
         except Exception as e:
             self.log(f"Warning: Could not reorder parameters for {operation_name}: {e}")
 

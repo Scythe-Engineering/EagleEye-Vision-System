@@ -81,12 +81,23 @@ class PipelineConfigMixin:
 
         existing_ops = {op["uuid"]: op for op in current_config[pipeline_name]}
         updated_operations = []
+        invalid_operations = []
         for operation in new_data:
             operation_uuid = operation["uuid"]
             operation_name = operation["action_name"]
-            operation_params = self._reorder_operation_params(
-                operation_name, operation["action_params"]
-            )
+            try:
+                operation_params = self._reorder_operation_params(
+                    operation_name, operation["action_params"]
+                )
+            except ValueError as exc:
+                invalid_operations.append(
+                    {
+                        "uuid": operation_uuid,
+                        "name": operation_name,
+                        "message": str(exc),
+                    }
+                )
+                continue
 
             if operation_uuid in existing_ops:
                 merged_op = existing_ops[operation_uuid].copy()
@@ -100,6 +111,12 @@ class PipelineConfigMixin:
                 merged_op["action_params"] = operation_params
 
             updated_operations.append(merged_op)
+
+        if invalid_operations:
+            return {
+                "message": "Pipeline config contains invalid operation configuration",
+                "invalid_operations": invalid_operations,
+            }, 400
 
         current_config[pipeline_name] = updated_operations
         restart_state = self._analyze_pipeline_restart_state(current_config)
