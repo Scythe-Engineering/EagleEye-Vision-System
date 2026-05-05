@@ -1294,6 +1294,16 @@ export async function init3DView(modelUrl, options = {}) {
             const model = gltf.scene;
             fieldObject = model;
 
+            const modelBounds = new Box3().setFromObject(model);
+            const modelSize = new Vector3();
+            const modelCenter = new Vector3();
+            modelBounds.getSize(modelSize);
+            modelBounds.getCenter(modelCenter);
+            console.log("FIELD MODEL BOUNDS", {
+                size: modelSize,
+                center: modelCenter,
+            });
+
             model.rotation.x = Math.PI / 2;
             model.scale.set(
                 currentFieldScaleFactor,
