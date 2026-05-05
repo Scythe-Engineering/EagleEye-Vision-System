@@ -125,8 +125,9 @@ async function renderConfirm() {
  * @param {string} [detail=""]
  */
 function renderProgress(message, detail = "") {
-    const { modal } = getOverlayElements();
+    const { overlay, modal } = getOverlayElements();
     modal.innerHTML = "";
+    showModal(overlay);
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
             createElement("h3", {
@@ -155,8 +156,9 @@ function renderProgress(message, detail = "") {
  * @param {string} message
  */
 function renderError(message) {
-    const { modal } = getOverlayElements();
+    const { overlay, modal } = getOverlayElements();
     modal.innerHTML = "";
+    showModal(overlay);
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
             createElement("h3", {
