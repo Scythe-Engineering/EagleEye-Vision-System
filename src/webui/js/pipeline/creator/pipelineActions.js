@@ -20,6 +20,7 @@ import {
 } from "./dataApi.js";
 import { applySelectedPipelineProfiling } from "./profilingController.js";
 import { postFlowchartStructureRefresh } from "./flowchartController.js";
+import { updateRestartIndicator } from "./restartController.js";
 import { updatePipelineCameraNote } from "./stateHelpers.js";
 
 /**
@@ -207,13 +208,21 @@ async function autoSavePipelineImpl(options = {}) {
             pipelineConfig,
         );
         console.log("Pipeline auto-saved successfully");
+        const restartRequired = Boolean(
+            result?.restart_required ||
+                options.requiresRestart ||
+                result?.live_update_status === "unsupported",
+        );
+        if (restartRequired) {
+            await updateRestartIndicator(true, { syncBackend: !result?.restart_required });
+        } else if (result?.restart_required === false) {
+            await updateRestartIndicator(false);
+        }
         if (options.showNotification) {
             if (result?.live_update_status === "failed") {
                 showDanger("Operation settings saved, but live apply failed.");
             } else if (
-                result?.restart_required ||
-                options.requiresRestart ||
-                result?.live_update_status === "unsupported"
+                restartRequired
             ) {
                 showWarning(
                     "Operation settings saved. Restart required to apply.",
