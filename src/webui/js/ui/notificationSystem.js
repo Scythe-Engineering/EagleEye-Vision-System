@@ -101,7 +101,7 @@ function updateNotificationPositions() {
         notificationElement.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
         notificationElement.style.opacity = opacity.toString();
         // Z-index: Newest (index 0) gets highest
-        notificationElement.style.zIndex = (reversedNotifications.length - index + 10).toString();
+        notificationElement.style.zIndex = (reversedNotifications.length - index + 100).toString();
     }
 }
 
