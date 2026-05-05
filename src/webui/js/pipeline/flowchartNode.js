@@ -1351,20 +1351,36 @@ export class FlowchartNode {
     }
 
     /**
+     * Gets the absolute flowchart-world position of a port connector center.
+     * @param {HTMLElement} port - Port connector element.
+     * @returns {{x:number,y:number}|null} Port center position or null.
+     */
+    getPortCenterPosition(port) {
+        if (!port || !this.element) return null;
+
+        const viewport = this.element.closest("#flowchartViewport");
+        const scale = this.getCanvasScale(viewport);
+        const portRect = port.getBoundingClientRect();
+        const nodeRect = this.element.getBoundingClientRect();
+
+        return {
+            x:
+                this.position.x +
+                (portRect.left + portRect.width / 2 - nodeRect.left) / scale,
+            y:
+                this.position.y +
+                (portRect.top + portRect.height / 2 - nodeRect.top) / scale,
+        };
+    }
+
+    /**
      * Gets the absolute position of an input port.
      * @param {string} portName - Port name.
      * @returns {{x:number,y:number}|null} Port position or null.
      */
     getInputPortPosition(portName) {
         const port = this.inputPorts.get(portName);
-        if (!port) return null;
-
-        const portCenterY = port.offsetTop + port.offsetHeight / 2;
-
-        return {
-            x: this.position.x,
-            y: this.position.y + portCenterY,
-        };
+        return this.getPortCenterPosition(port);
     }
 
     /**
@@ -1374,14 +1390,7 @@ export class FlowchartNode {
      */
     getOutputPortPosition(portName) {
         const port = this.outputPorts.get(portName);
-        if (!port) return null;
-
-        const portCenterY = port.offsetTop + port.offsetHeight / 2;
-
-        return {
-            x: this.position.x + this.cachedElementWidth,
-            y: this.position.y + portCenterY,
-        };
+        return this.getPortCenterPosition(port);
     }
 
     /**

@@ -557,8 +557,9 @@ export class FlowchartConnections {
                 },
             );
 
-            connection.customWaypoints = updatedWaypoints;
-            pathD = this.buildPathFromWaypoints(updatedWaypoints);
+            connection.customWaypoints =
+                this.enforceOrthogonalWaypoints(updatedWaypoints);
+            pathD = this.buildPathFromWaypoints(connection.customWaypoints);
         } else {
             pathD = this.calculateOrthogonalPath(fromPos, toPos);
         }
@@ -1107,7 +1108,7 @@ export class FlowchartConnections {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
 
-        connection.customWaypoints = waypoints;
+        connection.customWaypoints = this.enforceOrthogonalWaypoints(waypoints);
         connection.path.style.opacity = "1";
         connection.hitArea.style.opacity = "1";
 
@@ -1178,6 +1179,35 @@ export class FlowchartConnections {
     }
 
     /**
+     * Inserts corner waypoints anywhere a custom path would otherwise draw a
+     * diagonal segment.
+     *
+     * @param {Array<{x:number,y:number}>} waypoints
+     * @returns {Array<{x:number,y:number}>}
+     */
+    enforceOrthogonalWaypoints(waypoints) {
+        if (!waypoints || waypoints.length < 2) return waypoints || [];
+
+        const normalized = [{ ...waypoints[0] }];
+
+        for (let i = 1; i < waypoints.length; i++) {
+            const prev = normalized.at(-1);
+            const curr = waypoints[i];
+
+            if (prev.x !== curr.x && prev.y !== curr.y) {
+                normalized.push({ x: curr.x, y: prev.y });
+            }
+
+            const last = normalized.at(-1);
+            if (last.x !== curr.x || last.y !== curr.y) {
+                normalized.push({ ...curr });
+            }
+        }
+
+        return normalized;
+    }
+
+    /**
      * Builds a rounded SVG path from waypoint coordinates.
      *
      * @param {Array<{x:number,y:number}>} waypoints
@@ -1185,6 +1215,8 @@ export class FlowchartConnections {
      */
     buildPathFromWaypoints(waypoints) {
         if (!waypoints || waypoints.length < 2) return "";
+
+        waypoints = this.enforceOrthogonalWaypoints(waypoints);
 
         const cornerRadius = 12;
         const segments = [];
@@ -1252,7 +1284,9 @@ export class FlowchartConnections {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
 
-        connection.customWaypoints = waypoints;
+        connection.customWaypoints = waypoints
+            ? this.enforceOrthogonalWaypoints(waypoints)
+            : waypoints;
         if (waypoints) {
             this.updateConnectionWithWaypoints(connectionId);
         }
