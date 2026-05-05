@@ -184,9 +184,15 @@ def generate_all_pipelines(
             )
             if web_interface:
                 try:
-                    error_payload = {
-                        "pipeline_name": pipeline_name,
-                        "errors": [
+                    errors = []
+                    partial_pipeline = locals().get("pipeline")
+                    if (
+                        isinstance(partial_pipeline, Pipeline)
+                        and partial_pipeline.pipeline_name == pipeline_name
+                    ):
+                        errors = partial_pipeline.get_operation_errors()
+                    if not errors:
+                        errors = [
                             {
                                 "uuid": f"pipeline_init::{pipeline_name}",
                                 "name": "Pipeline Initialization",
@@ -194,7 +200,10 @@ def generate_all_pipelines(
                                 "last_seen_ts": time.time(),
                                 "count": 1,
                             }
-                        ],
+                        ]
+                    error_payload = {
+                        "pipeline_name": pipeline_name,
+                        "errors": errors,
                     }
                     web_interface.publish_operation_errors(error_payload)
                 except Exception:

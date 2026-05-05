@@ -280,9 +280,16 @@ function handleOperationErrorUpdate(payload) {
         if (payload.pipeline_name !== selectedPipeline.name) return;
     }
     operationErrorsByUuid.clear();
-    const errors = Array.isArray(payload.errors) ? payload.errors : [];
+    const rawErrors = Array.isArray(payload.errors) ? payload.errors : [];
+    const errors = rawErrors.filter((errorRecord) => {
+        if (!errorRecord?.uuid) return false;
+        // Pipeline-level initialization failures cannot be attached to a node.
+        // Keep them in store for diagnostics, but do not let them hide
+        // operation initialization errors that do have matching node UUIDs.
+        return !String(errorRecord.uuid).startsWith("pipeline_init::");
+    });
     errors.forEach((errorRecord) => {
-        if (errorRecord?.uuid) operationErrorsByUuid.set(errorRecord.uuid, errorRecord);
+        operationErrorsByUuid.set(errorRecord.uuid, errorRecord);
     });
     pipelineStore.setOperationErrors(errors);
     applyPipelineErrorHighlights();

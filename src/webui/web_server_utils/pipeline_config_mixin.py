@@ -350,6 +350,10 @@ class PipelineConfigMixin:
             with self._pipeline_error_lock:
                 self._pipeline_error_cache[pipeline_name] = normalized_payload
                 self._pipeline_error_dirty_pipelines.add(pipeline_name)
+            try:
+                self._publish_event("pipeline_operation_errors", normalized_payload)
+            except Exception:
+                pass
         except Exception as e:
             self.log(f"Failed to publish pipeline_operation_errors: {e}")
 

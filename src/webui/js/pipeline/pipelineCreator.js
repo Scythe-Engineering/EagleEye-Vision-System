@@ -218,6 +218,11 @@ export async function initPipelineCreator() {
     await refreshPipelineCreator(refreshCallbacks);
     await checkBackendRestartStatus();
 
+    const pendingOperationErrors = Array.isArray(globalThis.pendingPipelineOperationErrors)
+        ? globalThis.pendingPipelineOperationErrors.splice(0)
+        : [];
+    pendingOperationErrors.forEach((payload) => handleOperationErrorUpdate(payload));
+
     isInitialized = true;
 
     if (globalThis.showBackendRestartIndicator) {

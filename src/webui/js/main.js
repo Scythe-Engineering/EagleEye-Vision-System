@@ -367,7 +367,14 @@ window.onload = async () => {
     es.addEventListener("pipeline_operation_errors", (e) => {
         try {
             const data = JSON.parse(e.data);
-            globalThis.pipelineCreator?.handleOperationErrorUpdate?.(data);
+            const handler = globalThis.pipelineCreator?.handleOperationErrorUpdate;
+            if (typeof handler === "function") {
+                handler(data);
+            } else {
+                globalThis.pendingPipelineOperationErrors =
+                    globalThis.pendingPipelineOperationErrors || [];
+                globalThis.pendingPipelineOperationErrors.push(data);
+            }
         } catch (err) {
             console.warn(
                 "Failed to parse SSE pipeline_operation_errors event",

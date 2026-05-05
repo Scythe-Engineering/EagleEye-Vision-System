@@ -74,8 +74,20 @@ class SystemMonitorMixin:
         """
         Get the restart required flag.
         """
+        restart_required = bool(self.restart_required_for_config)
+        try:
+            restart_state = self._analyze_pipeline_restart_state(
+                self._load_pipeline_config_file()
+            )
+            restart_required = restart_required or bool(
+                restart_state.get("restart_required", False)
+            )
+            self.restart_required_for_config = restart_required
+        except Exception as error:
+            self.log(f"Failed to analyze pipeline restart state: {error}")
+
         return {
-            "restart_required": self.restart_required_for_config,
+            "restart_required": restart_required,
             "runtime_id": getattr(self, "runtime_id", ""),
         }, 200
 
