@@ -688,6 +688,7 @@ export function registerSettingsPopup() {
         });
 
         let input;
+        let secondaryInput = null;
         const currentValue =
             currentValues && name in currentValues
                 ? currentValues[name]
@@ -1006,8 +1007,14 @@ export function registerSettingsPopup() {
             });
         } else {
             const type = def.type;
+            const useSlider =
+                def.ui_control === "slider" &&
+                (type === "int" || type === "float") &&
+                typeof def.min === "number" &&
+                typeof def.max === "number";
             let inputType = "text";
-            if (type === "int" || type === "float") inputType = "number";
+            if (useSlider) inputType = "range";
+            else if (type === "int" || type === "float") inputType = "number";
             if (type === "str") inputType = "text";
             if (type === "bool") inputType = "checkbox";
 
@@ -1017,19 +1024,42 @@ export function registerSettingsPopup() {
                 className:
                     inputType === "checkbox"
                         ? "h-4 w-4 text-[#f9c845] focus:ring-[#f9c845] border-[#414141] rounded bg-[#232323]"
-                        : "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+                        : inputType === "range"
+                          ? "flex-1 accent-[#f9c845] cursor-pointer"
+                          : "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
             };
-            if (inputType === "number") {
+            if (inputType === "number" || inputType === "range") {
                 if (typeof def.min === "number") attrs.min = String(def.min);
                 if (typeof def.max === "number") attrs.max = String(def.max);
-                if (type === "int") attrs.step = "1";
-                if (type === "float") attrs.step = "any";
+                if (typeof def.step === "number") attrs.step = String(def.step);
+                else if (type === "int") attrs.step = "1";
+                else if (type === "float") attrs.step = inputType === "range" ? "0.001" : "any";
             }
             input = createElement("input", attrs);
             if (inputType === "checkbox") {
                 input.checked = Boolean(currentValue);
             } else if (currentValue !== undefined && currentValue !== null) {
                 input.value = String(currentValue);
+            }
+
+            if (useSlider) {
+                secondaryInput = createElement("input", {
+                    type: "number",
+                    min: String(def.min),
+                    max: String(def.max),
+                    step: attrs.step || "0.001",
+                    value: input.value,
+                    className:
+                        "w-24 bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+                    "aria-label": `${name} numeric value`,
+                });
+                input.addEventListener("input", () => {
+                    secondaryInput.value = input.value;
+                });
+                secondaryInput.addEventListener("input", () => {
+                    input.value = secondaryInput.value;
+                    input.dispatchEvent(new Event("input", { bubbles: true }));
+                });
             }
         }
 
@@ -1053,6 +1083,9 @@ export function registerSettingsPopup() {
 
         // Add input to container
         inputContainer.appendChild(input);
+        if (secondaryInput) {
+            inputContainer.appendChild(secondaryInput);
+        }
 
         let restartIndicator = null;
         if (def.restart_for_change) {
@@ -1308,7 +1341,11 @@ export function registerSettingsPopup() {
             }
             processedInputs.add(input);
 
-            if (
+            if (input.type === "range") {
+                input.addEventListener("change", () => {
+                    triggerAutoSave();
+                });
+            } else if (
                 input.tagName.toLowerCase() !== "select" &&
                 input.type !== "checkbox"
             ) {
