@@ -17,6 +17,12 @@
         "frame"
     ],
     "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Deterministic camera bus ID for hardware controls (same ID as device_input and camera calibration).",
+            "required": true,
+            "restart_for_change": true
+        },
         "brightness": {
             "type": "float",
             "description": "Brightness offset normalized in range [-1, 1].",

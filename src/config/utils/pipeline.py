@@ -43,7 +43,6 @@ class Pipeline:
         logger: Logger,
         camera_manager: CameraThreadManager | None = None,
         camera_config_registry: CameraConfigRegistry | None = None,
-        camera_bus_id: str | None = None,
         camera_bus_ids: list[str] | None = None,
         pipeline_name: str | None = None,
     ) -> None:
@@ -58,8 +57,7 @@ class Pipeline:
             camera_manager: The camera manager to use for the pipelines.
             camera_config_registry: Shared camera config registry for
                 camera intrinsics/extrinsics access.
-            camera_bus_id: USB bus ID to associate with this pipeline.
-            camera_bus_ids: List of USB bus IDs referenced by device_input operations.
+            camera_bus_ids: USB bus IDs referenced by device_input operations.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
@@ -68,13 +66,7 @@ class Pipeline:
         self.camera_manager = camera_manager
         self.camera_config_registry = camera_config_registry
         self.logger = logger
-        self.camera_bus_id = camera_bus_id
-        if camera_bus_ids is not None:
-            self.camera_bus_ids = camera_bus_ids
-        elif camera_bus_id is not None:
-            self.camera_bus_ids = [camera_bus_id]
-        else:
-            self.camera_bus_ids = []
+        self.camera_bus_ids = list(camera_bus_ids) if camera_bus_ids else []
         self.pipeline_name = pipeline_name or "unknown"
 
         self.thread_running = False

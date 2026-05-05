@@ -174,7 +174,6 @@ def generate_all_pipelines(
                 logger,
                 camera_manager,
                 camera_config_registry=camera_config_registry,
-                camera_bus_id=bus_ids[0] if len(bus_ids) == 1 else None,
                 camera_bus_ids=bus_ids,
                 pipeline_name=pipeline_name,
             )

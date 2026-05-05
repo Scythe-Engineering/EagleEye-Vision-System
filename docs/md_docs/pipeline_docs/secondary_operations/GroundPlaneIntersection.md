@@ -49,7 +49,6 @@ The operation implements a pinhole camera model for accurate projection:
 
 ### Optional Parameters
 
-- **pipeline**: Injected pipeline reference for accessing camera information
 - **camera_config_registry**: Injected registry for resolving camera intrinsics and extrinsics
 
 ### Constructor
@@ -60,7 +59,6 @@ def __init__(
     camera_bus_id: str | None = None,
     camera_height: float = 1.0,
     camera_pitch: float = 0.0,
-    pipeline: Any = None,
     camera_config_registry: CameraConfigRegistry | None = None,
 ) -> None:
     """Initialize ground plane intersection operation.
@@ -69,7 +67,6 @@ def __init__(
         camera_bus_id: Camera bus ID used to resolve intrinsics.
         camera_height: Legacy fallback height used when extrinsics are unavailable.
         camera_pitch: Legacy fallback pitch used when extrinsics are unavailable.
-        pipeline: Injected pipeline reference for accessing camera information
         camera_config_registry: Injected shared camera config registry.
     """
 ```
@@ -282,7 +279,7 @@ z_position = 0.0
 ### Configuration Errors
 
 - **Invalid Parameters**: Parameters are converted to float, may raise on non-numeric input
-- **Missing Pipeline**: Optional pipeline reference, not required for operation
+- **Missing camera_bus_id**: Operation cannot resolve a v4l2 device without a configured camera ID
 
 ### Runtime Errors
 

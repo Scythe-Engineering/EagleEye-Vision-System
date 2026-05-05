@@ -11,13 +11,13 @@ from src.main_operations.definitions.base.base_class import OperationInstance
 class CameraAdjust(OperationInstance):
     def __init__(
         self,
+        camera_bus_id: str | None = None,
         brightness: float = 0.0,
         contrast: float = 0.5,
         saturation: float = 0.406,
         gain: float = 0.0,
         exposure: float = 0.5,
         camera_manager: Any | None = None,
-        pipeline: Any | None = None,
         logger: Any | None = None,
     ) -> None:
         """Initialize hardware-accelerated camera adjustment operation.
@@ -25,15 +25,19 @@ class CameraAdjust(OperationInstance):
         All adjustments are attempted via hardware device controls using v4l2-ctl.
 
         Args:
+            camera_bus_id: Deterministic camera bus ID (matches device_input and
+                camera config registry) for resolving the v4l2 device path.
             brightness: Brightness offset normalized in range [-1, 1], mapped to v4l2 range [-64, 64].
             contrast: Contrast multiplier normalized in range [0, 1], mapped to v4l2 range [0, 64].
             saturation: Saturation multiplier normalized in range [-1, 1], mapped to v4l2 range [0, 128].
             gain: Gain control normalized in range [0, 1], mapped to v4l2 range [0, 100].
             exposure: Exposure time normalized in range [0, 1], mapped to v4l2 range [1, 5000]. Disables auto exposure when set.
             camera_manager: Injected camera manager reference.
-            pipeline: Injected pipeline reference.
             logger: Project logger injected by the pipeline.
         """
+        self.camera_bus_id = (
+            str(camera_bus_id) if camera_bus_id is not None else None
+        )
         self.brightness = float(brightness)
         self.contrast = float(contrast)
         self.saturation = float(saturation)
@@ -41,7 +45,6 @@ class CameraAdjust(OperationInstance):
         self.exposure = float(exposure)
 
         self.camera_manager = camera_manager
-        self.pipeline = pipeline
         self.logger = logger
 
         self._last_applied: Dict[str, Any] = {}
@@ -96,9 +99,13 @@ class CameraAdjust(OperationInstance):
         Args:
             json_config: Mapping of parameter names to new values.
         """
+        prior_bus = self.camera_bus_id
         for key, value in json_config.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+        if "camera_bus_id" in json_config and self.camera_bus_id != prior_bus:
+            self._controls_cache = {}
+            self._controls_cache_device = None
         self._apply_device_controls(force=True)
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
@@ -152,9 +159,9 @@ class CameraAdjust(OperationInstance):
         Returns:
             Device path like "/dev/video0" or None if not available.
         """
-        if self.camera_manager is None or self.pipeline is None:
+        if self.camera_manager is None:
             return None
-        bus_id = getattr(self.pipeline, "camera_bus_id", None)
+        bus_id = self.camera_bus_id
         if bus_id is None:
             return None
         camera_name = self.camera_manager.get_camera_name_by_bus_id(bus_id)

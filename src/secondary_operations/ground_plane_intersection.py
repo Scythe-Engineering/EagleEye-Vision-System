@@ -26,22 +26,19 @@ class GroundPlaneIntersection(OperationInstance):
         camera_bus_id: str | None = None,
         camera_height: float = 1.0,
         camera_pitch: float = 0.0,
-        pipeline: Any = None,
         camera_config_registry: CameraConfigRegistry | None = None,
     ) -> None:
         """Initialize ground plane intersection operation.
 
         Args:
-            camera_bus_id: Camera bus ID used to resolve intrinsics.
+            camera_bus_id: Camera bus ID used to resolve intrinsics and extrinsics.
             camera_height: Legacy fallback height used when extrinsics are unavailable.
             camera_pitch: Legacy fallback pitch used when extrinsics are unavailable.
-            pipeline: Injected pipeline reference for accessing camera information
             camera_config_registry: Injected shared camera config registry.
         """
         self.camera_bus_id = str(camera_bus_id) if camera_bus_id is not None else None
         self._fallback_camera_height = float(camera_height)
         self._fallback_camera_pitch = float(camera_pitch)
-        self.pipeline = pipeline
         self.camera_config_registry = camera_config_registry
         self._intrinsics_cache: dict[str, Any] | None = None
 
@@ -52,7 +49,7 @@ class GroundPlaneIntersection(OperationInstance):
         """Resolve the configured camera bus ID.
 
         Returns:
-            Camera bus ID from this operation or its owning pipeline.
+            Camera bus ID from this operation's configuration.
 
         Raises:
             ValueError: If no camera bus ID is configured.
@@ -60,11 +57,9 @@ class GroundPlaneIntersection(OperationInstance):
         if self.camera_bus_id:
             return self.camera_bus_id
 
-        pipeline_camera_bus_id = getattr(self.pipeline, "camera_bus_id", None)
-        if pipeline_camera_bus_id:
-            return str(pipeline_camera_bus_id)
-
-        raise ValueError("camera_bus_id is required to load camera intrinsics")
+        raise ValueError(
+            "camera_bus_id is required; set it in the operation settings to select a camera."
+        )
 
     def _default_intrinsics_path(self, camera_bus_id: str) -> Path:
         """Return the conventional intrinsics path for a camera bus ID."""

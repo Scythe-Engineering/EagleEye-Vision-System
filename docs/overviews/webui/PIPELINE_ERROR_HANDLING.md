@@ -227,16 +227,16 @@ After creating pipelines for new cameras, the `pipeline_config.json` structure:
 {
   "basic_test": {
     "apriltag_pipeline": [
-      { "action_name": "camera_adjust", "action_params": {} },
+      { "action_name": "camera_adjust", "action_params": { "camera_bus_id": "0" } },
       { "action_name": "detect_apriltags", "action_params": {} }
     ]
   },
   "Arducam OV9782 USB Camera": {
     "detection_pipeline": [
-      { "action_name": "camera_adjust", "action_params": {} }
+      { "action_name": "camera_adjust", "action_params": { "camera_bus_id": "0" } }
     ],
     "tracking_pipeline": [
-      { "action_name": "camera_adjust", "action_params": {} },
+      { "action_name": "camera_adjust", "action_params": { "camera_bus_id": "0" } },
       { "action_name": "temporal_acceleration", "action_params": {} }
     ]
   }

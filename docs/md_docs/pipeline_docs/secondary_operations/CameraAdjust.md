@@ -12,7 +12,7 @@ The operation implements direct camera hardware manipulation through:
 
 1. **V4L2 Integration**: Uses `v4l2-ctl` command-line tool for hardware control
 2. **Parameter Mapping**: Converts normalized parameters to device-specific ranges
-3. **Device Discovery**: Automatically resolves camera device paths from pipeline configuration
+3. **Device Discovery**: Resolves camera device paths from the operation's `camera_bus_id` and the camera manager
 4. **Change Detection**: Applies settings only when parameters actually change
 
 ### Visualization Integration
@@ -46,6 +46,7 @@ The operation includes AprilTag detection visualization capabilities, receiving 
 
 ### Primary Parameters
 
+- **camera_bus_id**: Deterministic camera ID (same as `device_input` / calibration) used to resolve the v4l2 device
 - **brightness**: Brightness offset (-1.0 to 1.0, default: 0.0)
 - **contrast**: Contrast multiplier (0.0 to 1.0, default: 0.5)
 - **saturation**: Saturation multiplier (-1.0 to 1.0, default: 0.406)
@@ -55,19 +56,18 @@ The operation includes AprilTag detection visualization capabilities, receiving 
 ### System Integration
 
 - **camera_manager**: Camera manager reference for device resolution
-- **pipeline**: Pipeline reference for camera identification
 
 ### Configuration Example
 
 ```python
 camera_adjust = CameraAdjust(
+    camera_bus_id="0",
     brightness=0.2,
     contrast=0.7,
     saturation=0.3,
     gain=0.1,
     exposure=0.8,
     camera_manager=camera_mgr,
-    pipeline=vision_pipeline
 )
 ```
 
@@ -100,12 +100,12 @@ Return enhanced frame
 ```python
 # Configure camera for low-light conditions
 low_light_adjust = CameraAdjust(
+    camera_bus_id="0",
     brightness=0.3,
     contrast=0.8,
     gain=0.6,
     exposure=0.9,
     camera_manager=camera_manager,
-    pipeline=pipeline
 )
 
 # Process frame with adjusted camera settings
@@ -179,11 +179,13 @@ v4l2_value = int(1 + (normalized_exposure * 4999))  # Range: 1 to 5000
 
 ### Device Path Resolution
 
-**Automatic Discovery:**
+**Automatic Discovery** (via configured `camera_bus_id` and `camera_manager`):
+
 ```python
-camera_name = pipeline.camera_bus_id
-camera_obj = camera_manager.camera_objects[camera_name]
-device_path = f"/dev/video{camera_obj.camera_index}"
+bus_id = operation.camera_bus_id
+camera_name = camera_manager.get_camera_name_by_bus_id(bus_id)
+worker = camera_manager.cameras.get(camera_name)
+device_path = f"/dev/video{int(worker.camera.camera_index)}"
 ```
 
 ### Visualization Implementation

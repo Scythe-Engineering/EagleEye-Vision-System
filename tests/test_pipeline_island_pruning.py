@@ -37,7 +37,6 @@ def _make_pipeline(config: list[dict[str, Any]], logger: CapturingLogger) -> Pip
         cast(Any, logger),
         cast(Any, camera_manager),
         camera_config_registry=CameraConfigRegistry(),
-        camera_bus_id="basic_test",
         camera_bus_ids=["basic_test"],
         pipeline_name="test_pipeline",
     )
