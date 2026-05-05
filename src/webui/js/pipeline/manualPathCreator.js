@@ -1,4 +1,11 @@
+// Manages interactive manual path creation, previewing, and cleanup in the web UI.
 export class ManualPathCreator {
+    /**
+     * Creates a manual path creator bound to an SVG layer and canvas options.
+     *
+     * @param {SVGElement} svgLayer - The SVG layer used for preview rendering.
+     * @param {Object} [options={}] - Configuration options.
+     */
     constructor(svgLayer, options = {}) {
         this.svgLayer = svgLayer;
         this.canvas = options.canvas;
@@ -31,12 +38,20 @@ export class ManualPathCreator {
         this.boundHandleMouseDown = this.handleMouseDown.bind(this);
         this.boundHandleMouseUp = this.handleMouseUp.bind(this);
         this.boundHandlePanMove = this.handlePanMove.bind(this);
+        this.boundHandleBackendDisconnected = this.cancel.bind(this);
 
         this.isPanning = false;
         this.panStartX = 0;
         this.panStartY = 0;
     }
 
+    /**
+     * Starts a manual path editing session.
+     *
+     * @param {string|number} connectionId - Identifier for the connection being edited.
+     * @param {{x:number, y:number}} startPoint - Starting point of the path.
+     * @param {{x:number, y:number}} endPoint - Ending point of the path.
+     */
     start(connectionId, startPoint, endPoint) {
         if (this.isActive) {
             this.cancel();
@@ -56,6 +71,9 @@ export class ManualPathCreator {
         this.updatePreview(startPoint);
     }
 
+    /**
+     * Creates the full-screen interaction overlay.
+     */
     createOverlay() {
         this.overlay = document.createElement("div");
         this.overlay.id = "manual-path-overlay";
@@ -72,6 +90,9 @@ export class ManualPathCreator {
         document.body.appendChild(this.overlay);
     }
 
+    /**
+     * Creates SVG elements used to render the confirmed and preview paths.
+     */
     createPreviewElements() {
         this.previewGroup = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -113,6 +134,13 @@ export class ManualPathCreator {
         this.svgLayer.appendChild(this.previewGroup);
     }
 
+    /**
+     * Creates a circular SVG marker for a point.
+     *
+     * @param {{x:number, y:number}} point - Marker position.
+     * @param {string} color - Marker fill color.
+     * @returns {SVGCircleElement} The created marker element.
+     */
     createPointMarker(point, color) {
         const marker = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -128,6 +156,12 @@ export class ManualPathCreator {
         return marker;
     }
 
+    /**
+     * Creates and registers a waypoint marker.
+     *
+     * @param {{x:number, y:number}} point - Waypoint position.
+     * @returns {SVGCircleElement} The created marker element.
+     */
     createWaypointMarker(point) {
         const marker = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -144,6 +178,9 @@ export class ManualPathCreator {
         return marker;
     }
 
+    /**
+     * Creates the on-screen instruction tooltip.
+     */
     createInstructionTooltip() {
         this.instructionTooltip = document.createElement("div");
         this.instructionTooltip.id = "manual-path-tooltip";
@@ -153,6 +190,9 @@ export class ManualPathCreator {
         document.body.appendChild(this.instructionTooltip);
     }
 
+    /**
+     * Updates the tooltip text to reflect current path state.
+     */
     updateTooltipText() {
         if (!this.instructionTooltip) return;
 
@@ -178,6 +218,9 @@ export class ManualPathCreator {
         `;
     }
 
+    /**
+     * Attaches DOM and global event listeners for the editing session.
+     */
     attachEventListeners() {
         this.overlay.addEventListener("mousemove", this.boundHandleMouseMove);
         this.overlay.addEventListener("click", this.boundHandleClick);
@@ -190,8 +233,15 @@ export class ManualPathCreator {
         });
         this.overlay.addEventListener("mousedown", this.boundHandleMouseDown);
         globalThis.addEventListener("keydown", this.boundHandleKeyDown);
+        document.addEventListener(
+            "backend-disconnected",
+            this.boundHandleBackendDisconnected,
+        );
     }
 
+    /**
+     * Detaches all event listeners registered by the editing session.
+     */
     detachEventListeners() {
         if (this.overlay) {
             this.overlay.removeEventListener(
@@ -210,10 +260,19 @@ export class ManualPathCreator {
             );
         }
         globalThis.removeEventListener("keydown", this.boundHandleKeyDown);
+        document.removeEventListener(
+            "backend-disconnected",
+            this.boundHandleBackendDisconnected,
+        );
         globalThis.removeEventListener("mousemove", this.boundHandlePanMove);
         globalThis.removeEventListener("mouseup", this.boundHandleMouseUp);
     }
 
+    /**
+     * Handles pointer movement over the overlay.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handleMouseMove(e) {
         if (!this.isActive || !this.canvas || this.isPanning) return;
 
@@ -225,6 +284,11 @@ export class ManualPathCreator {
         this.updatePreview(snappedPos);
     }
 
+    /**
+     * Handles overlay clicks to add waypoints or complete the path.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handleClick(e) {
         if (!this.isActive || !this.canvas) return;
 
@@ -250,6 +314,11 @@ export class ManualPathCreator {
         this.addWaypoint(snappedPos);
     }
 
+    /**
+     * Handles keyboard shortcuts during path creation.
+     *
+     * @param {KeyboardEvent} e - The keyboard event.
+     */
     handleKeyDown(e) {
         if (!this.isActive) return;
 
@@ -265,12 +334,22 @@ export class ManualPathCreator {
         }
     }
 
+    /**
+     * Cancels the path creation on context menu interaction.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handleContextMenu(e) {
         e.preventDefault();
         e.stopPropagation();
         this.cancel();
     }
 
+    /**
+     * Re-dispatches wheel input to the canvas container.
+     *
+     * @param {WheelEvent} e - The wheel event.
+     */
     handleWheel(e) {
         if (!this.canvas) return;
 
@@ -291,6 +370,11 @@ export class ManualPathCreator {
         canvasContainer.dispatchEvent(wheelEvent);
     }
 
+    /**
+     * Starts middle-mouse panning.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handleMouseDown(e) {
         if (e.button === 1) {
             e.preventDefault();
@@ -305,6 +389,11 @@ export class ManualPathCreator {
         }
     }
 
+    /**
+     * Handles mouse movement while panning.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handlePanMove(e) {
         if (!this.isPanning || !this.canvas) return;
 
@@ -322,6 +411,11 @@ export class ManualPathCreator {
         this.panStartY = e.clientY;
     }
 
+    /**
+     * Ends middle-mouse panning.
+     *
+     * @param {MouseEvent} e - The mouse event.
+     */
     handleMouseUp(e) {
         if (e.button === 1 && this.isPanning) {
             e.preventDefault();
@@ -337,6 +431,11 @@ export class ManualPathCreator {
         }
     }
 
+    /**
+     * Adds a constrained waypoint to the path.
+     *
+     * @param {{x:number, y:number}} snappedPos - Snapped cursor position.
+     */
     addWaypoint(snappedPos) {
         const lastPoint = this.waypoints.at(-1);
         let constrainedPoint;
@@ -364,6 +463,9 @@ export class ManualPathCreator {
         this.updateTooltipText();
     }
 
+    /**
+     * Removes the most recently added waypoint.
+     */
     undoLastWaypoint() {
         if (this.waypoints.length <= 1) return;
 
@@ -381,6 +483,11 @@ export class ManualPathCreator {
         this.updateTooltipText();
     }
 
+    /**
+     * Updates the dashed preview segment.
+     *
+     * @param {{x:number, y:number}} cursorPos - Current snapped cursor position.
+     */
     updatePreview(cursorPos) {
         if (!this.isActive) return;
 
@@ -397,6 +504,9 @@ export class ManualPathCreator {
         this.previewLine.setAttribute("d", pathD);
     }
 
+    /**
+     * Rebuilds the confirmed path SVG from waypoints.
+     */
     updateConfirmedPath() {
         if (this.waypoints.length < 2) {
             this.confirmedPath.setAttribute("d", "");
@@ -407,6 +517,13 @@ export class ManualPathCreator {
         this.confirmedPath.setAttribute("d", pathD);
     }
 
+    /**
+     * Builds an SVG path string from a waypoint list.
+     *
+     * @param {Array<{x:number, y:number}>} waypoints - Waypoints to convert.
+     * @param {boolean} [includeEndPoint=true] - Whether to append the endpoint.
+     * @returns {string} The SVG path data.
+     */
     buildPathFromWaypoints(waypoints, includeEndPoint = true) {
         if (waypoints.length < 2) return "";
 
@@ -464,6 +581,9 @@ export class ManualPathCreator {
         return segments.join(" ");
     }
 
+    /**
+     * Finalizes the manual path and notifies the completion callback.
+     */
     complete() {
         if (!this.isActive) return;
 
@@ -474,6 +594,11 @@ export class ManualPathCreator {
         this.cleanup();
     }
 
+    /**
+     * Builds the final waypoint list, including the endpoint.
+     *
+     * @returns {Array<{x:number, y:number}>} The final waypoint sequence.
+     */
     buildFinalWaypoints() {
         const points = [...this.waypoints];
 
@@ -495,6 +620,9 @@ export class ManualPathCreator {
         return points;
     }
 
+    /**
+     * Cancels the manual path session and notifies the cancel callback.
+     */
     cancel() {
         if (!this.isActive) return;
 
@@ -502,6 +630,9 @@ export class ManualPathCreator {
         this.cleanup();
     }
 
+    /**
+     * Cleans up DOM elements, state, and listeners.
+     */
     cleanup() {
         this.isActive = false;
         this.isPanning = false;
@@ -533,6 +664,9 @@ export class ManualPathCreator {
         this.endPoint = null;
     }
 
+    /**
+     * Destroys the manual path creator instance.
+     */
     destroy() {
         this.cleanup();
     }

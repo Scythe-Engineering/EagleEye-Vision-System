@@ -1,6 +1,7 @@
 /**
- * FlowchartNode - Node component with input/output ports based on config data
+ * FlowchartNode renders and manages a pipeline node with configurable ports.
  */
+// Responsible for node layout, port generation, interaction, and status badges.
 
 import { escapeHtml } from "./utils.js";
 import { BACKEND_BASE_URL } from "../config.js";
@@ -11,6 +12,11 @@ import {
 } from "./operationConfigCache.js";
 
 export class FlowchartNode {
+    /**
+     * Creates a new flowchart node instance.
+     * @param {object} operationData - Operation metadata and state.
+     * @param {object} [options={}] - Optional event callbacks and layout settings.
+     */
     constructor(operationData, options = {}) {
         this.operationData = operationData;
         this.instanceId = operationData.instanceId;
@@ -49,10 +55,22 @@ export class FlowchartNode {
         this.cachedElementWidth = 200;
     }
 
+    /**
+     * Builds a numbered port name from a base name.
+     * @param {string} baseName - The base port name.
+     * @param {number} index - 1-based port index.
+     * @returns {string} Indexed port name.
+     */
     buildIndexedPortName(baseName, index) {
         return `${baseName}_${index}`;
     }
 
+    /**
+     * Parses a dynamic port index from a port name.
+     * @param {string} portName - The port name to inspect.
+     * @param {string} baseName - The dynamic port base name.
+     * @returns {number|null} Parsed 1-based index, or null if not dynamic.
+     */
     parseDynamicPortIndex(portName, baseName) {
         if (!portName || !baseName) {
             return null;
@@ -75,6 +93,13 @@ export class FlowchartNode {
         return maybeIndex;
     }
 
+    /**
+     * Normalizes raw dynamic group config into internal state.
+     * @param {object|null} rawDynamicGroup - Raw dynamic group configuration.
+     * @param {Array} rawInputNodes - Configured input node names.
+     * @param {Array} rawOutputNodes - Configured output node names.
+     * @returns {object|null} Normalized dynamic group state.
+     */
     normalizeDynamicGroup(rawDynamicGroup, rawInputNodes, rawOutputNodes) {
         if (!rawDynamicGroup || typeof rawDynamicGroup !== "object") {
             return null;
@@ -146,6 +171,10 @@ export class FlowchartNode {
         };
     }
 
+    /**
+     * Initializes input/output port state from config data.
+     * @param {object} configData - Operation config payload.
+     */
     initializePortsFromConfig(configData) {
         this.inputNodeConfig.clear();
         this.outputNodeConfig.clear();
@@ -210,6 +239,11 @@ export class FlowchartNode {
         });
     }
 
+    /**
+     * Rebuilds dynamic port names and clamps dynamic counts.
+     * @param {object} [counts={}] - Desired and connected port counts.
+     * @returns {void}
+     */
     rebuildDynamicPortNames({
         inputCount = this.dynamicGroup?.inputCount ?? 0,
         outputCount = this.dynamicGroup?.outputCount ?? 0,
@@ -272,6 +306,11 @@ export class FlowchartNode {
         });
     }
 
+    /**
+     * Synchronizes dynamic port counts against current connections.
+     * @param {Array} connectionData - Connection records for the graph.
+     * @returns {boolean} True when port state changed.
+     */
     syncDynamicPorts(connectionData = []) {
         if (!this.dynamicGroup) {
             return false;
@@ -366,6 +405,12 @@ export class FlowchartNode {
         return true;
     }
 
+    /**
+     * Ensures a dynamic port exists for a connected port name.
+     * @param {string} portName - Connected port name.
+     * @param {"input"|"output"} [portType="input"] - Port side to expand.
+     * @returns {boolean} True when ports were expanded.
+     */
     ensureDynamicPortsForConnectionPort(portName, portType = "input") {
         if (!this.dynamicGroup) {
             return false;
@@ -459,6 +504,10 @@ export class FlowchartNode {
         return true;
     }
 
+    /**
+     * Loads operation config data, using cache when available.
+     * @returns {Promise<void>}
+     */
     async loadConfigData() {
         if (this.configDataLoaded) return;
 
@@ -511,6 +560,10 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Creates the node DOM element and wires up listeners.
+     * @returns {Promise<HTMLDivElement>} Node element.
+     */
     async createElement() {
         await this.loadConfigData();
 
@@ -531,6 +584,9 @@ export class FlowchartNode {
         return this.element;
     }
 
+    /**
+     * Applies base node styling and hover chrome behavior.
+     */
     applyStyles() {
         Object.assign(this.element.style, {
             backgroundColor: "#232323",
@@ -543,11 +599,17 @@ export class FlowchartNode {
             pointerEvents: "auto", // Ensure the node itself is interactable
         });
 
+        /**
+         * Restores the default node chrome styling.
+         */
         const applyDefaultNodeChrome = () => {
             this.element.style.borderColor = "#404040";
             this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
         };
 
+        /**
+         * Applies the hovered node chrome styling.
+         */
         const applyHoveredNodeChrome = () => {
             this.element.style.borderColor = "#f9c845";
             this.element.style.boxShadow =
@@ -586,6 +648,9 @@ export class FlowchartNode {
         });
     }
 
+    /**
+     * Updates the node chrome to match current hover/drag state.
+     */
     updateNodeHoverChrome() {
         if (!this.element || this.isDragging) {
             return;
@@ -601,6 +666,9 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Resets cached hover chrome state from the DOM.
+     */
     resetNodeChrome() {
         if (this.element) {
             this.isHovered = this.element.matches(":hover");
@@ -610,6 +678,9 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Renders the node header, badges, and port columns.
+     */
     renderContent() {
         const categoryColors = {
             det: "#995e19",
@@ -776,11 +847,18 @@ export class FlowchartNode {
             this.element.offsetWidth || this.cachedElementWidth;
     }
 
+    /**
+     * Marks the node as inactive within an operation island.
+     * @param {boolean} isInactive - Whether the node is inactive.
+     */
     setIslandInactive(isInactive) {
         this.isIslandInactive = Boolean(isInactive);
         this.applyIslandInactiveState();
     }
 
+    /**
+     * Applies inactive-island visual treatment to the category badge.
+     */
     applyIslandInactiveState() {
         if (!this.element) {
             return;
@@ -805,6 +883,10 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Renders input port markup for static and dynamic ports.
+     * @returns {string} HTML markup for input ports.
+     */
     renderInputPorts() {
         const staticPortsMarkup = this.staticInputNodes
             .map(
@@ -907,6 +989,10 @@ export class FlowchartNode {
         `;
     }
 
+    /**
+     * Renders output port markup for static and dynamic ports.
+     * @returns {string} HTML markup for output ports.
+     */
     renderOutputPorts() {
         const staticPortsMarkup = this.staticOutputNodes
             .map(
@@ -1014,6 +1100,9 @@ export class FlowchartNode {
         `;
     }
 
+    /**
+     * Caches connector elements and attaches port listeners.
+     */
     cachePortElements() {
         this.inputPorts.clear();
         this.outputPorts.clear();
@@ -1031,6 +1120,12 @@ export class FlowchartNode {
         });
     }
 
+    /**
+     * Attaches hover and click handlers to a port connector.
+     * @param {HTMLElement} portElement - Port connector element.
+     * @param {string} portName - Port name.
+     * @param {string} portType - Port side.
+     */
     setupPortListeners(portElement, portName, portType) {
         portElement.addEventListener("mouseenter", () => {
             portElement.style.backgroundColor = "#f9c845";
@@ -1058,6 +1153,9 @@ export class FlowchartNode {
         });
     }
 
+    /**
+     * Attaches hover and click handlers to node action buttons.
+     */
     setupButtonListeners() {
         const settingsBtn = this.element.querySelector(".node-settings-btn");
         const removeBtn = this.element.querySelector(".node-remove-btn");
@@ -1101,6 +1199,9 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Attaches drag-start handling to the node element.
+     */
     setupDragListeners() {
         this.element.addEventListener(
             "mousedown",
@@ -1108,6 +1209,10 @@ export class FlowchartNode {
         );
     }
 
+    /**
+     * Starts dragging the node and tracks pointer movement.
+     * @param {MouseEvent} event - Mouse down event.
+     */
     handleDragStart(event) {
         // Only handle left mouse button
         if (event.button !== 0) return;
@@ -1143,6 +1248,10 @@ export class FlowchartNode {
             this.onDragStart(this, event);
         }
 
+        /**
+         * Updates node position while dragging.
+         * @param {MouseEvent} e - Mouse move event.
+         */
         const handleDragMove = (e) => {
             if (!this.isDragging) return;
 
@@ -1178,6 +1287,9 @@ export class FlowchartNode {
             }
         };
 
+        /**
+         * Ends node dragging and restores interaction state.
+         */
         const handleDragEnd = () => {
             if (!this.isDragging) return;
 
@@ -1202,6 +1314,11 @@ export class FlowchartNode {
         event.stopPropagation();
     }
 
+    /**
+     * Reads the current canvas scale from the viewport transform.
+     * @param {HTMLElement|null} viewport - Optional viewport element.
+     * @returns {number} Current scale factor.
+     */
     getCanvasScale(viewport = null) {
         viewport = viewport || this.element.closest("#flowchartViewport");
         if (!viewport) return 1;
@@ -1211,6 +1328,11 @@ export class FlowchartNode {
         return scaleMatch ? Number.parseFloat(scaleMatch[1]) : 1;
     }
 
+    /**
+     * Reads the current canvas translation from the viewport transform.
+     * @param {HTMLElement|null} viewport - Optional viewport element.
+     * @returns {{x:number,y:number}} Current translation.
+     */
     getCanvasTranslate(viewport = null) {
         viewport = viewport || this.element.closest("#flowchartViewport");
         if (!viewport) return { x: 0, y: 0 };
@@ -1228,6 +1350,11 @@ export class FlowchartNode {
         return { x: 0, y: 0 };
     }
 
+    /**
+     * Gets the absolute position of an input port.
+     * @param {string} portName - Port name.
+     * @returns {{x:number,y:number}|null} Port position or null.
+     */
     getInputPortPosition(portName) {
         const port = this.inputPorts.get(portName);
         if (!port) return null;
@@ -1240,6 +1367,11 @@ export class FlowchartNode {
         };
     }
 
+    /**
+     * Gets the absolute position of an output port.
+     * @param {string} portName - Port name.
+     * @returns {{x:number,y:number}|null} Port position or null.
+     */
     getOutputPortPosition(portName) {
         const port = this.outputPorts.get(portName);
         if (!port) return null;
@@ -1252,6 +1384,11 @@ export class FlowchartNode {
         };
     }
 
+    /**
+     * Updates the node position and element coordinates.
+     * @param {number} x - X position.
+     * @param {number} y - Y position.
+     */
     setPosition(x, y) {
         this.position.x = x;
         this.position.y = y;
@@ -1261,15 +1398,29 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Returns the current node position.
+     * @returns {{x:number,y:number}} Current position.
+     */
     getPosition() {
         return { ...this.position };
     }
 
+    /**
+     * Checks whether an input port supports a default value.
+     * @param {string} portName - Port name.
+     * @returns {boolean} True when the port has a default.
+     */
     canInputPortBeDefault(portName) {
         const config = this.inputNodeConfig.get(portName);
         return config?.hasDefault ?? false;
     }
 
+    /**
+     * Maps a thread number to a display color.
+     * @param {number} threadNumber - Thread identifier.
+     * @returns {string|null} Color string or null.
+     */
     getThreadColor(threadNumber) {
         if (!threadNumber || threadNumber <= 0) return null;
 
@@ -1289,6 +1440,10 @@ export class FlowchartNode {
         return threadColors[(threadNumber - 1) % threadColors.length];
     }
 
+    /**
+     * Updates the thread badge with execution thread info.
+     * @param {object|null} threadInfo - Thread metadata.
+     */
     updateThreadInfo(threadInfo) {
         this.threadInfo = threadInfo;
         const badge = this.element?.querySelector(".thread-badge");
@@ -1305,6 +1460,9 @@ export class FlowchartNode {
         badge.textContent = timestep;
     }
 
+    /**
+     * Hides the thread badge and clears cached thread info.
+     */
     hideThreadBadge() {
         this.threadInfo = null;
         const badge = this.element?.querySelector(".thread-badge");
@@ -1313,6 +1471,10 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Updates the profiling badge with execution timing info.
+     * @param {object|null} profilingInfo - Profiling metadata.
+     */
     updateProfilingInfo(profilingInfo) {
         this.profilingInfo = profilingInfo;
         const badge = this.element?.querySelector(".profiling-badge");
@@ -1330,6 +1492,9 @@ export class FlowchartNode {
         badge.textContent = `${executionTimeMs.toFixed(2)}ms`;
     }
 
+    /**
+     * Hides the profiling badge and clears cached profiling info.
+     */
     hideProfilingBadge() {
         this.profilingInfo = null;
         const badge = this.element?.querySelector(".profiling-badge");
@@ -1338,6 +1503,11 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Applies or clears error-state visuals for the node.
+     * @param {object|null} errorRecord - Error data, if any.
+     * @param {boolean} isDownstream - Whether the node is downstream-disabled.
+     */
     setErrorState(errorRecord, isDownstream) {
         if (!this.element) {
             return;
@@ -1365,6 +1535,9 @@ export class FlowchartNode {
         }
     }
 
+    /**
+     * Removes the node element and clears cached port references.
+     */
     destroy() {
         this.element?.remove();
         this.inputPorts.clear();

@@ -1,3 +1,4 @@
+// Tooltip UI helpers: create, position, show, and hide accessible tooltips.
 const TOOLTIP_DELAY_MS = 500;
 const EDGE_OFFSET_PX = 10;
 const VIEWPORT_MARGIN_PX = 8;
@@ -8,6 +9,10 @@ let activeAnchor = null;
 let showTimer = null;
 let tooltipCleanup = null;
 
+/**
+ * Ensures the shared tooltip DOM element exists.
+ * @returns {HTMLDivElement}
+ */
 function ensureTooltipElement() {
     if (tooltipElement?.isConnected) {
         return tooltipElement;
@@ -25,6 +30,7 @@ function ensureTooltipElement() {
     return tooltipElement;
 }
 
+/** Clears any pending tooltip show timer. */
 function clearShowTimer() {
     if (showTimer) {
         clearTimeout(showTimer);
@@ -32,6 +38,11 @@ function clearShowTimer() {
     }
 }
 
+/**
+ * Resolves an element that can act as a tooltip anchor.
+ * @param {Element|null|undefined} anchor
+ * @returns {Element|null}
+ */
 function normalizeTooltipAnchor(anchor) {
     if (!anchor) {
         return null;
@@ -44,6 +55,10 @@ function normalizeTooltipAnchor(anchor) {
     return anchor.closest?.("[data-tooltip], [data-tooltip-html], [title]");
 }
 
+/**
+ * Migrates a native title attribute into tooltip dataset state.
+ * @param {Element} element
+ */
 function prepareNativeTitleTooltip(element) {
     const title = element.getAttribute("title");
     if (!title) {
@@ -55,6 +70,11 @@ function prepareNativeTitleTooltip(element) {
     element.removeAttribute("title");
 }
 
+/**
+ * Reads tooltip content from the anchor element.
+ * @param {Element} anchor
+ * @returns {{text?: string, html?: string, isHtml: boolean}}
+ */
 function getTooltipContent(anchor) {
     prepareNativeTitleTooltip(anchor);
 
@@ -71,6 +91,10 @@ function getTooltipContent(anchor) {
     };
 }
 
+/**
+ * Renders the tooltip content into the shared tooltip element.
+ * @param {{text?: string, html?: string, isHtml: boolean}} content
+ */
 function setTooltipContent(content) {
     const tooltip = ensureTooltipElement();
     tooltip.textContent = "";
@@ -88,6 +112,13 @@ function setTooltipContent(content) {
     tooltip.appendChild(body);
 }
 
+/**
+ * Chooses a tooltip placement that fits in the viewport.
+ * @param {DOMRect} anchorRect
+ * @param {DOMRect} tooltipRect
+ * @param {string} preferredPlacement
+ * @returns {string}
+ */
 function choosePlacement(anchorRect, tooltipRect, preferredPlacement) {
     const placements =
         preferredPlacement === "auto"
@@ -121,10 +152,22 @@ function choosePlacement(anchorRect, tooltipRect, preferredPlacement) {
     );
 }
 
+/**
+ * Clamps a value to an inclusive range.
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * Positions the tooltip relative to its anchor.
+ * @param {Element} anchor
+ * @param {string} preferredPlacement
+ */
 function positionTooltip(anchor, preferredPlacement = "auto") {
     const tooltip = ensureTooltipElement();
     const anchorRect = anchor.getBoundingClientRect();
@@ -256,6 +299,10 @@ export function showTooltip(anchor, options = {}) {
     }, delay);
 }
 
+/**
+ * Handles pointer/focus entry events for tooltip anchors.
+ * @param {Event} event
+ */
 function handleTooltipEnter(event) {
     const anchor = normalizeTooltipAnchor(event.target);
     if (!anchor) {
@@ -269,6 +316,10 @@ function handleTooltipEnter(event) {
     showTooltip(anchor);
 }
 
+/**
+ * Handles pointer/focus exit events for tooltip anchors.
+ * @param {Event} event
+ */
 function handleTooltipLeave(event) {
     const anchor = normalizeTooltipAnchor(event.target);
     if (anchor) {
@@ -279,14 +330,27 @@ function handleTooltipLeave(event) {
     }
 }
 
+/**
+ * Converts existing title attributes within a subtree into tooltip state.
+ * @param {ParentNode & Document | Element} root
+ */
 function prepareExistingTitleTooltips(root = document) {
     root.querySelectorAll?.("[title]").forEach((element) => {
         prepareNativeTitleTooltip(element);
     });
 }
 
+/**
+ * Attaches tooltip behavior to a root node and returns a cleanup function.
+ * @param {ParentNode & Document | Element} root
+ * @returns {() => void}
+ */
 export function initializeTooltips(root = document) {
     prepareExistingTitleTooltips(root);
+    /**
+     * Handles Escape key presses to dismiss the active tooltip.
+     * @param {KeyboardEvent} event
+     */
     const handleEscape = (event) => {
         if (event.key === "Escape") {
             hideTooltip();

@@ -1,3 +1,4 @@
+// Responsible for creating, updating, and removing SVG flowchart connections.
 /**
  * FlowchartConnections - SVG orthogonal connection management with data type labels
  */
@@ -5,6 +6,12 @@
 import { ManualPathCreator } from "./manualPathCreator.js";
 
 export class FlowchartConnections {
+    /**
+     * Creates a connection manager for an SVG layer.
+     *
+     * @param {SVGElement} svgLayer
+     * @param {Object} [options]
+     */
     constructor(svgLayer, options = {}) {
         this.svgLayer = svgLayer;
         this.connections = new Map();
@@ -30,6 +37,9 @@ export class FlowchartConnections {
         this.setupDefs();
     }
 
+    /**
+     * Ensures the SVG defs and arrow marker are available.
+     */
     setupDefs() {
         let defs = this.svgLayer.querySelector("defs");
         if (!defs) {
@@ -66,6 +76,11 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Creates or updates a connection between two nodes.
+     *
+     * @param {...*} args
+     */
     createConnection(...args) {
         const options =
             args.length === 1 && typeof args[0] === "object" && args[0] !== null
@@ -226,6 +241,12 @@ export class FlowchartConnections {
         });
     }
 
+    /**
+     * Attaches hover, click, and context-menu handlers to a connection.
+     *
+     * @param {SVGGElement} group
+     * @param {SVGPathElement} path
+     */
     setupHoverEffects(group, path) {
         path.style.transition =
             "stroke 0.15s ease, stroke-width 0.15s ease, filter 0.15s ease, opacity 0.15s ease, stroke-dasharray 0.15s ease";
@@ -266,6 +287,13 @@ export class FlowchartConnections {
         });
     }
 
+    /**
+     * Shows the connection context menu at the given screen position.
+     *
+     * @param {number} x
+     * @param {number} y
+     * @param {string} connectionId
+     */
     showContextMenu(x, y, connectionId) {
         // Remove existing context menu if any
         const existingMenu = document.getElementById("connection-context-menu");
@@ -418,6 +446,11 @@ export class FlowchartConnections {
         }, 10);
     }
 
+    /**
+     * Toggles the default-connection state.
+     *
+     * @param {string} connectionId
+     */
     toggleDefault(connectionId) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -442,6 +475,12 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Applies or clears cycle-highlight styling.
+     *
+     * @param {string} connectionId
+     * @param {boolean} isCycle
+     */
     setCycleHighlight(connectionId, isCycle) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -457,6 +496,16 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Recomputes a connection path from current node port positions.
+     *
+     * @param {string} connectionId
+     * @param {Object} fromNode
+     * @param {string} fromPortName
+     * @param {Object} toNode
+     * @param {string} toPortName
+     * @param {boolean} [skipLabelUpdate=false]
+     */
     updateConnection(
         connectionId,
         fromNode,
@@ -522,6 +571,13 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Builds a default orthogonal path between two points.
+     *
+     * @param {{x:number,y:number}} from
+     * @param {{x:number,y:number}} to
+     * @returns {string}
+     */
     calculateOrthogonalPath(from, to) {
         const startOffset = 10;
         const endOffset = 10;
@@ -543,6 +599,17 @@ export class FlowchartConnections {
         );
     }
 
+    /**
+     * Builds a simple rounded orthogonal SVG path string.
+     *
+     * @param {number} startX
+     * @param {number} startY
+     * @param {number} endX
+     * @param {number} endY
+     * @param {number} midX
+     * @param {number} cornerRadius
+     * @returns {string}
+     */
     buildSimpleOrthogonalPath(startX, startY, endX, endY, midX, cornerRadius) {
         const segments = [];
         segments.push(`M ${startX} ${startY}`);
@@ -568,6 +635,15 @@ export class FlowchartConnections {
         return segments.join(" ");
     }
 
+    /**
+     * Adds a horizontal segment to a path command list.
+     *
+     * @param {string[]} segments
+     * @param {number} fromX
+     * @param {number} y
+     * @param {number} toX
+     * @param {number} radius
+     */
     addHorizontalSegment(segments, fromX, y, toX, radius) {
         if (Math.abs(toX - fromX) < radius) {
             segments.push(`L ${toX} ${y}`);
@@ -578,6 +654,16 @@ export class FlowchartConnections {
         segments.push(`L ${toX - radius * direction} ${y}`);
     }
 
+    /**
+     * Adds a vertical segment with rounded corners to a path command list.
+     *
+     * @param {string[]} segments
+     * @param {number} x
+     * @param {number} fromY
+     * @param {number} toY
+     * @param {number} radius
+     * @param {number} [horizontalDirection=1]
+     */
     addVerticalSegment(
         segments,
         x,
@@ -607,10 +693,22 @@ export class FlowchartConnections {
         segments.push(`Q ${x} ${toY}, ${x + horizontalOffset} ${toY}`);
     }
 
+    /**
+     * Builds a path for a multi-segment connection.
+     *
+     * @param {{x:number,y:number}} from
+     * @param {{x:number,y:number}} to
+     * @returns {string}
+     */
     calculateMultiSegmentPath(from, to) {
         return this.calculateOrthogonalPath(from, to);
     }
 
+    /**
+     * Positions the connection label at the path midpoint.
+     *
+     * @param {Object} connection
+     */
     updateLabel(connection) {
         const path = connection.path;
         const labelGroup = connection.labelGroup;
@@ -644,6 +742,11 @@ export class FlowchartConnections {
         text.setAttribute("y", "0");
     }
 
+    /**
+     * Updates a stored connection path using the current node positions.
+     *
+     * @param {string} connectionId
+     */
     updateConnectionPath(connectionId) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -663,6 +766,13 @@ export class FlowchartConnections {
         connection.hitArea.setAttribute("d", pathData);
     }
 
+    /**
+     * Updates all connections, optionally filtering to changed nodes only.
+     *
+     * @param {Map} nodeMap
+     * @param {Set<string>|null} [changedNodeIds=null]
+     * @param {boolean} [skipLabelUpdate=false]
+     */
     updateAllConnections(
         nodeMap,
         changedNodeIds = null,
@@ -713,6 +823,11 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Removes every connection attached to the given node.
+     *
+     * @param {string} nodeInstanceId
+     */
     removeConnectionsForNode(nodeInstanceId) {
         const toRemove = [];
 
@@ -728,6 +843,9 @@ export class FlowchartConnections {
         toRemove.forEach((id) => this.removeConnection(id));
     }
 
+    /**
+     * Removes every connection without emitting removal callbacks.
+     */
     clearAllConnections() {
         const ids = [...this.connections.keys()];
         for (const connectionId of ids) {
@@ -735,6 +853,12 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Applies or clears the hover visual state for a connection.
+     *
+     * @param {string} connectionId
+     * @param {boolean} isHovered
+     */
     setHoverState(connectionId, isHovered) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -765,10 +889,24 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Convenience wrapper for applying hover highlighting.
+     *
+     * @param {string} connectionId
+     * @param {boolean} [highlight=true]
+     */
     highlightConnection(connectionId, highlight = true) {
         this.setHoverState(connectionId, highlight);
     }
 
+    /**
+     * Returns connection IDs attached to the specified node port.
+     *
+     * @param {string} nodeInstanceId
+     * @param {string} portName
+     * @param {string} portType
+     * @returns {string[]}
+     */
     getConnectionsForPort(nodeInstanceId, portName, portType) {
         const result = [];
 
@@ -789,6 +927,13 @@ export class FlowchartConnections {
         return result;
     }
 
+    /**
+     * Creates a temporary SVG path used while dragging a new connection.
+     *
+     * @param {{x:number,y:number}} startPos
+     * @param {Object} [options]
+     * @returns {{update: Function, remove: Function}}
+     */
     createTemporaryConnection(startPos, options = {}) {
         const tempPath = document.createElementNS(
             "http://www.w3.org/2000/svg",
@@ -870,6 +1015,11 @@ export class FlowchartConnections {
         };
     }
 
+    /**
+     * Serializes all stored connections to plain data objects.
+     *
+     * @returns {Array<Object>}
+     */
     getConnectionData() {
         const data = [];
         for (const [connectionId, connection] of this.connections) {
@@ -887,6 +1037,13 @@ export class FlowchartConnections {
         return data;
     }
 
+    /**
+     * Applies default and cycle visuals to a connection.
+     *
+     * @param {string} connectionId
+     * @param {boolean} isDefault
+     * @param {boolean} isCycle
+     */
     updateConnectionVisuals(connectionId, isDefault, isCycle) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -910,6 +1067,11 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Starts manual path editing for a connection.
+     *
+     * @param {string} connectionId
+     */
     startManualPathCreation(connectionId) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -935,6 +1097,12 @@ export class FlowchartConnections {
         this.manualPathCreator.start(connectionId, startPoint, endPoint);
     }
 
+    /**
+     * Stores completed manual waypoints and refreshes the path.
+     *
+     * @param {string} connectionId
+     * @param {Array<{x:number,y:number}>} waypoints
+     */
     handleManualPathComplete(connectionId, waypoints) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -950,6 +1118,11 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Restores connection visibility after manual path editing is cancelled.
+     *
+     * @param {string} connectionId
+     */
     handleManualPathCancel(connectionId) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -958,6 +1131,11 @@ export class FlowchartConnections {
         connection.hitArea.style.opacity = "1";
     }
 
+    /**
+     * Clears custom waypoints and returns the connection to auto routing.
+     *
+     * @param {string} connectionId
+     */
     resetToAutoPath(connectionId) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -982,6 +1160,11 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Rebuilds a connection path from stored custom waypoints.
+     *
+     * @param {string} connectionId
+     */
     updateConnectionWithWaypoints(connectionId) {
         const connection = this.connections.get(connectionId);
         const customWaypoints = connection?.customWaypoints;
@@ -994,6 +1177,12 @@ export class FlowchartConnections {
         this.updateLabel(connection);
     }
 
+    /**
+     * Builds a rounded SVG path from waypoint coordinates.
+     *
+     * @param {Array<{x:number,y:number}>} waypoints
+     * @returns {string}
+     */
     buildPathFromWaypoints(waypoints) {
         if (!waypoints || waypoints.length < 2) return "";
 
@@ -1053,6 +1242,12 @@ export class FlowchartConnections {
         return segments.join(" ");
     }
 
+    /**
+     * Stores custom waypoints for a connection.
+     *
+     * @param {string} connectionId
+     * @param {Array<{x:number,y:number}>|null} waypoints
+     */
     setCustomWaypoints(connectionId, waypoints) {
         const connection = this.connections.get(connectionId);
         if (!connection) return;
@@ -1063,11 +1258,20 @@ export class FlowchartConnections {
         }
     }
 
+    /**
+     * Returns stored custom waypoints for a connection.
+     *
+     * @param {string} connectionId
+     * @returns {Array<{x:number,y:number}>|null}
+     */
     getCustomWaypoints(connectionId) {
         const connection = this.connections.get(connectionId);
         return connection?.customWaypoints || null;
     }
 
+    /**
+     * Tears down the manager and clears all connections.
+     */
     destroy() {
         if (this.manualPathCreator) {
             this.manualPathCreator.destroy();

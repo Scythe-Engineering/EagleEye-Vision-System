@@ -1,3 +1,6 @@
+/*
+ * Main Web UI bootstrap: wires page setup, live backend events, and shared UI state.
+ */
 import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
@@ -38,6 +41,11 @@ import {
 import { cameraPoseToFieldSpaceMatrix } from "./utils/fieldSpaceTransforms.js";
 import "../style.css";
 
+/**
+ * Returns the currently active view id from the URL or visible DOM state.
+ *
+ * @returns {string} The active view element id.
+ */
 function getCurrentViewId() {
     // First check URL parameter
     const url = new URL(globalThis.location.href);
@@ -59,6 +67,12 @@ function getCurrentViewId() {
 }
 
 // Function to refresh views when connection is re-established
+/**
+ * Refreshes view-specific content after the backend reconnects.
+ *
+ * @param {string} currentViewId - The current view element id.
+ * @returns {Promise<void>}
+ */
 async function refreshViewsOnReconnection(currentViewId) {
     console.log("Refreshing views after reconnection");
 
@@ -75,6 +89,11 @@ async function refreshViewsOnReconnection(currentViewId) {
 }
 
 // Function to refresh pipeline creator specifically
+/**
+ * Refreshes the pipeline creator module if it is available globally.
+ *
+ * @returns {Promise<void>}
+ */
 async function refreshPipelineCreator() {
     // Use the refresh function from the pipeline creator module if available
     if (globalThis.pipelineCreator?.refreshPipelineCreator) {
@@ -84,6 +103,11 @@ async function refreshPipelineCreator() {
     }
 }
 
+/**
+ * Initializes the web UI after the page loads.
+ *
+ * @returns {Promise<void>}
+ */
 window.onload = async () => {
     const destroyTooltips = initializeTooltips();
 
@@ -103,10 +127,18 @@ window.onload = async () => {
         targetLink: faviconLink,
         baseIconUrl: faviconLink?.getAttribute("href") ?? "/favicon.ico",
     });
+    /**
+     * Updates the favicon status when backend connection state changes.
+     *
+     * @param {{status: string}} state - The connection status state.
+     */
     const unsubscribeConnectionStatus = subscribeConnectionStatus((state) => {
         faviconController.setStatus(state.status);
     });
 
+    /**
+     * Cleans up UI resources before the page unloads.
+     */
     window.addEventListener("beforeunload", () => {
         destroyTooltips();
         unsubscribeConnectionStatus();
@@ -115,6 +147,9 @@ window.onload = async () => {
 
     const clearAllButton = document.getElementById("clearAllNotificationsBtn");
     if (clearAllButton) {
+        /**
+         * Clears all notification messages.
+         */
         clearAllButton.addEventListener("click", () => {
             clearAll();
         });
@@ -124,18 +159,31 @@ window.onload = async () => {
         "testNotificationsBtn",
     );
     if (testNotificationsBtn) {
+        /**
+         * Triggers sample notification messages for testing.
+         */
         testNotificationsBtn.addEventListener("click", () => {
             showSuccess("This is a success notification!");
+            /**
+             * Shows the warning test notification after a short delay.
+             */
             setTimeout(() => {
                 showWarning("This is a warning notification!");
             }, 300);
+            /**
+             * Shows the danger test notification after a short delay.
+             */
             setTimeout(() => {
                 showDanger("This is a danger notification!");
             }, 600);
         });
     }
 
+    /**
+     * Shows the connection-lost overlay and notifies the app of backend disconnect.
+     */
     const showConnectionLostOverlay = () => {
+        document.dispatchEvent(new CustomEvent("backend-disconnected"));
         const overlay = document.getElementById("connection-lost-overlay");
         if (overlay) {
             overlay.classList.remove("hidden");
@@ -145,6 +193,9 @@ window.onload = async () => {
         }
     };
 
+    /**
+     * Hides the connection-lost overlay.
+     */
     const hideConnectionLostOverlay = () => {
         const overlay = document.getElementById("connection-lost-overlay");
         if (overlay) {
@@ -158,6 +209,9 @@ window.onload = async () => {
     let wasDisconnected = false;
     const HEARTBEAT_TIMEOUT_MS = 15000; // consider connection lost if no heartbeat
 
+    /**
+     * Handles SSE connection open events.
+     */
     es.addEventListener("open", () => {
         console.log(
             `SSE connection established at ${new Date().toISOString()}`,
@@ -167,6 +221,9 @@ window.onload = async () => {
         if (wasDisconnected) {
             console.log("SSE reconnected after disconnection");
             // Brief delay to allow connection to stabilize before refreshing views
+            /**
+             * Refreshes views and settings after reconnection stabilizes.
+             */
             setTimeout(async () => {
                 wasDisconnected = false;
                 const currentViewId = getCurrentViewId();
@@ -179,12 +236,20 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Updates the last heartbeat timestamp.
+     */
     es.addEventListener("heartbeat", () => {
         lastHeartbeat = Date.now();
         setBackendConnected(true);
         hideConnectionLostOverlay();
     });
 
+    /**
+     * Processes robot transform updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("update_robot_transform", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -224,6 +289,11 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Processes camera pose updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("update_camera_pose", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -254,6 +324,11 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Processes detected object updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("update_detected_objects", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -270,6 +345,11 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Processes log updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("log_update", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -279,6 +359,11 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Processes pipeline operation error updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("pipeline_operation_errors", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -303,6 +388,11 @@ window.onload = async () => {
     const recentProfilingUpdateKeys = new Map();
     const PROFILING_DEDUPE_WINDOW_MS = 1000;
 
+/**
+ * Validates, deduplicates, and forwards profiling update payloads.
+ *
+ * @param {string|object} data - Raw profiling update payload.
+ */
     const handleProfilingUpdatePayload = (data) => {
         try {
             const parsedData =
@@ -340,6 +430,11 @@ window.onload = async () => {
         }
     };
 
+/**
+ * Handles profiling updates received via SSE.
+ *
+ * @param {MessageEvent} e - The SSE message event.
+ */
     const handleProfilingUpdateFromSse = (e) => {
         handleProfilingUpdatePayload(e?.data);
     };
@@ -347,6 +442,11 @@ window.onload = async () => {
     es.addEventListener("profiling_update", handleProfilingUpdateFromSse);
     globalThis.profilingUpdateSseHandler = handleProfilingUpdateFromSse;
 
+/**
+ * Handles profiling updates received via Socket.IO.
+ *
+ * @param {unknown} data - The socket payload.
+ */
     const handleProfilingUpdateFromSocket = (data) => {
         handleProfilingUpdatePayload(data);
     };
@@ -367,6 +467,11 @@ window.onload = async () => {
         );
     }
 
+    /**
+     * Processes system status updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     es.addEventListener("system_status", (e) => {
         try {
             const data = JSON.parse(e.data);
@@ -378,6 +483,9 @@ window.onload = async () => {
         }
     });
 
+    /**
+     * Handles SSE errors by marking the backend disconnected.
+     */
     es.onerror = () => {
         console.warn("SSE connection error or lost");
         setBackendConnected(false);
@@ -386,6 +494,9 @@ window.onload = async () => {
     };
 
     // watchdog to detect missed heartbeats
+    /**
+     * Periodically checks for missed SSE heartbeats.
+     */
     setInterval(() => {
         if (Date.now() - lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
             console.warn("SSE connection lost - heartbeat timeout");

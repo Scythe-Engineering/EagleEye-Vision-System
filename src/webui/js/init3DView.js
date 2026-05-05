@@ -1,3 +1,6 @@
+/**
+ * Initializes and manages the 3D web UI view, rendering models, detections, and camera markers.
+ */
 import { GLTFLoader } from "GLTFLoader";
 import {
     PCFSoftShadowMap,
@@ -102,6 +105,9 @@ const cameraFrustumHalfWidth = 160;
 const cameraLabelOffset = 230;
 const cameraPoseStaleTimeoutMs = 2000;
 
+/**
+ * Returns whether a URL is absolute or uses a non-HTTP data/blob scheme.
+ */
 function isAbsoluteUrl(url) {
     return (
         /^[a-z][a-z\d+\-.]*:\/\//i.test(url) ||
@@ -110,6 +116,9 @@ function isAbsoluteUrl(url) {
     );
 }
 
+/**
+ * Resolves a backend asset path to a fully qualified URL when needed.
+ */
 function buildBackendAssetUrl(assetPath) {
     if (isAbsoluteUrl(assetPath)) {
         return assetPath;
@@ -126,16 +135,25 @@ function buildBackendAssetUrl(assetPath) {
     return assetPath;
 }
 
+/**
+ * Normalizes an asset scale value to a positive finite number.
+ */
 function normalizeAssetScale(scale) {
     const numericScale = Number.parseFloat(scale);
     return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
 }
 
+/**
+ * Recomputes the robot scale matrix from the current robot scale factor.
+ */
 function updateRobotScaleMatrix() {
     const scale = robotBaseScale * currentRobotScaleFactor;
     robotScaleMatrix.makeScale(scale, scale, scale);
 }
 
+/**
+ * Updates the robot model transform using the latest pose and scale state.
+ */
 function refreshRobotMatrix() {
     if (!robotObject) {
         return;
@@ -171,6 +189,9 @@ function refreshRobotMatrix() {
     robotObject.matrixWorldNeedsUpdate = true;
 }
 
+/**
+ * Applies the shared visual-axis correction used for camera and detection transforms.
+ */
 function applySharedVisualAxisCorrection(matrix) {
     return matrix
         .multiply(robotPitchRollSwap)
@@ -179,12 +200,18 @@ function applySharedVisualAxisCorrection(matrix) {
         .multiply(robotPitchRollSwapInverse);
 }
 
+/**
+ * Applies a new robot scale factor and refreshes the robot transform.
+ */
 function applyRobotScaleFactor(scale) {
     currentRobotScaleFactor = normalizeAssetScale(scale);
     updateRobotScaleMatrix();
     refreshRobotMatrix();
 }
 
+/**
+ * Applies a new field scale factor to the field and game-piece models.
+ */
 function applyFieldScaleFactor(scale) {
     currentFieldScaleFactor = normalizeAssetScale(scale);
     if (fieldObject) {
@@ -208,6 +235,10 @@ function applyFieldScaleFactor(scale) {
     }
 }
 
+/**
+ * Applies a scale update to the currently loaded 3D asset when it matches the active asset.
+ */
+
 export function apply3DAssetScale(assetType, asset, scale) {
     if (assetType === "robot" && asset?.filename === currentRobotFile) {
         applyRobotScaleFactor(scale);
@@ -223,6 +254,9 @@ export function apply3DAssetScale(assetType, asset, scale) {
     }
 }
 
+/**
+ * Collects the DOM elements used by the 3D loading overlay.
+ */
 function getLoadingElements() {
     return {
         overlay: document.getElementById("threeDLoadingOverlay"),
@@ -231,6 +265,9 @@ function getLoadingElements() {
     };
 }
 
+/**
+ * Hides and resets the 3D loading overlay.
+ */
 function hideLoadingOverlay() {
     const { overlay, progress } = getLoadingElements();
     if (overlay) {
@@ -243,11 +280,17 @@ function hideLoadingOverlay() {
     }
 }
 
+/**
+ * Creates a tracker for coordinating loading progress across multiple async tasks.
+ */
 function createLoadingTracker(token) {
     const pendingTasks = new Map();
     const taskProgress = new Map();
     let failedCount = 0;
 
+    /**
+     * Refreshes the loading overlay using the current task state.
+     */
     function update() {
         if (token !== currentLoadToken) {
             return;
@@ -292,12 +335,18 @@ function createLoadingTracker(token) {
         overlay.setAttribute("aria-busy", "true");
     }
 
+    /**
+     * Registers a new loading task.
+     */
     function start(key, label) {
         pendingTasks.set(key, label);
         taskProgress.set(key, 0);
         update();
     }
 
+    /**
+     * Updates the progress for a loading task.
+     */
     function progress(key, loaded, total) {
         if (!pendingTasks.has(key)) {
             return;
@@ -311,12 +360,18 @@ function createLoadingTracker(token) {
         update();
     }
 
+    /**
+     * Marks a loading task as complete.
+     */
     function finish(key) {
         pendingTasks.delete(key);
         taskProgress.delete(key);
         update();
     }
 
+    /**
+     * Marks a loading task as failed.
+     */
     function fail(key, errorMessage) {
         failedCount += 1;
         pendingTasks.delete(key);
@@ -328,6 +383,9 @@ function createLoadingTracker(token) {
     return { start, progress, finish, fail };
 }
 
+/**
+ * Updates the on-screen scene statistics display.
+ */
 function updateStats() {
     if (!scene || !statsDisplay) {
         return;
@@ -351,6 +409,9 @@ function updateStats() {
     }
 }
 
+/**
+ * Creates the axis helper used to visualize the robot coordinate frame.
+ */
 function createRobotAxes() {
     const axesGroup = new Group();
     const axisLength = 500; // Adjust length as needed
@@ -404,6 +465,9 @@ function createRobotAxes() {
     return axesGroup;
 }
 
+/**
+ * Disposes a Three.js object tree and any attached GPU resources.
+ */
 function disposeObject(object) {
     object.traverse((node) => {
         if (node.geometry) {
@@ -426,6 +490,9 @@ function disposeObject(object) {
     });
 }
 
+/**
+ * Removes an object from its parent and disposes its resources.
+ */
 function removeAndDisposeObject(object) {
     if (!object) {
         return;
@@ -434,6 +501,9 @@ function removeAndDisposeObject(object) {
     disposeObject(object);
 }
 
+/**
+ * Stops the active animation loop if one is running.
+ */
 function stopAnimationLoop() {
     animationStarted = false;
     if (animationFrameId !== null) {
@@ -442,6 +512,9 @@ function stopAnimationLoop() {
     }
 }
 
+/**
+ * Cancels any queued detected-object render request.
+ */
 function cancelPendingDetectedObjectRender() {
     if (detectedObjectsFrameId !== null) {
         cancelAnimationFrame(detectedObjectsFrameId);
@@ -449,6 +522,9 @@ function cancelPendingDetectedObjectRender() {
     }
 }
 
+/**
+ * Disposes the WebGL renderer and removes its canvas from the DOM.
+ */
 function disposeRenderer() {
     if (!renderer) {
         return;
@@ -464,6 +540,9 @@ function disposeRenderer() {
     renderer = null;
 }
 
+/**
+ * Disposes all objects currently attached to the scene.
+ */
 function disposeSceneObjects() {
     if (!scene) {
         return;
@@ -482,6 +561,9 @@ function disposeSceneObjects() {
     scene = null;
 }
 
+/**
+ * Cleans up the current 3D view state and optionally invalidates pending loads.
+ */
 function teardown3DView({ invalidateLoads = true } = {}) {
     if (invalidateLoads) {
         currentLoadToken += 1;
@@ -511,10 +593,17 @@ function teardown3DView({ invalidateLoads = true } = {}) {
     lastRobotTransformMatrix = null;
 }
 
+/**
+ * Publicly disposes the 3D view.
+ */
+
 export function dispose3DView() {
     teardown3DView();
 }
 
+/**
+ * Removes and disposes all detected-object visuals.
+ */
 function clearDetectedObjectsGroup() {
     if (!detectedObjectsGroup) {
         return;
@@ -528,6 +617,9 @@ function clearDetectedObjectsGroup() {
     }
 }
 
+/**
+ * Removes and disposes all camera marker visuals.
+ */
 function clearCameraMarkersGroup() {
     while (cameraMarkersGroup && cameraMarkersGroup.children.length > 0) {
         const child = cameraMarkersGroup.children.pop();
@@ -539,6 +631,9 @@ function clearCameraMarkersGroup() {
     cameraMarkers.clear();
 }
 
+/**
+ * Derives a stable hue value from a detection class identifier.
+ */
 function getHueFromClassIdentifier(classIdentifier) {
     if (
         typeof classIdentifier === "number" &&
@@ -555,6 +650,9 @@ function getHueFromClassIdentifier(classIdentifier) {
     return (hash % 360) / 360;
 }
 
+/**
+ * Clamps a confidence value to the inclusive range [0, 1].
+ */
 function clampConfidence(confidence) {
     if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
         return null;
@@ -568,10 +666,16 @@ function clampConfidence(confidence) {
     return confidence;
 }
 
+/**
+ * Converts a detection position into field-space coordinates.
+ */
 function normalizeDetectionPosition(position) {
     return position3DToFieldSpaceVector(position);
 }
 
+/**
+ * Creates the material used to render a detection cylinder.
+ */
 function createDetectionMaterial(classIdentifier, normalizedConfidence) {
     const hue = getHueFromClassIdentifier(classIdentifier);
     const saturation = 0.7;
@@ -596,6 +700,9 @@ function createDetectionMaterial(classIdentifier, normalizedConfidence) {
     });
 }
 
+/**
+ * Creates the cylinder mesh used to visualize a detection.
+ */
 function createDetectionCylinderMesh(classIdentifier, normalizedConfidence) {
     const geometry = new CylinderGeometry(
         detectionCylinderRadius,
@@ -615,6 +722,9 @@ function createDetectionCylinderMesh(classIdentifier, normalizedConfidence) {
     return cylinder;
 }
 
+/**
+ * Builds the label text for a detection marker.
+ */
 function buildDetectionLabelText(detection, normalizedConfidence) {
     const classIdentifier =
         detection.class_name ?? detection.class_id ?? "Detection";
@@ -626,6 +736,9 @@ function buildDetectionLabelText(detection, normalizedConfidence) {
     return `${classLabel} ${confidencePercent}%`;
 }
 
+/**
+ * Creates a text sprite for use as a scene label.
+ */
 function createLabelSprite(
     labelText,
     textColor = "#ffffff",
@@ -660,6 +773,9 @@ function createLabelSprite(
     return sprite;
 }
 
+/**
+ * Creates a Three.js group that represents a single detection.
+ */
 function createDetectionGroup(detection) {
     if (!detection || typeof detection !== "object") {
         return null;
@@ -687,6 +803,9 @@ function createDetectionGroup(detection) {
     return detectionGroup;
 }
 
+/**
+ * Renders the current set of detected objects into the scene.
+ */
 function renderDetectedObjects(detections) {
     if (!detectedObjectsGroup) {
         return;
@@ -703,6 +822,10 @@ function renderDetectedObjects(detections) {
     }
 }
 
+/**
+ * Queues a detected-object scene update for the next animation frame.
+ */
+
 export function updateDetectedObjects(detections) {
     pendingDetectedObjects = detections;
     if (detectedObjectsFrameId !== null) {
@@ -715,16 +838,25 @@ export function updateDetectedObjects(detections) {
     });
 }
 
+/**
+ * Synchronizes the robot model visibility with the current toggle state.
+ */
 function applyRobotModelVisibility() {
     if (robotObject) {
         robotObject.visible = robotModelVisible;
     }
 }
 
+/**
+ * Returns the display name for a camera pose.
+ */
 function getCameraDisplayName(cameraPose) {
     return String(cameraPose.cameraName || cameraPose.cameraBusId);
 }
 
+/**
+ * Derives a stable hue value from a generic identifier.
+ */
 function getHueFromIdentifier(identifier) {
     const key = String(identifier ?? "camera");
     let hash = 0;
@@ -734,12 +866,18 @@ function getHueFromIdentifier(identifier) {
     return (hash % 360) / 360;
 }
 
+/**
+ * Returns the accent color used for a camera marker.
+ */
 function getCameraAccentColor(cameraBusId) {
     const color = new Color();
     color.setHSL(getHueFromIdentifier(cameraBusId), 0.72, 0.58);
     return color;
 }
 
+/**
+ * Creates the wireframe frustum used to visualize a camera.
+ */
 function createCameraFrustumMesh(cameraBusId) {
     const positions = new Float32Array([
         0,
@@ -802,6 +940,9 @@ function createCameraFrustumMesh(cameraBusId) {
     return frustum;
 }
 
+/**
+ * Creates the scene object used to represent a camera pose.
+ */
 function createCameraMarker(cameraPose) {
     const markerGroup = new Group();
     markerGroup.matrixAutoUpdate = false;
@@ -828,6 +969,9 @@ function createCameraMarker(cameraPose) {
     return markerGroup;
 }
 
+/**
+ * Removes and disposes the marker for a specific camera.
+ */
 function removeCameraMarker(cameraBusId) {
     const marker = cameraMarkers.get(cameraBusId);
     if (!marker) {
@@ -841,6 +985,9 @@ function removeCameraMarker(cameraBusId) {
     cameraMarkers.delete(cameraBusId);
 }
 
+/**
+ * Creates or updates the marker for a camera pose.
+ */
 function upsertCameraMarker(cameraPose) {
     if (!cameraMarkersGroup) {
         return;
@@ -867,6 +1014,9 @@ function upsertCameraMarker(cameraPose) {
     marker.visible = allCameraMarkersVisible;
 }
 
+/**
+ * Removes camera poses that have exceeded the stale timeout.
+ */
 function pruneStaleCameraPoses(now = Date.now()) {
     for (const [cameraBusId, cameraPose] of pendingCameraPoses.entries()) {
         if (now - cameraPose.timestampMs <= cameraPoseStaleTimeoutMs) {
@@ -877,12 +1027,19 @@ function pruneStaleCameraPoses(now = Date.now()) {
     }
 }
 
+/**
+ * Synchronizes all camera markers from the pending pose map.
+ */
 function syncCameraMarkersFromPending() {
     pruneStaleCameraPoses();
     for (const cameraPose of pendingCameraPoses.values()) {
         upsertCameraMarker(cameraPose);
     }
 }
+
+/**
+ * Updates the stored pose for a camera and refreshes its marker.
+ */
 
 export function updateCameraPose(cameraPoseUpdate) {
     if (
@@ -911,6 +1068,10 @@ export function updateCameraPose(cameraPoseUpdate) {
     pruneStaleCameraPoses(normalizedUpdate.timestampMs);
     upsertCameraMarker(normalizedUpdate);
 }
+
+/**
+ * Initializes the 3D scene, loads assets, and starts rendering.
+ */
 
 export async function init3DView(modelUrl, options = {}) {
     const loadToken = currentLoadToken + 1;
@@ -968,6 +1129,9 @@ export async function init3DView(modelUrl, options = {}) {
 
     scene.background = new Color(0x222222);
 
+    /**
+     * Returns the scale for the currently selected robot model.
+     */
     function selectedRobotScale() {
         const selectedOption = robotFileSelect.selectedOptions?.[0];
         return normalizeAssetScale(
@@ -975,6 +1139,9 @@ export async function init3DView(modelUrl, options = {}) {
         );
     }
 
+    /**
+     * Loads a robot model and applies its scale.
+     */
     function loadRobot(robotFile, scaleFactor = selectedRobotScale()) {
         if (loadToken !== currentLoadToken) {
             return;
@@ -1180,6 +1347,9 @@ export async function init3DView(modelUrl, options = {}) {
 
         loadingTracker.start("gamePieces", "game pieces");
 
+        /**
+         * Aggregates progress across all game-piece loads.
+         */
         function updateGamePieceProgress(url, loaded, total) {
             gamePieceProgress.set(url, {
                 loaded: Number.isFinite(loaded) ? loaded : 0,
@@ -1197,6 +1367,9 @@ export async function init3DView(modelUrl, options = {}) {
             loadingTracker.progress("gamePieces", loadedBytes, totalBytes);
         }
 
+        /**
+         * Finalizes a single game-piece load.
+         */
         function finishGamePieceLoad() {
             pendingGamePieces -= 1;
             if (pendingGamePieces === 0) {
@@ -1292,6 +1465,9 @@ export async function init3DView(modelUrl, options = {}) {
     const clock = new Clock();
     let delta = 0;
 
+    /**
+     * Starts the render loop when the view is visible and assets are ready.
+     */
     function startAnimationLoop() {
         const container = document.getElementById("view-3d");
         const isViewVisible =
@@ -1311,6 +1487,9 @@ export async function init3DView(modelUrl, options = {}) {
         }
     }
 
+    /**
+     * Renders animation frames while the 3D view remains active.
+     */
     function animate() {
         const container = document.getElementById("view-3d");
         const isViewVisible =
@@ -1510,6 +1689,10 @@ export async function init3DView(modelUrl, options = {}) {
             );
         });
 }
+
+/**
+ * Updates the stored robot transform and refreshes the robot model.
+ */
 
 export function updateRobotTransform(transformMatrix) {
     lastRobotTransformMatrix = transformMatrix.clone();

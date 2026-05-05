@@ -1,6 +1,17 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { init3DView } from "../init3DView.js";
 
+/**
+ * Builds and manages the field/year dropdown state and selection handling for the web UI.
+ */
+
+/**
+ * Creates a normalized field record for a given year and field file.
+ *
+ * @param {string} year - Field year.
+ * @param {string} filename - Field file name.
+ * @returns {object} Field record object.
+ */
 function createFieldRecord(year, filename) {
     return {
         year,
@@ -23,11 +34,23 @@ const FALLBACK_FIELD_RECORDS = {
 let latestFieldRecords = FALLBACK_FIELD_RECORDS;
 let listenersAttached = false;
 
+/**
+ * Converts a scale value to a positive finite number, defaulting to 1.
+ *
+ * @param {unknown} scale - Scale value to normalize.
+ * @returns {number} Normalized scale.
+ */
 function normalizeScale(scale) {
     const numericScale = Number.parseFloat(scale);
     return Number.isFinite(numericScale) && numericScale > 0 ? numericScale : 1;
 }
 
+/**
+ * Converts records grouped by year into a year-to-filename array map.
+ *
+ * @param {Object<string, Array<object>>} recordsByYear - Records grouped by year.
+ * @returns {Object<string, string[]>} Map of years to filenames.
+ */
 function recordsToFilenameMap(recordsByYear) {
     return Object.fromEntries(
         Object.entries(recordsByYear).map(([year, records]) => [
@@ -37,6 +60,12 @@ function recordsToFilenameMap(recordsByYear) {
     );
 }
 
+/**
+ * Normalizes a raw field record into the shape used by the dropdown logic.
+ *
+ * @param {object} record - Raw field record.
+ * @returns {object|null} Normalized field record, or null when invalid.
+ */
 function normalizeFieldRecord(record) {
     if (!record?.year || !record?.filename) {
         return null;
@@ -54,6 +83,12 @@ function normalizeFieldRecord(record) {
     };
 }
 
+/**
+ * Groups valid field records by year from backend file details.
+ *
+ * @param {Array<object>} fileDetails - File detail records from the backend.
+ * @returns {Object<string, Array<object>>} Records grouped by year.
+ */
 function recordsByYearFromDetails(fileDetails) {
     const recordsByYear = {};
     fileDetails.forEach((fileDetail) => {
@@ -75,6 +110,11 @@ function recordsByYearFromDetails(fileDetails) {
     return recordsByYear;
 }
 
+/**
+ * Fetches available field records from the backend, falling back to built-in defaults.
+ *
+ * @returns {Promise<Object<string, Array<object>>>} Records grouped by year.
+ */
 async function fetchAvailableFields() {
     try {
         const response = await fetch(`${BACKEND_BASE_URL}/field-files`);
@@ -91,10 +131,22 @@ async function fetchAvailableFields() {
     return FALLBACK_FIELD_RECORDS;
 }
 
+/**
+ * Builds a relative field model URL for the selected year and file.
+ *
+ * @param {string} year - Field year.
+ * @param {string} file - Field file name.
+ * @returns {string} Relative field model URL.
+ */
 export function fieldModelUrl(year, file) {
     return `./assets/fields/${year}/field_files/${file}`;
 }
 
+/**
+ * Returns the currently selected field model information from the dropdowns.
+ *
+ * @returns {object|null} Selected field model data, or null if nothing is selected.
+ */
 export function getSelectedFieldModel() {
     const yearSelect = document.getElementById("yearSelect");
     const fileSelect = document.getElementById("fieldFileSelect");
@@ -130,16 +182,34 @@ export function getSelectedFieldModel() {
     };
 }
 
+/**
+ * Returns the URL for the currently selected field model.
+ *
+ * @returns {string|null} Selected field model URL, or null if unavailable.
+ */
 export function getSelectedFieldModelUrl() {
     return getSelectedFieldModel()?.url || null;
 }
 
+/**
+ * Finds a field record by year and filename in the cached records.
+ *
+ * @param {string} year - Field year.
+ * @param {string} filename - Field filename.
+ * @returns {object|undefined} Matching field record, if present.
+ */
 function getFieldRecord(year, filename) {
     return latestFieldRecords[year]?.find(
         (record) => record.filename === filename,
     );
 }
 
+/**
+ * Loads the selected field into the 3D view when both dropdowns have a valid selection.
+ *
+ * @param {HTMLSelectElement} yearSelect - Year dropdown element.
+ * @param {HTMLSelectElement} fileSelect - Field file dropdown element.
+ */
 function loadSelectedField(yearSelect, fileSelect) {
     if (yearSelect.selectedIndex <= 0 || fileSelect.selectedIndex <= 0) {
         return;
@@ -159,6 +229,14 @@ function loadSelectedField(yearSelect, fileSelect) {
     });
 }
 
+/**
+ * Renders the year and field dropdown options based on the latest field records.
+ *
+ * @param {HTMLSelectElement} yearSelect - Year dropdown element.
+ * @param {HTMLSelectElement} fileSelect - Field file dropdown element.
+ * @param {string|null} selectedYear - Previously selected year, if any.
+ * @param {string|null} selectedFile - Previously selected field file, if any.
+ */
 function renderFieldDropdowns(
     yearSelect,
     fileSelect,
@@ -206,6 +284,15 @@ function renderFieldDropdowns(
     }
 }
 
+/**
+ * Populates the field dropdowns, wires change listeners, and optionally loads the selection.
+ *
+ * @param {object} [options={}] - Population options.
+ * @param {string|null} [options.selectedYear] - Year to preserve when re-rendering.
+ * @param {string|null} [options.selectedFile] - File to preserve when re-rendering.
+ * @param {boolean} [options.loadSelected=false] - Whether to load the selected field immediately.
+ * @returns {Promise<void>}
+ */
 export async function populateFieldDropdown(options = {}) {
     const yearSelect = document.getElementById("yearSelect");
     const fileSelect = document.getElementById("fieldFileSelect");

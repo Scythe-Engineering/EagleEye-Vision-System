@@ -1,6 +1,9 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { registerFileManagerPopup } from "./fileManager.js";
 
+/**
+ * Builds and registers the settings popup UI for pipeline operations.
+ */
 export function registerSettingsPopup() {
     registerFileManagerPopup();
 
@@ -18,6 +21,9 @@ export function registerSettingsPopup() {
     let _availableCameras = null;
     let _availableCamerasLoading = null;
 
+    /**
+     * Creates a DOM element with the provided attributes and children.
+     */
     function createElement(tag, attrs = {}, children = []) {
         const el = document.createElement(tag);
         Object.entries(attrs).forEach(([k, v]) => {
@@ -37,6 +43,9 @@ export function registerSettingsPopup() {
         return el;
     }
 
+    /**
+     * Determines whether an operation configuration exposes editable settings.
+     */
     function operationHasSettings(config) {
         const params = config?.parameters;
         const hasParameters =
@@ -48,6 +57,9 @@ export function registerSettingsPopup() {
         return hasParameters || hasDynamicGroup;
     }
 
+    /**
+     * Renders a summary of static and dynamic pipeline port groups.
+     */
     function renderPortGroupsSummary(modalBody, config) {
         const inputNodes = Array.isArray(config?.input_nodes)
             ? config.input_nodes
@@ -214,6 +226,9 @@ export function registerSettingsPopup() {
         modalBody.appendChild(summaryContainer);
     }
 
+    /**
+     * Loads and caches the list of available cameras from the backend.
+     */
     async function loadAvailableCameras() {
         if (Array.isArray(_availableCameras)) {
             return _availableCameras;
@@ -269,6 +284,9 @@ export function registerSettingsPopup() {
         return _availableCamerasLoading;
     }
 
+    /**
+     * Notifies the pipeline creator that the camera list has changed.
+     */
     function notifyCameraListUpdated(cameras) {
         if (
             globalThis.pipelineCreator?.getAvailableCameras &&
@@ -286,6 +304,9 @@ export function registerSettingsPopup() {
         }
     }
 
+    /**
+     * Builds an HSV picker field for color parameters.
+     */
     function buildHsvPickerField(currentValue, fieldId, label, isEdited) {
         const hsvValue = currentValue || [0, 0, 0];
 
@@ -419,6 +440,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Builds a nested object field from a schema definition.
+     */
     function buildObjectField(
         name,
         def,
@@ -480,6 +504,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Builds an editable list field from a list definition.
+     */
     function buildListField(
         name,
         def,
@@ -672,6 +699,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Builds the appropriate form field for a parameter definition.
+     */
     function buildField(
         name,
         def,
@@ -1201,6 +1231,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Renders the full settings form for an operation.
+     */
     function renderForm(
         modalBody,
         config,
@@ -1248,6 +1281,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Attaches listeners that keep form state in sync for auto-save.
+     */
     function setupAutoSaveListeners(
         modalBody,
         fields,
@@ -1408,6 +1444,9 @@ export function registerSettingsPopup() {
         modalBody._autoSaveObserver = observer;
     }
 
+    /**
+     * Locates the popup overlay and modal elements in the DOM.
+     */
     function findOverlayElements() {
         const overlay = document.getElementById(OVERLAY_ID);
         const modal = document.getElementById(MODAL_ID);
@@ -1427,6 +1466,9 @@ export function registerSettingsPopup() {
         };
     }
 
+    /**
+     * Shows or hides the settings panel container.
+     */
     function setSettingsPanelVisibility(showSettings) {
         const { modal, liveViewPanel, liveViewCloseBtn, settingsContent } =
             findOverlayElements();
@@ -1451,11 +1493,17 @@ export function registerSettingsPopup() {
         }
     }
 
+    /**
+     * Applies the popup title to the modal header.
+     */
     function applyTitle(modal, title) {
         const titleEl = modal.querySelector("[data-role='modal-title']");
         if (titleEl) titleEl.textContent = title || "Operation Settings";
     }
 
+    /**
+     * Refreshes the live visualization for the selected operation.
+     */
     function updateLiveView(operationName, isSecondary = false) {
         const { liveViewPanel } = findOverlayElements();
         if (!liveViewPanel) return;
@@ -1472,6 +1520,9 @@ export function registerSettingsPopup() {
         }
     }
 
+    /**
+     * Checks whether a live visualization is available for an operation.
+     */
     function isVisualizationAvailable(operationName, operationId) {
         const operations = globalThis.pipelineCreator?.getOperations?.() || [];
         if (operations.length === 0) {
@@ -1498,6 +1549,9 @@ export function registerSettingsPopup() {
         return match ? Boolean(match.hasVisualization) : true;
     }
 
+    /**
+     * Removes the currently displayed live visualization image.
+     */
     function removeCurrentLiveImage() {
         const { liveViewPanel } = findOverlayElements();
         if (!liveViewPanel) return;
@@ -1513,6 +1567,9 @@ export function registerSettingsPopup() {
         }
     }
 
+    /**
+     * Displays a visualization error message in the popup.
+     */
     function showVisualizationErrorMessage(
         message = "Error getting visualization",
     ) {
@@ -1554,6 +1611,9 @@ export function registerSettingsPopup() {
         errorMsgEl.classList.remove("hidden");
     }
 
+    /**
+     * Initializes the settings popup singleton and DOM wiring.
+     */
     function init() {
         let { overlay } = findOverlayElements();
 
@@ -1566,6 +1626,9 @@ export function registerSettingsPopup() {
         });
     }
 
+    /**
+     * Opens the settings popup for the provided operation.
+     */
     function open({
         title,
         operationName,
@@ -1772,6 +1835,9 @@ export function registerSettingsPopup() {
         overlay.classList.remove("hidden");
     }
 
+    /**
+     * Stops any active live visualization polling.
+     */
     function stopVisualizationIfActive() {
         if (!_currentVisPipeline) {
             console.log("[SETTINGS] No active visualization to stop");
@@ -1796,6 +1862,9 @@ export function registerSettingsPopup() {
         }
     }
 
+    /**
+     * Closes the settings popup and clears transient state.
+     */
     function close() {
         console.log("[SETTINGS] Closing settings popup", {
             wasVisualizing: !!_visInterval,
@@ -1870,6 +1939,9 @@ export function registerSettingsPopup() {
         overlay.classList.add("hidden");
     }
 
+    /**
+     * Fetches configuration data for the requested operation.
+     */
     function fetchConfigData(operationName, isSecondary = false) {
         if (!operationName) {
             return Promise.reject(new Error("Operation name is required"));

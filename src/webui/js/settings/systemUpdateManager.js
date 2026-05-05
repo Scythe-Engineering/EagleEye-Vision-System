@@ -1,4 +1,6 @@
+// Manages the system update modal, status checks, and backend restart flow.
 import { BACKEND_BASE_URL } from "../config.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -18,6 +20,10 @@ let updateAvailable = false;
 let updating = false;
 let statusReason = "Checking update availability...";
 
+/**
+ * Gets or creates the modal overlay elements used by the system update UI.
+ * @returns {{overlay: HTMLElement, modal: HTMLElement}}
+ */
 function getOverlayElements() {
     return getOrCreateModalElements({
         overlayId: OVERLAY_ID,
@@ -27,6 +33,12 @@ function getOverlayElements() {
     });
 }
 
+/**
+ * Fetches JSON from the backend and throws on non-OK responses.
+ * @param {string} path
+ * @param {RequestInit} [options={}]
+ * @returns {Promise<any>}
+ */
 async function fetchJson(path, options = {}) {
     const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
     let payload = {};
@@ -46,6 +58,9 @@ async function fetchJson(path, options = {}) {
     return payload;
 }
 
+/**
+ * Closes the system update modal unless an update is currently running.
+ */
 function close() {
     if (updating) {
         return;
@@ -53,6 +68,9 @@ function close() {
     hideModal(getOverlayElements().overlay);
 }
 
+/**
+ * Updates the system update button to reflect current availability and state.
+ */
 function setButtonState() {
     const button = document.getElementById("updateSystemBtn");
     if (!button) {
@@ -66,6 +84,9 @@ function setButtonState() {
     button.textContent = updating ? "Updating..." : "Update System";
 }
 
+/**
+ * Refreshes the backend-reported system update availability and reason.
+ */
 async function refreshUpdateStatus() {
     if (updating) {
         return;
@@ -82,48 +103,27 @@ async function refreshUpdateStatus() {
     setButtonState();
 }
 
-function renderConfirm() {
-    const { overlay, modal } = getOverlayElements();
-    modal.innerHTML = "";
-
-    const cancelButton = createElement("button", {
-        type: "button",
-        className:
-            "px-4 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a]",
-        text: "Cancel",
-        onclick: close,
+/**
+ * Shows the confirmation dialog before starting the update flow.
+ */
+async function renderConfirm() {
+    const confirmed = await confirmDialog({
+        title: "Update System?",
+        message: "This will restart the system. Are you sure?",
+        detail: "The backend will run git pull, apt update, and non-interactive apt upgrade before restarting.",
+        confirmText: "Update and Restart",
+        variant: "warning",
     });
-    const confirmButton = createElement("button", {
-        type: "button",
-        className:
-            "px-4 py-2 bg-red-900 text-white rounded-md border border-red-700 hover:bg-red-800",
-        text: "Update and Restart",
-        onclick: runUpdate,
-    });
-
-    modal.appendChild(
-        createElement("div", { className: "p-6" }, [
-            createElement("h3", {
-                className: "text-xl font-bold text-yellow-400 mb-3",
-                text: "Update System",
-            }),
-            createElement("p", {
-                className: "text-gray-200 mb-2",
-                text: "This will restart the system. Are you sure?",
-            }),
-            createElement("p", {
-                className: "text-sm text-gray-400 mb-6",
-                text: "The backend will run git pull, apt update, and non-interactive apt upgrade before restarting.",
-            }),
-            createElement("div", { className: "flex justify-end gap-3" }, [
-                cancelButton,
-                confirmButton,
-            ]),
-        ]),
-    );
-    showModal(overlay);
+    if (confirmed) {
+        runUpdate();
+    }
 }
 
+/**
+ * Renders the in-modal progress state for the update flow.
+ * @param {string} message
+ * @param {string} [detail=""]
+ */
 function renderProgress(message, detail = "") {
     const { modal } = getOverlayElements();
     modal.innerHTML = "";
@@ -150,6 +150,10 @@ function renderProgress(message, detail = "") {
     );
 }
 
+/**
+ * Renders the in-modal error state for failed update attempts.
+ * @param {string} message
+ */
 function renderError(message) {
     const { modal } = getOverlayElements();
     modal.innerHTML = "";
@@ -177,6 +181,9 @@ function renderError(message) {
     );
 }
 
+/**
+ * Runs the system update sequence and restarts the backend.
+ */
 async function runUpdate() {
     updating = true;
     setButtonState();
@@ -209,6 +216,9 @@ async function runUpdate() {
     }
 }
 
+/**
+ * Initializes the system update manager UI and event handlers.
+ */
 export function initializeSystemUpdateManager() {
     if (initialized) {
         return;

@@ -1,3 +1,4 @@
+// Renders and manages the web UI pipeline/flowchart view.
 import { escapeHtml } from "./utils.js";
 import { FlowchartCanvas } from "./flowchartCanvas.js";
 import { FlowchartNode } from "./flowchartNode.js";
@@ -8,10 +9,20 @@ import { pipelineStore } from "./PipelineStore.js";
 import { prefetchConfigs } from "./operationConfigCache.js";
 import { hideTooltip, showTooltip } from "../ui/tooltip.js";
 
+/**
+ * Kept for compatibility with existing callers; actual tooltips are created lazily by the shared UI helper.
+ */
 export function createDescriptionPopup() {
     // Kept for existing callers; tooltips are lazily created by the shared UI helper.
 }
 
+/**
+ * Shows a tooltip for an operation description.
+ *
+ * @param {string} name Operation name.
+ * @param {string} description Operation description.
+ * @param {Event} event Triggering event.
+ */
 export function showDescriptionPopup(name, description, event) {
     showTooltip(event.currentTarget, {
         html: `
@@ -21,10 +32,20 @@ export function showDescriptionPopup(name, description, event) {
     });
 }
 
+/**
+ * Hides the shared description tooltip.
+ */
 export function hideDescriptionPopup() {
     hideTooltip();
 }
 
+/**
+ * Attaches tooltip hover listeners to an element.
+ *
+ * @param {HTMLElement} element Target element.
+ * @param {string} name Operation name.
+ * @param {string} description Operation description.
+ */
 export function addHoverListeners(element, name, description) {
     element.addEventListener("mouseenter", (e) => {
         showDescriptionPopup(name, description, e);
@@ -45,6 +66,12 @@ const FOLDER_ORDER = [
     "Output",
 ];
 
+/**
+ * Returns the SVG icon used for a folder label.
+ *
+ * @param {string} folderName Folder name.
+ * @returns {string} SVG markup.
+ */
 function getFolderIcon(folderName) {
     const icons = {
         Input: `<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="10" rx="1.5"/><path d="M5 4V3a2 2 0 0 1 4 0v1"/></svg>`,
@@ -61,6 +88,15 @@ function getFolderIcon(folderName) {
     );
 }
 
+/**
+ * Creates a draggable operation card for the operations list.
+ *
+ * @param {object} op Operation metadata.
+ * @param {Array<object>} operations All operations.
+ * @param {Function} openOperationSettings Settings callback.
+ * @param {Function} handleDragStart Drag-start callback.
+ * @returns {HTMLElement} The created card element.
+ */
 function createOperationCard(
     op,
     operations,
@@ -121,6 +157,14 @@ function createOperationCard(
     return el;
 }
 
+/**
+ * Renders the grouped operations list.
+ *
+ * @param {Array<object>} operations Operations to render.
+ * @param {HTMLElement} operationsList Container element.
+ * @param {Function} openOperationSettings Settings callback.
+ * @param {Function} handleDragStart Drag-start callback.
+ */
 export function renderOperations(
     operations,
     operationsList,
@@ -261,6 +305,12 @@ export function renderOperations(
 }
 
 export class FlowchartRenderer {
+    /**
+     * Creates a renderer for the pipeline canvas.
+     *
+     * @param {HTMLElement} canvasContainer Canvas container element.
+     * @param {object} [options={}] Renderer options.
+     */
     constructor(canvasContainer, options = {}) {
         this.canvasContainer = canvasContainer;
         this.canvas = null;
@@ -292,6 +342,9 @@ export class FlowchartRenderer {
         this.init();
     }
 
+    /**
+     * Initializes the canvas, minimap, and connection manager.
+     */
     init() {
         this.canvas = new FlowchartCanvas(this.canvasContainer, {
             gridSpacing: this.gridSpacing,
@@ -327,11 +380,20 @@ export class FlowchartRenderer {
         this.setupDropZone();
     }
 
+    /**
+     * Stores the current drag offset used for ghost placement.
+     *
+     * @param {number} offsetX Horizontal offset.
+     * @param {number} offsetY Vertical offset.
+     */
     setDragOffset(offsetX, offsetY) {
         this.dragOffsetX = offsetX;
         this.dragOffsetY = offsetY;
     }
 
+    /**
+     * Registers drag-and-drop handlers for the pipeline area.
+     */
     setupDropZone() {
         const pipelineArea = document.getElementById("pipelineArea");
         const canvasContainer = this.canvasContainer;
@@ -384,6 +446,11 @@ export class FlowchartRenderer {
         });
     }
 
+    /**
+     * Creates the drag ghost shown while placing a node.
+     *
+     * @param {DragEvent} e Drag event.
+     */
     createDragGhost(e) {
         if (this.dragGhost) return;
 
@@ -411,6 +478,11 @@ export class FlowchartRenderer {
         this.canvas.getNodesLayer().appendChild(this.dragGhost);
     }
 
+    /**
+     * Updates the drag ghost position.
+     *
+     * @param {DragEvent} e Drag event.
+     */
     updateDragGhost(e) {
         if (!this.dragGhost) {
             this.createDragGhost(e);
@@ -426,6 +498,9 @@ export class FlowchartRenderer {
         this.dragGhost.style.top = `${snappedPos.y}px`;
     }
 
+    /**
+     * Removes the drag ghost if it exists.
+     */
     removeDragGhost() {
         if (this.dragGhost) {
             this.dragGhost.remove();
@@ -433,6 +508,11 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Handles dropping an operation onto the canvas.
+     *
+     * @param {DragEvent} e Drop event.
+     */
     async handleDrop(e) {
         let dropData = null;
 
@@ -471,6 +551,12 @@ export class FlowchartRenderer {
         });
     }
 
+    /**
+     * Renders a pipeline into the canvas.
+     *
+     * @param {Array<object>} pipeline Pipeline nodes.
+     * @param {object} [options={}] Render options.
+     */
     async renderPipeline(pipeline, options = {}) {
         this.pipeline = pipeline;
 
@@ -609,6 +695,9 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Refreshes minimap, run button, and island overlays.
+     */
     refreshLayoutChrome() {
         if (this.minimap) {
             const nodeDataList = Array.from(this.nodes.values()).map(
@@ -629,6 +718,9 @@ export class FlowchartRenderer {
         this.updateIslandBlocks();
     }
 
+    /**
+     * Synchronizes the renderer's pipeline snapshot from the store.
+     */
     syncPipelineArrayFromStore() {
         this.pipeline = pipelineStore.getNodesForRenderer();
     }
@@ -678,6 +770,13 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Calculates a default node position for a pipeline item.
+     *
+     * @param {number} index Node index.
+     * @param {number} total Total node count.
+     * @returns {{x:number,y:number}} Default position.
+     */
     calculateDefaultPosition(index, total) {
         const startX = 100;
         const startY = 100;
@@ -688,6 +787,12 @@ export class FlowchartRenderer {
         };
     }
 
+    /**
+     * Creates and mounts a node for a pipeline item.
+     *
+     * @param {object} item Pipeline item.
+     * @returns {Promise<FlowchartNode>} Created node.
+     */
     async createNode(item) {
         const node = new FlowchartNode(item, {
             gridSpacing: this.gridSpacing,
@@ -710,6 +815,12 @@ export class FlowchartRenderer {
         return node;
     }
 
+    /**
+     * Synchronizes dynamic ports for a single node.
+     *
+     * @param {FlowchartNode} node Node to sync.
+     * @returns {boolean} Whether ports changed.
+     */
     syncNodeDynamicPorts(node) {
         if (!node || !node.dynamicGroup) {
             return false;
@@ -731,6 +842,11 @@ export class FlowchartRenderer {
         return true;
     }
 
+    /**
+     * Synchronizes dynamic ports for all nodes.
+     *
+     * @returns {boolean} Whether any node changed.
+     */
     syncAllDynamicNodes() {
         let anyChanged = false;
         for (let pass = 0; pass < 3; pass += 1) {
@@ -747,10 +863,22 @@ export class FlowchartRenderer {
         return anyChanged;
     }
 
+    /**
+     * Handles the start of a node drag.
+     *
+     * @param {FlowchartNode} node Dragged node.
+     * @param {DragEvent} event Drag event.
+     */
     handleNodeDragStart(node, event) {
         node.element.style.zIndex = "100";
     }
 
+    /**
+     * Handles the end of a node drag.
+     *
+     * @param {FlowchartNode} node Dragged node.
+     * @param {{x:number,y:number}} position Final position.
+     */
     handleNodeDragEnd(node, position) {
         node.element.style.zIndex = "10";
 
@@ -807,6 +935,12 @@ export class FlowchartRenderer {
         this.callbacks.autoSavePipeline();
     }
 
+    /**
+     * Handles in-progress node position updates.
+     *
+     * @param {FlowchartNode} node Node being moved.
+     * @param {{x:number,y:number}} position Current position.
+     */
     handleNodePositionChange(node, position) {
         this.pendingDragNodeIds.add(node.instanceId);
 
@@ -863,6 +997,14 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Highlights or unhighlights connections for a port.
+     *
+     * @param {FlowchartNode} node Node owning the port.
+     * @param {string} portName Port name.
+     * @param {string} portType Port type.
+     * @param {boolean} isHovering Whether the port is hovered.
+     */
     handlePortHover(node, portName, portType, isHovering) {
         const connectionIds = this.connections.getConnectionsForPort(
             node.instanceId,
@@ -875,6 +1017,14 @@ export class FlowchartRenderer {
         });
     }
 
+    /**
+     * Handles clicks on input/output ports.
+     *
+     * @param {FlowchartNode} node Node owning the port.
+     * @param {string} portName Port name.
+     * @param {string} portType Port type.
+     * @param {MouseEvent} event Click event.
+     */
     handlePortClick(node, portName, portType, event) {
         if (portType === "output") {
             // Check for existing connections from this output port
@@ -1050,6 +1200,14 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Starts a temporary connection drag.
+     *
+     * @param {FlowchartNode} node Source node.
+     * @param {string} portName Source port name.
+     * @param {MouseEvent} event Pointer event.
+     * @param {boolean} [isReconnecting=false] Whether this is a reconnect flow.
+     */
     startConnecting(node, portName, event, isReconnecting = false) {
         if (this.connectingState) {
             if (this.connectingState.cleanup) {
@@ -1161,6 +1319,12 @@ export class FlowchartRenderer {
         event.stopPropagation();
     }
 
+    /**
+     * Finalizes the current connection.
+     *
+     * @param {FlowchartNode} toNode Target node.
+     * @param {string} toPort Target port name.
+     */
     completeConnection(toNode, toPort) {
         if (!this.connectingState) return;
 
@@ -1218,6 +1382,9 @@ export class FlowchartRenderer {
         this.updateIslandBlocks();
     }
 
+    /**
+     * Updates cycle highlighting for all connections.
+     */
     updateCycleHighlights() {
         const connectionsData = this.connections.getConnectionData();
         const cycleConnectionIds = findCycles(this.nodes, connectionsData);
@@ -1233,6 +1400,9 @@ export class FlowchartRenderer {
         });
     }
 
+    /**
+     * Cancels any in-progress connection drag.
+     */
     cancelConnecting() {
         if (this.connectingState) {
             if (this.connectingState.cleanup) {
@@ -1244,6 +1414,9 @@ export class FlowchartRenderer {
         this.clearHighlightedInputPort();
     }
 
+    /**
+     * Clears the currently highlighted input port.
+     */
     clearHighlightedInputPort() {
         if (!this.lastHighlightedInputPort) {
             return;
@@ -1253,10 +1426,20 @@ export class FlowchartRenderer {
         this.lastHighlightedInputPort = null;
     }
 
+    /**
+     * Handles node removal requests from child nodes.
+     *
+     * @param {string} instanceId Node instance id.
+     */
     handleNodeRemove(instanceId) {
         this.callbacks.removeFromPipeline(instanceId);
     }
 
+    /**
+     * Handles removal of a connection from the canvas.
+     *
+     * @param {string} connectionId Connection id.
+     */
     handleConnectionRemoved(connectionId) {
         const parts = connectionId.split("-");
         if (parts.length >= 4) {
@@ -1285,6 +1468,11 @@ export class FlowchartRenderer {
         this.updateIslandBlocks();
     }
 
+    /**
+     * Handles updates to an existing connection.
+     *
+     * @param {string} connectionId Connection id.
+     */
     handleConnectionChanged(connectionId) {
         const parts = connectionId.split("-");
         if (parts.length >= 4) {
@@ -1337,12 +1525,22 @@ export class FlowchartRenderer {
         this.updateIslandBlocks();
     }
 
+    /**
+     * Propagates viewport changes to the minimap.
+     *
+     * @param {object} viewportState Viewport state.
+     */
     handleViewportChange(viewportState) {
         if (this.minimap) {
             this.minimap.onViewportChange(viewportState);
         }
     }
 
+    /**
+     * Removes a node from the renderer.
+     *
+     * @param {string} instanceId Node instance id.
+     */
     removeNode(instanceId) {
         const node = this.nodes.get(instanceId);
         if (node) {
@@ -1359,6 +1557,11 @@ export class FlowchartRenderer {
         }
     }
 
+    /**
+     * Returns the current positions of all rendered nodes.
+     *
+     * @returns {Object<string, {x:number,y:number}>} Node positions.
+     */
     getNodePositions() {
         const positions = {};
         this.nodes.forEach((node, instanceId) => {
@@ -1367,6 +1570,9 @@ export class FlowchartRenderer {
         return positions;
     }
 
+    /**
+     * Centers the canvas view on all rendered nodes.
+     */
     centerViewOnNodes() {
         if (this.nodes.size === 0) return;
 
@@ -1405,14 +1611,23 @@ export class FlowchartRenderer {
         this.canvas.updateTransform();
     }
 
+    /**
+     * Fits the canvas view to the rendered content.
+     */
     fitToContent() {
         this.canvas.fitToContent();
     }
 
+    /**
+     * Resets the canvas view to its default transform.
+     */
     resetView() {
         this.canvas.resetView();
     }
 
+    /**
+     * Tears down the renderer and its child components.
+     */
     destroy() {
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
@@ -1424,6 +1639,11 @@ export class FlowchartRenderer {
         this.canvas.destroy();
     }
 
+    /**
+     * Restores connections from serialized connection data.
+     *
+     * @param {Array<object>} connectionsData Serialized connections.
+     */
     restoreConnections(connectionsData) {
         connectionsData.forEach((conn) => {
             const fromNode = this.nodes.get(conn.fromNodeId);
@@ -1463,6 +1683,9 @@ export class FlowchartRenderer {
         this.updateIslandBlocks();
     }
 
+    /**
+     * Removes all island overlays.
+     */
     clearIslandBlocks() {
         const islandLayer = this.canvas?.getIslandLayer?.();
         if (islandLayer) {
@@ -1472,6 +1695,9 @@ export class FlowchartRenderer {
         hideTooltip();
     }
 
+    /**
+     * Recomputes and renders disconnected-operation island overlays.
+     */
     updateIslandBlocks() {
         const islandLayer = this.canvas?.getIslandLayer?.();
         if (!islandLayer) {
@@ -1552,6 +1778,11 @@ export class FlowchartRenderer {
         });
     }
 
+    /**
+     * Creates the info button shown on disconnected island overlays.
+     *
+     * @returns {HTMLButtonElement} Info button.
+     */
     createIslandInfoDot() {
         const message =
             "Operation Island: these operations will not execute in the current configuration.";

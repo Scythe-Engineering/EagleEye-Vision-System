@@ -1,3 +1,4 @@
+// Handles WiFi network discovery, connection, and disconnection in the web UI.
 import { BACKEND_BASE_URL } from "../config.js";
 import {
     closeOnBackdropClick,
@@ -7,6 +8,7 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
+import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     showDanger,
     showSuccess,
@@ -22,6 +24,11 @@ let loading = false;
 let activeRequestSsid = "";
 let networkManagerAvailable = false;
 
+/**
+ * Gets or creates the network manager overlay and modal elements.
+ *
+ * @returns {{overlay: HTMLElement, modal: HTMLElement}} The overlay elements.
+ */
 function getOverlayElements() {
     return getOrCreateModalElements({
         overlayId: OVERLAY_ID,
@@ -31,6 +38,13 @@ function getOverlayElements() {
     });
 }
 
+/**
+ * Fetches JSON from the backend and throws on non-OK responses.
+ *
+ * @param {string} path The backend path to request.
+ * @param {RequestInit} [options={}] Fetch options.
+ * @returns {Promise<object>} The parsed JSON payload.
+ */
 async function fetchJson(path, options = {}) {
     const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
     let payload = {};
@@ -50,6 +64,12 @@ async function fetchJson(path, options = {}) {
     return payload;
 }
 
+/**
+ * Converts a numeric signal strength into a readable label.
+ *
+ * @param {number} signal The signal strength percentage.
+ * @returns {string} A human-readable signal label.
+ */
 function signalLabel(signal) {
     if (!Number.isFinite(signal)) {
         return "Unknown";
@@ -63,11 +83,22 @@ function signalLabel(signal) {
     return "Weak";
 }
 
+/**
+ * Determines whether a network requires a password.
+ *
+ * @param {object} network The network record.
+ * @returns {boolean} True when a password is required.
+ */
 function networkNeedsPassword(network) {
     const security = String(network.security || "").toLowerCase();
     return security !== "" && security !== "open" && security !== "--";
 }
 
+/**
+ * Loads the current WiFi network list from the backend.
+ *
+ * @returns {Promise<void>}
+ */
 async function loadNetworks() {
     if (!networkManagerAvailable) {
         showWarning("Network Manager requires Linux.");
@@ -90,6 +121,13 @@ async function loadNetworks() {
     }
 }
 
+/**
+ * Connects to a selected WiFi network.
+ *
+ * @param {object} network The target network.
+ * @param {HTMLInputElement|undefined} passwordInput The password input element.
+ * @returns {Promise<void>}
+ */
 async function connectNetwork(network, passwordInput) {
     const password = passwordInput?.value || "";
     activeRequestSsid = network.ssid;
@@ -115,10 +153,20 @@ async function connectNetwork(network, passwordInput) {
     }
 }
 
+/**
+ * Disconnects from a selected WiFi network after confirmation.
+ *
+ * @param {object} network The target network.
+ * @returns {Promise<void>}
+ */
 async function disconnectNetwork(network) {
-    const shouldDisconnect = globalThis.confirm(
-        `Disconnect from "${network.ssid}"? Network access to this device may be interrupted.`,
-    );
+    const shouldDisconnect = await confirmDialog({
+        title: "Disconnect WiFi?",
+        message: `Disconnect from "${network.ssid}"?`,
+        detail: "Network access to this device may be interrupted.",
+        confirmText: "Disconnect",
+        variant: "warning",
+    });
     if (!shouldDisconnect) {
         return;
     }
@@ -143,6 +191,11 @@ async function disconnectNetwork(network) {
     }
 }
 
+/**
+ * Renders the network list rows into the provided container.
+ *
+ * @param {HTMLElement} container The container element for network rows.
+ */
 function renderNetworkRows(container) {
     container.innerHTML = "";
 
@@ -237,6 +290,9 @@ function renderNetworkRows(container) {
     });
 }
 
+/**
+ * Renders the network manager modal content.
+ */
 function render() {
     const { modal } = getOverlayElements();
     modal.innerHTML = "";
@@ -313,6 +369,9 @@ function render() {
     renderNetworkRows(listContainer);
 }
 
+/**
+ * Opens the network manager modal and loads networks.
+ */
 function open() {
     if (!networkManagerAvailable) {
         showWarning("Network Manager requires Linux.");
@@ -325,11 +384,19 @@ function open() {
     loadNetworks();
 }
 
+/**
+ * Closes the network manager modal.
+ */
 function close() {
     const { overlay } = getOverlayElements();
     hideModal(overlay);
 }
 
+/**
+ * Updates the manage networks button based on backend availability.
+ *
+ * @param {{available?: boolean}|undefined} status The backend status payload.
+ */
 function setManageButtonAvailability(status) {
     const manageButton = document.getElementById("manageNetworksBtn");
     if (!manageButton) {
@@ -341,6 +408,11 @@ function setManageButtonAvailability(status) {
     manageButton.title = networkManagerAvailable ? "" : "Requires Linux";
 }
 
+/**
+ * Loads the backend network manager availability status.
+ *
+ * @returns {Promise<void>}
+ */
 async function loadNetworkManagerStatus() {
     try {
         const payload = await fetchJson("/wifi-networks/status");
@@ -351,6 +423,9 @@ async function loadNetworkManagerStatus() {
     }
 }
 
+/**
+ * Initializes the network manager UI wiring.
+ */
 export function initializeNetworkManager() {
     if (initialized) {
         return;

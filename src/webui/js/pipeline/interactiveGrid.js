@@ -2,7 +2,13 @@
  * InteractiveGrid - Dynamic grid that responds to cursor and operation proximity
  * Works with FlowchartCanvas transform-based viewport
  */
+// Manages the interactive background grid rendering and proximity effects.
 export class InteractiveGrid {
+    /**
+     * Create an interactive grid for a container element.
+     * @param {HTMLElement} container
+     * @param {Object} [options]
+     */
     constructor(container, options = {}) {
         this.container = container;
         this.canvas = null;
@@ -56,6 +62,9 @@ export class InteractiveGrid {
         this.init();
     }
 
+    /**
+     * Set up the canvas and begin rendering.
+     */
     init() {
         this.canvas = document.createElement("canvas");
         this.canvas.style.position = "absolute";
@@ -76,6 +85,9 @@ export class InteractiveGrid {
         this.startAnimation();
     }
 
+    /**
+     * Refresh cached container bounds.
+     */
     updateContainerRect() {
         const rect = this.container.getBoundingClientRect();
         this.containerRect = {
@@ -86,6 +98,9 @@ export class InteractiveGrid {
         };
     }
 
+    /**
+     * Resize the canvas to match the container.
+     */
     resize() {
         const rect = this.containerRect;
         const dpr = window.devicePixelRatio || 1;
@@ -99,6 +114,9 @@ export class InteractiveGrid {
         this.requestRedraw();
     }
 
+    /**
+     * Attach pointer and resize listeners.
+     */
     setupEventListeners() {
         this.container.addEventListener("mousemove", (e) => {
             const rect = this.containerRect;
@@ -455,6 +473,9 @@ export class InteractiveGrid {
         this.ctx.stroke();
     }
 
+    /**
+     * Render the grid for the current viewport state.
+     */
     draw() {
         if (!this.ctx) return;
 
@@ -556,10 +577,16 @@ export class InteractiveGrid {
         }
     }
 
+    /**
+     * Kick off the redraw loop.
+     */
     startAnimation() {
         this.requestRedraw();
     }
 
+    /**
+     * Schedule the next animation frame draw.
+     */
     scheduleDraw() {
         if (this.animationFrame) {
             return;
@@ -575,6 +602,9 @@ export class InteractiveGrid {
         });
     }
 
+    /**
+     * Request a redraw with throttling.
+     */
     requestRedraw() {
         const now = performance.now();
         const elapsed = now - this.lastRedrawRequestTime;
@@ -598,6 +628,9 @@ export class InteractiveGrid {
         }, this.redrawThrottleMs - elapsed);
     }
 
+    /**
+     * Tear down timers and remove the canvas.
+     */
     destroy() {
         if (this.animationFrame) {
             cancelAnimationFrame(this.animationFrame);
