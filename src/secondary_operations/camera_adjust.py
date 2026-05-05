@@ -1,4 +1,6 @@
 from typing import Any, Dict, Optional
+import platform
+import time
 import numpy as np
 import cv2
 import subprocess
@@ -16,6 +18,7 @@ class CameraAdjust(OperationInstance):
         exposure: float = 0.5,
         camera_manager: Any | None = None,
         pipeline: Any | None = None,
+        logger: Any | None = None,
     ) -> None:
         """Initialize hardware-accelerated camera adjustment operation.
 
@@ -29,6 +32,7 @@ class CameraAdjust(OperationInstance):
             exposure: Exposure time normalized in range [0, 1], mapped to v4l2 range [1, 5000]. Disables auto exposure when set.
             camera_manager: Injected camera manager reference.
             pipeline: Injected pipeline reference.
+            logger: Project logger injected by the pipeline.
         """
         self.brightness = float(brightness)
         self.contrast = float(contrast)
@@ -38,10 +42,21 @@ class CameraAdjust(OperationInstance):
 
         self.camera_manager = camera_manager
         self.pipeline = pipeline
+        self.logger = logger
 
         self._last_applied: Dict[str, Any] = {}
         self._apriltag_detections: Optional[Any] = None
-        self._apply_device_controls()
+        self._controls_cache: Dict[str, Dict[str, int]] = {}
+        self._controls_cache_device: str | None = None
+        self._last_enforce_time = 0.0
+        # The camera may not be open yet during construction; run() will keep
+        # enforcing manual controls after OpenCV finishes applying format/FPS.
+        self._apply_device_controls(force=True)
+
+    def _log(self, message: str) -> None:
+        """Log through the project logger when available."""
+        if self.logger is not None:
+            self.logger.log(message)
 
     def run(self, input_data: Any) -> np.ndarray:
         """Return the frame, hardware adjustments already applied.
@@ -65,6 +80,14 @@ class CameraAdjust(OperationInstance):
         if detections is not None:
             self._apriltag_detections = detections
 
+        # Some UVC drivers/OpenCV renegotiate controls shortly after stream start
+        # and can re-enable auto exposure/gain. Keep the Linux camera in manual
+        # mode and re-apply values periodically instead of only on config change.
+        now = time.monotonic()
+        if now - self._last_enforce_time >= 1.0:
+            self._apply_device_controls(force=True)
+            self._last_enforce_time = now
+
         return frame
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
@@ -76,7 +99,7 @@ class CameraAdjust(OperationInstance):
         for key, value in json_config.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-        self._apply_device_controls()
+        self._apply_device_controls(force=True)
 
     def visualize(self, frame: np.ndarray) -> np.ndarray:
         """Return a visualization frame with AprilTag detections drawn.
@@ -145,96 +168,116 @@ class CameraAdjust(OperationInstance):
             return None
         return f"/dev/video{int(camera_index)}"
 
-    def _set_v4l2_control(self, control_name: str, value: int) -> bool:
-        """Set a v4l2 control using v4l2-ctl command.
+    def _run_v4l2(self, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        device_path = self._get_device_path()
+        if device_path is None or platform.system() != "Linux":
+            return None
+        try:
+            return subprocess.run(
+                ["v4l2-ctl", "-d", device_path, *args],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except Exception as e:
+            self._log(f"{Colors.RED}Error running v4l2-ctl for {device_path}: {e}{Colors.RESET}")
+            return None
 
-        Args:
-            control_name: Name of the control (e.g., 'brightness', 'contrast').
-            value: Value to set.
-
-        Returns:
-            True if setting succeeded, else False.
-        """
+    def _get_v4l2_controls(self) -> Dict[str, Dict[str, int]]:
+        """Return available integer/menu controls and their ranges for the camera."""
         device_path = self._get_device_path()
         if device_path is None:
+            return {}
+        if self._controls_cache_device == device_path and self._controls_cache:
+            return self._controls_cache
+
+        result = self._run_v4l2(["--list-ctrls"])
+        if result is None or result.returncode != 0:
+            return {}
+
+        controls: Dict[str, Dict[str, int]] = {}
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line or "(" not in line:
+                continue
+            name = line.split()[0]
+            values: Dict[str, int] = {}
+            for token in line.replace(":", " ").split():
+                if "=" not in token:
+                    continue
+                key, raw_value = token.split("=", 1)
+                try:
+                    values[key] = int(raw_value)
+                except ValueError:
+                    continue
+            controls[name] = values
+
+        self._controls_cache = controls
+        self._controls_cache_device = device_path
+        return controls
+
+    def _scale_control(self, control_name: str, normalized: float, default_min: int, default_max: int) -> int:
+        controls = self._get_v4l2_controls()
+        ctrl = controls.get(control_name, {})
+        min_value = ctrl.get("min", default_min)
+        max_value = ctrl.get("max", default_max)
+        value = int(round(min_value + normalized * (max_value - min_value)))
+        return max(min_value, min(max_value, value))
+
+    def _set_v4l2_control(self, control_name: str, value: int) -> bool:
+        """Set a v4l2 control using v4l2-ctl command."""
+        result = self._run_v4l2(["-c", f"{control_name}={value}"])
+        if result is None:
             return False
+        if result.returncode == 0:
+            return True
+        device_path = self._get_device_path() or "/dev/video0"
+        self._log(
+            f"{Colors.RED}Failed command: v4l2-ctl -d {device_path} -c {control_name}={value}\n"
+            f"stderr: {result.stderr.strip()}{Colors.RESET}"
+        )
+        return False
 
-        try:
-            cmd = ["v4l2-ctl", "-d", device_path, "-c", f"{control_name}={value}"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            return result.returncode == 0
-        except Exception as e:
-            cmd_str = f"v4l2-ctl -d {device_path} -c {control_name}={value}"
-            print(f"{Colors.RED}Error running command '{cmd_str}': {e}{Colors.RESET}")
-            return False
+    def _set_first_available_control(self, control_names: list[str], value: int) -> bool:
+        controls = self._get_v4l2_controls()
+        for control_name in control_names:
+            if control_name in controls and self._set_v4l2_control(control_name, value):
+                return True
+        return False
 
-    def _apply_device_controls(self) -> None:
-        """Apply adjustments via hardware device controls using v4l2-ctl."""
-        # Apply brightness (map -1 to 1 -> -64 to 64)
-        brightness_v4l2 = int(self.brightness * 64)
-        if self._last_applied.get("brightness") != self.brightness:
-            if self._set_v4l2_control("brightness", brightness_v4l2):
-                self._last_applied["brightness"] = self.brightness
-            else:
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c brightness={brightness_v4l2}"
-                print(
-                    f"{Colors.RED}Failed to set brightness {self.brightness} using command: {cmd_str}{Colors.RESET}"
-                )
+    def _apply_device_controls(self, force: bool = False) -> None:
+        """Apply adjustments via Linux hardware device controls using v4l2-ctl."""
+        if platform.system() != "Linux":
+            return
+        controls = self._get_v4l2_controls()
+        if not controls:
+            return
 
-        # Apply contrast (map 0-1 to 0-64)
-        contrast_v4l2 = int(self.contrast * 64)
-        if self._last_applied.get("contrast") != self.contrast:
-            if self._set_v4l2_control("contrast", contrast_v4l2):
-                self._last_applied["contrast"] = self.contrast
-            else:
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c contrast={contrast_v4l2}"
-                print(
-                    f"{Colors.RED}Failed to set contrast {self.contrast} using command: {cmd_str}{Colors.RESET}"
-                )
+        # Disable automatic controls first. UVC auto_exposure manual mode is 1;
+        # exposure_auto manual mode is also commonly 1 on older drivers.
+        self._set_first_available_control(["auto_exposure", "exposure_auto"], 1)
+        self._set_first_available_control(["gain_automatic", "auto_gain"], 0)
+        self._set_first_available_control(["white_balance_automatic", "white_balance_temperature_auto"], 0)
+        self._set_first_available_control(["focus_automatic_continuous", "focus_auto"], 0)
 
-        # Apply saturation (map -1 to 1 -> 0 to 128)
-        saturation_v4l2 = int((self.saturation + 1) * 64)
-        if self._last_applied.get("saturation") != self.saturation:
-            if self._set_v4l2_control("saturation", saturation_v4l2):
-                self._last_applied["saturation"] = self.saturation
-            else:
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c saturation={saturation_v4l2}"
-                print(
-                    f"{Colors.RED}Failed to set saturation {self.saturation} using command: {cmd_str}{Colors.RESET}"
-                )
+        settings = {
+            "brightness": self._scale_control("brightness", (self.brightness + 1) / 2, -64, 64),
+            "contrast": self._scale_control("contrast", self.contrast, 0, 64),
+            "saturation": self._scale_control("saturation", (self.saturation + 1) / 2, 0, 128),
+            "gain": self._scale_control("gain", self.gain, 0, 100),
+            "exposure": self._scale_control("exposure_time_absolute", self.exposure, 1, 5000),
+        }
 
-        # Apply gain (map 0-1 to 0-100)
-        gain_v4l2 = int(self.gain * 100)
-        if self._last_applied.get("gain") != self.gain:
-            if self._set_v4l2_control("gain", gain_v4l2):
-                self._last_applied["gain"] = self.gain
-            else:
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c gain={gain_v4l2}"
-                print(
-                    f"{Colors.RED}Failed to set gain {self.gain} using command: {cmd_str}{Colors.RESET}"
-                )
+        control_names = {
+            "brightness": ["brightness"],
+            "contrast": ["contrast"],
+            "saturation": ["saturation"],
+            "gain": ["gain"],
+            "exposure": ["exposure_time_absolute", "exposure_absolute"],
+        }
 
-        # Apply exposure (map 0-1 to 1-5000)
-        exposure_v4l2 = int(1 + (self.exposure * (5000 - 1)))
-        if self._last_applied.get("exposure") != self.exposure:
-            # Disable auto exposure before setting manual exposure time
-            if not self._set_v4l2_control("auto_exposure", 1):
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c auto_exposure=1"
-                print(
-                    f"{Colors.RED}Failed to disable auto exposure using command: {cmd_str}{Colors.RESET}"
-                )
-
-            # Set manual exposure time
-            if self._set_v4l2_control("exposure_time_absolute", exposure_v4l2):
-                self._last_applied["exposure"] = self.exposure
-            else:
-                device_path = self._get_device_path() or "/dev/video0"
-                cmd_str = f"v4l2-ctl -d {device_path} -c exposure_time_absolute={exposure_v4l2}"
-                print(
-                    f"{Colors.RED}Failed to set exposure {self.exposure} using command: {cmd_str}{Colors.RESET}"
-                )
+        for setting_name, value in settings.items():
+            if not force and self._last_applied.get(setting_name) == getattr(self, setting_name):
+                continue
+            if self._set_first_available_control(control_names[setting_name], value):
+                self._last_applied[setting_name] = getattr(self, setting_name)
