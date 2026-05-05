@@ -127,6 +127,7 @@ class ViewManager {
                             gamePieceUrls: fieldModel?.gamePieceUrls,
                             aprilTagMapUrl: fieldModel?.aprilTagMapUrl,
                             fieldScale: fieldModel?.fieldScale,
+                            fieldRotationOffset: fieldModel?.fieldRotationOffset,
                             fieldYear: fieldModel?.fieldYear,
                             fieldFilename: fieldModel?.fieldFilename,
                         },
