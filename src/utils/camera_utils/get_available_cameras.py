@@ -1,4 +1,5 @@
 import platform
+import re
 import subprocess
 from subprocess import CalledProcessError
 
@@ -78,8 +79,9 @@ def _extract_bus_id(device_name: str) -> str:
             "Logitech C920: usb-0000:00:14.0-1:"
 
     Returns:
-        The USB port number as a string, e.g., "1".
-        Falls back to the full bus info if extraction fails.
+        A stable USB path suffix such as "1" or "1-1".
+        Falls back to the raw usb token if extraction is partial.
+        Returns "unknown" when no USB token is present.
     """
     if ":" not in device_name:
         return "unknown"
@@ -88,20 +90,29 @@ def _extract_bus_id(device_name: str) -> str:
     if len(parts) < 2:
         return "unknown"
 
-    bus_info = parts[1].strip()
-    if not bus_info.startswith("usb-"):
+    bus_info = parts[1].strip().rstrip(":")
+    usb_match = re.search(r"usb-[^\s)]+", bus_info)
+    if not usb_match:
         return "unknown"
 
-    if "-" not in bus_info:
-        return bus_info
+    usb_token = usb_match.group(0).rstrip("),")
 
-    last_dash_index = bus_info.rfind("-")
-    bus_id = bus_info[last_dash_index + 1 :]
+    # Common Linux formats:
+    # - usb-0000:00:14.0-1  -> 1
+    # - usb-xhci-hcd.1-1     -> 1-1
+    if ":" in usb_token and "-" in usb_token:
+        bus_id = usb_token.rsplit("-", 1)[-1].strip(".:-_/ ")
+        return bus_id or usb_token
 
-    if not bus_id:
-        return bus_info
+    if "." in usb_token:
+        bus_id = usb_token.rsplit(".", 1)[-1].strip(".:-_/ ")
+        return bus_id or usb_token
 
-    return bus_id
+    if "-" in usb_token:
+        bus_id = usb_token.rsplit("-", 1)[-1].strip(".:-_/ ")
+        return bus_id or usb_token
+
+    return usb_token
 
 
 def _parse_v4l2_output(output: str) -> dict[str, dict[str, str]]:
