@@ -51,14 +51,19 @@ logger.log(
 
 current_dir = Path(__file__).parent
 
-# Ensure general config file exists for NetworkTables initialization
-general_conf_path = "src/general_conf.json"
-if not os.path.exists(general_conf_path):
-    # make empty json file with 0.0.0.0 as the address
-    with open(general_conf_path, "w") as f:
+# Ensure config files exist before backend initialization.
+general_conf_path = current_dir / "general_conf.json"
+if not general_conf_path.exists():
+    with general_conf_path.open("w", encoding="utf-8") as f:
         json.dump(DEFAULT_GENERAL_CONF, f)
 
-with open(general_conf_path) as f:
+pipeline_conf_path = current_dir / "config" / "pipeline_config.json"
+pipeline_conf_path.parent.mkdir(parents=True, exist_ok=True)
+if not pipeline_conf_path.exists():
+    with pipeline_conf_path.open("w", encoding="utf-8") as f:
+        json.dump({}, f, indent=4)
+
+with general_conf_path.open("r", encoding="utf-8") as f:
     general_conf = {**DEFAULT_GENERAL_CONF, **json.load(f)}
 
 
