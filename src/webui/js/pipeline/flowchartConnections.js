@@ -25,6 +25,22 @@ export class FlowchartConnections {
             options.onCheckDefaultAllowed || (() => true);
         this.canvas = options.canvas || null;
 
+        this.edgesLayer = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "g",
+        );
+        this.edgesLayer.setAttribute("id", "flowchart-connection-edges");
+        this.labelsLayer = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "g",
+        );
+        this.labelsLayer.setAttribute("id", "flowchart-connection-labels");
+        this.labelsLayer.setAttribute("pointer-events", "none");
+
+        this.setupDefs();
+        this.svgLayer.appendChild(this.edgesLayer);
+        this.svgLayer.appendChild(this.labelsLayer);
+
         this.manualPathCreator = new ManualPathCreator(svgLayer, {
             canvas: this.canvas,
             connectionColor: this.connectionColor,
@@ -32,9 +48,8 @@ export class FlowchartConnections {
             cornerRadius: 12,
             onComplete: this.handleManualPathComplete.bind(this),
             onCancel: this.handleManualPathCancel.bind(this),
+            insertBefore: this.labelsLayer,
         });
-
-        this.setupDefs();
     }
 
     /**
@@ -195,11 +210,11 @@ export class FlowchartConnections {
 
         group.appendChild(hitArea);
         group.appendChild(path);
-        group.appendChild(labelGroup);
 
         this.setupHoverEffects(group, path);
 
-        this.svgLayer.appendChild(group);
+        this.edgesLayer.appendChild(group);
+        this.labelsLayer.appendChild(labelGroup);
 
         this.connections.set(connectionId, {
             group,
@@ -817,6 +832,7 @@ export class FlowchartConnections {
         const connection = this.connections.get(connectionId);
         if (connection) {
             connection.group.remove();
+            connection.labelGroup.remove();
             this.connections.delete(connectionId);
             if (notify) {
                 this.onConnectionRemoved(connectionId);
@@ -981,7 +997,7 @@ export class FlowchartConnections {
         );
         tempPath.setAttribute("d", initialPathD);
 
-        this.svgLayer.appendChild(tempPath);
+        this.svgLayer.insertBefore(tempPath, this.labelsLayer);
 
         // Trigger transition to dragging state
         requestAnimationFrame(() => {

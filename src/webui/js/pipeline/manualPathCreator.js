@@ -40,6 +40,9 @@ export class ManualPathCreator {
         this.boundHandlePanMove = this.handlePanMove.bind(this);
         this.boundHandleBackendDisconnected = this.cancel.bind(this);
 
+        /** @type {SVGElement|null} Insert preview SVG before this node so labels stay on top. */
+        this.insertBefore = options.insertBefore ?? null;
+
         this.isPanning = false;
         this.panStartX = 0;
         this.panStartY = 0;
@@ -131,7 +134,11 @@ export class ManualPathCreator {
         this.previewGroup.appendChild(this.startMarker);
         this.previewGroup.appendChild(this.endMarker);
 
-        this.svgLayer.appendChild(this.previewGroup);
+        if (this.insertBefore?.parentNode === this.svgLayer) {
+            this.svgLayer.insertBefore(this.previewGroup, this.insertBefore);
+        } else {
+            this.svgLayer.appendChild(this.previewGroup);
+        }
     }
 
     /**
