@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import threading
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -168,7 +169,8 @@ def test_background_webp_route_serves_static_webp(monkeypatch) -> None:
     _rule, _endpoint, view_func, _options = background_routes[0]
     view_func()
 
-    assert calls == [(str(STATIC_DIR), "background.webp")]
+    background_dir = Path(STATIC_DIR).parent / "assets"
+    assert calls == [(str(background_dir), "background.webp")]
 
 
 def test_error_responses_are_logged_with_request_context(monkeypatch) -> None:

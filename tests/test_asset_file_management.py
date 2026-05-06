@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -114,9 +115,12 @@ def test_robot_file_scale_is_saved_to_metadata(
 
     assert status == 200
     assert payload["file"]["scale"] == pytest.approx(0.25)
-    assert (
-        robot_dir / "Practice.glb.metadata.json"
-    ).read_text(encoding="utf-8") == '{\n  "scale": 0.25\n}\n'
+    metadata_path = robot_dir / "Practice.glb.metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata == {
+        "rotation_offset": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "scale": 0.25,
+    }
 
     payload, status = interface.get_robot_files()
 
