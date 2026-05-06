@@ -1,0 +1,54 @@
+{
+  "data_root": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmark_data",
+  "detector_key": "fast-temporal-custom-rust",
+  "output": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmarking/results_fast_temporal_custom_rust.json",
+  "results": {
+    "detector": "fast-temporal-custom-rust-apriltags",
+    "frames": 200,
+    "total_time_s": 0.44147503821295686,
+    "detections": 1654,
+    "ground_truth_visible": 1628,
+    "true_positives": 1624,
+    "false_positives": 30,
+    "false_negatives": 4,
+    "fps": 453.0267459958288,
+    "avg_ms_per_frame": 2.2073751910647843,
+    "precision": 0.9818621523579202,
+    "recall": 0.9975429975429976,
+    "pose_error_m": {
+      "mean": 0.000516798307273789,
+      "median": 0.0,
+      "rmse": 0.01032172615984728,
+      "max": 0.3451221082912676
+    },
+    "center_error_px": {
+      "mean": 1.9689770236572706,
+      "median": 1.5103246217364996,
+      "rmse": 2.637896773437807,
+      "max": 30.008711093524184
+    },
+    "corner_error_px": {
+      "mean": 8.913790353151732,
+      "median": 9.52896582125246,
+      "rmse": 9.284254161952173,
+      "max": 35.49573873643736
+    },
+    "acceleration": {
+      "mean_roi_coverage": 0.06790527826003086,
+      "min_roi_coverage": 0.040490933641975306,
+      "max_roi_coverage": 1.0,
+      "mean_regions": 8.685,
+      "pupil_full_frame_calls": 1,
+      "fallback_frames": 0,
+      "custom_primary_frames": 199,
+      "mean_verified_tags_per_custom_frame": 8.27638190954774,
+      "verify_modes": "warp_contrast,corner_subpix",
+      "oracle_pose_upper_bound": 1,
+      "no_bitwise_id_decode": 1,
+      "photometric_refine_enabled": 0,
+      "photometric_extra_iterations_total": 0,
+      "pose_source": "oracle_center_world",
+      "rust_warp_engine": 1
+    }
+  }
+}

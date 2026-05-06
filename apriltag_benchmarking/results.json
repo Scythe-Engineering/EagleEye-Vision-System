@@ -1,0 +1,173 @@
+{
+  "data_root": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmark_data",
+  "output": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmarking/results.json",
+  "detectors": [
+    {
+      "detector": "pupil-apriltags",
+      "frames": 200,
+      "total_time_s": 4.753854456794215,
+      "detections": 1430,
+      "ground_truth_visible": 1628,
+      "true_positives": 1430,
+      "false_positives": 0,
+      "false_negatives": 198,
+      "fps": 42.0711239306369,
+      "avg_ms_per_frame": 23.769272283971077,
+      "precision": 1.0,
+      "recall": 0.8783783783783784,
+      "pose_error_m": {
+        "mean": 0.0660824483242276,
+        "median": 0.0556498537536352,
+        "rmse": 0.08677409973002716,
+        "max": 0.44998515410266443
+      },
+      "center_error_px": {
+        "mean": 0.5220795516181872,
+        "median": 0.5069389217571739,
+        "rmse": 0.5868332820021653,
+        "max": 3.0990658124265824
+      },
+      "corner_error_px": {
+        "mean": 7.827347738895743,
+        "median": 7.346296991081537,
+        "rmse": 8.16576946646761,
+        "max": 16.802169140810193
+      }
+    },
+    {
+      "detector": "temporal-pupil-apriltags",
+      "frames": 200,
+      "total_time_s": 3.8164066211902536,
+      "detections": 1430,
+      "ground_truth_visible": 1628,
+      "true_positives": 1430,
+      "false_positives": 0,
+      "false_negatives": 198,
+      "fps": 52.405317318526286,
+      "avg_ms_per_frame": 19.08203310595127,
+      "precision": 1.0,
+      "recall": 0.8783783783783784,
+      "pose_error_m": {
+        "mean": 0.05724547697895402,
+        "median": 0.05311052899567072,
+        "rmse": 0.0672896583330169,
+        "max": 0.22905105039396265
+      },
+      "center_error_px": {
+        "mean": 0.5220795516181872,
+        "median": 0.5069389217571739,
+        "rmse": 0.5868332820021653,
+        "max": 3.0990658124265824
+      },
+      "corner_error_px": {
+        "mean": 7.827347738895743,
+        "median": 7.346296991081537,
+        "rmse": 8.16576946646761,
+        "max": 16.802169140810193
+      },
+      "acceleration": {
+        "mean_roi_coverage": 1.0,
+        "min_roi_coverage": 1.0,
+        "max_roi_coverage": 1.0,
+        "mean_regions": 1.0
+      }
+    },
+    {
+      "detector": "fast-temporal-custom-apriltags",
+      "frames": 200,
+      "total_time_s": 0.6539774561824743,
+      "detections": 1684,
+      "ground_truth_visible": 1628,
+      "true_positives": 1624,
+      "false_positives": 60,
+      "false_negatives": 4,
+      "fps": 305.8209394058922,
+      "avg_ms_per_frame": 3.2698872809123714,
+      "precision": 0.9643705463182898,
+      "recall": 0.9975429975429976,
+      "pose_error_m": {
+        "mean": 0.000516798307273789,
+        "median": 0.0,
+        "rmse": 0.01032172615984728,
+        "max": 0.3451221082912676
+      },
+      "center_error_px": {
+        "mean": 1.9689769858474666,
+        "median": 1.51032900892475,
+        "rmse": 2.6378972251031416,
+        "max": 30.008743996384464
+      },
+      "corner_error_px": {
+        "mean": 8.913789396417561,
+        "median": 9.52896582125246,
+        "rmse": 9.284253823871232,
+        "max": 35.49573873634652
+      },
+      "acceleration": {
+        "mean_roi_coverage": 0.1308395351080247,
+        "min_roi_coverage": 0.0733714313271605,
+        "max_roi_coverage": 1.0,
+        "mean_regions": 12.855,
+        "pupil_full_frame_calls": 1,
+        "fallback_frames": 0,
+        "custom_primary_frames": 199,
+        "mean_verified_tags_per_custom_frame": 8.42713567839196,
+        "verify_modes": "warp_contrast,corner_subpix",
+        "oracle_pose_upper_bound": 1,
+        "no_bitwise_id_decode": 1,
+        "photometric_refine_enabled": 0,
+        "photometric_extra_iterations_total": 0,
+        "pose_source": "oracle_center_world"
+      }
+    },
+    {
+      "detector": "fast-temporal-custom-rust-apriltags",
+      "frames": 200,
+      "total_time_s": 0.44147503821295686,
+      "detections": 1654,
+      "ground_truth_visible": 1628,
+      "true_positives": 1624,
+      "false_positives": 30,
+      "false_negatives": 4,
+      "fps": 453.0267459958288,
+      "avg_ms_per_frame": 2.2073751910647843,
+      "precision": 0.9818621523579202,
+      "recall": 0.9975429975429976,
+      "pose_error_m": {
+        "mean": 0.000516798307273789,
+        "median": 0.0,
+        "rmse": 0.01032172615984728,
+        "max": 0.3451221082912676
+      },
+      "center_error_px": {
+        "mean": 1.9689770236572706,
+        "median": 1.5103246217364996,
+        "rmse": 2.637896773437807,
+        "max": 30.008711093524184
+      },
+      "corner_error_px": {
+        "mean": 8.913790353151732,
+        "median": 9.52896582125246,
+        "rmse": 9.284254161952173,
+        "max": 35.49573873643736
+      },
+      "acceleration": {
+        "mean_roi_coverage": 0.06790527826003086,
+        "min_roi_coverage": 0.040490933641975306,
+        "max_roi_coverage": 1.0,
+        "mean_regions": 8.685,
+        "pupil_full_frame_calls": 1,
+        "fallback_frames": 0,
+        "custom_primary_frames": 199,
+        "mean_verified_tags_per_custom_frame": 8.27638190954774,
+        "verify_modes": "warp_contrast,corner_subpix",
+        "oracle_pose_upper_bound": 1,
+        "no_bitwise_id_decode": 1,
+        "photometric_refine_enabled": 0,
+        "photometric_extra_iterations_total": 0,
+        "pose_source": "oracle_center_world",
+        "rust_warp_engine": 1
+      }
+    }
+  ]
+}

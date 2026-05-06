@@ -27,10 +27,12 @@ dependencies = [
   "pydantic",
   "mypy",
   "psutil",
+  "apriltag-fast-temporal",
   "memryx; sys_platform == 'linux'",
 ]
 
 [tool.uv.sources]
+apriltag-fast-temporal = { path = "apriltag_benchmarking/fast_temporal_custom_rust", editable = true }
 memryx = { index = "memryx" }
 torch = [
     { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
