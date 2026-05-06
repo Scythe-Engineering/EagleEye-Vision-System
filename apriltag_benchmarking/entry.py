@@ -6,18 +6,36 @@ import time
 from pathlib import Path
 
 import numpy as np
+from tqdm import tqdm
+
+from line_profiler import profile
 
 from .detectors.fast_temporal_custom_detector import FastTemporalCustomAprilTagDetector
-from .detectors.fast_temporal_custom_rust_detector import FastTemporalCustomRustAprilTagDetector
+from .detectors.fast_temporal_custom_rust_detector import (
+    FastTemporalCustomRustAprilTagDetector,
+)
 from .detectors.pupil_detector import PupilAprilTagDetector
 from .detectors.temporal_pupil_detector import TemporalPupilAprilTagDetector
-from .utils import BenchmarkSummary, iter_frames, match_by_family_id, read_image
+from .utils import (
+    BenchmarkSummary,
+    iter_frames,
+    iter_sequence_metadata,
+    match_by_family_id,
+    read_image,
+)
 
-DEFAULT_DATA_ROOT = Path("/Users/darkeden/EagleEye-Vision-System/apriltag_benchmark_data")
-DEFAULT_OUTPUT = Path("/Users/darkeden/EagleEye-Vision-System/apriltag_benchmarking/results.json")
-DEFAULT_DETECTORS = ["pupil", "temporal-pupil", "fast-temporal-custom", "fast-temporal-custom-rust"]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATA_ROOT = PROJECT_ROOT / "apriltag_benchmark_data"
+DEFAULT_OUTPUT = PROJECT_ROOT / "apriltag_benchmarking" / "results.json"
+DEFAULT_DETECTORS = [
+    "pupil",
+    "temporal-pupil",
+    "fast-temporal-custom",
+    "fast-temporal-custom-rust",
+]
 
 
+@profile
 def build_detector(name: str, args: argparse.Namespace):
     kwargs = dict(
         families=args.families,
@@ -90,21 +108,61 @@ def build_detector(name: str, args: argparse.Namespace):
     raise ValueError(f"Unknown detector: {name}")
 
 
-def output_path_for_detector(base_output: Path, detector_key: str, multiple_detectors: bool) -> Path:
+@profile
+def output_path_for_detector(
+    base_output: Path, detector_key: str, multiple_detectors: bool
+) -> Path:
     if not multiple_detectors:
         return base_output
-    return base_output.with_name(f"{base_output.stem}_{detector_key.replace('-', '_')}{base_output.suffix}")
+    return base_output.with_name(
+        f"{base_output.stem}_{detector_key.replace('-', '_')}{base_output.suffix}"
+    )
 
 
-def run_benchmark(args: argparse.Namespace, detector_key: str | None = None, output_path: Path | None = None) -> dict:
+@profile
+def count_frames(data_root: Path, max_frames: int | None = None) -> int:
+    total = 0
+    for _, meta in iter_sequence_metadata(data_root):
+        frame_count = len(meta.get("frames", []))
+        if max_frames is not None:
+            frame_count = min(frame_count, max(0, max_frames - total))
+        total += frame_count
+        if max_frames is not None and total >= max_frames:
+            break
+    return total
+
+
+@profile
+def run_benchmark(
+    args: argparse.Namespace,
+    detector_key: str | None = None,
+    output_path: Path | None = None,
+) -> dict:
     detector_key = detector_key or args.detector
+    args.data_root = args.data_root.expanduser().resolve()
     detector = build_detector(detector_key, args)
     summary = BenchmarkSummary(detector=detector.name)
 
+    if not args.data_root.exists():
+        raise FileNotFoundError(f"Dataset root does not exist: {args.data_root}")
+    if not any(args.data_root.glob("seq_*/metadata.json")):
+        raise FileNotFoundError(
+            f"No sequence metadata found under {args.data_root}. "
+            "Expected files like seq_0000/metadata.json."
+        )
+
+    total_frames = count_frames(args.data_root, args.max_frames)
     try:
-        for record in iter_frames(args.data_root, max_frames=args.max_frames):
+        for record in tqdm(
+            iter_frames(args.data_root, max_frames=args.max_frames),
+            total=total_frames or None,
+            desc=detector_key,
+            unit="frame",
+        ):
             image = read_image(record.image_path)
-            tag_size = args.tag_size_m or (record.tags[0].tag_size_m if record.tags else 0.24)
+            tag_size = args.tag_size_m or (
+                record.tags[0].tag_size_m if record.tags else 0.24
+            )
 
             if hasattr(detector, "prepare_frame"):
                 detector.prepare_frame(
@@ -128,13 +186,23 @@ def run_benchmark(args: argparse.Namespace, detector_key: str | None = None, out
             summary.false_positives += len(extras)
 
             for gt, det in matches:
-                summary.center_errors_px.append(float(np.linalg.norm(det.center - gt.center_image_px)))
-                summary.corner_errors_px.append(float(np.mean(np.linalg.norm(det.corners - gt.corners_image_px, axis=1))))
+                summary.center_errors_px.append(
+                    float(np.linalg.norm(det.center - gt.center_image_px))
+                )
+                summary.corner_errors_px.append(
+                    float(
+                        np.mean(
+                            np.linalg.norm(det.corners - gt.corners_image_px, axis=1)
+                        )
+                    )
+                )
                 if det.pose_t is not None:
-                    summary.pose_errors_m.append(float(np.linalg.norm(det.pose_t - gt.position_camera_cv_m)))
+                    summary.pose_errors_m.append(
+                        float(np.linalg.norm(det.pose_t - gt.position_camera_cv_m))
+                    )
 
             if args.verbose:
-                print(
+                tqdm.write(
                     f"{record.sequence} frame {record.frame}: "
                     f"{len(detections)} detections, {len(matches)} TP, "
                     f"{len(missed)} FN, {len(extras)} FP, {elapsed * 1000:.2f} ms"
@@ -161,7 +229,9 @@ def run_benchmark(args: argparse.Namespace, detector_key: str | None = None, out
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark AprilTag detectors on synthetic Blender metadata.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark AprilTag detectors on synthetic Blender metadata."
+    )
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(
@@ -176,7 +246,12 @@ def parse_args() -> argparse.Namespace:
         default=200,
         help="Limit frames per detector. Defaults to 200 to avoid a macOS pupil-apriltags native crash in temporal crop mode; use 0 for all frames.",
     )
-    parser.add_argument("--tag-size-m", type=float, default=None, help="Override metadata tag size for pose estimation.")
+    parser.add_argument(
+        "--tag-size-m",
+        type=float,
+        default=None,
+        help="Override metadata tag size for pose estimation.",
+    )
     parser.add_argument("--verbose", action="store_true")
 
     parser.add_argument("--families", default="tag36h11")
@@ -208,15 +283,25 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated pipeline, e.g. warp_contrast,corner_subpix or corner_subpix or contour_quad,warp_contrast,corner_subpix.",
     )
     parser.add_argument("--fast-temporal-warp-canonical-size", type=int, default=48)
-    parser.add_argument("--fast-temporal-warp-min-border-delta", type=float, default=6.0)
+    parser.add_argument(
+        "--fast-temporal-warp-min-border-delta", type=float, default=6.0
+    )
     parser.add_argument("--fast-temporal-warp-min-inner-std", type=float, default=7.0)
     parser.add_argument("--fast-temporal-subpix-window-half-size", type=int, default=5)
     parser.add_argument("--fast-temporal-subpix-max-iterations", type=int, default=40)
     parser.add_argument("--fast-temporal-subpix-epsilon", type=float, default=0.01)
-    parser.add_argument("--fast-temporal-contour-max-mean-error-px", type=float, default=18.0)
-    parser.add_argument("--fast-temporal-contrast-gate-min-range", type=float, default=18.0)
-    parser.add_argument("--fast-temporal-contrast-gate-patch-radius-px", type=int, default=7)
-    parser.add_argument("--fast-temporal-enable-photometric-refine", action="store_true")
+    parser.add_argument(
+        "--fast-temporal-contour-max-mean-error-px", type=float, default=18.0
+    )
+    parser.add_argument(
+        "--fast-temporal-contrast-gate-min-range", type=float, default=18.0
+    )
+    parser.add_argument(
+        "--fast-temporal-contrast-gate-patch-radius-px", type=int, default=7
+    )
+    parser.add_argument(
+        "--fast-temporal-enable-photometric-refine", action="store_true"
+    )
     parser.add_argument(
         "--fast-temporal-pose-source",
         choices=["oracle_center_world", "solvepnp_corners"],
@@ -229,7 +314,9 @@ def parse_args() -> argparse.Namespace:
 def print_report(report: dict) -> None:
     results = report["results"]
     print(f"Detector: {results['detector']}")
-    print(f"Frames: {results['frames']} | FPS: {results['fps']:.2f} | avg ms/frame: {results['avg_ms_per_frame']:.2f}")
+    print(
+        f"Frames: {results['frames']} | FPS: {results['fps']:.2f} | avg ms/frame: {results['avg_ms_per_frame']:.2f}"
+    )
     print(f"Precision: {results['precision']:.3f} | Recall: {results['recall']:.3f}")
     print(f"Pose error mean (m): {results['pose_error_m']['mean']}")
     if "acceleration" in results:
@@ -249,7 +336,9 @@ def print_comparison(reports: list[dict]) -> None:
     if len(reports) <= 1:
         return
     print("\n=== Detector comparison ===")
-    print(f"{'detector':28} {'fps':>9} {'ms/frame':>10} {'precision':>10} {'recall':>8} {'pose mean m':>12}")
+    print(
+        f"{'detector':28} {'fps':>9} {'ms/frame':>10} {'precision':>10} {'recall':>8} {'pose mean m':>12}"
+    )
     for report in reports:
         result = report["results"]
         pose_mean = result["pose_error_m"]["mean"]
@@ -264,6 +353,7 @@ def print_comparison(reports: list[dict]) -> None:
         )
 
 
+@profile
 def main() -> None:
     args = parse_args()
     if args.max_frames == 0:

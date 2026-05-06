@@ -57,8 +57,6 @@ class TemporalPupilAprilTagDetector:
             decode_sharpening=float(decode_sharpening),
         )
         self.crop_detector = self._new_crop_detector()
-        self._detect_calls = 0
-        self._recreate_every_calls = 20
         self.families = families
         self.padding_factor = float(padding_factor)
         self.max_regions = int(max_regions)
@@ -142,7 +140,6 @@ class TemporalPupilAprilTagDetector:
             gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if crop.ndim == 3 else crop
             with suppress_native_stderr(True):
                 raw_detections = self.crop_detector.detect(gray, estimate_tag_pose=False)
-            self._detect_calls += 1
             for raw in raw_detections:
                 family = getattr(raw, "tag_family", self.families)
                 if isinstance(family, bytes):
@@ -174,8 +171,14 @@ class TemporalPupilAprilTagDetector:
             x1, y1, x2, y2 = [int(v) for v in region]
             x1 = max(0, min(width, x1)); x2 = max(0, min(width, x2))
             y1 = max(0, min(height, y1)); y2 = max(0, min(height, y2))
-            if x2 > x1 and y2 > y1:
-                regions.append((x1, y1, x2 - x1, y2 - y1))
+            w = x2 - x1
+            h = y2 - y1
+            # After clipping at image boundaries a predicted ROI can become a
+            # very thin sliver (for example 1 px wide as a tag exits frame).
+            # Passing those degenerate crops into pupil-apriltags can abort the
+            # Python process from native code mid-benchmark.
+            if w >= self.min_region_size_px and h >= self.min_region_size_px:
+                regions.append((x1, y1, w, h))
         if not regions:
             return [(0, 0, width, height)]
         return self._merge_regions(regions) if self.merge_overlapping else regions
@@ -201,7 +204,7 @@ class TemporalPupilAprilTagDetector:
     def _new_crop_detector(self) -> Detector:
         return Detector(**self._detector_kwargs)
 
-    def _reset_crop_detector(self) -> None:
+    def _release_crop_detector(self) -> None:
         try:
             if hasattr(self.crop_detector, "tag_detector_ptr"):
                 self.crop_detector.tag_detector_ptr = None
@@ -209,6 +212,9 @@ class TemporalPupilAprilTagDetector:
                 self.crop_detector.tag_families = {}
         except Exception:
             pass
+
+    def _reset_crop_detector(self) -> None:
+        self._release_crop_detector()
         self.crop_detector = self._new_crop_detector()
 
     def _estimate_pose_t(
@@ -243,4 +249,4 @@ class TemporalPupilAprilTagDetector:
 
     def close(self) -> None:
         self.base.close()
-        self._reset_crop_detector()
+        self._release_crop_detector()

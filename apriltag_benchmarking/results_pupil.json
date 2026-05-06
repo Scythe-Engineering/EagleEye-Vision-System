@@ -1,37 +1,37 @@
 {
-  "data_root": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmark_data",
+  "data_root": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmark_data",
   "detector_key": "pupil",
-  "output": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmarking/results_pupil.json",
+  "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_pupil.json",
   "results": {
     "detector": "pupil-apriltags",
     "frames": 200,
-    "total_time_s": 4.753854456794215,
-    "detections": 1430,
-    "ground_truth_visible": 1628,
-    "true_positives": 1430,
-    "false_positives": 0,
-    "false_negatives": 198,
-    "fps": 42.0711239306369,
-    "avg_ms_per_frame": 23.769272283971077,
-    "precision": 1.0,
-    "recall": 0.8783783783783784,
+    "total_time_s": 8.247973500007902,
+    "detections": 1062,
+    "ground_truth_visible": 1426,
+    "true_positives": 1056,
+    "false_positives": 6,
+    "false_negatives": 370,
+    "fps": 24.2483805264176,
+    "avg_ms_per_frame": 41.23986750003951,
+    "precision": 0.9943502824858758,
+    "recall": 0.7405329593267882,
     "pose_error_m": {
-      "mean": 0.0660824483242276,
-      "median": 0.0556498537536352,
-      "rmse": 0.08677409973002716,
-      "max": 0.44998515410266443
+      "mean": 0.03481317716312138,
+      "median": 0.025805286064983682,
+      "rmse": 0.051392659068310635,
+      "max": 0.3364465657349203
     },
     "center_error_px": {
-      "mean": 0.5220795516181872,
-      "median": 0.5069389217571739,
-      "rmse": 0.5868332820021653,
-      "max": 3.0990658124265824
+      "mean": 0.05941194481995682,
+      "median": 0.04271642502892134,
+      "rmse": 0.09342181547011459,
+      "max": 1.6063846517661442
     },
     "corner_error_px": {
-      "mean": 7.827347738895743,
-      "median": 7.346296991081537,
-      "rmse": 8.16576946646761,
-      "max": 16.802169140810193
+      "mean": 6.811682001870508,
+      "median": 6.622535580510496,
+      "rmse": 7.195825026812778,
+      "max": 16.19704069658483
     }
   }
 }

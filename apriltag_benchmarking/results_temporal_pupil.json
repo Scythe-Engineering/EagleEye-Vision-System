@@ -1,43 +1,43 @@
 {
-  "data_root": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmark_data",
+  "data_root": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmark_data",
   "detector_key": "temporal-pupil",
-  "output": "/Users/darkeden/EagleEye-Vision-System/apriltag_benchmarking/results_temporal_pupil.json",
+  "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_temporal_pupil.json",
   "results": {
     "detector": "temporal-pupil-apriltags",
     "frames": 200,
-    "total_time_s": 3.8164066211902536,
-    "detections": 1430,
-    "ground_truth_visible": 1628,
-    "true_positives": 1430,
-    "false_positives": 0,
-    "false_negatives": 198,
-    "fps": 52.405317318526286,
-    "avg_ms_per_frame": 19.08203310595127,
-    "precision": 1.0,
-    "recall": 0.8783783783783784,
+    "total_time_s": 1.6165227999990748,
+    "detections": 1058,
+    "ground_truth_visible": 1426,
+    "true_positives": 1052,
+    "false_positives": 6,
+    "false_negatives": 374,
+    "fps": 123.7223502199378,
+    "avg_ms_per_frame": 8.082613999995374,
+    "precision": 0.994328922495274,
+    "recall": 0.7377279102384292,
     "pose_error_m": {
-      "mean": 0.05724547697895402,
-      "median": 0.05311052899567072,
-      "rmse": 0.0672896583330169,
-      "max": 0.22905105039396265
+      "mean": 0.03450236458295687,
+      "median": 0.023234395477871393,
+      "rmse": 0.05448901074370274,
+      "max": 0.33638196870805653
     },
     "center_error_px": {
-      "mean": 0.5220795516181872,
-      "median": 0.5069389217571739,
-      "rmse": 0.5868332820021653,
-      "max": 3.0990658124265824
+      "mean": 0.059862189808826446,
+      "median": 0.04322382309215615,
+      "rmse": 0.09328277347769402,
+      "max": 1.6063990580414236
     },
     "corner_error_px": {
-      "mean": 7.827347738895743,
-      "median": 7.346296991081537,
-      "rmse": 8.16576946646761,
-      "max": 16.802169140810193
+      "mean": 6.820141807828167,
+      "median": 6.6451379968611075,
+      "rmse": 7.2039952930252555,
+      "max": 16.1970435258805
     },
     "acceleration": {
-      "mean_roi_coverage": 1.0,
-      "min_roi_coverage": 1.0,
-      "max_roi_coverage": 1.0,
-      "mean_regions": 1.0
+      "mean_roi_coverage": 0.10628539014274692,
+      "min_roi_coverage": 0.06026234567901235,
+      "max_roi_coverage": 0.23927565586419752,
+      "mean_regions": 7.695
     }
   }
 }
