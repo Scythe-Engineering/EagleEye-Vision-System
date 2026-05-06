@@ -1840,6 +1840,14 @@ export function registerSettingsPopup() {
                     if (cancelBtn) cancelBtn.onclick = () => close();
                 }
 
+                if (isSecondary) {
+                    renderLineProfilingSection(
+                        body,
+                        selectedPipelineName,
+                        operationUuid,
+                    );
+                }
+
                 // Start visualization now that modal content is ready - wait for it to complete
                 await startVisIfReady();
             })
@@ -1956,6 +1964,125 @@ export function registerSettingsPopup() {
 
         setSettingsPanelVisibility(true);
         overlay.classList.add("hidden");
+    }
+
+    function showLineProfilingReport(reportText) {
+        const overlay = createElement("div", {
+            className:
+                "fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4",
+        });
+        const modal = createElement("div", {
+            className:
+                "bg-[#181818] border border-[#414141] rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl",
+        });
+        const pre = createElement("pre", {
+            className:
+                "m-4 p-4 bg-black text-gray-100 text-xs overflow-auto rounded border border-[#333] flex-1 whitespace-pre-wrap",
+            text: reportText || "No report available",
+        });
+        const closeBtn = createElement("button", {
+            className: "px-3 py-2 rounded bg-[#333] text-white hover:bg-[#444]",
+            text: "Close",
+            onClick: () => overlay.remove(),
+        });
+        const copyBtn = createElement("button", {
+            className:
+                "px-3 py-2 rounded bg-[#f9c845] text-black hover:bg-[#d6a93a]",
+            text: "Copy",
+            onClick: async () => navigator.clipboard?.writeText(reportText || ""),
+        });
+        const downloadBtn = createElement("button", {
+            className:
+                "px-3 py-2 rounded bg-[#2d6cdf] text-white hover:bg-[#2458b8]",
+            text: "Download",
+            onClick: () => {
+                const blob = new Blob([reportText || ""], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `eagleeye-line-profile-${Date.now()}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+            },
+        });
+        modal.appendChild(
+            createElement("div", { className: "flex items-center justify-between p-4 border-b border-[#333]" }, [
+                createElement("h3", { className: "text-lg font-semibold text-[#f9c845]", text: "Line Profiling Report" }),
+                createElement("div", { className: "flex gap-2" }, [copyBtn, downloadBtn, closeBtn]),
+            ]),
+        );
+        modal.appendChild(pre);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+    }
+
+    function renderLineProfilingSection(body, pipelineName, operationUuid) {
+        const section = createElement("div", {
+            className:
+                "mt-5 bg-[#1a1a1a] border border-[#414141] rounded-lg p-4 space-y-3",
+        });
+        const statusEl = createElement("div", {
+            className: "text-sm text-gray-300",
+            text: "Status: loading...",
+        });
+        const startBtn = createElement("button", {
+            className:
+                "px-3 py-2 rounded bg-[#f9c845] text-black hover:bg-[#d6a93a] disabled:opacity-50",
+            text: "Start",
+        });
+        const stopBtn = createElement("button", {
+            className:
+                "px-3 py-2 rounded bg-red-700 text-white hover:bg-red-600 disabled:opacity-50",
+            text: "Stop",
+        });
+        const reportBtn = createElement("button", {
+            className:
+                "px-3 py-2 rounded bg-[#333] text-white hover:bg-[#444] disabled:opacity-50",
+            text: "View Report",
+        });
+
+        async function refreshStatus() {
+            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/status`);
+            const data = await response.json();
+            const active = data.active_session;
+            const isThis = active?.pipeline_name === pipelineName && active?.operation_uuid === operationUuid;
+            statusEl.textContent = `Status: ${isThis ? "running" : active ? "another operation is running" : "idle"}`;
+            startBtn.disabled = !pipelineName || !!active;
+            stopBtn.disabled = !isThis;
+        }
+
+        startBtn.onclick = async () => {
+            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/start/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`, { method: "POST" });
+            const data = await response.json();
+            if (!response.ok || !data.success) alert(data.error || "Failed to start line profiling");
+            await refreshStatus();
+        };
+        stopBtn.onclick = async () => {
+            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/stop/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`, { method: "POST" });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                alert(data.error || "Failed to stop line profiling");
+            } else {
+                showLineProfilingReport(data.report || "");
+            }
+            await refreshStatus();
+        };
+        reportBtn.onclick = async () => {
+            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/report/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`);
+            const data = await response.json();
+            if (!response.ok || !data.success) alert(data.error || "No report available");
+            else showLineProfilingReport(data.report || "");
+        };
+
+        section.appendChild(createElement("div", { className: "text-sm font-semibold text-[#f9c845]", text: "Line Profiling" }));
+        section.appendChild(createElement("div", { className: "text-xs text-yellow-200", text: "Line profiling adds runtime overhead." }));
+        section.appendChild(statusEl);
+        section.appendChild(createElement("div", { className: "flex gap-2 flex-wrap" }, [startBtn, stopBtn, reportBtn]));
+        body.appendChild(section);
+        refreshStatus().catch((err) => {
+            console.warn("Failed to load line profiling status", err);
+            statusEl.textContent = "Status: unavailable";
+        });
     }
 
     /**

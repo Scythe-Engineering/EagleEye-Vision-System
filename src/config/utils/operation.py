@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from src.config.utils.line_profiling import line_profiling_manager
 from src.main_operations.definitions.base.base_class import OperationInstance
 
 if TYPE_CHECKING:
@@ -42,6 +43,11 @@ class Operation:
         Returns:
             Any: The output data of the operation.
         """
+        if line_profiling_manager.is_active_for(self.uuid):
+            return line_profiling_manager.profile_operation_call(
+                operation=self,
+                call=lambda: self.instance.run(input_data),
+            )
         return self.instance.run(input_data)
 
     def is_only_input_connection(self, uuid: str) -> bool:
