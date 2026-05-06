@@ -4,34 +4,34 @@
   "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_pupil.json",
   "results": {
     "detector": "pupil-apriltags",
-    "frames": 200,
-    "total_time_s": 8.247973500007902,
-    "detections": 1062,
-    "ground_truth_visible": 1426,
-    "true_positives": 1056,
+    "frames": 2400,
+    "total_time_s": 91.40028899998924,
+    "detections": 12509,
+    "ground_truth_visible": 15753,
+    "true_positives": 12503,
     "false_positives": 6,
-    "false_negatives": 370,
-    "fps": 24.2483805264176,
-    "avg_ms_per_frame": 41.23986750003951,
-    "precision": 0.9943502824858758,
-    "recall": 0.7405329593267882,
+    "false_negatives": 3250,
+    "fps": 26.25812266305069,
+    "avg_ms_per_frame": 38.08345374999552,
+    "precision": 0.999520345351347,
+    "recall": 0.7936900907763601,
     "pose_error_m": {
-      "mean": 0.03481317716312138,
-      "median": 0.025805286064983682,
-      "rmse": 0.051392659068310635,
-      "max": 0.3364465657349203
+      "mean": 0.04195727930905933,
+      "median": 0.032518433164831176,
+      "rmse": 0.06367757681069598,
+      "max": 0.4620670607062689
     },
     "center_error_px": {
-      "mean": 0.05941194481995682,
-      "median": 0.04271642502892134,
-      "rmse": 0.09342181547011459,
-      "max": 1.6063846517661442
+      "mean": 0.06497563539039763,
+      "median": 0.04778571074625676,
+      "rmse": 0.10117759596286699,
+      "max": 1.8154422271122455
     },
     "corner_error_px": {
-      "mean": 6.811682001870508,
-      "median": 6.622535580510496,
-      "rmse": 7.195825026812778,
-      "max": 16.19704069658483
+      "mean": 7.507431475128356,
+      "median": 6.735992776939166,
+      "rmse": 8.239377027824741,
+      "max": 32.307442076101566
     }
   }
 }

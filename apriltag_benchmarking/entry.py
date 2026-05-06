@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -133,33 +134,47 @@ def count_frames(data_root: Path, max_frames: int | None = None) -> int:
 
 
 @profile
+def _load_image(path):
+    return path, read_image(path)
+
+def load_all_records(data_root: Path, max_frames: int | None = None) -> list:
+    total_frames = count_frames(data_root, max_frames)
+    records = list(iter_frames(data_root, max_frames=max_frames))
+    print(f"Pre-loading {len(records)} frames into memory...")
+
+    # Use multiprocessing to speed up image reading
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(_load_image, r.image_path): r for r in records}
+        image_dict = {}
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Loading images", unit="img"):
+            path, img = future.result()
+            image_dict[path] = img
+
+    for r in records:
+        r.image_data = image_dict[r.image_path]
+
+    return records
+
+
+@profile
 def run_benchmark(
     args: argparse.Namespace,
+    records: list,
     detector_key: str | None = None,
     output_path: Path | None = None,
 ) -> dict:
     detector_key = detector_key or args.detector
-    args.data_root = args.data_root.expanduser().resolve()
     detector = build_detector(detector_key, args)
     summary = BenchmarkSummary(detector=detector.name)
 
-    if not args.data_root.exists():
-        raise FileNotFoundError(f"Dataset root does not exist: {args.data_root}")
-    if not any(args.data_root.glob("seq_*/metadata.json")):
-        raise FileNotFoundError(
-            f"No sequence metadata found under {args.data_root}. "
-            "Expected files like seq_0000/metadata.json."
-        )
-
-    total_frames = count_frames(args.data_root, args.max_frames)
     try:
         for record in tqdm(
-            iter_frames(args.data_root, max_frames=args.max_frames),
-            total=total_frames or None,
+            records,
+            total=len(records) or None,
             desc=detector_key,
             unit="frame",
         ):
-            image = read_image(record.image_path)
+            image = record.image_data
             tag_size = args.tag_size_m or (
                 record.tags[0].tag_size_m if record.tags else 0.24
             )
@@ -358,6 +373,19 @@ def main() -> None:
     args = parse_args()
     if args.max_frames == 0:
         args.max_frames = None
+
+    args.data_root = args.data_root.expanduser().resolve()
+    if not args.data_root.exists():
+        raise FileNotFoundError(f"Dataset root does not exist: {args.data_root}")
+    if not any(args.data_root.glob("seq_*/metadata.json")):
+        raise FileNotFoundError(
+            f"No sequence metadata found under {args.data_root}. "
+            "Expected files like seq_0000/metadata.json."
+        )
+
+    # Pre-load records once for all detectors
+    records = load_all_records(args.data_root, args.max_frames)
+
     detector_keys = DEFAULT_DETECTORS if args.detector == "all" else [args.detector]
     multiple = len(detector_keys) > 1
     reports = []
@@ -366,6 +394,7 @@ def main() -> None:
         print(f"\n=== Running {detector_key} ===")
         report = run_benchmark(
             args,
+            records,
             detector_key=detector_key,
             output_path=output_path_for_detector(args.output, detector_key, multiple),
         )

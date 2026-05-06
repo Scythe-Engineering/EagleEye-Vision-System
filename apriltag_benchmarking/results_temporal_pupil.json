@@ -4,40 +4,40 @@
   "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_temporal_pupil.json",
   "results": {
     "detector": "temporal-pupil-apriltags",
-    "frames": 200,
-    "total_time_s": 1.6165227999990748,
-    "detections": 1058,
-    "ground_truth_visible": 1426,
-    "true_positives": 1052,
+    "frames": 2400,
+    "total_time_s": 18.56482049998067,
+    "detections": 12212,
+    "ground_truth_visible": 15753,
+    "true_positives": 12206,
     "false_positives": 6,
-    "false_negatives": 374,
-    "fps": 123.7223502199378,
-    "avg_ms_per_frame": 8.082613999995374,
-    "precision": 0.994328922495274,
-    "recall": 0.7377279102384292,
+    "false_negatives": 3547,
+    "fps": 129.27676839118908,
+    "avg_ms_per_frame": 7.735341874991946,
+    "precision": 0.9995086799868982,
+    "recall": 0.7748365390719228,
     "pose_error_m": {
-      "mean": 0.03450236458295687,
-      "median": 0.023234395477871393,
-      "rmse": 0.05448901074370274,
-      "max": 0.33638196870805653
+      "mean": 0.03778036723040037,
+      "median": 0.030628399339276954,
+      "rmse": 0.05546322524687961,
+      "max": 0.4107859129718586
     },
     "center_error_px": {
-      "mean": 0.059862189808826446,
-      "median": 0.04322382309215615,
-      "rmse": 0.09328277347769402,
-      "max": 1.6063990580414236
+      "mean": 0.06359516883204315,
+      "median": 0.047519613289151996,
+      "rmse": 0.09817830420320037,
+      "max": 1.8154543386586643
     },
     "corner_error_px": {
-      "mean": 6.820141807828167,
-      "median": 6.6451379968611075,
-      "rmse": 7.2039952930252555,
-      "max": 16.1970435258805
+      "mean": 7.517953242472628,
+      "median": 6.734281591586257,
+      "rmse": 8.262307070184105,
+      "max": 32.307459095352876
     },
     "acceleration": {
-      "mean_roi_coverage": 0.10628539014274692,
-      "min_roi_coverage": 0.06026234567901235,
-      "max_roi_coverage": 0.23927565586419752,
-      "mean_regions": 7.695
+      "mean_roi_coverage": 0.1653688333895962,
+      "min_roi_coverage": 0.03496141975308642,
+      "max_roi_coverage": 0.8318113425925926,
+      "mean_regions": 4.881666666666667
     }
   }
 }
