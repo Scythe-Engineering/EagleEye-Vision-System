@@ -73,6 +73,17 @@ class AprilTagDetector:
         self.ready = False
         self._detect_lock: Lock = Lock()
 
+        # The camera pipeline is continuous, so frame shape/dtype/channel layout is
+        # expected to stay stable. Cache the chosen preprocessing path and reusable
+        # grayscale buffers to avoid repeated introspection/allocation every frame.
+        self._preprocess_signature: Optional[
+            tuple[tuple[int, ...], np.dtype, bool]
+        ] = None
+        self._preprocess_mode: Optional[str] = None
+        self._gray_buffer: Optional[np.ndarray] = None
+        self._segment_gray_buffers: dict[tuple[int, int], np.ndarray] = {}
+        self._min_input_dimension = int(np.ceil(4 * max(1.0, float(self.quad_decimate))))
+
         self.detector = self._create_detector(
             self.families,
             self.nthreads,
@@ -119,50 +130,74 @@ class AprilTagDetector:
         except Exception as exc:
             logger.warning("Failed to disable old AprilTag detector destructor: %s", exc)
 
-    def _preprocess_image(self, image: np.ndarray) -> Optional[np.ndarray]:
+    def _get_gray_buffer(self, shape: tuple[int, int]) -> np.ndarray:
+        """Return a reusable grayscale conversion buffer for a frame shape."""
+        if self._gray_buffer is None or self._gray_buffer.shape != shape:
+            self._gray_buffer = np.empty(shape, dtype=np.uint8)
+        return self._gray_buffer
+
+    def _get_segment_gray_buffer(self, shape: tuple[int, int]) -> np.ndarray:
+        """Return a reusable grayscale conversion buffer for a segment shape."""
+        buffer = self._segment_gray_buffers.get(shape)
+        if buffer is None:
+            buffer = np.empty(shape, dtype=np.uint8)
+            self._segment_gray_buffers[shape] = buffer
+        return buffer
+
+    def _preprocess_image(
+        self, image: np.ndarray, *, segment: bool = False
+    ) -> Optional[np.ndarray]:
         """Preprocess image to grayscale uint8 format.
 
-        Args:
-            image: Input image (grayscale or BGR).
-
-        Returns:
-            Preprocessed grayscale image or None if invalid.
+        The first valid frame establishes the common preprocessing path. If later
+        frames match that signature, the hot path skips repeated shape/dtype/color
+        checks and reuses conversion buffers.
         """
         if image is None or image.size == 0:
             return None
 
-        # Convert to grayscale if needed
-        if len(image.shape) == 3:
-            gray_image = np.empty(image.shape[:2], dtype=np.uint8)
-            cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
-        else:
-            if image.dtype != np.uint8:
-                gray_image = np.empty(image.shape, dtype=np.uint8)
-                cv2.convertScaleAbs(image, dst=gray_image)
+        shape = image.shape
+        if len(shape) < 2 or shape[0] < self._min_input_dimension or shape[1] < self._min_input_dimension:
+            return None
+
+        c_contiguous = image.flags.c_contiguous
+        signature = (shape, image.dtype, c_contiguous)
+        mode = self._preprocess_mode if signature == self._preprocess_signature else None
+
+        if mode is None:
+            if len(shape) == 3:
+                mode = "bgr"
+            elif len(shape) == 2 and image.dtype == np.uint8 and c_contiguous and image.flags.writeable:
+                mode = "gray_passthrough"
+            elif len(shape) == 2:
+                mode = "gray_convert" if image.dtype != np.uint8 else "gray_require"
             else:
-                gray_image = image
+                return None
+            self._preprocess_signature = signature
+            self._preprocess_mode = mode
 
-        # Validate dimensions
-        if gray_image is None or gray_image.size == 0:
-            return None
-        if gray_image.ndim != 2:
-            return None
-        if gray_image.shape[0] < 8 or gray_image.shape[1] < 8:
-            return None
+        if mode == "bgr":
+            gray_image = (
+                self._get_segment_gray_buffer(shape[:2])
+                if segment
+                else self._get_gray_buffer(shape[:2])
+            )
+            cv2.cvtColor(image, cv2.COLOR_BGR2GRAY, dst=gray_image)
+            return gray_image
 
-        # Ensure writable C-contiguous uint8 buffer
-        gray_image = np.require(
-            gray_image, dtype=np.uint8, requirements=["C", "W"]
-        )  # type: ignore
+        if mode == "gray_passthrough":
+            return image
 
-        # Check decimated size
-        if (
-            gray_image.shape[0] / max(self.quad_decimate, 1.0) < 4
-            or gray_image.shape[1] / max(self.quad_decimate, 1.0) < 4
-        ):
-            return None
+        if mode == "gray_convert":
+            gray_image = (
+                self._get_segment_gray_buffer(shape[:2])
+                if segment
+                else self._get_gray_buffer(shape[:2])
+            )
+            cv2.convertScaleAbs(image, dst=gray_image)
+            return gray_image
 
-        return gray_image
+        return np.require(image, dtype=np.uint8, requirements=["C", "W"])  # type: ignore
 
     def update_parameters(
         self,
@@ -220,6 +255,11 @@ class AprilTagDetector:
             self.decode_sharpening = float(next_decode_sharpening)
             self.detector = new_detector
             self.ready = True
+            self._min_input_dimension = int(np.ceil(4 * self.quad_decimate))
+            self._preprocess_signature = None
+            self._preprocess_mode = None
+            self._gray_buffer = None
+            self._segment_gray_buffers.clear()
             self._disable_native_destructor(old_detector)
 
     def run_detection(
@@ -243,31 +283,31 @@ class AprilTagDetector:
                 return detections
         else:
             detections = []
-            for image, offset in images:
-                gray_image = self._preprocess_image(image)
-                if gray_image is None:
-                    continue
-                with self._detect_lock:
+            with self._detect_lock:
+                for image, offset in images:
+                    gray_image = self._preprocess_image(image, segment=True)
+                    if gray_image is None:
+                        continue
                     try:
                         detected_tags = self.detector.detect(gray_image)
                     except Exception as exc:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue
-                if isinstance(detected_tags, Detection):
-                    detections.append(
-                        CustomDetection(
-                            tag_id=detected_tags.tag_id,
-                            corners=(detected_tags.corners + offset),
-                        )
-                    )
-                elif isinstance(detected_tags, list):
-                    for detection in detected_tags:
+                    if isinstance(detected_tags, Detection):
                         detections.append(
                             CustomDetection(
-                                tag_id=detection.tag_id,
-                                corners=(detection.corners + offset),
+                                tag_id=detected_tags.tag_id,
+                                corners=(detected_tags.corners + offset),
                             )
                         )
+                    elif isinstance(detected_tags, list):
+                        for detection in detected_tags:
+                            detections.append(
+                                CustomDetection(
+                                    tag_id=detection.tag_id,
+                                    corners=(detection.corners + offset),
+                                )
+                            )
             return detections
 
     def detect(
