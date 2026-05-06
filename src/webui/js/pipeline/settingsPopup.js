@@ -1840,13 +1840,11 @@ export function registerSettingsPopup() {
                     if (cancelBtn) cancelBtn.onclick = () => close();
                 }
 
-                if (isSecondary) {
-                    renderLineProfilingSection(
-                        body,
-                        selectedPipelineName,
-                        operationUuid,
-                    );
-                }
+                renderLineProfilingSection(
+                    body,
+                    selectedPipelineName,
+                    operationUuid,
+                );
 
                 // Start visualization now that modal content is ready - wait for it to complete
                 await startVisIfReady();

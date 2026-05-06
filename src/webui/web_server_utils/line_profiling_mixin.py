@@ -18,10 +18,13 @@ class LineProfilingMixin:
             return {"success": False, "error": "Operation not found"}, 404
 
         module_name = getattr(operation.instance.__class__, "__module__", "")
-        if not module_name.startswith("src.secondary_operations."):
+        if not (
+            module_name.startswith("src.secondary_operations.")
+            or module_name.startswith("src.main_operations.definitions.")
+        ):
             return {
                 "success": False,
-                "error": "Line profiling is only available for secondary operations",
+                "error": "Line profiling is only available for main or secondary operations",
             }, 400
 
         return line_profiling_manager.start_session(pipeline_name, operation)
