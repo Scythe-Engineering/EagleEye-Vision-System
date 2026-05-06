@@ -268,7 +268,7 @@ class FlowManager:
 
                 try:
                     operation_start = perf_counter()
-                    output = operation.instance.run(input_for_op)
+                    output = operation.run(input_for_op)
                     operation_end = perf_counter()
                     operation_time_by_uuid_ms[operation.uuid] = max(
                         (operation_end - operation_start) * 1000.0,

@@ -65,6 +65,7 @@ from src.webui.web_server_utils.asset_manager_mixin import AssetManagerMixin
 from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
+from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
@@ -81,6 +82,7 @@ class EagleEyeInterface(
     CameraCalibrationMixin,
     CameraConfigMixin,
     CameraStreamMixin,
+    LineProfilingMixin,
     NetworkManagerMixin,
     OperationConfigMixin,
     PipelineConfigMixin,
@@ -599,6 +601,30 @@ class EagleEyeInterface(
             "restart_backend",
             self.restart_backend,
             methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/line-profiling/start/<string:pipeline_name>/<string:operation_uuid>",
+            "start_line_profiling",
+            self.start_line_profiling,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/line-profiling/stop/<string:pipeline_name>/<string:operation_uuid>",
+            "stop_line_profiling",
+            self.stop_line_profiling,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/line-profiling/status",
+            "get_line_profiling_status",
+            self.get_line_profiling_status,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/line-profiling/report/<string:pipeline_name>/<string:operation_uuid>",
+            "get_line_profiling_report",
+            self.get_line_profiling_report,
+            methods=["GET"],
         )
         self.app.add_url_rule(
             "/system-update/status",

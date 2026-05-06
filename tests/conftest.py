@@ -16,8 +16,21 @@ def _profile_stub(func: Callable[..., Any]) -> Callable[..., Any]:
     return func
 
 
+class _LineProfilerStub:
+    def __call__(self, func: Callable[..., Any]) -> Callable[..., Any]:
+        return func
+
+    def add_function(self, _func: Callable[..., Any]) -> None:
+        return None
+
+    def print_stats(self, stream: Any | None = None) -> None:
+        if stream is not None:
+            stream.write("")
+
+
 line_profiler_stub = types.ModuleType("line_profiler")
 setattr(line_profiler_stub, "profile", _profile_stub)
+setattr(line_profiler_stub, "LineProfiler", _LineProfilerStub)
 sys.modules.setdefault("line_profiler", line_profiler_stub)
 
 
