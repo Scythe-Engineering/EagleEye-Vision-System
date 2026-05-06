@@ -1964,19 +1964,45 @@ export function registerSettingsPopup() {
         overlay.classList.add("hidden");
     }
 
+    async function copyTextToClipboard(text) {
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.top = "-9999px";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        try {
+            const copied = document.execCommand("copy");
+            if (!copied) {
+                throw new Error("Copy command was not accepted");
+            }
+        } finally {
+            textarea.remove();
+        }
+    }
+
     function showLineProfilingReport(reportText) {
+        const report = reportText || "";
         const overlay = createElement("div", {
             className:
                 "fixed inset-0 z-[10000] bg-black/70 flex items-center justify-center p-4",
         });
         const modal = createElement("div", {
             className:
-                "bg-[#181818] border border-[#414141] rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl",
+                "bg-[#181818] border border-[#414141] rounded-xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden",
         });
         const pre = createElement("pre", {
             className:
-                "m-4 p-4 bg-black text-gray-100 text-xs overflow-auto rounded border border-[#333] flex-1 whitespace-pre-wrap",
-            text: reportText || "No report available",
+                "eagle-scrollbar m-4 p-4 bg-black text-gray-100 text-xs overflow-auto rounded border border-[#333] flex-1 min-h-0 whitespace-pre-wrap dark:[color-scheme:dark]",
+            text: report || "No report available",
         });
         const closeBtn = createElement("button", {
             className: "px-3 py-2 rounded bg-[#333] text-white hover:bg-[#444]",
@@ -1985,16 +2011,34 @@ export function registerSettingsPopup() {
         });
         const copyBtn = createElement("button", {
             className:
-                "px-3 py-2 rounded bg-[#f9c845] text-black hover:bg-[#d6a93a]",
+                "px-3 py-2 rounded bg-[#f9c845] text-black hover:bg-[#d6a93a] disabled:opacity-60",
             text: "Copy",
-            onClick: async () => navigator.clipboard?.writeText(reportText || ""),
+            onClick: async () => {
+                const originalText = copyBtn.textContent;
+                copyBtn.disabled = true;
+                try {
+                    await copyTextToClipboard(report);
+                    copyBtn.textContent = "Copied";
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                        copyBtn.disabled = false;
+                    }, 1200);
+                } catch (err) {
+                    console.warn("Failed to copy line profiling report", err);
+                    copyBtn.textContent = "Copy Failed";
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                        copyBtn.disabled = false;
+                    }, 1800);
+                }
+            },
         });
         const downloadBtn = createElement("button", {
             className:
                 "px-3 py-2 rounded bg-[#2d6cdf] text-white hover:bg-[#2458b8]",
             text: "Download",
             onClick: () => {
-                const blob = new Blob([reportText || ""], { type: "text/plain" });
+                const blob = new Blob([report], { type: "text/plain" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
