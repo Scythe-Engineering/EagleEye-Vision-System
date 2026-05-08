@@ -39,6 +39,7 @@ class RustModuleBuilder:
         """Initialize the builder with the root directory."""
         self.root_dir = root_dir
         self.modules_dir = root_dir / "modules"
+        self.repo_root = root_dir.parents[1]
         self.build_cache_file = root_dir / ".build_cache.json"
         self.CARGO_TOML_FILENAME = "Cargo.toml"
         self.logger = logger
@@ -74,6 +75,14 @@ class RustModuleBuilder:
     def _find_executable(self, executable: str, env: dict) -> str | None:
         """Resolve an executable against the builder's normalized PATH."""
         return shutil.which(executable, path=env.get("PATH"))
+
+    def _python_command(self) -> list[str]:
+        """Return the interpreter command for the active backend environment."""
+        return [sys.executable]
+
+    def _maturin_command(self) -> list[str]:
+        """Run maturin through Python to avoid uv parsing a stale pyproject.toml."""
+        return [*self._python_command(), "-m", "maturin"]
 
     def _log(self, message: str) -> None:
         """Log a message using the logger if available, otherwise print."""
@@ -165,7 +174,7 @@ class RustModuleBuilder:
             return False
 
         result = subprocess.run(
-            ["uv", "run", "maturin", "develop"],
+            [*self._maturin_command(), "develop"],
             cwd=module_dir,
             capture_output=True,
             text=True,
@@ -192,8 +201,8 @@ class RustModuleBuilder:
 
         try:
             result = subprocess.run(
-                ["uv", "run", "python", "-c", f"import {module_name}"],
-                cwd=self.root_dir.parent,  # Run from workspace root
+                [*self._python_command(), "-c", f"import {module_name}"],
+                cwd=self.repo_root,  # Run from workspace root
                 capture_output=True,
                 text=True,
                 env=self._get_clean_env(),
@@ -248,7 +257,7 @@ class RustModuleBuilder:
         if build_script.exists():
             # Run module-specific build script
             result = subprocess.run(
-                ["uv", "run", "python", str(build_script)],
+                [*self._python_command(), str(build_script)],
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
@@ -260,7 +269,7 @@ class RustModuleBuilder:
                 return False
 
             result = subprocess.run(
-                ["uv", "run", "maturin", "develop"],
+                [*self._maturin_command(), "develop"],
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
@@ -312,8 +321,8 @@ class RustModuleBuilder:
             )
 
             result = subprocess.run(
-                ["uv", "run", "maturin", "--version"],
-                cwd=self.root_dir.parent,
+                [*self._maturin_command(), "--version"],
+                cwd=self.repo_root,
                 capture_output=True,
                 text=True,
                 env=env,
@@ -326,7 +335,7 @@ class RustModuleBuilder:
                     self._log(f"{Colors.RED}maturin error:{Colors.RESET}")
                     self._log(result.stderr)
                 self._log(
-                    f"{Colors.RED}Run `uv sync` to install project build dependencies.{Colors.RESET}"
+                    f"{Colors.RED}Run `uv sync` to install project build dependencies, or install maturin in the active virtualenv.{Colors.RESET}"
                 )
                 return False
 
