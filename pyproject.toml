@@ -27,7 +27,6 @@ dependencies = [
   "pydantic",
   "mypy",
   "psutil",
-  "apriltag-fast-temporal",
   "memryx; sys_platform == 'linux'",
 ]
 
