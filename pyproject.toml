@@ -31,18 +31,6 @@ dependencies = [
   "memryx; sys_platform == 'linux'",
 ]
 
-[tool.uv.sources]
-apriltag-fast-temporal = { path = "apriltag_benchmarking/fast_temporal_custom_rust", editable = true }
-memryx = { index = "memryx" }
-torch = [
-    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux'"}
-]
-torchvision = [
-    { index = "pytorch-cuda", marker = "sys_platform == 'win32'" },
-    { index = "pytorch-cpu", marker = "sys_platform == 'linux'"}
-]
-
 [[tool.uv.index]]
 name = "memryx"
 url = "https://developer.memryx.com/pip"
