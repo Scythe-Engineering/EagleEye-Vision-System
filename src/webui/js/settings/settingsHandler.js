@@ -1,5 +1,6 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { setNetworkTablesConnected } from "../ui/connectionStatus.js";
+import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
 
 // Handles loading, rendering, and saving settings for the web UI.
 
@@ -145,7 +146,7 @@ export function saveSettings() {
             viewStreamDownscale < 0.1 ||
             viewStreamDownscale > 1
         ) {
-            alert("Stream downscale must be between 0.1 and 1.");
+            showWarning("Stream downscale must be between 0.1 and 1.");
             return;
         }
 
@@ -167,13 +168,13 @@ export function saveSettings() {
             );
 
             if (response.ok) {
-                alert("Settings have been saved!");
+                showSuccess("Settings have been saved!");
             } else {
-                alert("Failed to save settings on the server.");
+                showDanger("Failed to save settings on the server.");
             }
         } catch (error) {
             console.error("Error saving settings:", error);
-            alert("An error occurred while saving settings.");
+            showDanger("An error occurred while saving settings.");
         }
     };
 
