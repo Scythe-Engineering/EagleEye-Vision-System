@@ -1,0 +1,56 @@
+{
+  "data_root": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmark_data",
+  "detector_key": "fast-temporal-custom-rust-corners",
+  "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_fast_temporal_custom_rust_corners.json",
+  "results": {
+    "detector": "fast-temporal-custom-rust-apriltags",
+    "frames": 2400,
+    "total_time_s": 37.73277670006064,
+    "detections": 15019,
+    "ground_truth_visible": 15952,
+    "true_positives": 14319,
+    "false_positives": 700,
+    "false_negatives": 1633,
+    "fps": 63.60517857134386,
+    "avg_ms_per_frame": 15.721990291691933,
+    "precision": 0.9533923696650909,
+    "recall": 0.8976303911735206,
+    "pose_error_m": {
+      "mean": 0.852068927947918,
+      "median": 0.08184700165844885,
+      "rmse": 2.481503862370384,
+      "max": 22.666096247770593
+    },
+    "center_error_px": {
+      "mean": 7.6672601695570135,
+      "median": 0.2602880641133011,
+      "rmse": 19.968738326521173,
+      "max": 156.544488631601
+    },
+    "corner_error_px": {
+      "mean": 22.193154492376,
+      "median": 13.243900092797514,
+      "rmse": 33.286678007654,
+      "max": 195.49588750459242
+    },
+    "acceleration": {
+      "mean_roi_coverage": 0.4504237907503858,
+      "min_roi_coverage": 0.0,
+      "max_roi_coverage": 1.0,
+      "mean_regions": 5.2675,
+      "pupil_full_frame_calls": 891,
+      "fallback_frames": 5,
+      "custom_primary_frames": 1509,
+      "mean_verified_tags_per_custom_frame": 7.2418820410868125,
+      "verify_modes": "corner_subpix,warp_contrast",
+      "oracle_pose_upper_bound": 0,
+      "no_bitwise_id_decode": 1,
+      "photometric_refine_enabled": 0,
+      "photometric_extra_iterations_total": 0,
+      "pose_source": "solvepnp_corners",
+      "optical_tracking_mode": "corners",
+      "keyframe_interval": 10,
+      "rust_warp_engine": 1
+    }
+  }
+}

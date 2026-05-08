@@ -74,7 +74,7 @@ class DatasetConfig:
 
     min_tags: int = 18
     max_tags: int = 32
-    tag_size_m: float = 0.24
+    tag_size_m: float = 0.48
     max_tag_tilt_deg: float = 6.0
     tag_surface_gap_m: float = 0.03
 
@@ -410,13 +410,17 @@ def set_image_output_settings(
     image_settings = scene.render.image_settings
     file_format_property = image_settings.bl_rna.properties["file_format"]
     available_formats = {item.identifier for item in file_format_property.enum_items}
-    static_formats = {item.identifier for item in file_format_property.enum_items_static}
+    static_formats = {
+        item.identifier for item in file_format_property.enum_items_static
+    }
 
     if preferred_format in available_formats:
         # Work around Blender contexts where the dynamic enum lists PNG but the
         # current file-format enum accepts only FFMPEG until the filepath suffix
         # makes Blender refresh the image-output enum.
-        scene.render.filepath = str(Path(scene.render.filepath or "render.png").with_suffix(".png"))
+        scene.render.filepath = str(
+            Path(scene.render.filepath or "render.png").with_suffix(".png")
+        )
         image_settings.file_format = preferred_format
     else:
         raise RuntimeError(

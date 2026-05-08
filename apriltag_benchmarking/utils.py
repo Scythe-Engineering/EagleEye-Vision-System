@@ -105,6 +105,135 @@ def iter_sequence_metadata(data_root: Path) -> Iterable[tuple[Path, dict[str, An
 
 
 @profile
+def estimate_world_from_cv_camera_from_detections(
+    detections: list[TagDetection],
+    all_tags: list[GroundTruthTag],
+    intrinsics: CameraIntrinsics,
+    previous_world_from_cv_camera: np.ndarray | None = None,
+    robust: bool = False,
+) -> np.ndarray | None:
+    """Estimate world-from-OpenCV-camera pose from current detections only."""
+    tags_by_key = {(str(tag.tag_family), int(tag.tag_id)): tag for tag in all_tags}
+    visible_by_key = {
+        (str(tag.tag_family), int(tag.tag_id)): tag
+        for tag in all_tags
+        if np.all(np.isfinite(tag.corners_image_px))
+    }
+    object_points: list[np.ndarray] = []
+    image_points: list[np.ndarray] = []
+    for det in detections:
+        key = (str(det.tag_family), int(det.tag_id))
+        tag = tags_by_key.get(key)
+        visible_tag = visible_by_key.get(key)
+        if tag is None or tag.corners_world is None or visible_tag is None:
+            continue
+        center_image = np.asarray(visible_tag.center_image_px, dtype=np.float64).reshape(1, 2)
+        # Metadata corners describe the full rendered 10x10 texture plane, while
+        # pupil/custom detected corners describe the black-border payload square.
+        # Validate against the same approximate payload-square model used for
+        # solvePnP and temporal projection.
+        visible_payload_corners = center_image + (
+            np.asarray(visible_tag.corners_image_px, dtype=np.float64).reshape(4, 2) - center_image
+        ) * 0.78
+        det_corners = np.asarray(det.corners, dtype=float).reshape(4, 2)
+        center_error = float(np.linalg.norm(np.asarray(det.center, dtype=float).reshape(2) - center_image.reshape(2)))
+        corner_error = min(
+            float(np.mean(np.linalg.norm(np.roll(det_corners, shift, axis=0) - visible_payload_corners, axis=1)))
+            for shift in range(4)
+        )
+        if center_error > 45.0 or corner_error > 45.0:
+            continue
+        try:
+            object_corners_full = np.asarray(tag.corners_world, dtype=np.float64).reshape(4, 3)
+            if tag.center_world is not None:
+                center_world = np.asarray(tag.center_world, dtype=np.float64).reshape(1, 3)
+                # pupil-apriltags corners correspond to the black-border payload
+                # square, not the full rendered 10x10 textured plane. Keep the
+                # pose-update object model consistent with detected corners.
+                object_corners = center_world + (object_corners_full - center_world) * 0.78
+            else:
+                object_corners = object_corners_full
+            image_corners = np.asarray(det.corners, dtype=np.float64).reshape(4, 2)
+        except (TypeError, ValueError):
+            continue
+        if not (np.all(np.isfinite(object_corners)) and np.all(np.isfinite(image_corners))):
+            continue
+        object_points.append(object_corners)
+        image_points.append(image_corners)
+    if not object_points:
+        return None
+    object_array = np.ascontiguousarray(np.concatenate(object_points, axis=0), dtype=np.float64).reshape(-1, 1, 3)
+    image_array = np.ascontiguousarray(np.concatenate(image_points, axis=0), dtype=np.float64).reshape(-1, 1, 2)
+    if object_array.shape[0] < 4 or image_array.shape[0] != object_array.shape[0]:
+        return None
+    camera_matrix = np.asarray(
+        [[intrinsics.fx, 0.0, intrinsics.cx], [0.0, intrinsics.fy, intrinsics.cy], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+    dist_coeffs = np.zeros((4, 1), dtype=np.float64)
+    rvec_guess = None
+    tvec_guess = None
+    use_guess = previous_world_from_cv_camera is not None
+    if use_guess:
+        camera_from_world = np.linalg.inv(np.asarray(previous_world_from_cv_camera, dtype=np.float64).reshape(4, 4))
+        rvec_guess, _ = cv2.Rodrigues(camera_from_world[:3, :3])
+        tvec_guess = camera_from_world[:3, 3].reshape(3, 1)
+    try:
+        if robust:
+            ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+                object_array,
+                image_array,
+                camera_matrix,
+                dist_coeffs,
+                rvec=rvec_guess,
+                tvec=tvec_guess,
+                useExtrinsicGuess=use_guess,
+                iterationsCount=100,
+                reprojectionError=8.0,
+                confidence=0.99,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+            if not ok or inliers is None or len(inliers) < 4:
+                return None
+            inlier_idx = inliers.reshape(-1)
+            ok, rvec, tvec = cv2.solvePnP(
+                object_array[inlier_idx],
+                image_array[inlier_idx],
+                camera_matrix,
+                dist_coeffs,
+                rvec=rvec,
+                tvec=tvec,
+                useExtrinsicGuess=True,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+        else:
+            inlier_idx = np.arange(object_array.shape[0])
+            ok, rvec, tvec = cv2.solvePnP(
+                object_array,
+                image_array,
+                camera_matrix,
+                dist_coeffs,
+                rvec=rvec_guess,
+                tvec=tvec_guess,
+                useExtrinsicGuess=use_guess,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+    except cv2.error:
+        return None
+    if not ok:
+        return None
+    projected, _ = cv2.projectPoints(object_array, rvec, tvec, camera_matrix, dist_coeffs)
+    errors = np.linalg.norm(projected.reshape(-1, 2) - image_array.reshape(-1, 2), axis=1)
+    inlier_errors = errors[inlier_idx]
+    if float(np.mean(inlier_errors)) > 12.0 or float(np.max(inlier_errors)) > 35.0:
+        return None
+    rotation_world_to_camera, _ = cv2.Rodrigues(rvec)
+    world_from_camera = np.eye(4, dtype=np.float64)
+    world_from_camera[:3, :3] = rotation_world_to_camera.T
+    world_from_camera[:3, 3] = (-rotation_world_to_camera.T @ tvec.reshape(3, 1)).reshape(3)
+    return world_from_camera
+
+
 def blender_world_to_cv_camera(
     camera_matrix_world: list[list[float]], point_world: list[float]
 ) -> np.ndarray:

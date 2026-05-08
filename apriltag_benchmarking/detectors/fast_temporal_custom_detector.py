@@ -2,10 +2,9 @@
 
 This module implements a deliberately non-deployed benchmark path:
 
-- **Oracle pose (upper bound)**: Each frame uses ``prepare_frame`` with synthetic
-  metadata ``camera_matrix_world`` so projected tag quads match ground truth
-  camera motion. This measures how fast a temporal-ROI + custom verifier stack
-  could run if pose were perfect, not a realistic on-robot tracker.
+- **Temporal pose input**: Each frame uses only the camera pose estimated from
+  previous-frame detections. Sequence starts and failed pose updates fall back to
+  full-frame pupil detection.
 
 - **No true AprilTag ID decode**: Expected ``tag_family`` / ``tag_id`` come from
   the known layout (``all_tags``). The verifier only checks that the image
@@ -35,36 +34,25 @@ def _world_points_to_image_pixels(
     points_world_m: np.ndarray,
     camera_matrix_world_blender: np.ndarray,
     intrinsics: CameraIntrinsics,
-) -> np.ndarray:
-    """Projects 3D world points into pixel coordinates using the Blender camera matrix.
-
-    Args:
-        points_world_m: Array of shape ``(n, 3)`` with world-space points in meters.
-        camera_matrix_world_blender: ``4x4`` Blender ``world`` from ``camera`` matrix.
-        intrinsics: Pinhole intrinsics for the rendered image.
-
-    Returns:
-        Array of shape ``(n, 2)`` with floating-point pixel coordinates ``(u, v)``.
-    """
+) -> tuple[np.ndarray, np.ndarray]:
+    """Projects world points and returns pixels plus OpenCV camera-space depth."""
     blender_to_cv_local = np.diag([1.0, -1.0, -1.0, 1.0]).astype(np.float64)
     world_from_cv_camera = np.asarray(camera_matrix_world_blender, dtype=np.float64) @ blender_to_cv_local
     camera_from_world = np.linalg.inv(world_from_cv_camera)
-    rotation_world_to_camera = camera_from_world[:3, :3]
-    translation_world_to_camera = camera_from_world[:3, 3].reshape(3, 1)
-    rotation_vector, _ = cv2.Rodrigues(rotation_world_to_camera)
-    distortion = np.zeros((1, 5), dtype=np.float64)
+    points_world_h = np.concatenate(
+        [points_world_m.reshape(-1, 3).astype(np.float64), np.ones((points_world_m.reshape(-1, 3).shape[0], 1))],
+        axis=1,
+    )
+    points_camera = (camera_from_world @ points_world_h.T).T[:, :3]
+    z_camera = points_camera[:, 2].copy()
     camera_matrix = np.asarray(
         [[intrinsics.fx, 0.0, intrinsics.cx], [0.0, intrinsics.fy, intrinsics.cy], [0.0, 0.0, 1.0]],
         dtype=np.float64,
     )
-    projected, _ = cv2.projectPoints(
-        points_world_m.reshape(-1, 1, 3).astype(np.float64),
-        rotation_vector,
-        translation_world_to_camera,
-        camera_matrix,
-        distortion,
-    )
-    return projected.reshape(-1, 2)
+    pixels = np.empty((points_camera.shape[0], 2), dtype=np.float64)
+    pixels[:, 0] = intrinsics.fx * (points_camera[:, 0] / points_camera[:, 2]) + intrinsics.cx
+    pixels[:, 1] = intrinsics.fy * (points_camera[:, 1] / points_camera[:, 2]) + intrinsics.cy
+    return pixels, z_camera
 
 
 def _quad_area_pixels(corners_xy: np.ndarray) -> float:
@@ -196,7 +184,16 @@ def verify_warp_border_contrast(
     border_mean = float(np.mean(border_values))
     inner_mean = float(np.mean(inner_values))
     inner_std = float(np.std(inner_values))
-    return (border_mean > inner_mean + min_border_delta) and (inner_std > min_inner_std)
+    border_std = float(np.std(border_values))
+    # The original prototype assumed a bright outer margin. Real AprilTag crops
+    # can contain either the white margin or the black payload border depending
+    # on which quad is being tracked, so accept either contrast polarity while
+    # still requiring a textured interior. A low-variance border is an extra
+    # AprilTag-like cue, but keep it permissive for motion-blurred frames.
+    mean_delta = abs(border_mean - inner_mean)
+    border_is_coherent = border_std < max(45.0, inner_std * 1.8)
+    has_tag_like_contrast = mean_delta > min_border_delta or inner_std > min_inner_std * 1.35
+    return has_tag_like_contrast and inner_std > min_inner_std * 0.55 and border_is_coherent
 
 
 def refine_corners_subpix(
@@ -304,18 +301,21 @@ class FastTemporalCustomAprilTagDetector:
         min_region_size_px: int = 28,
         merge_overlapping_rois: bool = True,
         min_detection_count: int | None = 1,
-        verify_modes: str = "warp_contrast,corner_subpix",
+        verify_modes: str = "corner_subpix,warp_contrast",
         warp_canonical_size: int = 48,
         warp_min_border_delta: float = 6.0,
         warp_min_inner_std: float = 7.0,
         subpix_window_half_size: int = 5,
         subpix_max_iterations: int = 40,
         subpix_epsilon: float = 0.01,
+        subpix_max_shift_px: float = 4.0,
         contour_max_mean_error_px: float = 18.0,
         contrast_gate_min_range: float = 18.0,
         contrast_gate_patch_radius_px: int = 7,
         enable_photometric_refine: bool = False,
-        pose_source: str = "oracle_center_world",
+        pose_source: str = "solvepnp_corners",
+        optical_tracking_mode: str = "tag_plane",
+        keyframe_interval: int = 10,
     ) -> None:
         self.families = str(families)
         self.padding_factor = float(padding_factor)
@@ -330,6 +330,7 @@ class FastTemporalCustomAprilTagDetector:
         self.subpix_window_half_size = int(subpix_window_half_size)
         self.subpix_max_iterations = int(subpix_max_iterations)
         self.subpix_epsilon = float(subpix_epsilon)
+        self.subpix_max_shift_px = float(subpix_max_shift_px)
         self.contour_max_mean_error_px = float(contour_max_mean_error_px)
         self.contrast_gate_min_range = float(contrast_gate_min_range)
         self.contrast_gate_patch_radius_px = int(contrast_gate_patch_radius_px)
@@ -337,6 +338,11 @@ class FastTemporalCustomAprilTagDetector:
         if pose_source not in ("oracle_center_world", "solvepnp_corners"):
             raise ValueError("pose_source must be oracle_center_world or solvepnp_corners")
         self.pose_source = str(pose_source)
+        if optical_tracking_mode not in ("tag_plane", "corners", "none"):
+            raise ValueError("optical_tracking_mode must be tag_plane, corners, or none")
+        self.optical_tracking_mode = str(optical_tracking_mode)
+        self.keyframe_interval = max(0, int(keyframe_interval))
+        self._frames_since_keyframe = 0
         self._full_pupil = PupilAprilTagDetector(
             families=families,
             nthreads=nthreads,
@@ -347,6 +353,9 @@ class FastTemporalCustomAprilTagDetector:
         )
         self._intrinsics: CameraIntrinsics | None = None
         self._camera_matrix_world: np.ndarray | None = None
+        self._previous_world_from_cv_camera: np.ndarray | None = None
+        self._current_world_from_cv_camera: np.ndarray | None = None
+        self._has_pose_for_next_frame = False
         self._layout_tags: list[GroundTruthTag] = []
         self._last_sequence: str | None = None
         self._sequence_requires_full_pupil: bool = True
@@ -357,22 +366,78 @@ class FastTemporalCustomAprilTagDetector:
         self._custom_accept_frames = 0
         self._verified_tag_count_total = 0
         self._photometric_iterations_total = 0
+        self._previous_gray: np.ndarray | None = None
+        self._previous_tag_corners: dict[tuple[str, int], np.ndarray] = {}
+        self._lk_grid_side = 7
+        self.last_regions: list[tuple[int, int, int, int]] = []
+        self.last_raw_regions: list[tuple[int, int, int, int]] = []
+        self.last_projected_tags: list[tuple[str, int, np.ndarray]] = []
 
     def prepare_frame(
         self,
         intrinsics: CameraIntrinsics,
         all_tags: Sequence[GroundTruthTag],
-        camera_matrix_world: np.ndarray,
+        camera_matrix_world: np.ndarray | None,
         *,
         sequence: str | None = None,
     ) -> None:
-        """Caches oracle pose and layout for ROI projection; resets per-sequence state."""
+        """Caches intrinsics/layout; temporal pose is supplied by previous detections."""
         if sequence is not None and sequence != self._last_sequence:
             self._last_sequence = sequence
             self._sequence_requires_full_pupil = True
+            self._has_pose_for_next_frame = False
+            self._camera_matrix_world = None
+            self._previous_world_from_cv_camera = None
+            self._current_world_from_cv_camera = None
+            self._clear_optical_flow_tracks()
+            self._frames_since_keyframe = 0
         self._intrinsics = intrinsics
-        self._camera_matrix_world = np.asarray(camera_matrix_world, dtype=np.float64).reshape(4, 4)
         self._layout_tags = list(all_tags)
+
+    def update_pose_from_detections(
+        self,
+        world_from_cv_camera: np.ndarray | None,
+        *,
+        sequence: str | None = None,
+    ) -> None:
+        """Stores a predicted next-frame camera pose for temporal ROIs."""
+        if sequence is not None and sequence != self._last_sequence:
+            self._last_sequence = sequence
+            self._sequence_requires_full_pupil = True
+            self._has_pose_for_next_frame = False
+            self._camera_matrix_world = None
+            self._previous_world_from_cv_camera = None
+            self._current_world_from_cv_camera = None
+            self._clear_optical_flow_tracks()
+            self._frames_since_keyframe = 0
+            return
+        if world_from_cv_camera is None:
+            self._has_pose_for_next_frame = False
+            self._camera_matrix_world = None
+            self._previous_world_from_cv_camera = None
+            self._current_world_from_cv_camera = None
+            self._sequence_requires_full_pupil = True
+            self._clear_optical_flow_tracks()
+            self._frames_since_keyframe = 0
+            return
+
+        world_from_cv_camera = np.asarray(world_from_cv_camera, dtype=np.float64).reshape(4, 4)
+        self._previous_world_from_cv_camera = self._current_world_from_cv_camera
+        self._current_world_from_cv_camera = world_from_cv_camera
+
+        predicted_world_from_cv_camera = world_from_cv_camera
+        if self._previous_world_from_cv_camera is not None:
+            # Constant-velocity pose prediction. Projecting frame N+1 with frame
+            # N's pose causes a global offset when the camera moves.
+            world_delta = world_from_cv_camera @ np.linalg.inv(self._previous_world_from_cv_camera)
+            predicted_world_from_cv_camera = world_delta @ world_from_cv_camera
+
+        cv_to_blender_local = np.diag([1.0, -1.0, -1.0, 1.0]).astype(np.float64)
+        self._camera_matrix_world = predicted_world_from_cv_camera @ cv_to_blender_local
+        self._has_pose_for_next_frame = True
+        self._sequence_requires_full_pupil = False
+        if hasattr(self, "_rust"):
+            self._rust.set_pose_blender_row_major(self._camera_matrix_world.reshape(16).tolist())
 
     def close(self) -> None:
         """Releases native pupil resources used for full-frame fallback."""
@@ -396,12 +461,185 @@ class FastTemporalCustomAprilTagDetector:
             "custom_primary_frames": int(self._custom_accept_frames),
             "mean_verified_tags_per_custom_frame": mean_verified_per_custom_frame,
             "verify_modes": ",".join(self.verify_modes),
-            "oracle_pose_upper_bound": 1,
+            "oracle_pose_upper_bound": 0,
             "no_bitwise_id_decode": 1,
             "photometric_refine_enabled": int(self.enable_photometric_refine),
             "photometric_extra_iterations_total": int(self._photometric_iterations_total),
             "pose_source": self.pose_source,
+            "optical_tracking_mode": str(self.optical_tracking_mode),
+            "keyframe_interval": int(self.keyframe_interval),
         }
+
+    def _clear_optical_flow_tracks(self) -> None:
+        """Drops image-space temporal tracks when a sequence/pose is reset."""
+        self._previous_gray = None
+        self._previous_tag_corners = {}
+
+    def _remember_optical_flow_tracks(
+        self,
+        gray_u8: np.ndarray,
+        detections: Sequence[TagDetection],
+    ) -> None:
+        """Stores accepted/full detections as anchors for next-frame planar flow."""
+        self._previous_gray = gray_u8.copy()
+        self._previous_tag_corners = {
+            (str(det.tag_family), int(det.tag_id)): np.asarray(det.corners, dtype=np.float64)
+            .reshape(4, 2)
+            .copy()
+            for det in detections
+        }
+
+    def _sample_quad_plane_points(self, corners_xy: np.ndarray) -> np.ndarray:
+        """Returns a stable grid of points on the previous tag plane for LK tracking."""
+        grid_side = max(3, int(self._lk_grid_side))
+        canonical = []
+        for y in np.linspace(0.0, 1.0, grid_side):
+            for x in np.linspace(0.0, 1.0, grid_side):
+                canonical.append([x, y])
+        canonical_xy = np.asarray(canonical, dtype=np.float32).reshape(-1, 1, 2)
+        square = np.asarray([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float32)
+        transform = cv2.getPerspectiveTransform(square, corners_xy.astype(np.float32))
+        return cv2.perspectiveTransform(canonical_xy, transform).reshape(-1, 2).astype(np.float32)
+
+    def _track_corners_with_optical_flow(
+        self,
+        current_gray_u8: np.ndarray,
+        previous_corners_xy: np.ndarray,
+    ) -> np.ndarray | None:
+        """Tracks only the four tag corners with LK optical flow."""
+        previous_gray = self._previous_gray
+        if previous_gray is None or previous_gray.shape[:2] != current_gray_u8.shape[:2]:
+            return None
+        next_points, status, errors = cv2.calcOpticalFlowPyrLK(
+            previous_gray,
+            current_gray_u8,
+            previous_corners_xy.astype(np.float32).reshape(-1, 1, 2),
+            None,
+            winSize=(25, 25),
+            maxLevel=3,
+            criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+            minEigThreshold=1e-4,
+        )
+        if next_points is None or status is None or int(np.count_nonzero(status)) < 4:
+            return None
+        if errors is not None and np.any(errors.reshape(-1) > 90.0):
+            return None
+        projected = next_points.reshape(4, 2).astype(np.float64)
+        if not np.all(np.isfinite(projected)):
+            return None
+        old_area = _quad_area_pixels(previous_corners_xy)
+        new_area = _quad_area_pixels(projected)
+        if (
+            old_area < 4.0
+            or new_area < 4.0
+            or new_area > old_area * 4.0
+            or new_area < old_area * 0.20
+        ):
+            return None
+        height, width = current_gray_u8.shape[:2]
+        max_motion = 0.60 * float(max(width, height))
+        if float(np.max(np.linalg.norm(projected - previous_corners_xy, axis=1))) > max_motion:
+            return None
+        return projected
+
+    def _track_plane_with_optical_flow(
+        self,
+        current_gray_u8: np.ndarray,
+        previous_corners_xy: np.ndarray,
+    ) -> np.ndarray | None:
+        """Tracks many points on a tag plane and projects the previous corners by a RANSAC homography."""
+        previous_gray = self._previous_gray
+        if previous_gray is None or previous_gray.shape[:2] != current_gray_u8.shape[:2]:
+            return None
+        prev_points = self._sample_quad_plane_points(previous_corners_xy)
+        next_points, status, errors = cv2.calcOpticalFlowPyrLK(
+            previous_gray,
+            current_gray_u8,
+            prev_points.reshape(-1, 1, 2),
+            None,
+            winSize=(21, 21),
+            maxLevel=3,
+            criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+            flags=0,
+            minEigThreshold=1e-4,
+        )
+        if next_points is None or status is None:
+            return None
+        status_mask = status.reshape(-1).astype(bool)
+        if errors is not None:
+            # Keep this permissive: LK's error scale varies with blur/exposure,
+            # and RANSAC below removes geometrically inconsistent points.
+            status_mask &= errors.reshape(-1) < 90.0
+        height, width = current_gray_u8.shape[:2]
+        tracked = next_points.reshape(-1, 2)
+        status_mask &= (tracked[:, 0] >= -4.0) & (tracked[:, 0] < width + 4.0)
+        status_mask &= (tracked[:, 1] >= -4.0) & (tracked[:, 1] < height + 4.0)
+        if int(np.count_nonzero(status_mask)) < 8:
+            return None
+        homography, inliers = cv2.findHomography(
+            prev_points[status_mask].astype(np.float32),
+            tracked[status_mask].astype(np.float32),
+            cv2.RANSAC,
+            5.0,
+        )
+        if homography is None or inliers is None:
+            return None
+        inlier_ratio = float(np.count_nonzero(inliers)) / float(inliers.size)
+        if inlier_ratio < 0.40:
+            return None
+        projected = cv2.perspectiveTransform(
+            previous_corners_xy.astype(np.float32).reshape(-1, 1, 2),
+            homography,
+        ).reshape(4, 2).astype(np.float64)
+        if not np.all(np.isfinite(projected)):
+            return None
+        old_area = _quad_area_pixels(previous_corners_xy)
+        new_area = _quad_area_pixels(projected)
+        if (
+            old_area < 4.0
+            or new_area < 4.0
+            or new_area > old_area * 4.0
+            or new_area < old_area * 0.20
+        ):
+            return None
+        max_motion = 0.60 * float(max(width, height))
+        if float(np.max(np.linalg.norm(projected - previous_corners_xy, axis=1))) > max_motion:
+            return None
+        return projected
+
+    def _flow_projected_layout(
+        self,
+        gray_u8: np.ndarray,
+        pose_projected: Sequence[tuple[str, int, np.ndarray]],
+    ) -> list[tuple[str, int, np.ndarray]]:
+        """Uses tag-plane optical flow for known previous tags, with pose projections as fallback."""
+        pose_by_key = {(str(family), int(tag_id)): corners for family, tag_id, corners in pose_projected}
+        tracked: list[tuple[str, int, np.ndarray]] = []
+        used: set[tuple[str, int]] = set()
+        for key, previous_corners in self._previous_tag_corners.items():
+            mode = str(getattr(self, "optical_tracking_mode", "tag_plane"))
+            if mode == "none":
+                tracked_corners = None
+            elif mode == "corners":
+                tracked_corners = self._track_corners_with_optical_flow(gray_u8, previous_corners)
+            else:
+                tracked_corners = self._track_plane_with_optical_flow(gray_u8, previous_corners)
+            if tracked_corners is None:
+                continue
+            if key in pose_by_key:
+                pose_corners = pose_by_key[key]
+                mean_delta = float(np.mean(np.linalg.norm(tracked_corners - pose_corners, axis=1)))
+                max_span = float(np.max(np.linalg.norm(pose_corners - np.mean(pose_corners, axis=0), axis=1)))
+                if mean_delta > max(45.0, 1.4 * max_span):
+                    continue
+            family, tag_id = key
+            tracked.append((family, int(tag_id), tracked_corners))
+            used.add(key)
+        for family, tag_id, corners in pose_projected:
+            key = (str(family), int(tag_id))
+            if key not in used:
+                tracked.append((str(family), int(tag_id), corners))
+        return tracked[: self.max_regions]
 
     def detect(self, image_bgr: np.ndarray, intrinsics: CameraIntrinsics, tag_size_m: float) -> list[TagDetection]:
         """Runs full-image pupil on sequence start or fallback; otherwise custom ROI verification."""
@@ -413,21 +651,38 @@ class FastTemporalCustomAprilTagDetector:
         )
         dist_coeffs = np.zeros((4, 1), dtype=np.float64)
 
-        if self._sequence_requires_full_pupil or self._intrinsics is None or self._camera_matrix_world is None:
+        force_keyframe = self.keyframe_interval > 0 and self._frames_since_keyframe >= self.keyframe_interval
+        if (
+            force_keyframe
+            or self._sequence_requires_full_pupil
+            or self._intrinsics is None
+            or self._camera_matrix_world is None
+            or not self._has_pose_for_next_frame
+        ):
             self._pupil_full_frame_calls += 1
             self._sequence_requires_full_pupil = False
             self._coverage_values.append(1.0)
             self._region_counts.append(1)
-            return self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self.last_regions = [(0, 0, width, height)]
+            self.last_raw_regions = [(0, 0, width, height)]
+            self.last_projected_tags = []
+            detections = self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self._remember_optical_flow_tracks(gray, detections)
+            self._frames_since_keyframe = 0
+            return detections
 
-        projected = self._projected_layout(width, height)
+        pose_projected = self._projected_layout(width, height)
+        projected = self._flow_projected_layout(gray, pose_projected)
+        self.last_projected_tags = [(family, int(tag_id), corners.copy()) for family, tag_id, corners in projected]
         per_tag_rois = [
             _axis_aligned_roi_from_quad(corners, width, height, self.padding_factor, self.min_region_size_px)
             for _family, _tag_id, corners in projected
         ]
+        self.last_raw_regions = list(per_tag_rois)
         regions_for_coverage = (
             _merge_axis_aligned_regions(list(per_tag_rois)) if self.merge_overlapping_rois else list(per_tag_rois)
         )
+        self.last_regions = list(regions_for_coverage)
         image_area = max(1, width * height)
         roi_area = sum(region[2] * region[3] for region in regions_for_coverage)
         self._coverage_values.append(min(1.0, roi_area / float(image_area)))
@@ -478,10 +733,17 @@ class FastTemporalCustomAprilTagDetector:
             self._fallback_frames += 1
             self._coverage_values[-1] = 1.0
             self._region_counts[-1] = 1
-            return self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self.last_regions = [(0, 0, width, height)]
+            self.last_raw_regions = [(0, 0, width, height)]
+            detections = self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self._remember_optical_flow_tracks(gray, detections)
+            self._frames_since_keyframe = 0
+            return detections
 
         self._custom_accept_frames += 1
         self._verified_tag_count_total += len(custom_detections)
+        self._remember_optical_flow_tracks(gray, custom_detections)
+        self._frames_since_keyframe += 1
         return custom_detections
 
     def _projected_layout(self, image_width: int, image_height: int) -> list[tuple[str, int, np.ndarray]]:
@@ -494,9 +756,19 @@ class FastTemporalCustomAprilTagDetector:
         for tag in self._layout_tags:
             if tag.corners_world is None:
                 continue
-            corners_world = np.asarray(tag.corners_world, dtype=np.float64).reshape(4, 3)
-            corners_image = _world_points_to_image_pixels(corners_world, camera_matrix_world, intrinsics)
-            if not np.all(np.isfinite(corners_image)):
+            corners_world_full = np.asarray(tag.corners_world, dtype=np.float64).reshape(4, 3)
+            if tag.center_world is not None:
+                center_world = np.asarray(tag.center_world, dtype=np.float64).reshape(1, 3)
+                corners_world = center_world + (corners_world_full - center_world) * 0.78
+            else:
+                corners_world = corners_world_full
+            corners_image, z_camera = _world_points_to_image_pixels(corners_world, camera_matrix_world, intrinsics)
+            if not (np.all(np.isfinite(corners_image)) and np.all(np.isfinite(z_camera))):
+                continue
+            # OpenCV camera coordinates look down +Z. Reject tags with any
+            # projected payload corner behind/too close to the camera; otherwise
+            # perspective division mirrors them into plausible-looking screen ROIs.
+            if np.any(z_camera <= 1e-4):
                 continue
             margin = 0.02 * float(max(image_width, image_height))
             inside = np.sum(
@@ -572,6 +844,9 @@ class FastTemporalCustomAprilTagDetector:
                     self.subpix_max_iterations,
                     self.subpix_epsilon,
                 )
+                shift_px = np.linalg.norm(refined - corners_image, axis=1)
+                if np.any(shift_px > self.subpix_max_shift_px):
+                    return None
                 working_local = refined - np.asarray([region_x, region_y], dtype=np.float64)
             elif mode == "contour_quad":
                 fitted = verify_contour_quad(crop, working_local, self.contour_max_mean_error_px)
@@ -598,6 +873,9 @@ class FastTemporalCustomAprilTagDetector:
                     max(10, self.subpix_max_iterations // 2),
                     self.subpix_epsilon * 0.5,
                 )
+                shift_px = np.linalg.norm(refined - corners_image, axis=1)
+                if np.any(shift_px > self.subpix_max_shift_px):
+                    return None
                 working_local = refined - np.asarray([region_x, region_y], dtype=np.float64)
                 self._photometric_iterations_total += 1
         return working_local + np.asarray([region_x, region_y], dtype=np.float64)

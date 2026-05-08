@@ -67,20 +67,36 @@ class TemporalPupilAprilTagDetector:
         self.last_regions: list[tuple[int, int, int, int]] = []
         self._coverage_values: list[float] = []
         self._region_counts: list[int] = []
+        self._last_sequence: str | None = None
+        self._has_pose_for_next_frame = False
 
     def prepare_frame(
         self,
         intrinsics: CameraIntrinsics,
         all_tags: Sequence[GroundTruthTag],
-        camera_matrix_world: np.ndarray,
+        camera_matrix_world: np.ndarray | None,
         *,
         sequence: str | None = None,
     ) -> None:
+        if sequence is not None and sequence != self._last_sequence:
+            self._last_sequence = sequence
+            self._has_pose_for_next_frame = False
         self._ensure_accelerator(intrinsics, all_tags)
-        if self._accel is not None:
-            blender_to_cv_local = np.diag([1.0, -1.0, -1.0, 1.0])
-            world_from_cv_camera = np.asarray(camera_matrix_world, dtype=float) @ blender_to_cv_local
-            self._accel.back_propagate_input(world_from_cv_camera.astype(np.float32).reshape(-1).tolist())
+
+    def update_pose_from_detections(
+        self,
+        world_from_cv_camera: np.ndarray | None,
+        *,
+        sequence: str | None = None,
+    ) -> None:
+        if sequence is not None and sequence != self._last_sequence:
+            self._last_sequence = sequence
+            self._has_pose_for_next_frame = False
+        if self._accel is None or world_from_cv_camera is None:
+            self._has_pose_for_next_frame = False
+            return
+        self._accel.back_propagate_input(np.asarray(world_from_cv_camera, dtype=np.float32).reshape(-1).tolist())
+        self._has_pose_for_next_frame = True
 
     def _ensure_accelerator(self, intrinsics: CameraIntrinsics, all_tags: Sequence[GroundTruthTag]) -> None:
         layout_key = tuple(sorted((tag.tag_family, tag.tag_id) for tag in all_tags))
@@ -163,7 +179,7 @@ class TemporalPupilAprilTagDetector:
         return list(detections_by_key.values())
 
     def _regions(self, width: int, height: int) -> list[tuple[int, int, int, int]]:
-        if self._accel is None:
+        if self._accel is None or not self._has_pose_for_next_frame:
             return [(0, 0, width, height)]
         _crops, raw_regions = self._accel.process_frame(width=width, height=height)
         regions = []

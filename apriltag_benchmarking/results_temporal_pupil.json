@@ -5,39 +5,39 @@
   "results": {
     "detector": "temporal-pupil-apriltags",
     "frames": 2400,
-    "total_time_s": 18.56482049998067,
-    "detections": 12212,
-    "ground_truth_visible": 15753,
-    "true_positives": 12206,
+    "total_time_s": 36.64771790006125,
+    "detections": 11862,
+    "ground_truth_visible": 15952,
+    "true_positives": 11856,
     "false_positives": 6,
-    "false_negatives": 3547,
-    "fps": 129.27676839118908,
-    "avg_ms_per_frame": 7.735341874991946,
-    "precision": 0.9995086799868982,
-    "recall": 0.7748365390719228,
+    "false_negatives": 4096,
+    "fps": 65.48838884169616,
+    "avg_ms_per_frame": 15.269882458358854,
+    "precision": 0.9994941831057157,
+    "recall": 0.7432296890672017,
     "pose_error_m": {
-      "mean": 0.03778036723040037,
-      "median": 0.030628399339276954,
-      "rmse": 0.05546322524687961,
-      "max": 0.4107859129718586
+      "mean": 0.080090944380177,
+      "median": 0.0796026759351252,
+      "rmse": 0.08678923931213556,
+      "max": 0.4463766597407567
     },
     "center_error_px": {
-      "mean": 0.06359516883204315,
-      "median": 0.047519613289151996,
-      "rmse": 0.09817830420320037,
-      "max": 1.8154543386586643
+      "mean": 0.07702782134020139,
+      "median": 0.034728972348353385,
+      "rmse": 0.27445651064922144,
+      "max": 5.52536206618794
     },
     "corner_error_px": {
-      "mean": 7.517953242472628,
-      "median": 6.734281591586257,
-      "rmse": 8.262307070184105,
-      "max": 32.307459095352876
+      "mean": 14.15129236442593,
+      "median": 12.435275146839832,
+      "rmse": 15.682658092973092,
+      "max": 65.76928730688122
     },
     "acceleration": {
-      "mean_roi_coverage": 0.1653688333895962,
-      "min_roi_coverage": 0.03496141975308642,
-      "max_roi_coverage": 0.8318113425925926,
-      "mean_regions": 4.881666666666667
+      "mean_roi_coverage": 0.48325534838766715,
+      "min_roi_coverage": 0.062474922839506175,
+      "max_roi_coverage": 1.0,
+      "mean_regions": 2.2720833333333332
     }
   }
 }

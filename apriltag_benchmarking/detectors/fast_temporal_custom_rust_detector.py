@@ -60,11 +60,14 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
         subpix_window_half_size: int = 5,
         subpix_max_iterations: int = 40,
         subpix_epsilon: float = 0.01,
+        subpix_max_shift_px: float = 4.0,
         contour_max_mean_error_px: float = 18.0,
         contrast_gate_min_range: float = 18.0,
         contrast_gate_patch_radius_px: int = 7,
         enable_photometric_refine: bool = False,
-        pose_source: str = "oracle_center_world",
+        pose_source: str = "solvepnp_corners",
+        optical_tracking_mode: str = "tag_plane",
+        keyframe_interval: int = 10,
     ) -> None:
         if not _RUST_CORE_AVAILABLE:
             raise ImportError(
@@ -91,11 +94,14 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
             subpix_window_half_size=subpix_window_half_size,
             subpix_max_iterations=subpix_max_iterations,
             subpix_epsilon=subpix_epsilon,
+            subpix_max_shift_px=subpix_max_shift_px,
             contour_max_mean_error_px=contour_max_mean_error_px,
             contrast_gate_min_range=contrast_gate_min_range,
             contrast_gate_patch_radius_px=contrast_gate_patch_radius_px,
             enable_photometric_refine=enable_photometric_refine,
             pose_source=pose_source,
+            optical_tracking_mode=optical_tracking_mode,
+            keyframe_interval=keyframe_interval,
         )
         self._rust = _RustCoreType()
 
@@ -103,7 +109,7 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
         self,
         intrinsics: CameraIntrinsics,
         all_tags: Sequence[GroundTruthTag],
-        camera_matrix_world: np.ndarray,
+        camera_matrix_world: np.ndarray | None,
         *,
         sequence: str | None = None,
     ) -> None:
@@ -123,11 +129,18 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
                 continue
             tag_families.append(str(tag.tag_family))
             tag_ids.append(int(tag.tag_id))
-            corners_flat.extend(np.asarray(tag.corners_world, dtype=np.float64).reshape(12).tolist())
+            corners_world_full = np.asarray(tag.corners_world, dtype=np.float64).reshape(4, 3)
+            if tag.center_world is not None:
+                center_world = np.asarray(tag.center_world, dtype=np.float64).reshape(1, 3)
+                corners_world = center_world + (corners_world_full - center_world) * 0.78
+            else:
+                corners_world = corners_world_full
+            corners_flat.extend(corners_world.reshape(12).tolist())
         self._rust.set_layout(tag_families, tag_ids, corners_flat)
-        self._rust.set_pose_blender_row_major(
-            np.asarray(camera_matrix_world, dtype=np.float64).reshape(16).tolist()
-        )
+        if self._camera_matrix_world is not None:
+            self._rust.set_pose_blender_row_major(
+                np.asarray(self._camera_matrix_world, dtype=np.float64).reshape(16).tolist()
+            )
         self._rust.set_roi_params(
             float(self.padding_factor),
             int(self.max_regions),
@@ -156,21 +169,116 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
         )
         dist_coeffs = np.zeros((4, 1), dtype=np.float64)
 
-        if self._sequence_requires_full_pupil or self._intrinsics is None or self._camera_matrix_world is None:
+        force_keyframe = self.keyframe_interval > 0 and self._frames_since_keyframe >= self.keyframe_interval
+        if (
+            force_keyframe
+            or self._sequence_requires_full_pupil
+            or self._intrinsics is None
+            or self._camera_matrix_world is None
+            or not self._has_pose_for_next_frame
+        ):
             self._pupil_full_frame_calls += 1
             self._sequence_requires_full_pupil = False
             self._coverage_values.append(1.0)
             self._region_counts.append(1)
-            return self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self.last_regions = [(0, 0, width, height)]
+            self.last_raw_regions = [(0, 0, width, height)]
+            self.last_projected_tags = []
+            detections = self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self._remember_optical_flow_tracks(gray, detections)
+            self._frames_since_keyframe = 0
+            return detections
 
         gray_contiguous = np.ascontiguousarray(gray, dtype=np.uint8)
-        coverage, region_count = self._rust.merged_roi_coverage_fraction(gray_contiguous)
-        self._coverage_values.append(float(coverage))
-        self._region_counts.append(float(region_count))
+        pose_projected = self._projected_layout(width, height)
+        # Rust path owns optical tracking; start debug/ROI accounting from pose
+        # projections and replace with Rust-tracked accepted quads below.
+        projected = pose_projected
+        self.last_projected_tags = [(family, int(tag_id), corners.copy()) for family, tag_id, corners in projected]
+        per_tag_rois = [
+            self._roi_from_projected_corners(corners, width, height)
+            for _family, _tag_id, corners in projected
+        ]
+        self.last_raw_regions = list(per_tag_rois)
+        self.last_regions = self._merge_debug_regions(per_tag_rois)
+        image_area = max(1, width * height)
+        roi_area = sum(region[2] * region[3] for region in self.last_regions)
+        self._coverage_values.append(min(1.0, roi_area / float(image_area)))
+        self._region_counts.append(float(len(per_tag_rois)))
 
-        rust_rows = self._rust.process_frame(gray_contiguous)
         modes = self.verify_modes
-        use_subpix = "corner_subpix" in modes
+        if hasattr(self._rust, "track_and_verify_quads") and self._previous_gray is not None:
+            prev_families = [family for family, _tag_id in self._previous_tag_corners.keys()]
+            prev_ids = [int(tag_id) for _family, tag_id in self._previous_tag_corners.keys()]
+            prev_flat = []
+            for corners in self._previous_tag_corners.values():
+                prev_flat.extend(np.asarray(corners, dtype=np.float64).reshape(8).tolist())
+            pose_families = [str(family) for family, _tag_id, _corners in pose_projected]
+            pose_ids = [int(tag_id) for _family, tag_id, _corners in pose_projected]
+            pose_flat = []
+            for _family, _tag_id, corners in pose_projected:
+                pose_flat.extend(np.asarray(corners, dtype=np.float64).reshape(8).tolist())
+            rust_rows = self._rust.track_and_verify_quads(
+                np.ascontiguousarray(self._previous_gray, dtype=np.uint8),
+                gray_contiguous,
+                prev_families,
+                prev_ids,
+                prev_flat,
+                pose_families,
+                pose_ids,
+                pose_flat,
+                str(self.optical_tracking_mode),
+            )
+            projected = [(str(f), int(i), np.asarray(c, dtype=np.float64).reshape(4, 2)) for f, i, c in rust_rows]
+            self.last_projected_tags = [(family, int(tag_id), corners.copy()) for family, tag_id, corners in projected]
+            per_tag_rois = [self._roi_from_projected_corners(corners, width, height) for _family, _tag_id, corners in projected]
+            self.last_raw_regions = list(per_tag_rois)
+            self.last_regions = self._merge_debug_regions(per_tag_rois)
+            rust_rows = [(f, i, np.asarray(c, dtype=np.float64).reshape(8).tolist()) for f, i, c in rust_rows]
+        else:
+            rust_rows = None
+
+        warp_mode_index = modes.index("warp_contrast") if "warp_contrast" in modes else None
+        subpix_mode_index = modes.index("corner_subpix") if "corner_subpix" in modes else None
+        if rust_rows is None:
+            preverified_rows: list[tuple[str, int, list[float]]] = []
+            rows_for_rust: list[tuple[str, int, np.ndarray]] = []
+            for tag_family, tag_id, corners in projected:
+                corners_xy = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+                if subpix_mode_index is not None and (warp_mode_index is None or subpix_mode_index < warp_mode_index):
+                    if warp_mode_index is None and not verify_local_contrast_gate(
+                        gray,
+                        corners_xy,
+                        self.contrast_gate_patch_radius_px,
+                        self.contrast_gate_min_range,
+                    ):
+                        continue
+                    refined = refine_corners_subpix(
+                        gray,
+                        corners_xy,
+                        self.subpix_window_half_size,
+                        self.subpix_max_iterations,
+                        self.subpix_epsilon,
+                    )
+                    if np.any(np.linalg.norm(refined - corners_xy, axis=1) > self.subpix_max_shift_px):
+                        continue
+                    corners_xy = refined
+                    if warp_mode_index is None:
+                        preverified_rows.append((str(tag_family), int(tag_id), corners_xy.reshape(8).tolist()))
+                        continue
+                rows_for_rust.append((str(tag_family), int(tag_id), corners_xy))
+
+            tag_families = [family for family, _tag_id, _corners in rows_for_rust]
+            tag_ids = [tag_id for _family, tag_id, _corners in rows_for_rust]
+            corners_flat = []
+            for _family, _tag_id, corners in rows_for_rust:
+                corners_flat.extend(np.asarray(corners, dtype=np.float64).reshape(8).tolist())
+            if hasattr(self._rust, "process_projected_quads"):
+                rust_rows = self._rust.process_projected_quads(gray_contiguous, tag_families, tag_ids, corners_flat)
+            else:
+                rust_rows = self._rust.process_frame(gray_contiguous)
+            rust_rows = list(preverified_rows) + list(rust_rows)
+        use_subpix = subpix_mode_index is not None and (warp_mode_index is None or warp_mode_index < subpix_mode_index)
 
         custom_detections: list[TagDetection] = []
         dedup_keys: set[tuple[str, int]] = set()
@@ -188,13 +296,16 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
                         self.contrast_gate_min_range,
                     ):
                         continue
-                corners_xy = refine_corners_subpix(
+                refined = refine_corners_subpix(
                     gray,
                     corners_xy,
                     self.subpix_window_half_size,
                     self.subpix_max_iterations,
                     self.subpix_epsilon,
                 )
+                if np.any(np.linalg.norm(refined - corners_xy, axis=1) > self.subpix_max_shift_px):
+                    continue
+                corners_xy = refined
             if self.enable_photometric_refine:
                 corners_xy = refine_corners_subpix(
                     gray,
@@ -232,8 +343,35 @@ class FastTemporalCustomRustAprilTagDetector(FastTemporalCustomAprilTagDetector)
             self._fallback_frames += 1
             self._coverage_values[-1] = 1.0
             self._region_counts[-1] = 1.0
-            return self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self.last_regions = [(0, 0, width, height)]
+            self.last_raw_regions = [(0, 0, width, height)]
+            detections = self._full_pupil.detect(image_bgr, intrinsics, tag_size_m)
+            self._remember_optical_flow_tracks(gray, detections)
+            self._frames_since_keyframe = 0
+            return detections
 
         self._custom_accept_frames += 1
         self._verified_tag_count_total += len(custom_detections)
+        self._remember_optical_flow_tracks(gray, custom_detections)
+        self._frames_since_keyframe += 1
         return custom_detections
+
+    def _roi_from_projected_corners(
+        self,
+        corners: np.ndarray,
+        width: int,
+        height: int,
+    ) -> tuple[int, int, int, int]:
+        from .fast_temporal_custom_detector import _axis_aligned_roi_from_quad
+
+        return _axis_aligned_roi_from_quad(corners, width, height, self.padding_factor, self.min_region_size_px)
+
+    def _merge_debug_regions(
+        self,
+        regions: list[tuple[int, int, int, int]],
+    ) -> list[tuple[int, int, int, int]]:
+        from .fast_temporal_custom_detector import _merge_axis_aligned_regions
+
+        if not regions:
+            return []
+        return _merge_axis_aligned_regions(regions) if self.merge_overlapping_rois else list(regions)

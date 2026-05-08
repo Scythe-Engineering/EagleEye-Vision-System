@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import cv2
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -21,9 +22,43 @@ from .utils import (
     BenchmarkSummary,
     iter_frames,
     iter_sequence_metadata,
+    estimate_world_from_cv_camera_from_detections,
     match_by_family_id,
     read_image,
 )
+
+
+def _debug_draw_frame(
+    image: np.ndarray,
+    detections: list,
+    rois: list[tuple[int, int, int, int]],
+    output_path: Path,
+    label: str,
+    raw_rois: list[tuple[int, int, int, int]] | None = None,
+) -> None:
+    canvas = image.copy()
+    for x, y, w, h in raw_rois or []:
+        cv2.rectangle(canvas, (int(x), int(y)), (int(x + w), int(y + h)), (255, 0, 255), 1)
+    for x, y, w, h in rois:
+        cv2.rectangle(canvas, (int(x), int(y)), (int(x + w), int(y + h)), (0, 255, 255), 2)
+    for det in detections:
+        corners = np.asarray(det.corners, dtype=float).reshape(4, 2).astype(int)
+        cv2.polylines(canvas, [corners], True, (0, 255, 0), 2)
+        center = tuple(np.asarray(det.center, dtype=float).reshape(2).astype(int))
+        cv2.circle(canvas, center, 4, (0, 0, 255), -1)
+        cv2.putText(
+            canvas,
+            f"{det.tag_family}:{det.tag_id}",
+            (center[0] + 5, center[1] - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+    cv2.putText(canvas, label, (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), canvas)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = PROJECT_ROOT / "apriltag_benchmark_data"
@@ -32,7 +67,9 @@ DEFAULT_DETECTORS = [
     "pupil",
     "temporal-pupil",
     "fast-temporal-custom",
-    "fast-temporal-custom-rust",
+    "fast-temporal-custom-rust-tag-plane",
+    "fast-temporal-custom-rust-corners",
+    "fast-temporal-custom-rust-none",
 ]
 
 
@@ -75,13 +112,28 @@ def build_detector(name: str, args: argparse.Namespace):
             subpix_window_half_size=args.fast_temporal_subpix_window_half_size,
             subpix_max_iterations=args.fast_temporal_subpix_max_iterations,
             subpix_epsilon=args.fast_temporal_subpix_epsilon,
+            subpix_max_shift_px=args.fast_temporal_subpix_max_shift_px,
             contour_max_mean_error_px=args.fast_temporal_contour_max_mean_error_px,
             contrast_gate_min_range=args.fast_temporal_contrast_gate_min_range,
             contrast_gate_patch_radius_px=args.fast_temporal_contrast_gate_patch_radius_px,
             enable_photometric_refine=args.fast_temporal_enable_photometric_refine,
             pose_source=args.fast_temporal_pose_source,
+            optical_tracking_mode=args.fast_temporal_optical_tracking_mode,
+            keyframe_interval=args.fast_temporal_keyframe_interval,
         )
-    if name == "fast-temporal-custom-rust":
+    if name in (
+        "fast-temporal-custom-rust",
+        "fast-temporal-custom-rust-tag-plane",
+        "fast-temporal-custom-rust-corners",
+        "fast-temporal-custom-rust-none",
+    ):
+        rust_mode = args.fast_temporal_optical_tracking_mode
+        if name == "fast-temporal-custom-rust-tag-plane":
+            rust_mode = "tag_plane"
+        elif name == "fast-temporal-custom-rust-corners":
+            rust_mode = "corners"
+        elif name == "fast-temporal-custom-rust-none":
+            rust_mode = "none"
         return FastTemporalCustomRustAprilTagDetector(
             **kwargs,
             padding_factor=args.fast_temporal_padding_factor,
@@ -100,11 +152,14 @@ def build_detector(name: str, args: argparse.Namespace):
             subpix_window_half_size=args.fast_temporal_subpix_window_half_size,
             subpix_max_iterations=args.fast_temporal_subpix_max_iterations,
             subpix_epsilon=args.fast_temporal_subpix_epsilon,
+            subpix_max_shift_px=args.fast_temporal_subpix_max_shift_px,
             contour_max_mean_error_px=args.fast_temporal_contour_max_mean_error_px,
             contrast_gate_min_range=args.fast_temporal_contrast_gate_min_range,
             contrast_gate_patch_radius_px=args.fast_temporal_contrast_gate_patch_radius_px,
             enable_photometric_refine=args.fast_temporal_enable_photometric_refine,
             pose_source=args.fast_temporal_pose_source,
+            optical_tracking_mode=rust_mode,
+            keyframe_interval=args.fast_temporal_keyframe_interval,
         )
     raise ValueError(f"Unknown detector: {name}")
 
@@ -166,14 +221,20 @@ def run_benchmark(
     detector_key = detector_key or args.detector
     detector = build_detector(detector_key, args)
     summary = BenchmarkSummary(detector=detector.name)
+    previous_world_from_cv_camera: np.ndarray | None = None
+    previous_pose_sequence: str | None = None
+
+    debug_dir = getattr(args, "debug_frames_dir", None)
+    debug_limit = int(getattr(args, "debug_frames", 0) or 0)
+    debug_written = 0
 
     try:
-        for record in tqdm(
+        for record_index, record in enumerate(tqdm(
             records,
             total=len(records) or None,
             desc=detector_key,
             unit="frame",
-        ):
+        )):
             image = record.image_data
             tag_size = args.tag_size_m or (
                 record.tags[0].tag_size_m if record.tags else 0.24
@@ -183,13 +244,38 @@ def run_benchmark(
                 detector.prepare_frame(
                     record.intrinsics,
                     record.all_tags,
-                    record.camera_matrix_world,
+                    None,
                     sequence=record.sequence,
                 )
 
             start = time.perf_counter()
             detections = detector.detect(image, record.intrinsics, tag_size)
             elapsed = time.perf_counter() - start
+
+            if debug_dir is not None and debug_written < debug_limit:
+                rois = list(getattr(detector, "last_regions", []))
+                _debug_draw_frame(
+                    image,
+                    detections,
+                    rois,
+                    Path(debug_dir) / f"{detector_key}_{record_index:04d}_{record.sequence}_f{record.frame}.jpg",
+                    f"{detector_key} {record.sequence} frame {record.frame} det={len(detections)} roi={len(rois)}",
+                    raw_rois=list(getattr(detector, "last_raw_regions", [])),
+                )
+                debug_written += 1
+
+            if hasattr(detector, "update_pose_from_detections"):
+                pose_guess = previous_world_from_cv_camera if previous_pose_sequence == record.sequence else None
+                world_from_cv_camera = estimate_world_from_cv_camera_from_detections(
+                    detections,
+                    record.tags,
+                    record.intrinsics,
+                    pose_guess,
+                    robust=not detector_key.startswith("fast-temporal-custom"),
+                )
+                detector.update_pose_from_detections(world_from_cv_camera, sequence=record.sequence)
+                previous_world_from_cv_camera = world_from_cv_camera
+                previous_pose_sequence = record.sequence if world_from_cv_camera is not None else None
 
             matches, missed, extras = match_by_family_id(record.tags, detections)
             summary.frames += 1
@@ -268,6 +354,18 @@ def parse_args() -> argparse.Namespace:
         help="Override metadata tag size for pose estimation.",
     )
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--debug-frames",
+        type=int,
+        default=0,
+        help="Write this many annotated frames per detector showing detections and ROIs.",
+    )
+    parser.add_argument(
+        "--debug-frames-dir",
+        type=Path,
+        default=PROJECT_ROOT / "apriltag_benchmarking" / "debug_frames",
+        help="Directory for --debug-frames annotated images.",
+    )
 
     parser.add_argument("--families", default="tag36h11")
     parser.add_argument("--nthreads", type=int, default=4)
@@ -294,7 +392,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fast-temporal-verify-modes",
         type=str,
-        default="warp_contrast,corner_subpix",
+        default="corner_subpix,warp_contrast",
         help="Comma-separated pipeline, e.g. warp_contrast,corner_subpix or corner_subpix or contour_quad,warp_contrast,corner_subpix.",
     )
     parser.add_argument("--fast-temporal-warp-canonical-size", type=int, default=48)
@@ -305,6 +403,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fast-temporal-subpix-window-half-size", type=int, default=5)
     parser.add_argument("--fast-temporal-subpix-max-iterations", type=int, default=40)
     parser.add_argument("--fast-temporal-subpix-epsilon", type=float, default=0.01)
+    parser.add_argument("--fast-temporal-subpix-max-shift-px", type=float, default=4.0)
     parser.add_argument(
         "--fast-temporal-contour-max-mean-error-px", type=float, default=18.0
     )
@@ -320,8 +419,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fast-temporal-pose-source",
         choices=["oracle_center_world", "solvepnp_corners"],
-        default="oracle_center_world",
+        default="solvepnp_corners",
         help="oracle_center_world matches benchmark GT pose definition; solvepnp_corners uses cv2.solvePnP on refined corners.",
+    )
+    parser.add_argument(
+        "--fast-temporal-optical-tracking-mode",
+        choices=["tag_plane", "corners", "none"],
+        default="tag_plane",
+        help="Prediction source between detector keyframes: tag-plane LK homography, 4-corner LK, or pose projection only.",
+    )
+    parser.add_argument(
+        "--fast-temporal-keyframe-interval",
+        type=int,
+        default=10,
+        help="Run full-frame pupil as a detector keyframe after this many custom frames. Defaults to 10; use 0 to disable periodic keyframes.",
     )
     return parser.parse_args()
 

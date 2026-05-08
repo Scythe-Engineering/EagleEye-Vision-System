@@ -1,0 +1,56 @@
+{
+  "data_root": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmark_data",
+  "detector_key": "fast-temporal-custom-rust-tag-plane",
+  "output": "E:\\Ceph-Mirror\\Python-Files\\Projects\\FIRST-Note-Detection\\apriltag_benchmarking\\results_fast_temporal_custom_rust_tag_plane.json",
+  "results": {
+    "detector": "fast-temporal-custom-rust-apriltags",
+    "frames": 2400,
+    "total_time_s": 47.256919100011146,
+    "detections": 14467,
+    "ground_truth_visible": 15952,
+    "true_positives": 13924,
+    "false_positives": 543,
+    "false_negatives": 2028,
+    "fps": 50.786213864700166,
+    "avg_ms_per_frame": 19.690382958337977,
+    "precision": 0.9624663026197553,
+    "recall": 0.8728686058174524,
+    "pose_error_m": {
+      "mean": 2.243458794647884,
+      "median": 0.10565590221140837,
+      "rmse": 4.396775432301945,
+      "max": 32.89155348856795
+    },
+    "center_error_px": {
+      "mean": 211.64636640599548,
+      "median": 0.872722406686756,
+      "rmse": 14901.155967019977,
+      "max": 1707296.7919197395
+    },
+    "corner_error_px": {
+      "mean": 232.57500934497284,
+      "median": 16.508670626769366,
+      "rmse": 14901.776035238672,
+      "max": 1707309.427552517
+    },
+    "acceleration": {
+      "mean_roi_coverage": 0.5659306588380916,
+      "min_roi_coverage": 0.0,
+      "max_roi_coverage": 1.0,
+      "mean_regions": 4.318333333333333,
+      "pupil_full_frame_calls": 1205,
+      "fallback_frames": 0,
+      "custom_primary_frames": 1195,
+      "mean_verified_tags_per_custom_frame": 7.236820083682009,
+      "verify_modes": "corner_subpix,warp_contrast",
+      "oracle_pose_upper_bound": 0,
+      "no_bitwise_id_decode": 1,
+      "photometric_refine_enabled": 0,
+      "photometric_extra_iterations_total": 0,
+      "pose_source": "solvepnp_corners",
+      "optical_tracking_mode": "tag_plane",
+      "keyframe_interval": 10,
+      "rust_warp_engine": 1
+    }
+  }
+}

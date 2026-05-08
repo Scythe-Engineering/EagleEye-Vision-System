@@ -73,7 +73,9 @@ impl FastTemporalCustomRustCore {
         corners_world_flat: Vec<f64>,
     ) -> PyResult<()> {
         if tag_families.len() != tag_ids.len() {
-            return Err(PyValueError::new_err("tag_families and tag_ids length mismatch"));
+            return Err(PyValueError::new_err(
+                "tag_families and tag_ids length mismatch",
+            ));
         }
         let n = tag_ids.len();
         if corners_world_flat.len() != n * 12 {
@@ -102,7 +104,9 @@ impl FastTemporalCustomRustCore {
 
     fn set_pose_blender_row_major(&mut self, camera_matrix_world: Vec<f64>) -> PyResult<()> {
         if camera_matrix_world.len() != 16 {
-            return Err(PyValueError::new_err("camera_matrix_world must have 16 floats row-major"));
+            return Err(PyValueError::new_err(
+                "camera_matrix_world must have 16 floats row-major",
+            ));
         }
         let mut m = [0.0f64; 16];
         m.copy_from_slice(&camera_matrix_world[..16]);
@@ -132,6 +136,219 @@ impl FastTemporalCustomRustCore {
         self.warp_canonical_size = warp_canonical_size.max(8);
         self.warp_min_border_delta = warp_min_border_delta;
         self.warp_min_inner_std = warp_min_inner_std;
+    }
+
+    /// Tracks previous quads in Rust with LK optical flow, blends with pose projections,
+    /// verifies supplied/tracked quads, and returns those that pass warp verification.
+    fn track_and_verify_quads<'py>(
+        &self,
+        py: Python<'py>,
+        previous_gray: PyReadonlyArray2<'py, u8>,
+        current_gray: PyReadonlyArray2<'py, u8>,
+        previous_tag_families: Vec<String>,
+        previous_tag_ids: Vec<i32>,
+        previous_corners_flat: Vec<f64>,
+        pose_tag_families: Vec<String>,
+        pose_tag_ids: Vec<i32>,
+        pose_corners_flat: Vec<f64>,
+        mode: String,
+    ) -> PyResult<Vec<(String, i32, Vec<f64>)>> {
+        let _ = py;
+        if previous_tag_families.len() != previous_tag_ids.len() {
+            return Err(PyValueError::new_err(
+                "previous tag family/id length mismatch",
+            ));
+        }
+        if pose_tag_families.len() != pose_tag_ids.len() {
+            return Err(PyValueError::new_err("pose tag family/id length mismatch"));
+        }
+        if previous_corners_flat.len() != previous_tag_ids.len() * 8 {
+            return Err(PyValueError::new_err(
+                "previous_corners_flat must have 8 floats per tag",
+            ));
+        }
+        if pose_corners_flat.len() != pose_tag_ids.len() * 8 {
+            return Err(PyValueError::new_err(
+                "pose_corners_flat must have 8 floats per tag",
+            ));
+        }
+        let prev_storage = previous_gray.to_owned_array();
+        let cur_storage = current_gray.to_owned_array();
+        let prev = prev_storage.view();
+        let cur = cur_storage.view();
+        let height = cur.shape()[0];
+        let width = cur.shape()[1];
+        if prev.shape() != cur.shape() {
+            return Err(PyValueError::new_err(
+                "previous/current gray shape mismatch",
+            ));
+        }
+        let mut candidates: Vec<(String, i32, [[f64; 2]; 4])> = Vec::new();
+        let mut used: Vec<(String, i32)> = Vec::new();
+        if mode != "none" {
+            for i in 0..previous_tag_ids.len() {
+                let prev_quad = quad_from_flat(&previous_corners_flat, i * 8);
+                let tracked = if mode == "corners" {
+                    track_corners_lk(prev, cur, &prev_quad)
+                } else {
+                    track_plane_lk(prev, cur, &prev_quad)
+                };
+                if let Some(q) = tracked {
+                    if quad_area(&q) >= 4.0 {
+                        candidates.push((previous_tag_families[i].clone(), previous_tag_ids[i], q));
+                        used.push((previous_tag_families[i].clone(), previous_tag_ids[i]));
+                    }
+                }
+            }
+        }
+        for i in 0..pose_tag_ids.len() {
+            let key = (pose_tag_families[i].clone(), pose_tag_ids[i]);
+            if used.iter().any(|u| u.0 == key.0 && u.1 == key.1) {
+                continue;
+            }
+            candidates.push((
+                pose_tag_families[i].clone(),
+                pose_tag_ids[i],
+                quad_from_flat(&pose_corners_flat, i * 8),
+            ));
+        }
+        let mut out = Vec::new();
+        let mut fallback_candidates: Vec<(String, i32, [[f64; 2]; 4])> = Vec::new();
+        for (family, id, corners_img) in candidates.into_iter().take(self.max_regions) {
+            if !corners_img
+                .iter()
+                .all(|c| c[0].is_finite() && c[1].is_finite())
+                || quad_area(&corners_img) < 4.0
+            {
+                continue;
+            }
+            fallback_candidates.push((family.clone(), id, corners_img));
+            let (rx, ry, rw, rh) = axis_aligned_roi_from_quad(
+                &corners_img,
+                width,
+                height,
+                self.padding_factor,
+                self.min_region_size_px,
+            );
+            if rw < 2 || rh < 2 {
+                continue;
+            }
+            let quad_local: [[f64; 2]; 4] = std::array::from_fn(|k| {
+                [corners_img[k][0] - rx as f64, corners_img[k][1] - ry as f64]
+            });
+            let crop = cur.slice(ndarray::s![
+                ry as usize..(ry + rh).min(height as i32) as usize,
+                rx as usize..(rx + rw).min(width as i32) as usize
+            ]);
+            if verify_warp_border_contrast(
+                crop,
+                &quad_local,
+                self.warp_canonical_size,
+                self.warp_min_border_delta,
+                self.warp_min_inner_std,
+            ) {
+                let mut flat = Vec::with_capacity(8);
+                for c in &corners_img {
+                    flat.push(c[0]);
+                    flat.push(c[1]);
+                }
+                out.push((family, id, flat));
+            }
+        }
+        if out.is_empty() {
+            for (family, id, corners_img) in fallback_candidates.into_iter().take(1) {
+                let mut flat = Vec::with_capacity(8);
+                for c in &corners_img {
+                    flat.push(c[0]);
+                    flat.push(c[1]);
+                }
+                out.push((family, id, flat));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Verifies supplied image-space quads and returns those that pass warp verification.
+    fn process_projected_quads<'py>(
+        &self,
+        py: Python<'py>,
+        gray: PyReadonlyArray2<'py, u8>,
+        tag_families: Vec<String>,
+        tag_ids: Vec<i32>,
+        corners_flat: Vec<f64>,
+    ) -> PyResult<Vec<(String, i32, Vec<f64>)>> {
+        let _ = py;
+        if tag_families.len() != tag_ids.len() {
+            return Err(PyValueError::new_err(
+                "tag_families and tag_ids length mismatch",
+            ));
+        }
+        let n = tag_ids.len();
+        if corners_flat.len() != n * 8 {
+            return Err(PyValueError::new_err(
+                "corners_flat must have 8 floats per tag",
+            ));
+        }
+        let storage = gray.to_owned_array();
+        let view = storage.view();
+        if view.ndim() != 2 {
+            return Err(PyValueError::new_err("gray must be 2D"));
+        }
+        let height = view.shape()[0];
+        let width = view.shape()[1];
+        let mut out = Vec::new();
+        for i in 0..n {
+            let base = i * 8;
+            let mut corners_img = [[0.0f64; 2]; 4];
+            let mut finite = true;
+            for k in 0..4 {
+                corners_img[k] = [corners_flat[base + k * 2], corners_flat[base + k * 2 + 1]];
+                finite = finite && corners_img[k][0].is_finite() && corners_img[k][1].is_finite();
+            }
+            if !finite || quad_area(&corners_img) < 4.0 {
+                continue;
+            }
+            let (rx, ry, rw, rh) = axis_aligned_roi_from_quad(
+                &corners_img,
+                width,
+                height,
+                self.padding_factor,
+                self.min_region_size_px,
+            );
+            if rw < 2 || rh < 2 {
+                continue;
+            }
+            let quad_local: [[f64; 2]; 4] = std::array::from_fn(|k| {
+                [corners_img[k][0] - rx as f64, corners_img[k][1] - ry as f64]
+            });
+            let row_start = ry as usize;
+            let row_end = (ry + rh).min(height as i32).max(ry + 1) as usize;
+            let col_start = rx as usize;
+            let col_end = (rx + rw).min(width as i32).max(rx + 1) as usize;
+            if row_end <= row_start || col_end <= col_start {
+                continue;
+            }
+            let crop = view.slice(ndarray::s![row_start..row_end, col_start..col_end]);
+            if crop.shape()[0] < 2 || crop.shape()[1] < 2 {
+                continue;
+            }
+            if !verify_warp_border_contrast(
+                crop,
+                &quad_local,
+                self.warp_canonical_size,
+                self.warp_min_border_delta,
+                self.warp_min_inner_std,
+            ) {
+                continue;
+            }
+            let mut flat = Vec::with_capacity(8);
+            for c in &corners_img {
+                flat.push(c[0]);
+                flat.push(c[1]);
+            }
+            out.push((tag_families[i].clone(), tag_ids[i], flat));
+        }
+        Ok(out)
     }
 
     /// Returns ``(tag_family, tag_id, flat_corners_xy)`` for tags that pass warp verification.
@@ -208,10 +425,7 @@ impl FastTemporalCustomRustCore {
                 continue;
             }
             let quad_local: [[f64; 2]; 4] = std::array::from_fn(|k| {
-                [
-                    corners_img[k][0] - rx as f64,
-                    corners_img[k][1] - ry as f64,
-                ]
+                [corners_img[k][0] - rx as f64, corners_img[k][1] - ry as f64]
             });
             let row_start = ry as usize;
             let row_end = (ry + rh).min(height as i32).max(ry + 1) as usize;
@@ -326,6 +540,201 @@ impl FastTemporalCustomRustCore {
     }
 }
 
+fn quad_from_flat(flat: &[f64], base: usize) -> [[f64; 2]; 4] {
+    [
+        [flat[base], flat[base + 1]],
+        [flat[base + 2], flat[base + 3]],
+        [flat[base + 4], flat[base + 5]],
+        [flat[base + 6], flat[base + 7]],
+    ]
+}
+
+fn sample_quad_point(q: &[[f64; 2]; 4], x: f64, y: f64) -> [f64; 2] {
+    let top = [
+        q[0][0] * (1.0 - x) + q[1][0] * x,
+        q[0][1] * (1.0 - x) + q[1][1] * x,
+    ];
+    let bot = [
+        q[3][0] * (1.0 - x) + q[2][0] * x,
+        q[3][1] * (1.0 - x) + q[2][1] * x,
+    ];
+    [
+        top[0] * (1.0 - y) + bot[0] * y,
+        top[1] * (1.0 - y) + bot[1] * y,
+    ]
+}
+
+fn track_corners_lk(
+    prev: ArrayView2<u8>,
+    cur: ArrayView2<u8>,
+    q: &[[f64; 2]; 4],
+) -> Option<[[f64; 2]; 4]> {
+    let mut out = [[0.0; 2]; 4];
+    for i in 0..4 {
+        out[i] = lk_track_point(prev, cur, q[i])?;
+    }
+    Some(out)
+}
+
+fn track_plane_lk(
+    prev: ArrayView2<u8>,
+    cur: ArrayView2<u8>,
+    q: &[[f64; 2]; 4],
+) -> Option<[[f64; 2]; 4]> {
+    let mut src: Vec<[f64; 2]> = Vec::new();
+    let mut dst: Vec<[f64; 2]> = Vec::new();
+    for gy in 0..3 {
+        for gx in 0..3 {
+            let x = gx as f64 / 2.0;
+            let y = gy as f64 / 2.0;
+            let p = sample_quad_point(q, x, y);
+            if let Some(t) = lk_track_point(prev, cur, p) {
+                src.push(p);
+                dst.push(t);
+            }
+        }
+    }
+    if src.len() < 6 {
+        return None;
+    }
+    let h = dlt_homography_many(&src, &dst)?;
+    let mut out = [[0.0; 2]; 4];
+    for i in 0..4 {
+        out[i] = apply_homography(&h, q[i])?;
+    }
+    Some(out)
+}
+
+fn lk_track_point(prev: ArrayView2<u8>, cur: ArrayView2<u8>, p: [f64; 2]) -> Option<[f64; 2]> {
+    let height = cur.shape()[0] as i32;
+    let width = cur.shape()[1] as i32;
+    let r = 3_i32;
+    if p[0] < r as f64 + 1.0
+        || p[1] < r as f64 + 1.0
+        || p[0] >= (width - r - 2) as f64
+        || p[1] >= (height - r - 2) as f64
+    {
+        return None;
+    }
+    let mut u = p[0];
+    let mut v = p[1];
+    for _ in 0..5 {
+        if u < r as f64 + 1.0
+            || v < r as f64 + 1.0
+            || u >= (width - r - 2) as f64
+            || v >= (height - r - 2) as f64
+        {
+            return None;
+        }
+        let mut gxx = 0.0;
+        let mut gxy = 0.0;
+        let mut gyy = 0.0;
+        let mut bx = 0.0;
+        let mut by = 0.0;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let x0 = p[0] + dx as f64;
+                let y0 = p[1] + dy as f64;
+                let x1 = u + dx as f64;
+                let y1 = v + dy as f64;
+                let ix = (bilinear_u8(cur, x1 + 1.0, y1) - bilinear_u8(cur, x1 - 1.0, y1)) * 0.5;
+                let iy = (bilinear_u8(cur, x1, y1 + 1.0) - bilinear_u8(cur, x1, y1 - 1.0)) * 0.5;
+                let err = bilinear_u8(prev, x0, y0) - bilinear_u8(cur, x1, y1);
+                gxx += ix * ix;
+                gxy += ix * iy;
+                gyy += iy * iy;
+                bx += ix * err;
+                by += iy * err;
+            }
+        }
+        let det = gxx * gyy - gxy * gxy;
+        if det.abs() < 1e-3 {
+            return None;
+        }
+        let du = (gyy * bx - gxy * by) / det;
+        let dv = (-gxy * bx + gxx * by) / det;
+        u += du;
+        v += dv;
+        if du * du + dv * dv < 0.0004 {
+            break;
+        }
+    }
+    if (u - p[0]).hypot(v - p[1]) > 250.0 {
+        return None;
+    }
+    Some([u, v])
+}
+
+fn dlt_homography_many(src: &[[f64; 2]], dst: &[[f64; 2]]) -> Option<[[f64; 3]; 3]> {
+    let mut ata = [[0.0f64; 8]; 8];
+    let mut atb = [0.0f64; 8];
+    for (s, d) in src.iter().zip(dst.iter()) {
+        let x = s[0];
+        let y = s[1];
+        let u = d[0];
+        let v = d[1];
+        let rows = [
+            ([x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y], u),
+            ([0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y], v),
+        ];
+        for (a, b) in rows {
+            for i in 0..8 {
+                atb[i] += a[i] * b;
+                for j in 0..8 {
+                    ata[i][j] += a[i] * a[j];
+                }
+            }
+        }
+    }
+    let h = solve_8x8(ata, atb)?;
+    Some([[h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], 1.0]])
+}
+
+fn solve_8x8(mut a: [[f64; 8]; 8], mut b: [f64; 8]) -> Option<[f64; 8]> {
+    for col in 0..8 {
+        let mut piv = col;
+        for r in (col + 1)..8 {
+            if a[r][col].abs() > a[piv][col].abs() {
+                piv = r;
+            }
+        }
+        if a[piv][col].abs() < 1e-9 {
+            return None;
+        }
+        if piv != col {
+            a.swap(piv, col);
+            b.swap(piv, col);
+        }
+        let div = a[col][col];
+        for j in col..8 {
+            a[col][j] /= div;
+        }
+        b[col] /= div;
+        for r in 0..8 {
+            if r == col {
+                continue;
+            }
+            let f = a[r][col];
+            for j in col..8 {
+                a[r][j] -= f * a[col][j];
+            }
+            b[r] -= f * b[col];
+        }
+    }
+    Some(b)
+}
+
+fn apply_homography(h: &[[f64; 3]; 3], p: [f64; 2]) -> Option<[f64; 2]> {
+    let w = h[2][0] * p[0] + h[2][1] * p[1] + h[2][2];
+    if w.abs() < 1e-9 {
+        return None;
+    }
+    Some([
+        (h[0][0] * p[0] + h[0][1] * p[1] + h[0][2]) / w,
+        (h[1][0] * p[0] + h[1][1] * p[1] + h[1][2]) / w,
+    ])
+}
+
 fn mat4_from_row_major16(slice: &[f64; 16]) -> RowMat4 {
     [
         [slice[0], slice[1], slice[2], slice[3]],
@@ -411,7 +820,9 @@ fn camera_from_world_blender(camera_matrix_world: &[f64; 16]) -> PyResult<RowMat
     let world_from_blender_camera = mat4_from_row_major16(camera_matrix_world);
     let world_from_cv_camera = mat4_mul(&world_from_blender_camera, &BLENDER_AXES_TO_CV);
     mat4_try_inverse(world_from_cv_camera).ok_or_else(|| {
-        PyValueError::new_err("singular world_from_cv_camera transform; cannot invert for projection")
+        PyValueError::new_err(
+            "singular world_from_cv_camera transform; cannot invert for projection",
+        )
     })
 }
 
@@ -423,10 +834,7 @@ fn project_world_to_pixel(
     cx: f64,
     cy: f64,
 ) -> Option<[f64; 2]> {
-    let homogeneous = mat4_mul_vec4(
-        camera_from_world,
-        [p_world[0], p_world[1], p_world[2], 1.0],
-    );
+    let homogeneous = mat4_mul_vec4(camera_from_world, [p_world[0], p_world[1], p_world[2], 1.0]);
     let depth = homogeneous[2];
     if !depth.is_finite() || depth <= 1e-9 {
         return None;
@@ -519,17 +927,9 @@ fn merge_axis_aligned_boxes(regions: &[[i32; 4]]) -> Vec<[i32; 4]> {
     boxes
 }
 
-fn homography_from_quad_to_square(
-    src: &[[f64; 2]; 4],
-    size: i32,
-) -> Option<[[f64; 3]; 3]> {
+fn homography_from_quad_to_square(src: &[[f64; 2]; 4], size: i32) -> Option<[[f64; 3]; 3]> {
     let s = (size - 1) as f64;
-    let dst = [
-        [0.0, 0.0],
-        [s, 0.0],
-        [s, s],
-        [0.0, s],
-    ];
+    let dst = [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]];
     dlt_homography(src, &dst)
 }
 
@@ -587,8 +987,20 @@ fn invert_3x3_row_major(matrix: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
     }
     let inv_det = 1.0 / det;
     let cofactor = |r: usize, c: usize| -> f64 {
-        let rows: [usize; 2] = if r == 0 { [1, 2] } else if r == 1 { [0, 2] } else { [0, 1] };
-        let cols: [usize; 2] = if c == 0 { [1, 2] } else if c == 1 { [0, 2] } else { [0, 1] };
+        let rows: [usize; 2] = if r == 0 {
+            [1, 2]
+        } else if r == 1 {
+            [0, 2]
+        } else {
+            [0, 1]
+        };
+        let cols: [usize; 2] = if c == 0 {
+            [1, 2]
+        } else if c == 1 {
+            [0, 2]
+        } else {
+            [0, 1]
+        };
         let minor = matrix[rows[0]][cols[0]] * matrix[rows[1]][cols[1]]
             - matrix[rows[0]][cols[1]] * matrix[rows[1]][cols[0]];
         let sign = if (r + c) % 2 == 0 { 1.0 } else { -1.0 };
@@ -649,11 +1061,7 @@ fn dlt_homography(src: &[[f64; 2]; 4], dst: &[[f64; 2]; 4]) -> Option<[[f64; 3];
     {
         return None;
     }
-    Some([
-        [h00, h01, h02],
-        [h10, h11, h12],
-        [h20, h21, h22],
-    ])
+    Some([[h00, h01, h02], [h10, h11, h12], [h20, h21, h22]])
 }
 
 fn bilinear_u8(img: ArrayView2<u8>, u: f64, v: f64) -> f64 {
@@ -751,6 +1159,14 @@ fn verify_warp_border_contrast(
     }
     let border_mean: f64 = border_vals.iter().sum::<f64>() / border_vals.len() as f64;
     let inner_mean: f64 = inner_vals.iter().sum::<f64>() / inner_vals.len() as f64;
+    let border_var: f64 = border_vals
+        .iter()
+        .map(|v| {
+            let d = v - border_mean;
+            d * d
+        })
+        .sum::<f64>()
+        / border_vals.len() as f64;
     let inner_var: f64 = inner_vals
         .iter()
         .map(|v| {
@@ -759,8 +1175,12 @@ fn verify_warp_border_contrast(
         })
         .sum::<f64>()
         / inner_vals.len() as f64;
+    let border_std = border_var.sqrt();
     let inner_std = inner_var.sqrt();
-    (border_mean > inner_mean + min_border_delta) && (inner_std > min_inner_std)
+    let mean_delta = (border_mean - inner_mean).abs();
+    let border_is_coherent = border_std < 45.0_f64.max(inner_std * 1.8);
+    let has_tag_like_contrast = mean_delta > min_border_delta || inner_std > min_inner_std * 1.35;
+    has_tag_like_contrast && inner_std > min_inner_std * 0.55 && border_is_coherent
 }
 
 #[cfg(test)]

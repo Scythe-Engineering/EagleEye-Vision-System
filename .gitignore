@@ -303,3 +303,7 @@ files/*
 
 uv.lock
 package-lock.json
+
+# Windows reserved device name; can be created accidentally by shell redirects.
+/nul
+/NUL
