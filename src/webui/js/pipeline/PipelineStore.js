@@ -76,6 +76,7 @@ class PipelineStore {
 
         this.isAutoSaving = false;
         this.pendingAutoSave = false;
+        this.suppressCameraAutoSelect = false;
     }
 
     /**
@@ -323,8 +324,116 @@ class PipelineStore {
             type: "node:config:changed",
             uuid,
         });
+        if (!this.suppressCameraAutoSelect && this.isDeviceInputNode(node)) {
+            this.autoSelectCameraBusIds();
+        }
 
         return true;
+    }
+
+    /**
+     * Returns whether a node is a device input operation.
+     *
+     * @param {PipelineNode|object|null} node Pipeline node.
+     * @returns {boolean} True for device_input nodes.
+     */
+    isDeviceInputNode(node) {
+        return this.normalizeOperationId(node?.operationId) === "device_input";
+    }
+
+    /**
+     * Infer a camera bus ID for a node from exactly one upstream device_input.
+     *
+     * @param {string} identifier Node UUID or instance ID.
+     * @returns {string|null} Inferred bus ID, or null when ambiguous/unavailable.
+     */
+    inferCameraBusIdForNode(identifier) {
+        const uuid = this.resolveToUuid(identifier);
+        if (!uuid) return null;
+
+        const node = this.state.currentPipeline.nodes.get(uuid);
+        if (!node || this.isDeviceInputNode(node)) return null;
+
+        const upstreamByTarget = new Map();
+        for (const conn of this.state.currentPipeline.connections.values()) {
+            if (!upstreamByTarget.has(conn.toUuid)) {
+                upstreamByTarget.set(conn.toUuid, []);
+            }
+            upstreamByTarget.get(conn.toUuid).push(conn.fromUuid);
+        }
+
+        const deviceInputBusIds = new Set();
+        const visited = new Set();
+        const stack = [...(upstreamByTarget.get(uuid) || [])];
+
+        while (stack.length > 0) {
+            const currentUuid = stack.pop();
+            if (!currentUuid || visited.has(currentUuid)) continue;
+            visited.add(currentUuid);
+
+            const upstreamNode = this.state.currentPipeline.nodes.get(currentUuid);
+            if (!upstreamNode) continue;
+
+            if (this.isDeviceInputNode(upstreamNode)) {
+                const busId = upstreamNode.config?.bus_id;
+                if (busId !== undefined && busId !== null && String(busId) !== "") {
+                    deviceInputBusIds.add(String(busId));
+                }
+                continue;
+            }
+
+            stack.push(...(upstreamByTarget.get(currentUuid) || []));
+        }
+
+        return deviceInputBusIds.size === 1
+            ? Array.from(deviceInputBusIds)[0]
+            : null;
+    }
+
+    /**
+     * Auto-fill empty camera_bus_id settings from exactly one upstream device_input.
+     * Existing values are treated as user-editable and are never overwritten.
+     *
+     * @returns {number} Number of nodes updated.
+     */
+    autoSelectCameraBusIds() {
+        let updatedCount = 0;
+
+        for (const node of this.state.currentPipeline.nodes.values()) {
+            if (this.isDeviceInputNode(node)) continue;
+
+            const config = node.config || {};
+            const originalConfig = node.originalConfig || {};
+            const exposesCameraBusId =
+                Object.prototype.hasOwnProperty.call(config, "camera_bus_id") ||
+                Object.prototype.hasOwnProperty.call(originalConfig, "camera_bus_id");
+            const currentValue = config.camera_bus_id;
+
+            if (
+                !exposesCameraBusId ||
+                (currentValue !== undefined &&
+                    currentValue !== null &&
+                    String(currentValue) !== "")
+            ) {
+                continue;
+            }
+
+            const inferredBusId = this.inferCameraBusIdForNode(node.uuid);
+            if (!inferredBusId) continue;
+
+            node.config = { ...config, camera_bus_id: inferredBusId };
+            this.emit("node:config:changed", {
+                uuid: node.uuid,
+                config: node.config,
+            });
+            this.emit("pipeline:changed", {
+                type: "node:config:changed",
+                uuid: node.uuid,
+            });
+            updatedCount += 1;
+        }
+
+        return updatedCount;
     }
 
     /**
@@ -396,6 +505,9 @@ class PipelineStore {
             type: "connection:added",
             key: connectionKey,
         });
+        if (!this.suppressCameraAutoSelect) {
+            this.autoSelectCameraBusIds();
+        }
 
         return connectionKey;
     }
@@ -448,6 +560,7 @@ class PipelineStore {
             type: "connection:removed",
             key: connectionKey,
         });
+        this.autoSelectCameraBusIds();
 
         return true;
     }
@@ -812,17 +925,24 @@ class PipelineStore {
             }
         });
 
-        connectionsData.forEach((conn) => {
-            this.addConnection(
-                conn.from_uuid,
-                conn.from_port,
-                conn.to_uuid,
-                conn.to_port,
-                conn.data_type,
-                conn.is_default || false,
-                conn.custom_waypoints || null,
-            );
-        });
+        this.suppressCameraAutoSelect = true;
+        try {
+            connectionsData.forEach((conn) => {
+                this.addConnection(
+                    conn.from_uuid,
+                    conn.from_port,
+                    conn.to_uuid,
+                    conn.to_port,
+                    conn.data_type,
+                    conn.is_default || false,
+                    conn.custom_waypoints || null,
+                );
+            });
+        } finally {
+            this.suppressCameraAutoSelect = false;
+        }
+
+        this.autoSelectCameraBusIds();
 
         this.emit("pipeline:loaded", {
             nodeCount: this.state.currentPipeline.nodes.size,

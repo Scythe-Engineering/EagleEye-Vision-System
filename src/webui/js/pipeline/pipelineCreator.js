@@ -213,6 +213,8 @@ export async function initPipelineCreator() {
         handleProfilingUpdate,
         getOperations: () => pipelineStore.state.operations,
         getSelectedPipeline,
+        inferCameraBusIdForOperation: (identifier) =>
+            pipelineStore.inferCameraBusIdForNode(identifier),
     });
 
     await refreshPipelineCreator(refreshCallbacks);
