@@ -1671,6 +1671,10 @@ export function registerSettingsPopup() {
         applyTitle(modal, title);
         updateLiveView(operationName, isSecondary);
         const body = modal.querySelector("[data-role='modal-body']");
+        const normalizedOperationName = String(operationName || "")
+            .replace(/\.py$/i, "")
+            .toLowerCase()
+            .replaceAll(/\s+/g, "_");
         setSettingsPanelVisibility(true);
 
         // Show loading state
@@ -1797,13 +1801,33 @@ export function registerSettingsPopup() {
                     body.innerHTML =
                         '<div class="text-center text-[#f9c845] py-8">This operation has no configurable settings.</div>';
                 } else {
+                    const effectiveInitialValues = { ...(initialValues || {}) };
+                    const cameraBusIdParam = config?.parameters?.camera_bus_id;
+                    const currentCameraBusId = effectiveInitialValues.camera_bus_id;
+                    const shouldPrefillCameraBusId =
+                        cameraBusIdParam?.type === "str" &&
+                        normalizedOperationName !== "device_input" &&
+                        (currentCameraBusId === undefined ||
+                            currentCameraBusId === null ||
+                            String(currentCameraBusId) === "");
+
+                    if (shouldPrefillCameraBusId) {
+                        const inferredCameraBusId =
+                            globalThis.pipelineCreator?.inferCameraBusIdForOperation?.(
+                                operationUuid,
+                            );
+                        if (inferredCameraBusId) {
+                            effectiveInitialValues.camera_bus_id = inferredCameraBusId;
+                        }
+                    }
+
                     // Use the loaded values as baseline for comparison, not defaults
-                    const originalValues = { ...initialValues };
+                    const originalValues = { ...effectiveInitialValues };
 
                     const getValues = renderForm(
                         body,
                         config,
-                        initialValues,
+                        effectiveInitialValues,
                         originalValues,
                         onSave,
                         operationName,

@@ -20,6 +20,7 @@ export function registerPipelineCreatorGlobalApi({
     handleProfilingUpdate,
     getOperations,
     getSelectedPipeline,
+    inferCameraBusIdForOperation,
 }) {
     globalThis.pipelineCreator = {
         autoSavePipeline,
@@ -35,6 +36,7 @@ export function registerPipelineCreatorGlobalApi({
         handleOperationErrorUpdate,
         handleProfilingUpdate,
         getOperations,
+        inferCameraBusIdForOperation,
     };
 
     Object.defineProperty(globalThis.pipelineCreator, "selectedPipeline", {
