@@ -27,13 +27,7 @@ dependencies = [
   "pydantic",
   "mypy",
   "psutil",
-  "memryx; sys_platform == 'linux'",
 ]
-
-[[tool.uv.index]]
-name = "memryx"
-url = "https://developer.memryx.com/pip"
-explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cuda"
