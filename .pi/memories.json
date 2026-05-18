@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "nextId": 2,
+  "memories": [
+    {
+      "id": 1,
+      "text": "For EagleEye robot integration architecture, prefer function-based robot-side accessors called from subsystem files with explicit NetworkTables keys/aliases passed or selected at call sites (e.g. Drive.java requests an EagleEye RobotPose2D key), rather than purely dynamic manifest/config-driven consumers.",
+      "createdAt": "2026-05-18T02:55:30.743Z",
+      "updatedAt": "2026-05-18T02:55:30.743Z"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.device_management_utils.compute_pool import ComputePool
+from src.utils.timing import FramePacket, TimedValue
 from src.webui.web_server import EagleEyeInterface
 
 if TYPE_CHECKING:
@@ -103,15 +104,22 @@ class DeviceInput(OperationInstance):
             return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame
 
-    def run(self, _input_data: Any) -> np.ndarray | None:
-        """Fetch the current frame from the configured camera with rotation applied.
+    def run(self, _input_data: Any) -> FramePacket | None:
+        """Fetch the current timestamped frame from the configured camera.
 
         Args:
             _input_data: Unused (data source operations don't use input).
 
         Returns:
-            Current camera frame as numpy array (rotated if configured), or None if camera unavailable.
+            Timestamped frame packet with rotation applied, or None if unavailable.
         """
+        get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
+        if callable(get_packet):
+            packet = get_packet(self.bus_id)
+            if packet is None:
+                return None
+            return TimedValue(self._apply_rotation(packet.value), packet.timing)
+
         frame_result = self.camera_manager.get_current_frame_by_bus_id(self.bus_id)
         if frame_result is not None:
             frame, _ = frame_result

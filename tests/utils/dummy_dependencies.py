@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
+from src.utils.timing import FramePacket, TimedValue, TimingMetadata
+
 
 class DummyComputePool:
     """ComputePool stub to avoid importing torch-dependent modules."""
@@ -86,14 +88,34 @@ class FakeNetworkTable:
     def getStructArrayTopic(self, key: str, _value_type: type) -> Any:  # noqa: N802
         return self._make_topic(key)
 
+    def getDoubleTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getBooleanTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getStringTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getDoubleArrayTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getBooleanArrayTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
+    def getStringArrayTopic(self, key: str) -> Any:  # noqa: N802
+        return self._make_topic(key)
+
     def _make_topic(self, key: str) -> Any:
         table = self
 
         class _Topic:
             def publish(self) -> Any:
                 class _Publisher:
-                    def set(self, value: Any) -> None:
+                    def set(self, value: Any, timestamp: int | None = None) -> None:
                         table.values[key] = value
+                        if timestamp is not None:
+                            table.values[f"{key}:timestamp"] = timestamp
 
                 return _Publisher()
 
@@ -107,6 +129,19 @@ class FakeCameraWorker:
     camera_index: int = 0
     frame: Optional[np.ndarray] = None
     timestamp: float = 0.0
+
+    def get_current_packet(self) -> FramePacket | None:
+        if self.frame is None:
+            return None
+        return TimedValue(
+            self.frame,
+            TimingMetadata(
+                capture_nt_us=int(self.timestamp * 1000) or 1,
+                capture_monotonic_ns=1,
+                camera_name="fake_camera",
+                source="test",
+            ),
+        )
 
     def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
         if self.frame is None:
@@ -175,6 +210,16 @@ class FakeCameraThreadManager:
         if worker is None:
             return None
         return worker.get_current_frame()
+
+    def get_current_packet_by_bus_id(self, bus_id: str) -> FramePacket | None:
+        """Get latest timestamped frame packet for a camera by bus ID."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        worker = self.camera_objects.get(camera_name)
+        if worker is None:
+            return None
+        return worker.get_current_packet()
 
     def get_current_frame_by_bus_id(
         self, bus_id: str

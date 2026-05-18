@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from src.config.utils.line_profiling import line_profiling_manager
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.timing import attach_output_timing, unwrap_timed_deep
 
 if TYPE_CHECKING:
     from src.config.utils.thread_object import ThreadObject
@@ -35,20 +36,26 @@ class Operation:
         self.finish_timestep: int | None = None
 
     def run(self, input_data: Any) -> Any:
-        """Run the operation with the given input data.
+        """Run the operation and propagate capture timing metadata.
 
-        Args:
-            input_data (Any): The input data to pass to the operation.
-
-        Returns:
-            Any: The output data of the operation.
+        Operations receive raw unwrapped values by default so existing image/dict
+        processors remain compatible. Operations that need timing metadata may set
+        ``uses_timed_inputs = True`` on the instance.
         """
+        call_input = (
+            input_data
+            if getattr(self.instance, "uses_timed_inputs", False)
+            else unwrap_timed_deep(input_data)
+        )
+
         if line_profiling_manager.is_active_for(self.uuid):
-            return line_profiling_manager.profile_operation_call(
+            output = line_profiling_manager.profile_operation_call(
                 operation=self,
-                call=lambda: self.instance.run(input_data),
+                call=lambda: self.instance.run(call_input),
             )
-        return self.instance.run(input_data)
+        else:
+            output = self.instance.run(call_input)
+        return attach_output_timing(output, input_data)
 
     def is_only_input_connection(self, uuid: str) -> bool:
         """

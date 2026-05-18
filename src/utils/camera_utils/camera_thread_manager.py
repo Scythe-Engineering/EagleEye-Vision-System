@@ -5,6 +5,7 @@ import time
 import traceback
 from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
+import ntcore
 import numpy as np
 
 from src.utils.camera_utils.add_system_cameras import add_system_cameras
@@ -13,6 +14,7 @@ from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.timing import FramePacket, TimedValue, TimingMetadata
 
 if TYPE_CHECKING:
     from src.webui.web_server import EagleEyeInterface
@@ -50,36 +52,76 @@ class CameraWorker:
         self.running = True
         self.thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
-        self._current_frame: Optional[np.ndarray] = None
-        self._current_timestamp: float = 0.0
-        self._last_cached_frame: Optional[np.ndarray] = None
+        self._current_packet: FramePacket | None = None
+        self._last_cached_packet: FramePacket | None = None
+        self._frame_seq: int = 0
+
+    def next_frame_seq(self) -> int:
+        """Return the next monotonically increasing frame sequence number."""
+        with self._lock:
+            self._frame_seq += 1
+            return self._frame_seq
+
+    def set_current_packet(self, packet: FramePacket) -> None:
+        """Thread-safe timestamped frame packet update."""
+        with self._lock:
+            self._current_packet = TimedValue(packet.value.copy(), packet.timing)
+
+    def get_current_packet(self) -> FramePacket | None:
+        """Thread-safe timestamped frame packet retrieval."""
+        with self._lock:
+            if self._current_packet is None:
+                return None
+            return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
 
     def set_current_frame(self, frame: np.ndarray, timestamp: float) -> None:
-        """Thread-safe frame update."""
-        with self._lock:
-            self._current_frame = frame.copy()
-            self._current_timestamp = timestamp
+        """Compatibility frame update using a millisecond timestamp."""
+        timing = TimingMetadata(
+            capture_nt_us=int(timestamp * 1000),
+            capture_monotonic_ns=time.monotonic_ns(),
+            frame_seq=self.next_frame_seq(),
+            camera_name=self.camera_name,
+            source="compatibility",
+        )
+        self.set_current_packet(TimedValue(frame, timing))
 
     def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
-        """Thread-safe frame retrieval."""
+        """Thread-safe compatibility frame retrieval."""
+        packet = self.get_current_packet()
+        if packet is None:
+            return None
+        return (packet.value.copy(), packet.timing.capture_nt_us / 1000.0)
+
+    def set_cached_packet(self, packet: FramePacket) -> None:
+        """Thread-safe cached packet update."""
         with self._lock:
-            if self._current_frame is None:
+            self._last_cached_packet = TimedValue(packet.value.copy(), packet.timing)
+
+    def get_cached_packet(self) -> FramePacket | None:
+        """Thread-safe cached packet retrieval."""
+        with self._lock:
+            if self._last_cached_packet is None:
                 return None
-            return (self._current_frame.copy(), self._current_timestamp)
+            return TimedValue(
+                self._last_cached_packet.value.copy(),
+                self._last_cached_packet.timing,
+            )
 
     def set_cached_frame(self, frame: np.ndarray) -> None:
-        """Thread-safe cached frame update."""
-        with self._lock:
-            self._last_cached_frame = frame.copy()
+        """Compatibility cached frame update."""
+        timing = TimingMetadata(
+            capture_nt_us=ntcore._now(),
+            capture_monotonic_ns=time.monotonic_ns(),
+            frame_seq=self.next_frame_seq(),
+            camera_name=self.camera_name,
+            source="compatibility-cache",
+        )
+        self.set_cached_packet(TimedValue(frame, timing))
 
     def get_cached_frame(self) -> Optional[np.ndarray]:
         """Thread-safe cached frame retrieval."""
-        with self._lock:
-            return (
-                self._last_cached_frame.copy()
-                if self._last_cached_frame is not None
-                else None
-            )
+        packet = self.get_cached_packet()
+        return packet.value.copy() if packet is not None else None
 
     def start(self, worker_fn) -> None:
         """Start the camera worker thread."""
@@ -165,10 +207,19 @@ class CameraThreadManager:
 
                 if frame is not None:
                     failure_tracker.reset()
-                    worker.set_cached_frame(frame)
-                    current_time_ms = time.time() * 1000.0
-                    timestamp_from_start = current_time_ms - self.start_time_ms
-                    worker.set_current_frame(frame, timestamp_from_start)
+                    packet = TimedValue(
+                        frame,
+                        TimingMetadata(
+                            capture_nt_us=ntcore._now(),
+                            capture_monotonic_ns=time.monotonic_ns(),
+                            frame_seq=worker.next_frame_seq(),
+                            camera_name=camera_name,
+                            bus_id=self.get_bus_id_for_camera_name(camera_name),
+                            source="camera",
+                        ),
+                    )
+                    worker.set_cached_packet(packet)
+                    worker.set_current_packet(packet)
                     self.web_interface.update_camera_frame(camera_name, frame)
                 else:
                     if failure_tracker.record_failure():
@@ -177,11 +228,9 @@ class CameraThreadManager:
                         )
                         break
 
-                    cached_frame = worker.get_cached_frame()
-                    if cached_frame is not None:
-                        current_time_ms = time.time() * 1000.0
-                        timestamp_from_start = current_time_ms - self.start_time_ms
-                        worker.set_current_frame(cached_frame, timestamp_from_start)
+                    cached_packet = worker.get_cached_packet()
+                    if cached_packet is not None:
+                        worker.set_current_packet(cached_packet)
 
                     if failure_tracker.should_log():
                         self.logger.log(
@@ -284,6 +333,11 @@ class CameraThreadManager:
         for camera_name in camera_names:
             self.stop_camera_thread(camera_name)
         self.logger.log(f"{Colors.CYAN}All camera threads stopped{Colors.RESET}")
+
+    def get_current_packet(self, camera_name: str) -> FramePacket | None:
+        """Get the most current timestamped frame packet for a specific camera."""
+        worker = self.cameras.get(camera_name)
+        return worker.get_current_packet() if worker else None
 
     def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
         """
@@ -398,6 +452,20 @@ class CameraThreadManager:
             The camera name if found, None otherwise.
         """
         return self.bus_id_to_name.get(bus_id)
+
+    def get_bus_id_for_camera_name(self, camera_name: str) -> str | None:
+        """Get the registered bus_id associated with a camera name."""
+        for bus_id, registered_name in self.bus_id_to_name.items():
+            if registered_name == camera_name:
+                return bus_id
+        return None
+
+    def get_current_packet_by_bus_id(self, bus_id: str) -> FramePacket | None:
+        """Get the current timestamped frame packet for a camera identified by bus_id."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        return self.get_current_packet(camera_name)
 
     def get_current_frame_by_bus_id(
         self, bus_id: str

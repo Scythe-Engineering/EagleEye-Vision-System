@@ -11,11 +11,14 @@ from wpimath.geometry import (
     Quaternion,
     Rotation2d,
     Rotation3d,
+    Transform2d,
+    Transform3d,
     Translation2d,
     Translation3d,
 )
 
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.timing import get_timing, retime, unwrap_timed
 
 _POSE3D_KEYS = frozenset({"x", "y", "z", "roll", "pitch", "yaw"})
 _POSE2D_KEYS = frozenset({"x", "y", "rotation"})
@@ -63,8 +66,26 @@ def _matrix_to_pose2d(matrix: np.ndarray) -> Pose2d:
     return Pose2d(Translation2d(x, y), Rotation2d(yaw))
 
 
-def _dict_to_wpilib(value: dict) -> Pose3d | Pose2d | Translation3d | Translation2d | None:
+def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
     keys = frozenset(value.keys())
+    if schema == "rotation3d" and {"roll", "pitch", "yaw"} <= keys:
+        return Rotation3d(float(value["roll"]), float(value["pitch"]), float(value["yaw"]))
+    if schema == "rotation2d" and "rotation" in keys:
+        return Rotation2d(float(value["rotation"]))
+    if schema == "transform3d" and _POSE3D_KEYS <= keys:
+        return Transform3d(
+            Translation3d(float(value["x"]), float(value["y"]), float(value["z"])),
+            Rotation3d(float(value["roll"]), float(value["pitch"]), float(value["yaw"])),
+        )
+    if schema == "transform2d" and _POSE2D_KEYS <= keys and "z" not in keys:
+        return Transform2d(
+            Translation2d(float(value["x"]), float(value["y"])),
+            Rotation2d(float(value["rotation"])),
+        )
+    if schema == "translation3d" and _TRANSLATION3D_KEYS <= keys:
+        return Translation3d(float(value["x"]), float(value["y"]), float(value["z"]))
+    if schema == "translation2d" and _TRANSLATION2D_KEYS <= keys and "z" not in keys:
+        return Translation2d(float(value["x"]), float(value["y"]))
     if _POSE3D_KEYS <= keys:
         return Pose3d(
             Translation3d(float(value["x"]), float(value["y"]), float(value["z"])),
@@ -83,13 +104,32 @@ def _dict_to_wpilib(value: dict) -> Pose3d | Pose2d | Translation3d | Translatio
 
 
 def _coerce_wpilib(value: Any, schema: str) -> Any:
-    if isinstance(value, np.ndarray) and value.shape == (4, 4):
-        return _matrix_to_pose2d(value) if schema == "pose2d" else _matrix_to_pose3d(value)
+    if schema in {"double", "float", "number"} and isinstance(value, int | float):
+        return float(value)
+    if schema in {"boolean", "bool"} and isinstance(value, bool):
+        return value
+    if schema == "string" and isinstance(value, str):
+        return value
+    if schema == "auto" and isinstance(value, (bool, int, float, str)):
+        return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else value
+    if isinstance(value, np.ndarray):
+        if value.shape == (4, 4):
+            return _matrix_to_pose2d(value) if schema == "pose2d" else _matrix_to_pose3d(value)
+        if schema in {"double_array", "float_array", "number_array", "auto"} and np.issubdtype(value.dtype, np.number):
+            return [float(item) for item in value.flatten().tolist()]
     if isinstance(value, dict):
-        return _dict_to_wpilib(value)
+        return _dict_to_wpilib(value, schema)
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        if not value:
+            return []
+        if all(isinstance(item, bool) for item in value):
+            return list(value)
+        if all(isinstance(item, int | float) and not isinstance(item, bool) for item in value):
+            return [float(item) for item in value]
+        if all(isinstance(item, str) for item in value):
+            return list(value)
         items = [_coerce_wpilib(item, schema) for item in value]
-        if items and all(type(i) is type(items[0]) for i in items):
+        if items and all(item is not None for item in items) and all(type(i) is type(items[0]) for i in items):
             return items
     return None
 
@@ -107,6 +147,7 @@ class PublishToNetworktables(OperationInstance):
         self.schema = schema
         self.data_path_tokens = self._normalize_path(data_path)
         self._publisher: Any = None
+        self.uses_timed_inputs = True
 
     def run(self, data: Any) -> Any:
         value = self._select_value(data)
@@ -124,21 +165,41 @@ class PublishToNetworktables(OperationInstance):
             self.data_path_tokens = self._normalize_path(json_config["data_path"])
 
     def _publish(self, value: Any) -> None:
-        wpi_value = _coerce_wpilib(value, self.schema)
+        timing = get_timing(value)
+        raw_value = unwrap_timed(value)
+        wpi_value = _coerce_wpilib(raw_value, self.schema)
         if wpi_value is None:
             return
         if self._publisher is None:
-            if isinstance(wpi_value, list):
-                if not wpi_value:
-                    return
-                self._publisher = self.network_table.getStructArrayTopic(
-                    self.target_key, type(wpi_value[0])
-                ).publish()
-            else:
-                self._publisher = self.network_table.getStructTopic(
-                    self.target_key, type(wpi_value)
-                ).publish()
-        self._publisher.set(wpi_value)
+            self._publisher = self._create_publisher(wpi_value)
+            if self._publisher is None:
+                return
+        if timing is not None:
+            self._publisher.set(wpi_value, timing.capture_nt_us)
+        else:
+            self._publisher.set(wpi_value)
+
+    def _create_publisher(self, wpi_value: Any) -> Any:
+        if isinstance(wpi_value, list):
+            if not wpi_value:
+                return None
+            first = wpi_value[0]
+            if isinstance(first, bool):
+                return self.network_table.getBooleanArrayTopic(self.target_key).publish()
+            if isinstance(first, float):
+                return self.network_table.getDoubleArrayTopic(self.target_key).publish()
+            if isinstance(first, str):
+                return self.network_table.getStringArrayTopic(self.target_key).publish()
+            return self.network_table.getStructArrayTopic(
+                self.target_key, type(first)
+            ).publish()
+        if isinstance(wpi_value, bool):
+            return self.network_table.getBooleanTopic(self.target_key).publish()
+        if isinstance(wpi_value, float):
+            return self.network_table.getDoubleTopic(self.target_key).publish()
+        if isinstance(wpi_value, str):
+            return self.network_table.getStringTopic(self.target_key).publish()
+        return self.network_table.getStructTopic(self.target_key, type(wpi_value)).publish()
 
     def _normalize_path(self, data_path: str | Sequence[str] | None) -> list[str | int]:
         if data_path is None:
@@ -159,9 +220,12 @@ class PublishToNetworktables(OperationInstance):
     def _select_value(self, data: Any) -> Any:
         if not self.data_path_tokens:
             return data
-        if self._should_extract_sequence_field(data):
-            return self._extract_sequence_field(data)
-        current = data
+        timing = get_timing(data)
+        raw_data = unwrap_timed(data)
+        if self._should_extract_sequence_field(raw_data):
+            selected = self._extract_sequence_field(raw_data)
+            return retime(selected, timing) if timing is not None and selected is not None else selected
+        current = raw_data
         for token in self.data_path_tokens:
             if isinstance(token, int):
                 if isinstance(current, Sequence):
@@ -176,7 +240,7 @@ class PublishToNetworktables(OperationInstance):
                     current = current[token]
                 else:
                     return None
-        return current
+        return retime(current, timing) if timing is not None else current
 
     def _should_extract_sequence_field(self, data: Any) -> bool:
         return (
