@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
@@ -12,12 +12,6 @@ class TimingMetadata:
     """Capture-time metadata propagated alongside pipeline values."""
 
     capture_nt_us: int
-    capture_monotonic_ns: int
-    frame_seq: int | None = None
-    camera_name: str | None = None
-    bus_id: str | None = None
-    source: str | None = None
-    derived_from: tuple["TimingMetadata", ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -32,15 +26,38 @@ FramePacket = TimedValue[Any]
 
 
 def is_timed(value: object) -> bool:
+    """Check whether a value carries timing metadata.
+
+    Args:
+        value: Value to inspect.
+
+    Returns:
+        True when the value is a TimedValue, otherwise False.
+    """
     return isinstance(value, TimedValue)
 
 
 def unwrap_timed(value: T | TimedValue[T]) -> T:
+    """Return the raw value from a timed wrapper.
+
+    Args:
+        value: Raw value or TimedValue wrapper.
+
+    Returns:
+        The wrapped value when timed, otherwise the original value.
+    """
     return value.value if isinstance(value, TimedValue) else value
 
 
 def unwrap_timed_deep(value: Any) -> Any:
-    """Remove TimedValue wrappers recursively while preserving container shape."""
+    """Remove TimedValue wrappers recursively while preserving container shape.
+
+    Args:
+        value: Value or container that may include TimedValue wrappers.
+
+    Returns:
+        A value with all nested TimedValue wrappers replaced by raw values.
+    """
 
     if isinstance(value, TimedValue):
         return unwrap_timed_deep(value.value)
@@ -54,31 +71,53 @@ def unwrap_timed_deep(value: Any) -> Any:
 
 
 def get_timing(value: object) -> TimingMetadata | None:
+    """Get timing metadata from a timed value.
+
+    Args:
+        value: Value to inspect.
+
+    Returns:
+        Timing metadata when value is timed, otherwise None.
+    """
     return value.timing if isinstance(value, TimedValue) else None
 
 
 def retime(value: T | TimedValue[T], timing: TimingMetadata) -> TimedValue[T]:
+    """Wrap a value with replacement timing metadata.
+
+    Args:
+        value: Raw value or TimedValue to re-time.
+        timing: Timing metadata to attach.
+
+    Returns:
+        TimedValue containing the raw value and provided timing metadata.
+    """
     return TimedValue(unwrap_timed(value), timing)
 
 
-def average_timings(timings: Sequence[TimingMetadata]) -> TimingMetadata:
-    if not timings:
-        raise ValueError("average_timings() requires at least one timing")
-    if len(timings) == 1:
-        return timings[0]
+def oldest_timing(timings: Sequence[TimingMetadata]) -> TimingMetadata:
+    """Select the oldest timing metadata record.
 
-    return TimingMetadata(
-        capture_nt_us=round(sum(t.capture_nt_us for t in timings) / len(timings)),
-        capture_monotonic_ns=round(
-            sum(t.capture_monotonic_ns for t in timings) / len(timings)
-        ),
-        source="average",
-        derived_from=tuple(timings),
-    )
+    Args:
+        timings: Timing metadata records to compare.
+
+    Returns:
+        The timing metadata record with the earliest capture timestamp.
+    """
+    if not timings:
+        raise ValueError("oldest_timing() requires at least one timing")
+    return min(timings, key=lambda timing: timing.capture_nt_us)
 
 
 def collect_timings(value: Any) -> list[TimingMetadata]:
-    """Collect timing metadata from TimedValue wrappers in a current-frame input."""
+    """Collect timing metadata from TimedValue wrappers in current-frame input.
+
+    Args:
+        value: Value or container that may include TimedValue wrappers.
+
+    Returns:
+        Timing metadata records found in the value.
+    """
 
     if isinstance(value, TimedValue):
         return [value.timing]
@@ -96,7 +135,15 @@ def collect_timings(value: Any) -> list[TimingMetadata]:
 
 
 def attach_output_timing(output: Any, inputs: Any) -> Any:
-    """Attach input capture timing to a raw operation output when possible."""
+    """Attach input capture timing to a raw operation output when possible.
+
+    Args:
+        output: Operation output that may need timing metadata.
+        inputs: Operation inputs used as the timing metadata source.
+
+    Returns:
+        Timed output when input timing exists, otherwise the original output.
+    """
 
     if output is None or isinstance(output, TimedValue):
         return output
@@ -105,11 +152,5 @@ def attach_output_timing(output: Any, inputs: Any) -> Any:
     if not timings:
         return output
 
-    timing = timings[0] if len(timings) == 1 else average_timings(timings)
+    timing = oldest_timing(timings)
     return TimedValue(output, timing)
-
-
-def clone_timing(timing: TimingMetadata, **changes: Any) -> TimingMetadata:
-    """Return a copy of timing with selected debug/source fields changed."""
-
-    return replace(timing, **changes)

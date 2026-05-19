@@ -16,7 +16,7 @@ from tests.utils.dummy_dependencies import FakeNetworkTable
 
 
 def test_matrix_to_pose3d_converts_opencv_camera_axes_to_wpilib_body_axes() -> None:
-    """A level robot pose should not publish with a 90 degree roll."""
+    """Verify matrix to pose3d converts opencv camera axes to wpilib body axes."""
 
     transform = np.eye(4, dtype=float)
     transform[:3, :3] = np.array(
@@ -40,7 +40,7 @@ def test_matrix_to_pose3d_converts_opencv_camera_axes_to_wpilib_body_axes() -> N
 
 
 def test_matrix_to_pose3d_preserves_wpilib_yaw_after_basis_conversion() -> None:
-    """OpenCV camera-axis pose should publish robot yaw in WPILib NWU axes."""
+    """Verify matrix to pose3d preserves wpilib yaw after basis conversion."""
 
     yaw = math.radians(45.0)
     field_from_robot = np.array(
@@ -70,10 +70,11 @@ def test_matrix_to_pose3d_preserves_wpilib_yaw_after_basis_conversion() -> None:
 
 
 def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
+    """Verify publish uses capture timestamp when value is timed."""
     table = FakeNetworkTable()
     publisher = PublishToNetworktables(table, "RobotPose2D", schema="pose2d")
     transform = np.eye(4, dtype=float)
-    timing = TimingMetadata(capture_nt_us=123456, capture_monotonic_ns=789)
+    timing = TimingMetadata(capture_nt_us=123456)
 
     publisher.run(TimedValue(transform, timing))
 
@@ -82,9 +83,10 @@ def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
 
 
 def test_publish_supports_primitive_double_arrays() -> None:
+    """Verify publish supports primitive double arrays."""
     table = FakeNetworkTable()
     publisher = PublishToNetworktables(table, "values", schema="double_array")
-    timing = TimingMetadata(capture_nt_us=654321, capture_monotonic_ns=987)
+    timing = TimingMetadata(capture_nt_us=654321)
 
     publisher.run(TimedValue([1, 2.5], timing))
 

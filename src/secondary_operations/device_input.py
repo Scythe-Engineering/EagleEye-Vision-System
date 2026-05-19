@@ -51,15 +51,14 @@ class DeviceInput(OperationInstance):
         bus_id: str,
         frame_rotation: int = 0,
     ) -> None:
-        """Initialize the device input operation.
-
+        """Initialize the object.
+        
         Args:
-            web_interface: Web interface for runtime updates.
-            compute_pool: Compute pool available for device operations.
-            camera_manager: Camera thread manager to fetch frames from.
-            bus_id: USB bus identifier for the camera to read frames from.
-            frame_rotation: Rotation angle in degrees (0, 90, 180, or 270). Defaults to 0.
-        """
+            web_interface (EagleEyeInterface): Web interface.
+            compute_pool (ComputePool): Compute pool.
+            camera_manager ('CameraThreadManager'): Camera manager.
+            bus_id (str): Bus id.
+            frame_rotation (int): Frame rotation."""
         self.web_interface = web_interface
         self.compute_pool = compute_pool
         self.camera_manager = camera_manager
@@ -67,17 +66,13 @@ class DeviceInput(OperationInstance):
         self.frame_rotation = self._normalize_rotation(frame_rotation)
 
     def _normalize_rotation(self, rotation: int) -> int:
-        """Normalize and validate rotation value.
-
+        """Normalize rotation.
+        
         Args:
-            rotation: Raw rotation value from config.
-
+            rotation (int): Rotation.
+        
         Returns:
-            Normalized rotation in {0, 90, 180, 270}.
-
-        Raises:
-            ValueError: If rotation cannot be normalized to a valid value.
-        """
+            int: Result of normalize rotation."""
         normalized = ((rotation % 360) + 360) % 360
         if normalized not in self.VALID_ROTATIONS:
             raise ValueError(
@@ -86,14 +81,13 @@ class DeviceInput(OperationInstance):
         return normalized
 
     def _apply_rotation(self, frame: np.ndarray) -> np.ndarray:
-        """Apply configured rotation to a frame.
-
+        """Apply rotation.
+        
         Args:
-            frame: Input frame to rotate.
-
+            frame (np.ndarray): Frame.
+        
         Returns:
-            Rotated frame (or original if rotation is 0).
-        """
+            np.ndarray: Result of apply rotation."""
         if self.frame_rotation == 0:
             return frame
         elif self.frame_rotation == 90:
@@ -105,14 +99,13 @@ class DeviceInput(OperationInstance):
         return frame
 
     def run(self, _input_data: Any) -> FramePacket | None:
-        """Fetch the current timestamped frame from the configured camera.
-
+        """Run.
+        
         Args:
-            _input_data: Unused (data source operations don't use input).
-
+            _input_data (Any):  input data.
+        
         Returns:
-            Timestamped frame packet with rotation applied, or None if unavailable.
-        """
+            FramePacket | None: Result of run."""
         get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
         if callable(get_packet):
             packet = get_packet(self.bus_id)
@@ -127,13 +120,10 @@ class DeviceInput(OperationInstance):
         return None
 
     def update_config(self, json_config: dict[str, Any]) -> None:
-        """Update runtime-configurable settings for the operation.
-
+        """Update config.
+        
         Args:
-            json_config: Runtime configuration overrides. Supports:
-                - bus_id: Changes the camera source (requires restart).
-                - frame_rotation: Changes rotation angle (applied immediately).
-        """
+            json_config (dict[str, Any]): Json config."""
         self.bus_id = json_config.get("bus_id", self.bus_id)
 
         if "frame_rotation" in json_config:

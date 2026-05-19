@@ -12,14 +12,13 @@ if TYPE_CHECKING:
 
 class Operation:
     def __init__(self, instance: OperationInstance, uuid: str, name: str, is_data_source: bool = False) -> None:
-        """Initializes the Operation class.
-
+        """Initialize the object.
+        
         Args:
-            instance (object): The instance of the operation.
-            uuid (str): The UUID of the operation.
-            name (str): The name of the operation.
-            is_data_source (bool): Whether this operation generates its own data.
-        """
+            instance (OperationInstance): Instance.
+            uuid (str): Uuid.
+            name (str): Name.
+            is_data_source (bool): Is data source."""
         self.instance: OperationInstance = instance
         self.uuid: str = uuid
         self.name: str = name
@@ -36,12 +35,13 @@ class Operation:
         self.finish_timestep: int | None = None
 
     def run(self, input_data: Any) -> Any:
-        """Run the operation and propagate capture timing metadata.
-
-        Operations receive raw unwrapped values by default so existing image/dict
-        processors remain compatible. Operations that need timing metadata may set
-        ``uses_timed_inputs = True`` on the instance.
-        """
+        """Run.
+        
+        Args:
+            input_data (Any): Input data.
+        
+        Returns:
+            Any: Result of run."""
         call_input = (
             input_data
             if getattr(self.instance, "uses_timed_inputs", False)
@@ -58,17 +58,13 @@ class Operation:
         return attach_output_timing(output, input_data)
 
     def is_only_input_connection(self, uuid: str) -> bool:
-        """
-        Check if the passed uuid is the only input connection to this operation.
-
+        """Is only input connection.
+        
         Args:
-            uuid (str): The uuid of the operation that has its output connected to this operation.
-
+            uuid (str): Uuid.
+        
         Returns:
-            bool: True if the uuid is the only input connection to this operation, False otherwise.
-        Raises:
-            ValueError: If the connections have not been registered yet.
-        """
+            bool: Result of is only input connection."""
         if len(self.input_connections) == 0:
             raise ValueError("Connections not registered yet")
 
@@ -78,63 +74,54 @@ class Operation:
         return len(input_connections) == 1 and len(self.input_connections) == 1
 
     def set_thread_object(self, thread_object: ThreadObject) -> None:
-        """Set the assigned thread object for the operation.
-
+        """Set thread object.
+        
         Args:
-            thread_object (ThreadObject): The thread object to assign.
-        """
+            thread_object (ThreadObject): Thread object."""
         self.assigned_thread_object = thread_object
 
     def get_thread_object(self) -> ThreadObject | None:
-        """Get the assigned thread object for the operation.
-
+        """Get thread object.
+        
         Returns:
-            ThreadObject | None: The assigned thread object for the operation.
-        """
+            ThreadObject | None: Result of get thread object."""
         return self.assigned_thread_object
 
     def get_output_connections(self) -> list[Connection]:
-        """Get the output connections of the operation.
-
+        """Get output connections.
+        
         Returns:
-            list[Connection]: The output connections of the operation.
-        """
+            list[Connection]: Result of get output connections."""
         return self.output_connections
 
     def get_input_connections(self) -> list[Connection]:
-        """Get the input connections of the operation.
-
+        """Get input connections.
+        
         Returns:
-            list[Connection]: The input connections of the operation.
-        """
+            list[Connection]: Result of get input connections."""
         return self.input_connections
 
     def add_input_connection(self, connection: Connection) -> None:
-        """Add an input connection to the operation.
-
+        """Add input connection.
+        
         Args:
-            connection (Connection): The connection to add.
-        """
+            connection (Connection): Connection."""
         self.input_connections.append(connection)
         self.has_input_connections = True
 
     def add_output_connection(self, connection: Connection) -> None:
-        """Add an output connection to the operation.
-
+        """Add output connection.
+        
         Args:
-            connection (Connection): The connection to add.
-        """
+            connection (Connection): Connection."""
         self.output_connections.append(connection)
         self.has_output_connections = True
 
     def all_inputs_solved(self) -> bool:
-        """Check if all non-default inputs of the operation are solved.
-
-        Default connections use previous frame data and are always available.
-
+        """All inputs solved.
+        
         Returns:
-            bool: True if all non-default inputs are solved, False otherwise.
-        """
+            bool: Result of all inputs solved."""
         non_default_connections = [
             conn for conn in self.input_connections if not conn.is_default
         ]
@@ -148,6 +135,10 @@ class Operation:
         )
 
     def __str__(self) -> str:
+        """Return a human-readable string representation.
+        
+        Returns:
+            str: Result of str  ."""
         return f"Operation {self.name} with UUID {self.uuid} with output connections {[str(conn) for conn in self.output_connections]} and input connections {[str(conn) for conn in self.input_connections]}"
 
 
@@ -161,16 +152,15 @@ class Connection:
         data_type: str,
         is_default: bool = False,
     ) -> None:
-        """Initializes the Connection class.
-
+        """Initialize the object.
+        
         Args:
-            from_operation (Operation): The operation that outputs data through this connection.
-            from_port (str): The output port name on the from_operation.
-            to_operation (Operation): The operation that receives data through this connection.
-            to_port (str): The input port name on the to_operation.
-            data_type (str): The type of data transmitted through this connection.
-            is_default (bool, optional): Whether this connection is a default connection from the from_operation. Defaults to False.
-        """
+            from_operation (Operation): From operation.
+            from_port (str): From port.
+            to_operation (Operation): To operation.
+            to_port (str): To port.
+            data_type (str): Data type.
+            is_default (bool): Is default."""
         self.from_operation: Operation = from_operation
         self.from_port: str = from_port
         self.to_operation: Operation = to_operation
@@ -182,4 +172,8 @@ class Connection:
         self.to_operation.add_input_connection(self)
 
     def __str__(self) -> str:
+        """Return a human-readable string representation.
+        
+        Returns:
+            str: Result of str  ."""
         return f"Connection from {self.from_operation.name}:{self.from_operation.uuid}:{self.from_port} to {self.to_operation.name}:{self.to_operation.uuid}:{self.to_port}"
