@@ -1,0 +1,44 @@
+{
+    "class_name": "RobotRoiFrameFilter",
+    "description": "Filters dynamic camera frame streams by shared robot-space circular ROI eligibility",
+    "category": "filt",
+    "folder": "Filtering",
+    "dynamic_group": {
+        "input_base_name": "camera_frame",
+        "output_base_name": "filtered_frame",
+        "max_inputs": 16,
+        "max_outputs": 16,
+        "mirrored_output_group": true,
+        "coupled_groups": true,
+        "input_dynamic_group": true,
+        "output_dynamic_group": false
+    },
+    "input_nodes": [
+        {
+            "name": "robot_pose",
+            "has_default": true
+        },
+        {
+            "name": "camera_frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "filtered_frame"
+    ],
+    "parameters": {
+        "allowed_regions": {
+            "type": "list",
+            "description": "Shared circular robot-space ROI list. Each region is {\"x\": meters, \"y\": meters, \"radius\": meters}.",
+            "default": [
+                {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "radius": 1.0
+                }
+            ],
+            "required": false,
+            "restart_for_change": false
+        }
+    }
+}
