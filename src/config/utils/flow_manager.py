@@ -9,6 +9,7 @@ from src.config.utils.operation import Operation
 from src.config.utils.thread_object import ThreadObject
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.timing import unwrap_timed_deep
 
 
 def recursive_forward_flow_register(
@@ -429,7 +430,7 @@ class FlowManager:
             if conn.is_default:
                 from_uuid = conn.from_operation.uuid
                 if from_uuid in self.previous_operation_outputs:
-                    return self.previous_operation_outputs[from_uuid]
+                    return unwrap_timed_deep(self.previous_operation_outputs[from_uuid])
                 else:
                     return None
             else:
@@ -447,9 +448,9 @@ class FlowManager:
                 if conn.is_default:
                     from_uuid = conn.from_operation.uuid
                     if from_uuid in self.previous_operation_outputs:
-                        inputs[conn.to_port] = self.previous_operation_outputs[
-                            from_uuid
-                        ]
+                        inputs[conn.to_port] = unwrap_timed_deep(
+                            self.previous_operation_outputs[from_uuid]
+                        )
 
             return inputs
 
