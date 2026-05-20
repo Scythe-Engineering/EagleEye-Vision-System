@@ -34,6 +34,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         padding_factor: float = 0.65,
         max_regions: int = 10,
         min_region_size_px: int = 16,
+        max_detection_distance_m: float = 0.0,
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
         compute_pool: ComputePool | None = None,
@@ -46,6 +47,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             padding_factor: Fractional padding applied to ROI size.
             max_regions: Maximum number of ROIs to return.
             min_region_size_px: Minimum side length for ROI squares.
+            max_detection_distance_m: Maximum 3D distance in meters from the
+                camera to the tag center for ROI generation. Tags farther than
+                this are skipped. Zero disables the limit.
             camera_config_registry: Injected shared camera config registry.
         """
         if TemporalAcceleration is None:
@@ -111,6 +115,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             padding_factor=padding_factor,
             max_regions=max_regions,
             min_region_size_px=min_region_size_px,
+            max_detection_distance_m=max_detection_distance_m,
         )
 
         self._last_regions: List[Tuple[int, int, int, int]] = []
@@ -178,6 +183,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 - padding_factor
                 - max_regions
                 - min_region_size_px
+                - max_detection_distance_m
         """
         self._rust_impl.update_config(json_config)
 
