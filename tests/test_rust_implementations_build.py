@@ -47,6 +47,7 @@ def test_check_dependencies_finds_cargo_in_added_rustup_path(monkeypatch) -> Non
             return "/home/pi/.cargo/bin/cargo"
         return None
 
+    maturin_version_command = [*builder._maturin_command(), "--version"]
     calls: list[tuple[list[str], str | None]] = []
 
     def fake_run(command: list[str], **kwargs):
@@ -55,7 +56,7 @@ def test_check_dependencies_finds_cargo_in_added_rustup_path(monkeypatch) -> Non
 
         if command == ["/home/pi/.cargo/bin/cargo", "--version"]:
             return subprocess.CompletedProcess(command, 0, stdout="cargo 1.0", stderr="")
-        if command == ["uv", "run", "maturin", "--version"]:
+        if command == maturin_version_command:
             return subprocess.CompletedProcess(
                 command,
                 0,
@@ -70,5 +71,5 @@ def test_check_dependencies_finds_cargo_in_added_rustup_path(monkeypatch) -> Non
     assert builder.check_dependencies() is True
     assert calls == [
         (["/home/pi/.cargo/bin/cargo", "--version"], "/home/pi/.cargo/bin:/usr/bin:/bin"),
-        (["uv", "run", "maturin", "--version"], "/home/pi/.cargo/bin:/usr/bin:/bin"),
+        (maturin_version_command, "/home/pi/.cargo/bin:/usr/bin:/bin"),
     ]
