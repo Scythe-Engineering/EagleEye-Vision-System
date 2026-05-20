@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -332,7 +332,7 @@ class FakeCameraWorker:
 
     camera_index: int = 0
     frame: Optional[np.ndarray] = None
-    timestamp: float = 0.0
+    capture_nt_us: int = 1
 
     def get_current_packet(self) -> FramePacket | None:
         """Get current packet.
@@ -343,17 +343,8 @@ class FakeCameraWorker:
             return None
         return TimedValue(
             self.frame,
-            TimingMetadata(capture_nt_us=int(self.timestamp * 1000) or 1),
+            TimingMetadata(capture_nt_us=self.capture_nt_us),
         )
-
-    def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
-        """Get current frame.
-        
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: Result of get current frame."""
-        if self.frame is None:
-            return None
-        return self.frame, self.timestamp
 
 
 @dataclass
@@ -393,18 +384,18 @@ class FakeCameraThreadManager:
             Optional[str]: Result of get camera name by bus id."""
         return self.bus_id_to_name.get(bus_id)
 
-    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
-        """Get current frame.
+    def get_current_packet(self, camera_name: str) -> FramePacket | None:
+        """Get current packet.
         
         Args:
             camera_name (str): Camera name.
         
         Returns:
-            Optional[Tuple[np.ndarray, float]]: Result of get current frame."""
+            FramePacket | None: Result of get current packet."""
         worker = self.camera_objects.get(camera_name)
         if worker is None:
             return None
-        return worker.get_current_frame()
+        return worker.get_current_packet()
 
     def get_current_packet_by_bus_id(self, bus_id: str) -> FramePacket | None:
         """Get current packet by bus id.
@@ -421,21 +412,6 @@ class FakeCameraThreadManager:
         if worker is None:
             return None
         return worker.get_current_packet()
-
-    def get_current_frame_by_bus_id(
-        self, bus_id: str
-    ) -> Optional[Tuple[np.ndarray, float]]:
-        """Get current frame by bus id.
-        
-        Args:
-            bus_id (str): Bus id.
-        
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: Result of get current frame by bus id."""
-        camera_name = self.get_camera_name_by_bus_id(bus_id)
-        if camera_name is None:
-            return None
-        return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
         """Get all bus ids.

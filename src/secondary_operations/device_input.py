@@ -21,7 +21,7 @@ class DeviceInput(OperationInstance):
 
     The run() method signature:
 
-        run(self, input) -> np.ndarray | None
+        run(self, input) -> FramePacket | None
 
     Input:
         _input_data (Any): Unused parameter. Data source operations don't consume
@@ -29,16 +29,10 @@ class DeviceInput(OperationInstance):
             by the `bus_id` constructor parameter.
 
     Output:
-        np.ndarray | None: The current camera frame as a numpy array in BGR format
-            with rotation applied if configured. Returns None if the camera is
-            unavailable or no frame has been captured yet. The array shape is
-            (height, width, 3) for color images.
-
-    Example:
-        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "1", 90)
-        >>> frame = device_input.run(None)
-        >>> if frame is not None:
-        ...     print(frame.shape)  # e.g., (720, 1280, 3)
+        FramePacket | None: The current camera frame wrapped with capture timing
+            metadata. The frame value is a numpy array in BGR format with rotation
+            applied if configured. Returns None if the camera is unavailable or
+            no frame has been captured yet.
     """
 
     VALID_ROTATIONS = {0, 90, 180, 270}
@@ -106,18 +100,10 @@ class DeviceInput(OperationInstance):
         
         Returns:
             FramePacket | None: Result of run."""
-        get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
-        if callable(get_packet):
-            packet = get_packet(self.bus_id)
-            if packet is None:
-                return None
-            return TimedValue(self._apply_rotation(packet.value), packet.timing)
-
-        frame_result = self.camera_manager.get_current_frame_by_bus_id(self.bus_id)
-        if frame_result is not None:
-            frame, _ = frame_result
-            return self._apply_rotation(frame)
-        return None
+        packet = self.camera_manager.get_current_packet_by_bus_id(self.bus_id)
+        if packet is None:
+            return None
+        return TimedValue(self._apply_rotation(packet.value), packet.timing)
 
     def update_config(self, json_config: dict[str, Any]) -> None:
         """Update config.

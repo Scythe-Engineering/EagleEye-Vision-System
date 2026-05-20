@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
 import ntcore
 import numpy as np
@@ -87,25 +87,6 @@ class CameraWorker:
                 return None
             return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
 
-    def set_current_frame(self, frame: np.ndarray, timestamp: float) -> None:
-        """Set current frame.
-        
-        Args:
-            frame (np.ndarray): Frame.
-            timestamp (float): Timestamp."""
-        timing = TimingMetadata(capture_nt_us=int(timestamp * 1000))
-        self.set_current_packet(TimedValue(frame, timing))
-
-    def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
-        """Get current frame.
-        
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: Result of get current frame."""
-        packet = self.get_current_packet()
-        if packet is None:
-            return None
-        return (packet.value.copy(), packet.timing.capture_nt_us / 1000.0)
-
     def set_cached_packet(self, packet: FramePacket) -> None:
         """Set cached packet.
         
@@ -126,22 +107,6 @@ class CameraWorker:
                 self._last_cached_packet.value.copy(),
                 self._last_cached_packet.timing,
             )
-
-    def set_cached_frame(self, frame: np.ndarray) -> None:
-        """Set cached frame.
-        
-        Args:
-            frame (np.ndarray): Frame."""
-        timing = TimingMetadata(capture_nt_us=ntcore._now())
-        self.set_cached_packet(TimedValue(frame, timing))
-
-    def get_cached_frame(self) -> Optional[np.ndarray]:
-        """Get cached frame.
-        
-        Returns:
-            Optional[np.ndarray]: Result of get cached frame."""
-        packet = self.get_cached_packet()
-        return packet.value.copy() if packet is not None else None
 
     def start(self, worker_fn) -> None:
         """Start.
@@ -355,28 +320,6 @@ class CameraThreadManager:
         worker = self.cameras.get(camera_name)
         return worker.get_current_packet() if worker else None
 
-    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
-        """Get current frame.
-        
-        Args:
-            camera_name (str): Camera name.
-        
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: Result of get current frame."""
-        worker = self.cameras.get(camera_name)
-        return worker.get_current_frame() if worker else None
-
-    def get_all_current_frames(self) -> Dict[str, Tuple[np.ndarray, float]]:
-        """Get all current frames.
-        
-        Returns:
-            Dict[str, Tuple[np.ndarray, float]]: Result of get all current frames."""
-        result = {}
-        for name, worker in self.cameras.items():
-            if frame_data := worker.get_current_frame():
-                result[name] = frame_data
-        return result
-
     def get_start_time_ms(self) -> float:
         """
         Get the start time in milliseconds when the manager was initialized.
@@ -491,22 +434,6 @@ class CameraThreadManager:
         if camera_name is None:
             return None
         return self.get_current_packet(camera_name)
-
-    def get_current_frame_by_bus_id(
-        self, bus_id: str
-    ) -> Optional[Tuple[np.ndarray, float]]:
-        """Get the current frame for a camera identified by bus_id.
-
-        Args:
-            bus_id: The USB bus identifier for the camera.
-
-        Returns:
-            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
-        """
-        camera_name = self.get_camera_name_by_bus_id(bus_id)
-        if camera_name is None:
-            return None
-        return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
         """Get all registered bus IDs.
