@@ -1,9 +1,12 @@
 from pathlib import Path
+from threading import Lock
 import traceback
-from typing import List, Optional, Dict, Any
+from typing import Callable, List, Optional, Dict, Any
+from uuid import uuid4
 
 import numpy as np
 
+from src.utils.device_management_utils.async_compute_wrapper import AsyncComputeResult
 from src.utils.device_management_utils.compute_device import ComputeDevice
 from src.utils.colors import Colors
 from src.main_operations.modules.object_detection.utils.yolov10.yolov10_ops import (
@@ -61,6 +64,11 @@ class ObjectDetectionImplementation:
         self.target_height = target_height
         self.conf_threshold = conf_threshold
         self.max_detections = max_detections
+        self._async_result_lock = Lock()
+        self._latest_async_detections: List[Dict[str, Any]] = []
+        self._pending_async_request_id: str | None = None
+        self._pending_async_error: BaseException | None = None
+        self._async_unsubscribe: Callable[[], None] | None = None
 
         # Check if we should use ultralytics directly
         self._use_ultralytics = (
@@ -83,6 +91,7 @@ class ObjectDetectionImplementation:
             print(
                 f"{Colors.GREEN}Assigned stream index: {self.stream_idx}{Colors.RESET}"
             )
+        self._register_async_result_callback()
 
     def _load_model(self) -> None:
         """Load the model onto the device if available."""
@@ -91,23 +100,107 @@ class ObjectDetectionImplementation:
 
         self.model_name = Path(self.model_path).stem
 
-        try:
-            from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
+        self.device.load_model(
+            self.model_path,
+            (self.target_height, self.target_width),
+            self.post_processing_model_path,
+            self.is_grayscale,
+        )
 
-            if isinstance(self.device, MX3Accelerator):
-                self.device.load_model(
-                    self.model_path,
-                    (self.target_height, self.target_width),
-                    self.post_processing_model_path,
+    def _uses_async_device(self) -> bool:
+        """Check whether the device exposes the async callback contract.
+
+        Returns:
+            True when the current device can accept non-blocking frame requests.
+        """
+        return (
+            self.device is not None
+            and hasattr(self.device, "on_frame")
+            and hasattr(self.device, "on_result")
+            and not self._use_ultralytics
+        )
+
+    def _register_async_result_callback(self) -> None:
+        """Register the object detection result callback when available."""
+        if not self._uses_async_device() or self.device is None:
+            return
+        on_result = getattr(self.device, "on_result")
+        self._async_unsubscribe = on_result(self._handle_async_result)
+
+    def _handle_async_result(self, result: AsyncComputeResult) -> None:
+        """Handle async inference completion from a compute wrapper.
+
+        Args:
+            result: Device result payload emitted by the async wrapper.
+        """
+        with self._async_result_lock:
+            if result.request_id != self._pending_async_request_id:
+                return
+            self._pending_async_request_id = None
+
+        if result.exception is not None:
+            with self._async_result_lock:
+                self._pending_async_error = result.exception
+            return
+        if result.output_data is None:
+            with self._async_result_lock:
+                self._pending_async_error = RuntimeError(
+                    "Async object detection result did not include output data"
                 )
-            else:
-                self.device.load_model(
-                    self.model_path, (self.target_height, self.target_width)
-                )
-        except ImportError:
-            self.device.load_model(
-                self.model_path, (self.target_height, self.target_width)
+            return
+
+        try:
+            detections = self.yolov10_ops.postprocess(result.output_data)
+        except Exception as exc:
+            with self._async_result_lock:
+                self._pending_async_error = exc
+            raise
+
+        with self._async_result_lock:
+            self._latest_async_detections = detections
+
+    def _run_async_device(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+        """Queue object detection inference and return the latest result.
+
+        Args:
+            frame: Input BGR frame.
+
+        Returns:
+            Latest completed detections, or an empty list before first result.
+        """
+        with self._async_result_lock:
+            pending_async_error = self._pending_async_error
+            self._pending_async_error = None
+            latest_async_detections = list(self._latest_async_detections)
+            has_pending_request = self._pending_async_request_id is not None
+
+        if pending_async_error is not None:
+            raise pending_async_error
+        if has_pending_request:
+            return latest_async_detections
+        if self.device is None:
+            raise RuntimeError("Object detection async device is not available")
+
+        input_tensor = self.yolov10_ops.preprocess(frame)
+        request_id = uuid4().hex
+        with self._async_result_lock:
+            self._pending_async_request_id = request_id
+        try:
+            on_frame = getattr(self.device, "on_frame")
+            on_frame(
+                self.model_name,
+                input_tensor,
+                (self.target_height, self.target_width),
+                self.stream_idx,
+                request_id,
             )
+        except Exception:
+            with self._async_result_lock:
+                if self._pending_async_request_id == request_id:
+                    self._pending_async_request_id = None
+            raise
+
+        return latest_async_detections
 
     def _is_onnx_or_pt_model(self, model_path: str) -> bool:
         """Check if the model file is ONNX or PyTorch format."""
@@ -188,6 +281,8 @@ class ObjectDetectionImplementation:
                     )
             return detections
         else:
+            if self._uses_async_device():
+                return self._run_async_device(frame)
             input_tensor = self.yolov10_ops.preprocess(frame)
             outputs = self.device.run(
                 self.model_name,

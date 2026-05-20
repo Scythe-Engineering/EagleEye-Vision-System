@@ -87,6 +87,20 @@ Each device implementation leverages hardware-specific optimizations:
 
 The MX3 implementation supports asynchronous multi-stream processing, allowing multiple inference requests to be processed concurrently.
 
+### Device-Agnostic Async Wrapper
+
+`AsyncComputeWrapper` wraps any `ComputeDevice` and exposes the same callback contract to pipelines regardless of hardware type:
+
+- `on_frame(model_path, input_data, input_data_shape, stream_idx)`: camera or pipeline code submits a preprocessed image buffer without waiting for the device implementation to finish inference. The call returns a request id that identifies the eventual result.
+- `on_result(callback)`: pipeline code registers a thread-safe result hook. The callback receives an `AsyncComputeResult` containing the request id, output data, latency, and any device exception.
+- `run(...)`: existing synchronous callers are bridged through `on_frame` and `wait_for_result`, so older pipeline code can keep the `ComputeDevice.run()` shape while new ML-heavy operations opt in to event-driven flow.
+
+The wrapper is applied by `ComputePool.add_compute_device()` by default so dynamic device lifecycle handling still uses the compute pool. `connect_streams()`, `load_model()`, `stop()`, and MX3-style `register_thread_access()` calls are forwarded to the wrapped device.
+
+Callback and device exceptions are preserved and surfaced back through the requesting operation. Object-detection operations store async callback exceptions and re-raise them on the next pipeline invocation, allowing the existing `FlowManager` and `Pipeline.record_operation_error()` path to publish centralized operation errors. The wrapper does not add retries or hardware failover; device replacement and retry policy remain compute-pool or operation-level responsibilities.
+
+The async wrapper owns a small worker thread per wrapped device. `on_frame()` queue insertion is non-blocking, result callbacks run on the wrapper worker thread, and callback registration/result state are protected by locks. Callers that share buffers across threads must treat submitted input buffers as owned by the async request until its result callback fires. `AsyncComputeResult.latency_s` captures device execution time for future latency logging.
+
 ### Error Handling
 
 Robust error handling for hardware unavailability, model loading failures, and inference execution errors.
@@ -101,6 +115,7 @@ Proper cleanup and resource management through the `stop()` method implementatio
 device_management_utils/
 ├── compute_device.py          # Abstract base class for compute devices
 ├── compute_pool.py            # Pool management for multiple devices
+├── async_compute_wrapper.py   # Device-agnostic event-driven async wrapper
 ├── cpu.py                     # CPU-based inference implementation
 ├── gpu.py                     # GPU-based inference implementation
 ├── mx3_accelerator.py         # MemryX MX3 accelerator implementation

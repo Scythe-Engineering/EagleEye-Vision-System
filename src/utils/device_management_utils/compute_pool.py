@@ -1,12 +1,18 @@
 from src.utils.device_management_utils.compute_device import ComputeDevice
+from src.utils.device_management_utils.async_compute_wrapper import AsyncComputeWrapper
 
 
 class ComputePool:
-    def __init__(self) -> None:
+    def __init__(self, enable_async_wrappers: bool = True) -> None:
         """
         Initialize the compute pool.
+
+        Args:
+            enable_async_wrappers (bool): Whether added devices should be wrapped
+                with the event-driven async compute contract.
         """
-        self.compute_pool = []
+        self.enable_async_wrappers = enable_async_wrappers
+        self.compute_pool: list[ComputeDevice] = []
         
     def add_compute_device(self, compute_device: ComputeDevice) -> None:
         """
@@ -15,7 +21,7 @@ class ComputePool:
         Args:
             compute_device (ComputeDevice): The compute device to be added.
         """
-        self.compute_pool.append(compute_device)
+        self.compute_pool.append(self._wrap_compute_device(compute_device))
         
     def remove_compute_device(self, compute_device: ComputeDevice) -> None:
         """
@@ -24,7 +30,17 @@ class ComputePool:
         Args:
             compute_device (ComputeDevice): The compute device to be removed.
         """
-        self.compute_pool.remove(compute_device)
+        if compute_device in self.compute_pool:
+            self.compute_pool.remove(compute_device)
+            return
+        for pooled_compute_device in self.compute_pool:
+            if (
+                isinstance(pooled_compute_device, AsyncComputeWrapper)
+                and pooled_compute_device.delegate is compute_device
+            ):
+                self.compute_pool.remove(pooled_compute_device)
+                return
+        raise ValueError(f"Compute device with id {compute_device.device_id} not found")
 
     def remove_compute_device_by_id(self, compute_device_id: str) -> None:
         """
@@ -72,3 +88,18 @@ class ComputePool:
         """
         for compute_device in self.compute_pool:
             compute_device.stop()
+
+    def _wrap_compute_device(self, compute_device: ComputeDevice) -> ComputeDevice:
+        """Wrap compute devices with the async event contract when enabled.
+
+        Args:
+            compute_device (ComputeDevice): Device to wrap.
+
+        Returns:
+            ComputeDevice: Wrapped or original compute device.
+        """
+        if not self.enable_async_wrappers:
+            return compute_device
+        if isinstance(compute_device, AsyncComputeWrapper):
+            return compute_device
+        return AsyncComputeWrapper(compute_device)
