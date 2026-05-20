@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -15,6 +17,47 @@ class DummyApriltagDetection:
 
     tag_id: int
     corners: np.ndarray
+
+
+@dataclass(frozen=True)
+class BenchmarkGroundTruthFrame:
+    """Ground-truth pose data for one benchmark replay frame."""
+
+    frame_index: int
+    x: float
+    y: float
+    z: float
+    yaw_rad: float
+    pitch_rad: float
+
+
+def load_benchmark_ground_truth_csv(
+    ground_truth_path: Path,
+) -> dict[int, BenchmarkGroundTruthFrame]:
+    """Load benchmark pose annotations keyed by frame index.
+
+    Args:
+        ground_truth_path: CSV file containing rendered benchmark annotations.
+
+    Returns:
+        Mapping of frame index to benchmark ground-truth pose values.
+    """
+
+    frame_ground_truth: dict[int, BenchmarkGroundTruthFrame] = {}
+    with ground_truth_path.open("r", encoding="utf-8", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            frame_index = int(row["frame"])
+            frame_ground_truth[frame_index] = BenchmarkGroundTruthFrame(
+                frame_index=frame_index,
+                x=float(row["x"]),
+                y=float(row["y"]),
+                z=float(row["z"]),
+                yaw_rad=float(row["yaw_rad"]),
+                pitch_rad=float(row.get("pitch_rad", 0.0)),
+            )
+
+    return frame_ground_truth
 
 
 def dummy_frame() -> np.ndarray:

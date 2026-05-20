@@ -1,0 +1,22 @@
+{
+    "benchmarks": [
+        {
+            "name": "basic_test_full_pipeline",
+            "pipeline_name": "test",
+            "camera_bus_id": "basic_test",
+            "video_path": "src/utils/sim_videos/basic_test.mp4",
+            "ground_truth_path": "src/utils/sim_videos/basic_test_data.csv",
+            "max_frames": 120,
+            "capture_period_us": 33333,
+            "thresholds": {
+                "translation_rmse_m": 0.25,
+                "translation_max_error_m": 0.5,
+                "yaw_rmse_rad": 0.2,
+                "yaw_max_error_rad": 0.35,
+                "timestamp_max_drift_us": 0,
+                "min_pose_samples": 10,
+                "min_apriltag_detection_frames": 10
+            }
+        }
+    ]
+}

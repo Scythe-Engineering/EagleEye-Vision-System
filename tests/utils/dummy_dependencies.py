@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 
@@ -419,3 +419,52 @@ class FakeCameraThreadManager:
         Returns:
             list[str]: Result of get all bus ids."""
         return list(self.bus_id_to_name.keys())
+
+
+class ReplayCameraThreadManager(FakeCameraThreadManager):
+    """Camera manager that advances through decoded benchmark frames."""
+
+    def __init__(
+        self,
+        camera_name: str,
+        frames: Sequence[np.ndarray],
+        capture_period_us: int,
+    ) -> None:
+        """Initialize replay frames for one benchmark camera.
+
+        Args:
+            camera_name: Camera and bus ID used by the pipeline config.
+            frames: Ordered decoded video frames.
+            capture_period_us: Synthetic capture timestamp period.
+        """
+
+        if not frames:
+            raise ValueError("ReplayCameraThreadManager requires at least one frame")
+
+        self.camera_name = camera_name
+        self.frames = list(frames)
+        self.capture_period_us = capture_period_us
+        super().__init__(default_frame=self.frames[0])
+        self.add_camera(camera_name, self.frames[0])
+        self.register_bus_id(camera_name, camera_name)
+
+    def advance_to_frame(self, frame_index: int) -> None:
+        """Move the replay camera to a decoded frame index.
+
+        Args:
+            frame_index: Zero-based frame index to expose to the pipeline.
+        """
+
+        worker = self.camera_objects[self.camera_name]
+        worker.frame = self.frames[frame_index]
+        worker.capture_nt_us = frame_index * self.capture_period_us
+
+    @property
+    def frame_count(self) -> int:
+        """Return the number of decoded replay frames.
+
+        Returns:
+            int: Number of decoded frames.
+        """
+
+        return len(self.frames)

@@ -2,7 +2,9 @@
 
 ## Directory Structure
 
-The `assets/` directory contains all static assets used by the EagleEye web interface, organized by type and purpose.
+Static assets are organized by type and purpose. Web interface assets live under
+`assets/`, while pipeline replay assets live beside the managed simulation
+videos.
 
 ```
 assets/
@@ -14,6 +16,10 @@ assets/
 ├── favicon.ico                # Browser favicon
 ├── no_image.png               # Placeholder image
 └── background.webp            # Application background
+src/utils/sim_videos/
+├── benchmark_manifest.json    # Benchmark replay metadata and thresholds
+├── *_data.csv                 # Ground-truth replay annotations
+└── *.mp4                      # Managed benchmark videos
 ```
 
 ## 3D Models (Robots)
@@ -135,6 +141,12 @@ Contains 3D models and assets for the 2025 FRC game field.
   - Optimized for web delivery
 
 ## Asset Management
+
+### Benchmark Replay Assets
+- **Location**: `src/utils/sim_videos/`
+- **Video Format**: MP4 files named after the camera bus ID, such as `basic_test.mp4`
+- **Annotations**: Ground-truth CSV files kept beside the video, such as `basic_test_data.csv`
+- **Manifest**: `benchmark_manifest.json` maps each video and annotation file to the pipeline, camera, and accuracy thresholds used by pytest replay coverage
 
 ### Loading Strategy
 - **Lazy Loading**: 3D models loaded on-demand

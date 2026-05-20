@@ -12,6 +12,8 @@ executing the full pipeline end-to-end.
 - Initializes each operation with config defaults and dummy dependencies.
 - Calls `run()` with operation-specific dummy inputs.
 - Initializes pipelines without starting any threads or camera access.
+- Loads benchmark replay metadata from `src/utils/sim_videos/benchmark_manifest.json`
+  and replays available MP4 assets through the configured full pipeline.
 
 ## Running tests
 
@@ -30,6 +32,14 @@ pytest -q tests
 | `EAGLEEYE_TEST_APRILTAG_MAP_PATH` | AprilTag map file | `files/apriltag_map_path/frc2025r2.json` |
 | `EAGLEEYE_TEST_CAMERA_NAME` | Device input camera name | `test_camera` |
 | `EAGLEEYE_TEST_NETWORK_TABLE_KEY` | NetworkTables key | `test_key` |
+
+## Benchmark replay assets
+
+Full-pipeline replay tests consume versioned assets from `src/utils/sim_videos/`.
+Each benchmark entry declares the MP4 video, ground-truth CSV, pipeline name,
+camera bus ID, and pose/detection/timing thresholds. When a large benchmark MP4
+is not checked out in the local environment, pytest reports a `hardware_skip`
+instead of failing unrelated smoke tests.
 
 ## Notes
 
