@@ -114,7 +114,7 @@ def _coerce_wpilib(value: Any, schema: str) -> Any:
         return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else value
     if isinstance(value, np.ndarray):
         if value.shape == (4, 4):
-        return _matrix_to_pose2d(value) if schema == "pose2d" else _matrix_to_pose3d(value)
+            return _matrix_to_pose2d(value) if schema == "pose2d" else _matrix_to_pose3d(value)
         if schema in {"double_array", "float_array", "number_array", "auto"} and np.issubdtype(value.dtype, np.number):
             return [float(item) for item in value.flatten().tolist()]
     if isinstance(value, dict):
@@ -173,11 +173,11 @@ class PublishToNetworktables(OperationInstance):
         if self._publisher is None:
             self._publisher = self._create_publisher(wpi_value)
             if self._publisher is None:
-                    return
+                return
         if timing is not None:
             self._publisher.set(wpi_value, timing.capture_nt_us)
-            else:
-        self._publisher.set(wpi_value)
+        else:
+            self._publisher.set(wpi_value)
 
     def _create_publisher(self, wpi_value: Any) -> Any:
         if isinstance(wpi_value, list):
