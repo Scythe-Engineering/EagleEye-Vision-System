@@ -1,7 +1,7 @@
 from pathlib import Path
 from threading import Lock
 import traceback
-from typing import Callable, List, Optional, Dict, Any
+from typing import Callable, List, Optional, Dict, Any, cast
 from uuid import uuid4
 
 import numpy as np
@@ -212,6 +212,7 @@ class ObjectDetectionImplementation:
         try:
             from ultralytics import YOLO
 
+            assert self.model_path is not None
             self.ultralytics_model = YOLO(self.model_path)
             print(
                 f"{Colors.GREEN}Loaded YOLO model with ultralytics: {self.model_path}{Colors.RESET}"
@@ -263,7 +264,9 @@ class ObjectDetectionImplementation:
             height, width = frame.shape[:2]
             detections = []
             for r in results:
-                for box in r.boxes:
+                if r.boxes is None:
+                    continue
+                for box in cast(Any, r.boxes):
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     score = box.conf[0].item()
                     class_id = box.cls[0].item()
@@ -284,6 +287,7 @@ class ObjectDetectionImplementation:
             if self._uses_async_device():
                 return self._run_async_device(frame)
             input_tensor = self.yolov10_ops.preprocess(frame)
+            assert self.device is not None
             outputs = self.device.run(
                 self.model_name,
                 input_tensor,
