@@ -17,6 +17,7 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "device_input": dummy_data.dummy_device_input_data,
         "detect_apriltags": dummy_data.dummy_apriltag_segments,
         "pnp_camera_localization": lambda: [],
+        "robust_2d_solve_pnp": lambda: [],
         "temporal_acceleration_preprocessor_rust": dummy_data.dummy_temporal_acceleration_input,
         "color_threshold_detection": dummy_data.dummy_frame,
         "ground_plane_intersection": dummy_data.dummy_detections,

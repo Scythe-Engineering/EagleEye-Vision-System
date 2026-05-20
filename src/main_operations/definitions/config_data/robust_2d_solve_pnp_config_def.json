@@ -1,0 +1,72 @@
+{
+    "class_name": "Robust2dSolvePnpDefinition",
+    "description": "Rust-backed 2D nonlinear AprilTag pose solver using corner reprojection residuals and an optional gyro yaw constraint",
+    "category": "proc",
+    "folder": "Localization",
+    "input_nodes": [
+        {
+            "name": "detections",
+            "has_default": false
+        },
+        {
+            "name": "gyro_yaw",
+            "has_default": true
+        }
+    ],
+    "output_nodes": [
+        "camera_pose"
+    ],
+    "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Camera USB bus ID used to resolve calibration files and camera extrinsics.",
+            "required": true,
+            "restart_for_change": true
+        },
+        "apriltag_map_path": {
+            "type": "str",
+            "description": "Path to the apriltag map file",
+            "default": "{project_root}/config/apriltag_map.fmap",
+            "required": true,
+            "restart_for_change": true
+        },
+        "jump_threshold": {
+            "type": "float",
+            "description": "Maximum camera pose jump in meters before resetting the previous-pose seed",
+            "default": 2.0,
+            "required": false,
+            "restart_for_change": false,
+            "min": 0.1,
+            "max": 10.0
+        },
+        "gyro_prior_weight": {
+            "type": "float",
+            "description": "Positive values enforce the optional gyro_yaw input as the solver yaw constraint; set to 0 to ignore gyro yaw",
+            "default": 1000000.0,
+            "required": false,
+            "restart_for_change": false,
+            "min": 0.0,
+            "max": 1000000.0
+        },
+        "gyro_yaw_units": {
+            "type": "str",
+            "description": "Units for optional gyro_yaw input values",
+            "default": "radians",
+            "required": false,
+            "restart_for_change": false,
+            "options": [
+                "radians",
+                "degrees"
+            ]
+        },
+        "max_iterations": {
+            "type": "int",
+            "description": "Maximum Levenberg-Marquardt iterations per frame",
+            "default": 20,
+            "required": false,
+            "restart_for_change": false,
+            "min": 1,
+            "max": 100
+        }
+    }
+}

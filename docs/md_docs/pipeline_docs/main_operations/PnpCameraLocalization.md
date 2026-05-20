@@ -56,6 +56,29 @@ The output transformation matrix is a 4x4 numpy array where:
 
 ## Configuration Example
 
+### Robust 2D Replacement
+
+Use `robust_2d_solve_pnp.py` when the pipeline should solve only robot-field
+`x`, `y`, and yaw while keeping the same downstream `camera_pose` output slot.
+It consumes the same AprilTag detections as `pnp_camera_localization.py`; adding
+an optional `GetNetworktablesValue` connection into the `gyro_yaw` input
+hard-constrains yaw when `gyro_prior_weight` is positive. If gyro data is
+missing, the solver relies on its previous vision pose seed and resets that seed
+when the configured `jump_threshold` is exceeded.
+
+```json
+{
+    "action_name": "robust_2d_solve_pnp.py",
+    "action_params": {
+        "camera_bus_id": "basic_test",
+        "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
+        "jump_threshold": 2.0,
+        "gyro_prior_weight": 1000000.0,
+        "gyro_yaw_units": "radians"
+    }
+}
+```
+
 ### Pipeline Config Entry
 
 ```json

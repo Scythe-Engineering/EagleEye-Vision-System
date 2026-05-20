@@ -1,0 +1,11 @@
+[package]
+name = "robust_2d_solve_pnp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "robust_2d_solve_pnp"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.26.0", features = ["extension-module"] }

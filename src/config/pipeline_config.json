@@ -50,11 +50,13 @@
             ]
         },
         {
-            "action_name": "pnp_camera_localization.py",
+            "action_name": "robust_2d_solve_pnp.py",
             "action_params": {
                 "camera_bus_id": "basic_test",
                 "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
-                "jump_threshold": 2
+                "jump_threshold": 2,
+                "gyro_prior_weight": 1000000.0,
+                "gyro_yaw_units": "radians"
             },
             "position": {
                 "x": 860,

@@ -113,4 +113,8 @@ def build_exclusion_list() -> set[str]:
 def is_rust_operation(action_name: str) -> bool:
     """Return True when an operation depends on Rust extensions."""
 
-    return "temporal_acceleration" in action_name or "pose_outlier_filter" in action_name
+    return (
+        "temporal_acceleration" in action_name
+        or "pose_outlier_filter" in action_name
+        or "robust_2d_solve_pnp" in action_name
+    )
