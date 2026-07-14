@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any, cast
+
 import numpy as np
 
 from src.config.utils.operation import Operation
+from src.config.utils.pipeline import Pipeline
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.secondary_operations.device_input import DeviceInput
 from src.utils.timing import TimedValue, TimingMetadata
@@ -64,3 +68,25 @@ def test_operation_can_opt_in_to_timed_inputs() -> None:
     assert isinstance(output, TimedValue)
     assert output.value == 42
     assert output.timing is timing
+
+
+def test_visualization_device_frame_is_unwrapped() -> None:
+    """Visualization receives the image rather than its timing wrapper."""
+    timing = TimingMetadata(capture_nt_us=42, capture_monotonic_ns=100)
+    frame = np.zeros((2, 3), dtype=np.uint8)
+    device_input = Operation(
+        ShapeOperation(), uuid="camera", name="device_input", is_data_source=True
+    )
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.operations = {device_input.uuid: device_input}
+    pipeline.flow_manager = cast(
+        Any,
+        SimpleNamespace(
+            operation_outputs={device_input.uuid: TimedValue(frame, timing)}
+        ),
+    )
+
+    result = pipeline._get_device_input_frame(device_input.uuid)
+
+    assert result is frame
+    assert result.copy().shape == (2, 3)

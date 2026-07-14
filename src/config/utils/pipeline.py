@@ -21,6 +21,7 @@ from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
+from src.utils.timing import unwrap_timed
 
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
@@ -574,11 +575,13 @@ class Pipeline:
         """
         target_device_input = self._find_upstream_device_input(target_operation_uuid)
         if target_device_input is not None:
-            return self.flow_manager.operation_outputs.get(target_device_input.uuid)
+            output = self.flow_manager.operation_outputs.get(target_device_input.uuid)
+            return unwrap_timed(output)
 
         for operation in self.operations.values():
             if operation.name == "device_input":
-                return self.flow_manager.operation_outputs.get(operation.uuid)
+                output = self.flow_manager.operation_outputs.get(operation.uuid)
+                return unwrap_timed(output)
         return None
 
     def get_operation_by_uuid(self, operation_uuid: str) -> Operation | None:
