@@ -55,6 +55,15 @@
             "min": 4,
             "max": 2048,
             "restart_for_change": false
+        },
+        "max_detection_distance_m": {
+            "type": "float",
+            "description": "Maximum 3D distance in meters from the camera to the tag center for ROI generation. Tags beyond this distance are not searched. Zero disables the limit.",
+            "default": 0.0,
+            "required": false,
+            "min": 0.0,
+            "max": 100.0,
+            "restart_for_change": false
         }
     }
 }
