@@ -1,6 +1,7 @@
 use ndarray::{Array2, Array1, s};
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3::types::PyDict;
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -203,10 +204,10 @@ impl PoseOutlierFilter {
 
     /// Update configuration parameters
     #[pyo3(signature = (config))]
-    fn update_config(&mut self, config: std::collections::HashMap<String, PyObject>, py: Python) -> PyResult<()> {
+    fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
 
-        if let Some(val) = config.get("history_size") {
-            let history_size_candidate: usize = val.extract(py)?;
+        if let Some(val) = config.get_item("history_size")? {
+            let history_size_candidate: usize = val.extract()?;
             if history_size_candidate == 0 || history_size_candidate > 1000 {
                 return Err(PyValueError::new_err("history_size must be between 1 and 1000"));
             }
@@ -218,64 +219,64 @@ impl PoseOutlierFilter {
             self.accepted_timestamps = old_timestamps.into_iter().rev().take(self.history_size).rev().collect();
         }
 
-        if let Some(val) = config.get("base_sigma") {
-            let base_sigma_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("base_sigma")? {
+            let base_sigma_candidate: f64 = val.extract()?;
             if base_sigma_candidate <= 0.0 {
                 return Err(PyValueError::new_err("base_sigma must be greater than 0"));
             }
             self.base_sigma = base_sigma_candidate;
         }
 
-        if let Some(val) = config.get("growth_rate") {
-            let growth_rate_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("growth_rate")? {
+            let growth_rate_candidate: f64 = val.extract()?;
             if growth_rate_candidate < 0.0 {
                 return Err(PyValueError::new_err("growth_rate must be non-negative"));
             }
             self.growth_rate = growth_rate_candidate;
         }
 
-        if let Some(val) = config.get("gate_k") {
-            let gate_k_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("gate_k")? {
+            let gate_k_candidate: f64 = val.extract()?;
             if gate_k_candidate <= 0.0 {
                 return Err(PyValueError::new_err("gate_k must be greater than 0"));
             }
             self.gate_k = gate_k_candidate;
         }
 
-        if let Some(val) = config.get("max_consecutive_rejections") {
-            let max_consecutive_rejections_candidate: usize = val.extract(py)?;
+        if let Some(val) = config.get_item("max_consecutive_rejections")? {
+            let max_consecutive_rejections_candidate: usize = val.extract()?;
             if max_consecutive_rejections_candidate == 0 {
                 return Err(PyValueError::new_err("max_consecutive_rejections must be greater than 0"));
             }
             self.max_consecutive_rejections = max_consecutive_rejections_candidate;
         }
 
-        if let Some(val) = config.get("relax_factor") {
-            let relax_factor_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("relax_factor")? {
+            let relax_factor_candidate: f64 = val.extract()?;
             if relax_factor_candidate <= 0.0 {
                 return Err(PyValueError::new_err("relax_factor must be greater than 0"));
             }
             self.relax_factor = relax_factor_candidate;
         }
 
-        if let Some(val) = config.get("angular_gate_threshold") {
-            let angular_gate_threshold_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("angular_gate_threshold")? {
+            let angular_gate_threshold_candidate: f64 = val.extract()?;
             if angular_gate_threshold_candidate < 0.0 || angular_gate_threshold_candidate > std::f64::consts::PI {
                 return Err(PyValueError::new_err("angular_gate_threshold must be between 0 and π radians"));
             }
             self.angular_gate_threshold = angular_gate_threshold_candidate;
         }
 
-        if let Some(val) = config.get("velocity_smoothing_alpha") {
-            let velocity_smoothing_alpha_candidate: f64 = val.extract(py)?;
+        if let Some(val) = config.get_item("velocity_smoothing_alpha")? {
+            let velocity_smoothing_alpha_candidate: f64 = val.extract()?;
             if velocity_smoothing_alpha_candidate < 0.0 || velocity_smoothing_alpha_candidate > 1.0 {
                 return Err(PyValueError::new_err("velocity_smoothing_alpha must be between 0 and 1"));
             }
             self.velocity_smoothing_alpha = velocity_smoothing_alpha_candidate;
         }
 
-        if let Some(val) = config.get("full_reset_threshold") {
-            let full_reset_threshold_candidate: usize = val.extract(py)?;
+        if let Some(val) = config.get_item("full_reset_threshold")? {
+            let full_reset_threshold_candidate: usize = val.extract()?;
             if full_reset_threshold_candidate == 0 {
                 return Err(PyValueError::new_err("full_reset_threshold must be greater than 0"));
             }
