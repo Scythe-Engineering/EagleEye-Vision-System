@@ -19,6 +19,7 @@ pub struct TemporalAcceleration {
     padding_factor: f32,
     max_regions: usize,
     min_region_size_px: i32,
+    max_detection_distance_m: f32,
     last_pose_world_from_camera: Option<[f32; 16]>,
 }
 
@@ -33,7 +34,8 @@ impl TemporalAcceleration {
         apriltag_centers,
         padding_factor=0.35,
         max_regions=20,
-        min_region_size_px=16
+        min_region_size_px=16,
+        max_detection_distance_m=0.0
     ))]
     fn new(
         _py: Python,
@@ -45,6 +47,7 @@ impl TemporalAcceleration {
         padding_factor: f32,
         max_regions: usize,
         min_region_size_px: i32,
+        max_detection_distance_m: f32,
     ) -> PyResult<Self> {
         if camera_matrix.len() != 9 {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -90,6 +93,7 @@ impl TemporalAcceleration {
             padding_factor,
             max_regions,
             min_region_size_px,
+            max_detection_distance_m: max_detection_distance_m.max(0.0),
             last_pose_world_from_camera: None,
         })
     }
@@ -161,6 +165,12 @@ impl TemporalAcceleration {
             if center_camera[2] <= 0.01 {
                 continue;
             }
+            let distance_3d = vec3_norm(center_camera);
+            if self.max_detection_distance_m > 0.0
+                && distance_3d > self.max_detection_distance_m
+            {
+                continue;
+            }
 
             // Frustum cull using corners
             if !frustum_cull(&r_wc, t_wc, corners_world, width as i32, height as i32, fx, fy) {
@@ -202,9 +212,7 @@ impl TemporalAcceleration {
                 self.padding_factor,
                 self.min_region_size_px,
             ) {
-                // Store distance (z-coordinate in camera space) with bbox
-                let distance = center_camera[2];
-                region_distances.push((distance, bbox));
+                region_distances.push((distance_3d, bbox));
             }
         }
 
@@ -238,6 +246,10 @@ impl TemporalAcceleration {
         if let Some(val) = config.get_item("min_region_size_px")? {
             let extracted_i32 = val.extract::<i32>()?;
             self.min_region_size_px = extracted_i32.max(1);
+        }
+        if let Some(val) = config.get_item("max_detection_distance_m")? {
+            let extracted_f32 = val.extract::<f32>()?;
+            self.max_detection_distance_m = extracted_f32.max(0.0);
         }
         Ok(())
     }
@@ -288,6 +300,10 @@ fn mat3_mul_vec3(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
 }
 
 fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+
+fn vec3_norm(v: [f32; 3]) -> f32 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
 
 fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [
