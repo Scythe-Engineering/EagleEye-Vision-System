@@ -178,5 +178,16 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 
 - **Purpose**: Server-Sent Events stream
 - **Response**: Event stream with real-time updates
-- **Events**: `heartbeat`, `update_robot_transform`, `update_detected_objects`
+- **Events**: `heartbeat`, `update_robot_transform`, `update_detected_objects`, `log_update`, `system_update_progress`, `pipeline_operation_errors`, `profiling_update`
 - **Use**: Real-time data subscription
+
+#### `GET /system-update/status`
+
+- **Purpose**: Reports whether WiFi + internet allow a system update
+- **Response**: `{ available, reason }`
+
+#### `POST /system-update/run`
+
+- **Purpose**: Starts git pull / apt update / apt upgrade in a background thread
+- **Response**: `202` with `{ started: true }` when accepted; progress streams over SSE `system_update_progress`
+- **Use**: System update from the WebUI

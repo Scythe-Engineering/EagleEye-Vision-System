@@ -468,6 +468,25 @@ The server uses Server-Sent Events (SSE) for real-time communication via the `/s
 }
 ```
 
+#### `system_update_progress`
+
+**Description:** Streams live system-update terminal lines and granular progress while `POST /system-update/run` executes in a background thread.  
+**Payload:**
+
+```json
+{
+    "phase": "git_pull",
+    "phase_index": 0,
+    "phase_count": 3,
+    "percent": 30,
+    "line": "Already up to date.",
+    "done": false,
+    "error": null
+}
+```
+
+Phases include `starting`, `git_pull`, `apt_update`, `apt_upgrade`, `complete`, and `error`. When `done` is true the frontend restarts the backend (success) or shows the failure terminal (error).
+
 ## Data Models
 
 ### Transformation Matrix

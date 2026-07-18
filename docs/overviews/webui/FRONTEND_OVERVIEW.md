@@ -65,6 +65,7 @@ Handles visual pipeline creation and configuration.
     - Connection line drawing
     - Removing a flowchart edge calls through to `PipelineStore` so drag-to-disconnect matches auto-save
     - Adding or removing an operation updates the flowchart incrementally (no full node tear-down) and only recenters when the first node is placed or on a full load/switch via `renderPipeline` with `centerView`
+    - Tab switches do not re-center; reconnect refresh reloads with `centerView: false` and restores the saved viewport
     - Visual state updates
 
 - **`utils.js`**: Pipeline utility functions (47 lines)
@@ -83,6 +84,11 @@ Manages application settings and configuration.
     - REST API calls to restart backend
     - User confirmation dialogs
     - Error handling for restart operations
+
+- **`systemUpdateManager.js`**: System update modal with live terminal output
+    - Confirms before `git pull` / `apt update` / `apt upgrade`
+    - Streams progress lines and percent over SSE (`system_update_progress`)
+    - Restarts backend and reloads the page on success
 
 - **`loadSettings.js`**: Settings loading and display (39 lines)
 
@@ -106,6 +112,13 @@ User interface management and navigation.
     - Active state management
     - Content area updates
     - Navigation event handling
+    - Pipeline tab re-entry keeps the existing flowchart instance (no full refresh), preserving pan/zoom
+
+- **`notificationSystem.js`**: Toast notifications, including upload progress toasts
+    - Standard success/warning/danger toasts
+    - `showUploadToast` shows a progress bar that morphs in-place into a single success or failure toast
+
+- **`uploadWithProgress.js`**: Shared XHR upload helper reporting `upload.onprogress` percent
 
 ### Camera Feed Management (`js/feeds/`)
 
