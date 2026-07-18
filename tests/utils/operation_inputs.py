@@ -30,6 +30,7 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "get_networktables_value": dummy_data.dummy_device_input_data,
         "camera_adjust": dummy_data.dummy_camera_adjust_input,
         "fps_limiter": dummy_data.dummy_frame,
+        "new_frame_gate": dummy_data.dummy_frame,
         "extract_pose": dummy_data.dummy_pose_matrix,
         "flatten_pose": dummy_data.dummy_pose_matrix,
         "camera_to_robot_pose": dummy_data.dummy_pose_matrix,

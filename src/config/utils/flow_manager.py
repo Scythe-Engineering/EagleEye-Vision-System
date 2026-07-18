@@ -5,7 +5,7 @@ from time import perf_counter, perf_counter_ns, sleep, time
 from typing import Any, Callable
 from line_profiler import profile
 
-from src.config.utils.operation import Operation
+from src.config.utils.operation import SKIP_PIPELINE_CYCLE, Operation
 from src.config.utils.thread_object import ThreadObject
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
@@ -271,6 +271,8 @@ class FlowManager:
                     operation_start = perf_counter()
                     output = operation.run(input_for_op)
                     operation_end = perf_counter()
+                    if output is SKIP_PIPELINE_CYCLE:
+                        return
                     operation_time_by_uuid_ms[operation.uuid] = max(
                         (operation_end - operation_start) * 1000.0,
                         0.0,
@@ -317,6 +319,7 @@ class FlowManager:
         operation_time_by_uuid_ms: dict[str, float] = {}
         timestep_total_ms: dict[int, float] = {}
         cycle_id = perf_counter_ns()
+        active_thread_objects: set[ThreadObject] = set()
 
         max_timestep = len(self.execution_time_groups)
 
@@ -334,6 +337,7 @@ class FlowManager:
                     thread_obj.set_needs_processing(
                         input_for_op, current_timestep, cycle_id
                     )
+                    active_thread_objects.add(thread_obj)
                 except Exception as _:
                     sleep(1)  # wait a bit before trying again
                     raise ValueError(
@@ -348,7 +352,12 @@ class FlowManager:
                 if thread_obj is None:
                     raise ValueError(f"Operation {operation.name} has no thread object")
 
-                not_timed_out = thread_obj.wait_done_processing()
+                wait_timeout_s = (
+                    None
+                    if getattr(operation.instance, "allows_indefinite_wait", False)
+                    else 5.0
+                )
+                not_timed_out = thread_obj.wait_done_processing(wait_timeout_s)
                 if not not_timed_out:
                     # Reset thread state on timeout before raising error
                     thread_obj.reset_state()
@@ -375,6 +384,10 @@ class FlowManager:
                     )
 
                 output_data = thread_obj.get_output_data()
+                active_thread_objects.discard(thread_obj)
+                if output_data is SKIP_PIPELINE_CYCLE:
+                    self._discard_active_threaded_operations(active_thread_objects)
+                    return
                 self.operation_outputs[operation.uuid] = output_data
                 timing_uuid, execution_time_ms = thread_obj.get_last_cycle_timing(
                     cycle_id
@@ -399,6 +412,19 @@ class FlowManager:
             operation_time_by_uuid_ms=operation_time_by_uuid_ms,
             timestep_total_ms=timestep_total_ms,
         )
+
+    @staticmethod
+    def _discard_active_threaded_operations(
+        active_thread_objects: set[ThreadObject],
+    ) -> None:
+        """Wait for concurrent stale work and reset its threads before the next cycle."""
+        for thread_obj in active_thread_objects:
+            if not thread_obj.wait_done_processing():
+                thread_obj.reset_state()
+                raise ValueError(
+                    "Operation did not finish while discarding a skipped pipeline cycle"
+                )
+            thread_obj.get_output_data()
 
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.

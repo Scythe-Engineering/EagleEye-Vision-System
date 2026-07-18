@@ -1,0 +1,24 @@
+{
+    "class_name": "NewFrameGate",
+    "description": "Waits for a new camera frame before allowing the pipeline to continue",
+    "category": "proc",
+    "folder": "Preprocessing",
+    "input_nodes": [
+        {
+            "name": "frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "frame"
+    ],
+    "parameters": {
+        "bus_id": {
+            "type": "str",
+            "description": "USB bus identifier for the camera to monitor",
+            "default": "",
+            "required": true,
+            "restart_for_change": true
+        }
+    }
+}

@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     from src.config.utils.thread_object import ThreadObject
 
 
+class _SkipPipelineCycle:
+    """Sentinel returned by an operation to discard the current pipeline cycle."""
+
+
+SKIP_PIPELINE_CYCLE = _SkipPipelineCycle()
+
+
 class Operation:
     def __init__(self, instance: OperationInstance, uuid: str, name: str, is_data_source: bool = False) -> None:
         """Initializes the Operation class.
@@ -55,6 +62,8 @@ class Operation:
             )
         else:
             output = self.instance.run(call_input)
+        if output is SKIP_PIPELINE_CYCLE:
+            return output
         return attach_output_timing(output, input_data)
 
     def is_only_input_connection(self, uuid: str) -> bool:

@@ -169,16 +169,18 @@ class ThreadObject:
             return self.state in ("done", "error")
 
     @profile
-    def wait_done_processing(self) -> bool:
-        """
-        Wait for the thread to finish processing.
+    def wait_done_processing(self, timeout_s: float | None = 5.0) -> bool:
+        """Wait for the thread to finish processing.
+
+        Args:
+            timeout_s: Maximum wait in seconds, or ``None`` to wait indefinitely.
 
         Returns:
-            bool: False if the thread timed out, True otherwise.
+            ``False`` if the thread timed out, otherwise ``True``.
         """
         with self.condition:
             return self.condition.wait_for(
-                lambda: self.state in ("done", "error"), timeout=5
+                lambda: self.state in ("done", "error"), timeout=timeout_s
             )
 
     @profile

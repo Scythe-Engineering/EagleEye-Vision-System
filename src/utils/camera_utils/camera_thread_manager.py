@@ -52,6 +52,7 @@ class CameraWorker:
         self.running = True
         self.thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
+        self._frame_available = threading.Condition(self._lock)
         self._current_packet: FramePacket | None = None
         self._last_cached_packet: FramePacket | None = None
         self._frame_seq: int = 0
@@ -63,9 +64,16 @@ class CameraWorker:
             return self._frame_seq
 
     def set_current_packet(self, packet: FramePacket) -> None:
-        """Thread-safe timestamped frame packet update."""
-        with self._lock:
+        """Store a frame packet and wake consumers waiting for a newer frame."""
+        with self._frame_available:
+            previous_seq = (
+                self._current_packet.timing.frame_seq
+                if self._current_packet is not None
+                else None
+            )
             self._current_packet = TimedValue(packet.value.copy(), packet.timing)
+            if packet.timing.frame_seq != previous_seq:
+                self._frame_available.notify_all()
 
     def get_current_packet(self) -> FramePacket | None:
         """Thread-safe timestamped frame packet retrieval."""
@@ -73,6 +81,29 @@ class CameraWorker:
             if self._current_packet is None:
                 return None
             return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
+
+    def wait_for_new_frame(
+        self, after_frame_seq: int, timeout_s: float | None = None
+    ) -> bool:
+        """Wait until a frame newer than ``after_frame_seq`` is available.
+
+        Args:
+            after_frame_seq: Last frame sequence consumed by the caller.
+            timeout_s: Maximum wait in seconds, or ``None`` to wait indefinitely.
+
+        Returns:
+            ``True`` when a newer frame is available, otherwise ``False``.
+        """
+
+        def frame_is_newer() -> bool:
+            """Return whether the current packet has a newer sequence number."""
+            if self._current_packet is None:
+                return False
+            frame_seq = self._current_packet.timing.frame_seq
+            return frame_seq is not None and frame_seq > after_frame_seq
+
+        with self._frame_available:
+            return self._frame_available.wait_for(frame_is_newer, timeout_s)
 
     def set_current_frame(self, frame: np.ndarray, timestamp: float) -> None:
         """Compatibility frame update using a millisecond timestamp."""
@@ -466,6 +497,21 @@ class CameraThreadManager:
         if camera_name is None:
             return None
         return self.get_current_packet(camera_name)
+
+    def wait_for_new_frame_by_bus_id(
+        self,
+        bus_id: str,
+        after_frame_seq: int,
+        timeout_s: float | None = None,
+    ) -> bool:
+        """Wait for a newer frame from a camera identified by bus ID."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return False
+        worker = self.cameras.get(camera_name)
+        if worker is None:
+            return False
+        return worker.wait_for_new_frame(after_frame_seq, timeout_s)
 
     def get_current_frame_by_bus_id(
         self, bus_id: str
