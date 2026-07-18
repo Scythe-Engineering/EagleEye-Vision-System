@@ -108,9 +108,9 @@ async function handlePipelineSelection({ loadPipelineIntoBuilder }) {
  * Load a pipeline configuration into the builder state.
  *
  * @param {string} pipelineName - Pipeline identifier to load.
- * @param {{renderCurrentPipeline?: Function}} [options={}] - Optional render callback.
+ * @param {{renderCurrentPipeline?: Function, centerView?: boolean}} [options={}] - Optional render callback.
  */
-async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } = {}) {
+async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline, centerView = true } = {}) {
     try {
         const operations = getOperations();
         if (operations.length === 0) {
@@ -127,7 +127,7 @@ async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } =
         });
 
         pipelineStore.loadPipelineData(pipelineConfig, allConnections);
-        await renderCurrentPipeline?.();
+        await renderCurrentPipeline?.({ centerView });
         updateRunButton();
         updatePipelineCameraNote();
     } catch (error) {
@@ -139,16 +139,16 @@ async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } =
 /**
  * Render the current pipeline into the flowchart view.
  *
- * @param {Object} [_options={}] - Unused options placeholder.
+ * @param {{centerView?: boolean}} [options={}] - Render options.
  */
-async function renderCurrentPipeline({}) {
+async function renderCurrentPipeline({ centerView = true } = {}) {
     const flowchartRenderer = creatorContext.flowchartRenderer;
     if (!flowchartRenderer) return;
     const pipeline = getPipeline();
     const connections = pipelineStore.getConnectionsForRenderer();
     await flowchartRenderer.renderPipeline(pipeline, {
         connections,
-        centerView: true,
+        centerView,
     });
     await postFlowchartStructureRefresh();
 }
@@ -384,6 +384,9 @@ async function refreshPipelineCreator({
 }) {
     try {
         console.log("[PIPELINE] Refreshing pipeline creator after reconnection");
+        const flowchartCanvas = creatorContext.flowchartRenderer?.canvas;
+        const savedViewport = flowchartCanvas?.getViewportState?.() || null;
+
         await fetchAvailableOperations(pipelineStore);
         const operations = getOperations();
         const operationsList = creatorContext.elements.operationsList;
@@ -400,7 +403,12 @@ async function refreshPipelineCreator({
         populatePipelineDropdown();
         const selectedPipeline = getSelectedPipeline();
         if (selectedPipeline) {
-            await loadPipelineIntoBuilder?.(selectedPipeline.name);
+            await loadPipelineIntoBuilder?.(selectedPipeline.name, {
+                centerView: false,
+            });
+        }
+        if (savedViewport && flowchartCanvas?.setViewportState) {
+            flowchartCanvas.setViewportState(savedViewport);
         }
         updateDeleteButtonVisibility();
         await checkBackendRestartStatus?.();
