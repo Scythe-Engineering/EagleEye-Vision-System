@@ -9,7 +9,7 @@
         "frame"
     ],
     "parameters": {
-        "bus_id": {
+        "camera_bus_id": {
             "type": "str",
             "description": "USB bus identifier for the camera (e.g., '1' for USB port 1)",
             "default": "",

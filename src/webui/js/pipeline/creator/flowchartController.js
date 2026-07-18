@@ -133,7 +133,9 @@ async function removeFromPipeline(instanceId) {
 
     const deviceInputCountAfter = getDeviceInputNodes().length;
     if (deviceInputCountBefore > 0 && deviceInputCountAfter === 0) {
-        showWarning("No device_input nodes configured; bus_id required for camera input.");
+        showWarning(
+            "No device_input nodes configured; camera_bus_id required for camera input.",
+        );
     }
 
     console.log("Operation removed from pipeline - requiring backend restart");

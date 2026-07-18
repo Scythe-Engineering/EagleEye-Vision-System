@@ -19,7 +19,7 @@ The operation implements a camera frame fetching pattern:
 ### Camera Integration
 
 - **Camera Thread Manager Access**: Retrieves frames from active camera threads
-- **Per-Camera Configuration**: Specifies which camera to read frames from via the deterministic `bus_id` parameter (USB port index)
+- **Per-Camera Configuration**: Specifies which camera to read frames from via the deterministic `camera_bus_id` parameter (USB port index)
 - **Non-Blocking Retrieval**: Returns current packet if available, None otherwise
 
 ### Frame Data Handling
@@ -32,17 +32,17 @@ The operation implements a camera frame fetching pattern:
 
 ### Required Parameters
 
-- **bus_id** (`str`): USB bus ID of the camera to fetch frames from (matches `camera_manager` registration)
+- **camera_bus_id** (`str`): USB bus ID of the camera to fetch frames from (matches `camera_manager` registration)
 
 ### Constructor
 
 ```python
-def __init__(self, camera_manager: CameraThreadManager, bus_id: str) -> None:
+def __init__(self, camera_manager: CameraThreadManager, camera_bus_id: str) -> None:
     """Initialize the device input operation.
 
     Args:
         camera_manager: Camera thread manager to fetch frames from.
-        bus_id: Deterministic bus ID of the camera to read frames from.
+        camera_bus_id: Deterministic bus ID of the camera to read frames from.
     """
 ```
 
@@ -52,7 +52,7 @@ def __init__(self, camera_manager: CameraThreadManager, bus_id: str) -> None:
 
 1. **Initialization**: DeviceInput is created with reference to camera manager and camera bus ID
 2. **Frame Request**: `run()` method called to fetch current packet
-3. **Camera Lookup**: Calls `camera_manager.get_current_packet_by_bus_id(bus_id)`
+3. **Camera Lookup**: Calls `camera_manager.get_current_packet_by_bus_id(camera_bus_id)`
 4. **Frame Return**: Returns timed frame packet or None if unavailable
 5. **Pipeline Processing**: Returned packet enters next operation in pipeline
 
@@ -65,7 +65,7 @@ Camera Thread Manager
 [DeviceInput.run()]
        |
        v
-get_current_packet_by_bus_id(bus_id)
+get_current_packet_by_bus_id(camera_bus_id)
        |
        v
 Return: FramePacket | None
@@ -81,7 +81,7 @@ Return: FramePacket | None
 ```python
 device_input = DeviceInput(
     camera_manager=camera_manager,
-    bus_id="1",
+    camera_bus_id="1",
 )
 
 packet = device_input.run(None)
@@ -128,7 +128,7 @@ def run(self, input_data: Any) -> FramePacket | None:
     Returns:
         Current camera frame as a timed packet, or None if camera unavailable.
     """
-    packet = self.camera_manager.get_current_packet_by_bus_id(self.bus_id)
+    packet = self.camera_manager.get_current_packet_by_bus_id(self.camera_bus_id)
     if packet is None:
         return None
     return TimedValue(self._apply_rotation(packet.value), packet.timing)
@@ -159,7 +159,7 @@ def run(self, input_data: Any) -> FramePacket | None:
 
 ### Camera Issues
 
-- **Camera Not Found**: Returns None if bus_id doesn't match any registered camera
+- **Camera Not Found**: Returns None if `camera_bus_id` doesn't match any registered camera
 - **No Frames Available**: Returns None if camera thread hasn't captured a frame yet
 - **Thread Not Running**: Returns None if camera thread is not active
 
@@ -178,6 +178,6 @@ def run(self, input_data: Any) -> FramePacket | None:
 
 ### Configuration
 
-1. **Valid Bus IDs**: Ensure bus_id matches CameraThreadManager registration
+1. **Valid Bus IDs**: Ensure `camera_bus_id` matches CameraThreadManager registration
 2. **Camera Thread Setup**: Verify camera thread is running before pipeline execution
 3. **Frame Timing**: Propagated capture timestamps are used for NetworkTables publishing

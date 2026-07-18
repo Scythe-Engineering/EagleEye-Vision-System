@@ -438,7 +438,7 @@ def _restart_diff_interface(
 def _device_input_operation(
     *,
     uuid: str = "op-1",
-    bus_id: str = "0",
+    camera_bus_id: str = "0",
     camera_type: str = "physical",
     position: dict[str, int] | None = None,
     connections: list[dict[str, Any]] | None = None,
@@ -446,7 +446,10 @@ def _device_input_operation(
     """Build a minimal device_input operation config for restart diff tests."""
     return {
         "action_name": "device_input",
-        "action_params": {"bus_id": bus_id, "camera_type": camera_type},
+        "action_params": {
+            "camera_bus_id": camera_bus_id,
+            "camera_type": camera_type,
+        },
         "position": position or {"x": 100, "y": 100},
         "uuid": uuid,
         "connections": connections or [],
@@ -512,8 +515,8 @@ def test_restart_diff_detects_operation_add_remove_and_connection_changes() -> N
 
 
 def test_restart_diff_detects_restart_required_config_param_only() -> None:
-    baseline = {"Pipeline": [_device_input_operation(bus_id="0")]}
-    current = {"Pipeline": [_device_input_operation(bus_id="1")]}
+    baseline = {"Pipeline": [_device_input_operation(camera_bus_id="0")]}
+    current = {"Pipeline": [_device_input_operation(camera_bus_id="1")]}
 
     state = _restart_diff_interface(baseline)._analyze_pipeline_restart_state(current)
 

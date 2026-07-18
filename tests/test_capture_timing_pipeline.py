@@ -39,7 +39,7 @@ def test_device_input_returns_frame_packet_with_capture_timing() -> None:
         web_interface=FakeEagleEyeInterface(),
         compute_pool=DummyComputePool(),
         camera_manager=manager,
-        bus_id="1",
+        camera_bus_id="1",
     ).run(None)
 
     assert isinstance(packet, TimedValue)

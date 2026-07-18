@@ -26,7 +26,7 @@ class DeviceInput(OperationInstance):
     Input:
         _input_data (Any): Unused parameter. Data source operations don't consume
             input from previous pipeline stages. The camera source is determined
-            by the `bus_id` constructor parameter.
+            by the `camera_bus_id` constructor parameter.
 
     Output:
         np.ndarray | None: The current camera frame as a numpy array in BGR format
@@ -48,7 +48,7 @@ class DeviceInput(OperationInstance):
         web_interface: EagleEyeInterface,
         compute_pool: ComputePool,
         camera_manager: "CameraThreadManager",
-        bus_id: str,
+        camera_bus_id: str,
         frame_rotation: int = 0,
     ) -> None:
         """Initialize the device input operation.
@@ -57,13 +57,13 @@ class DeviceInput(OperationInstance):
             web_interface: Web interface for runtime updates.
             compute_pool: Compute pool available for device operations.
             camera_manager: Camera thread manager to fetch frames from.
-            bus_id: USB bus identifier for the camera to read frames from.
+            camera_bus_id: USB bus identifier for the camera to read frames from.
             frame_rotation: Rotation angle in degrees (0, 90, 180, or 270). Defaults to 0.
         """
         self.web_interface = web_interface
         self.compute_pool = compute_pool
         self.camera_manager = camera_manager
-        self.bus_id = bus_id
+        self.camera_bus_id = camera_bus_id
         self.frame_rotation = self._normalize_rotation(frame_rotation)
 
     def _normalize_rotation(self, rotation: int) -> int:
@@ -115,12 +115,14 @@ class DeviceInput(OperationInstance):
         """
         get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
         if callable(get_packet):
-            packet = get_packet(self.bus_id)
+            packet = get_packet(self.camera_bus_id)
             if packet is None:
                 return None
             return TimedValue(self._apply_rotation(packet.value), packet.timing)
 
-        frame_result = self.camera_manager.get_current_frame_by_bus_id(self.bus_id)
+        frame_result = self.camera_manager.get_current_frame_by_bus_id(
+            self.camera_bus_id
+        )
         if frame_result is not None:
             frame, _ = frame_result
             return self._apply_rotation(frame)
@@ -131,10 +133,12 @@ class DeviceInput(OperationInstance):
 
         Args:
             json_config: Runtime configuration overrides. Supports:
-                - bus_id: Changes the camera source (requires restart).
+                - camera_bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """
-        self.bus_id = json_config.get("bus_id", self.bus_id)
+        self.camera_bus_id = json_config.get(
+            "camera_bus_id", self.camera_bus_id
+        )
 
         if "frame_rotation" in json_config:
             try:

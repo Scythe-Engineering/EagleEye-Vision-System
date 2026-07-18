@@ -47,7 +47,10 @@ def test_pipeline_prunes_unreachable_runtime_island() -> None:
     config = [
         {
             "action_name": "device_input.py",
-            "action_params": {"bus_id": "basic_test", "frame_rotation": 0},
+            "action_params": {
+                "camera_bus_id": "basic_test",
+                "frame_rotation": 0,
+            },
             "uuid": "camera",
             "connections": [
                 {

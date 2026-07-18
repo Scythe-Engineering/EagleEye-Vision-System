@@ -3,7 +3,7 @@
         {
             "action_name": "device_input.py",
             "action_params": {
-                "bus_id": "basic_test",
+                "camera_bus_id": "basic_test",
                 "frame_rotation": 0
             },
             "position": {

@@ -74,7 +74,7 @@ export function getDeviceInputBusIds() {
             node.operationId,
         );
         if (operationId === "device_input") {
-            const busId = node.config?.bus_id;
+            const busId = node.config?.camera_bus_id;
             if (busId !== undefined && busId !== null) {
                 busIds.add(String(busId));
             }

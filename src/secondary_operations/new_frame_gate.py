@@ -26,18 +26,18 @@ class NewFrameGate(OperationInstance):
     def __init__(
         self,
         camera_manager: CameraThreadManager,
-        bus_id: str,
+        camera_bus_id: str,
         pipeline: Pipeline | None = None,
     ) -> None:
-        """Initialize a gate for the camera identified by ``bus_id``.
+        """Initialize a gate for the camera identified by ``camera_bus_id``.
 
         Args:
             camera_manager: Camera manager that publishes captured frames.
-            bus_id: USB bus identifier matching the upstream device input.
+            camera_bus_id: USB bus identifier matching the upstream device input.
             pipeline: Injected pipeline used to cancel waits during shutdown.
         """
         self.camera_manager = camera_manager
-        self.bus_id = bus_id
+        self.camera_bus_id = camera_bus_id
         self.pipeline = pipeline
         self._last_frame_seq: int | None = None
 
@@ -66,12 +66,16 @@ class NewFrameGate(OperationInstance):
             self._last_frame_seq = input_seq
             return input_data
 
-        if self.camera_manager.get_camera_name_by_bus_id(self.bus_id) is None:
-            raise ValueError(f"No camera is registered for bus ID {self.bus_id!r}")
+        if (
+            self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id) is None
+        ):
+            raise ValueError(
+                f"No camera is registered for bus ID {self.camera_bus_id!r}"
+            )
 
         while self._pipeline_is_running():
             frame_available = self.camera_manager.wait_for_new_frame_by_bus_id(
-                self.bus_id,
+                self.camera_bus_id,
                 self._last_frame_seq,
                 timeout_s=self.WAIT_TIMEOUT_S,
             )
@@ -88,12 +92,12 @@ class NewFrameGate(OperationInstance):
         if input_camera_name is None:
             return
         configured_camera_name = self.camera_manager.get_camera_name_by_bus_id(
-            self.bus_id
+            self.camera_bus_id
         )
         if configured_camera_name != input_camera_name:
             raise ValueError(
                 f"Input camera {input_camera_name!r} does not match bus ID "
-                f"{self.bus_id!r} ({configured_camera_name!r})"
+                f"{self.camera_bus_id!r} ({configured_camera_name!r})"
             )
 
     @staticmethod

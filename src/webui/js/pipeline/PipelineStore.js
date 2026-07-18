@@ -375,7 +375,7 @@ class PipelineStore {
             if (!upstreamNode) continue;
 
             if (this.isDeviceInputNode(upstreamNode)) {
-                const busId = upstreamNode.config?.bus_id;
+                const busId = upstreamNode.config?.camera_bus_id;
                 if (busId !== undefined && busId !== null && String(busId) !== "") {
                     deviceInputBusIds.add(String(busId));
                 }
