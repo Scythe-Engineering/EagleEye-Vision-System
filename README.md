@@ -43,8 +43,9 @@ this check; protected-branch CI should remain required as the authoritative
 gate.
 
 ## License
-EagleEye Framework © 2025 by (ScytheEngineering/FRC3322) is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
-![image](https://github.com/user-attachments/assets/e16050ce-11b1-4567-98d5-f94c44065c28)
+EagleEye Framework © 2025 by ScytheEngineering is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
+<img width="1606" height="979" alt="image" src="https://github.com/user-attachments/assets/00b03576-f924-415a-a8c5-8559e4f1a509" />
+
 
 
 ## Contributors
