@@ -228,6 +228,27 @@
     opacity: 0 !important;
 }
 
+.upload-toast-progress-hide {
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.upload-toast-complete-icon {
+    animation: upload-toast-check-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes upload-toast-check-pop {
+    0% {
+        transform: scale(0.6);
+        opacity: 0.4;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
 /* Settings modal single-panel layout adjustments */
 #operationSettingsContent {
     display: flex;

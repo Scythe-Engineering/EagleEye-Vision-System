@@ -15,8 +15,10 @@ import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
     showDanger,
     showSuccess,
+    showUploadToast,
     showWarning,
 } from "../ui/notificationSystem.js";
+import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 
 const OVERLAY_ID = "testVideoManagerOverlay";
 const MODAL_ID = "testVideoManagerModal";
@@ -152,16 +154,22 @@ async function uploadVideo(file, overwrite = false) {
         formData.append("overwrite", "true");
     }
 
+    const uploadToast = showUploadToast({
+        label: `Uploading ${file.name}...`,
+    });
+
     try {
-        await fetchJson("/test-videos", {
-            method: "POST",
-            body: formData,
+        await uploadWithProgress({
+            url: "/test-videos",
+            formData,
+            onProgress: uploadToast.setProgress,
         });
-        showSuccess("Test video uploaded.");
+        uploadToast.complete("Test video uploaded.");
         await markRestartRequired();
         await loadVideos();
     } catch (error) {
         if (error.status === 409 && error.payload?.requires_overwrite) {
+            uploadToast.dismiss();
             const shouldOverwrite = await confirmDialog({
                 title: "Replace Test Video?",
                 message: `"${error.payload.filename}" already exists. Replace it?`,
@@ -175,7 +183,7 @@ async function uploadVideo(file, overwrite = false) {
         }
 
         console.error("Failed to upload test video:", error);
-        showDanger(error.payload?.error || "Failed to upload test video");
+        uploadToast.fail(error.payload?.error || "Failed to upload test video");
     }
 }
 
