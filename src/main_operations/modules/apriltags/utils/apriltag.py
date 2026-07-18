@@ -75,10 +75,18 @@ class Apriltag:
         Returns:
             np.ndarray: An array of shape (4, 3) containing the global positions of the tag's corners in field space.
         """
-        local_corners = np.column_stack(
-            (self.single_solve_local_corners, np.ones(4))
+        half_size = self.size / 2
+        local_corners = np.array(
+            [
+                [-half_size, -half_size, 0, 1],
+                [half_size, -half_size, 0, 1],
+                [half_size, half_size, 0, 1],
+                [-half_size, half_size, 0, 1],
+            ]
         )
 
         global_transform_matrix = self._get_global_transform_matrix()
         global_corners_homogeneous = (global_transform_matrix @ local_corners.T).T
-        return global_corners_homogeneous[:, :3]
+        global_corners = global_corners_homogeneous[:, :3]
+        global_corners = global_corners[[0, 3, 2, 1]]
+        return global_corners
