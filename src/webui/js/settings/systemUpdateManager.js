@@ -1,4 +1,4 @@
-// Manages the system update modal, status checks, and backend restart flow.
+// Manages the system update modal, status checks, live terminal, and backend restart flow.
 import { BACKEND_BASE_URL } from "../config.js";
 import { confirmDialog } from "../ui/confirmationDialog.js";
 import {
@@ -14,11 +14,26 @@ import { showDanger } from "../ui/notificationSystem.js";
 const OVERLAY_ID = "systemUpdateOverlay";
 const MODAL_ID = "systemUpdateModal";
 
+const PHASE_LABELS = {
+    starting: "Starting update...",
+    git_pull: "Pulling latest changes...",
+    apt_update: "Updating package lists...",
+    apt_upgrade: "Installing package upgrades...",
+    complete: "Update complete. Restarting...",
+    error: "Update failed",
+};
+
 let initialized = false;
 let statusTimer = null;
 let updateAvailable = false;
 let updating = false;
 let statusReason = "Checking update availability...";
+/** @type {HTMLElement | null} */
+let progressBarFill = null;
+/** @type {HTMLElement | null} */
+let progressLabel = null;
+/** @type {HTMLElement | null} */
+let terminalElement = null;
 
 /**
  * Gets or creates the modal overlay elements used by the system update UI.
@@ -29,7 +44,7 @@ function getOverlayElements() {
         overlayId: OVERLAY_ID,
         modalId: MODAL_ID,
         modalClassName:
-            "bg-[#1a1a1a] rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
+            "bg-[#1a1a1a] rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
     });
 }
 
@@ -120,33 +135,78 @@ async function renderConfirm() {
 }
 
 /**
- * Renders the in-modal progress state for the update flow.
- * @param {string} message
- * @param {string} [detail=""]
+ * Appends a line to the live terminal and scrolls to the bottom.
+ * @param {string} line
  */
-function renderProgress(message, detail = "") {
+function appendTerminalLine(line) {
+    if (!terminalElement || !line) {
+        return;
+    }
+    if (terminalElement.textContent) {
+        terminalElement.textContent += `\n${line}`;
+    } else {
+        terminalElement.textContent = line;
+    }
+    terminalElement.scrollTop = terminalElement.scrollHeight;
+}
+
+/**
+ * Updates the progress bar fill and phase label.
+ * @param {number} percent
+ * @param {string} [label]
+ */
+function setProgress(percent, label) {
+    if (progressBarFill) {
+        const clampedPercent = Math.max(0, Math.min(100, percent));
+        progressBarFill.style.width = `${clampedPercent}%`;
+    }
+    if (progressLabel && label) {
+        progressLabel.textContent = label;
+    }
+}
+
+/**
+ * Renders the live progress modal with terminal output.
+ */
+function renderLiveProgress() {
     const { overlay, modal } = getOverlayElements();
     modal.innerHTML = "";
     showModal(overlay);
+
+    progressLabel = createElement("div", {
+        className: "mb-3 text-gray-200",
+        text: "Starting update...",
+    });
+
+    progressBarFill = createElement("div", {
+        className: "h-full rounded-full bg-yellow-400 transition-[width] duration-300 ease-out",
+    });
+    progressBarFill.style.width = "0%";
+
+    const progressTrack = createElement(
+        "div",
+        {
+            className:
+                "h-3 w-full overflow-hidden rounded-full bg-[#2a2a2a] border border-[#414141]",
+        },
+        [progressBarFill],
+    );
+
+    terminalElement = createElement("pre", {
+        className:
+            "mt-4 h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141] font-mono",
+        text: "",
+    });
+
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
             createElement("h3", {
                 className: "text-xl font-bold text-yellow-400 mb-4",
                 text: "Updating System",
             }),
-            createElement("div", {
-                className: "mb-3 text-gray-200",
-                text: message,
-            }),
-            createElement("div", {
-                className: "h-3 w-full overflow-hidden rounded-full bg-[#2a2a2a] border border-[#414141]",
-                html: '<div class="h-full w-1/3 rounded-full bg-yellow-400 animate-pulse"></div>',
-            }),
-            createElement("pre", {
-                className:
-                    "mt-4 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141]",
-                text: detail,
-            }),
+            progressLabel,
+            progressTrack,
+            terminalElement,
         ]),
     );
 }
@@ -156,9 +216,14 @@ function renderProgress(message, detail = "") {
  * @param {string} message
  */
 function renderError(message) {
+    updating = false;
+    setButtonState();
     const { overlay, modal } = getOverlayElements();
     modal.innerHTML = "";
     showModal(overlay);
+    progressBarFill = null;
+    progressLabel = null;
+    terminalElement = null;
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
             createElement("h3", {
@@ -167,7 +232,7 @@ function renderError(message) {
             }),
             createElement("pre", {
                 className:
-                    "max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-sm text-red-100 border border-red-700/60 mb-5",
+                    "max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-sm text-red-100 border border-red-700/60 mb-5 font-mono",
                 text: message,
             }),
             createElement("div", { className: "flex justify-end" }, [
@@ -184,12 +249,78 @@ function renderError(message) {
 }
 
 /**
- * Runs the system update sequence and restarts the backend.
+ * Restarts the backend and reloads the page after a successful update.
+ */
+async function restartAfterUpdate() {
+    setProgress(100, PHASE_LABELS.complete);
+    try {
+        await fetchJson("/restart-backend", { method: "POST" });
+    } catch (error) {
+        console.warn("Restart request failed or connection closed:", error);
+    }
+    setTimeout(() => {
+        globalThis.location.reload();
+    }, 2500);
+}
+
+/**
+ * Handles a system update progress SSE payload.
+ * @param {object} data
+ */
+export function handleSystemUpdateProgress(data) {
+    if (!data || typeof data !== "object") {
+        return;
+    }
+
+    if (!updating && !data.done) {
+        return;
+    }
+
+    if (typeof data.line === "string" && data.line.length > 0) {
+        appendTerminalLine(data.line);
+    }
+
+    const phaseLabel =
+        PHASE_LABELS[data.phase] ||
+        (typeof data.phase === "string" ? data.phase : "Updating...");
+    if (typeof data.percent === "number") {
+        setProgress(data.percent, phaseLabel);
+    } else if (phaseLabel) {
+        setProgress(
+            progressBarFill
+                ? Number.parseFloat(progressBarFill.style.width) || 0
+                : 0,
+            phaseLabel,
+        );
+    }
+
+    if (!data.done) {
+        return;
+    }
+
+    if (data.error) {
+        const errorMessage =
+            typeof data.error === "string" ? data.error : "Update failed";
+        if (terminalElement) {
+            appendTerminalLine(errorMessage);
+            const terminalSnapshot = terminalElement.textContent || errorMessage;
+            renderError(terminalSnapshot);
+        } else {
+            renderError(errorMessage);
+        }
+        return;
+    }
+
+    void restartAfterUpdate();
+}
+
+/**
+ * Runs the system update sequence and waits for SSE progress events.
  */
 async function runUpdate() {
     updating = true;
     setButtonState();
-    renderProgress("Checking WiFi internet access...");
+    renderLiveProgress();
 
     try {
         const status = await fetchJson("/system-update/status");
@@ -197,24 +328,13 @@ async function runUpdate() {
             throw new Error(status.reason || "WiFi internet access is required.");
         }
 
-        renderProgress("Pulling latest changes and installing apt upgrades...");
-        const updateResult = await fetchJson("/system-update/run", { method: "POST" });
-        renderProgress("Restarting backend...", updateResult.output || "Update completed.");
-
-        try {
-            await fetchJson("/restart-backend", { method: "POST" });
-        } catch (error) {
-            console.warn("Restart request failed or connection closed:", error);
-        }
-
-        setTimeout(() => {
-            globalThis.location.reload();
-        }, 2500);
+        appendTerminalLine("Checking WiFi internet access... OK");
+        setProgress(2, "Starting update...");
+        await fetchJson("/system-update/run", { method: "POST" });
     } catch (error) {
-        updating = false;
-        const message = error.payload?.error || error.payload?.output || error.message || "Update failed";
+        const message =
+            error.payload?.error || error.payload?.output || error.message || "Update failed";
         renderError(message);
-        setButtonState();
     }
 }
 

@@ -155,6 +155,8 @@ class EagleEyeInterface(
         self.network_table_instance = network_table_instance
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
+        self._system_update_lock = threading.Lock()
+        self._system_update_in_progress = False
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
         self._refresh_view_stream_settings()

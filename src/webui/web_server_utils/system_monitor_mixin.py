@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,23 @@ from src.webui.web_server_utils.constants import (
     MIN_VIEW_STREAM_DOWNSCALE,
     VIEW_STREAM_DOWNSCALE_KEY,
 )
+
+SYSTEM_UPDATE_PHASES: list[tuple[str, list[str], float]] = [
+    ("git_pull", ["git", "pull"], 120.0),
+    ("apt_update", ["sudo", "apt", "update"], 300.0),
+    (
+        "apt_upgrade",
+        [
+            "sudo",
+            "env",
+            "DEBIAN_FRONTEND=noninteractive",
+            "apt",
+            "upgrade",
+            "-y",
+        ],
+        1800.0,
+    ),
+]
 
 
 def _request():
@@ -135,62 +153,212 @@ class SystemMonitorMixin:
     def _repo_root(self) -> Path:
         return Path(__file__).resolve().parents[3]
 
-    def _run_update_command(self, command: list[str], timeout: float) -> str:
-        result = subprocess.run(
+    def _ensure_system_update_state(self) -> None:
+        """Initialize system-update lock state if missing (e.g. in tests)."""
+        if not hasattr(self, "_system_update_lock"):
+            self._system_update_lock = threading.Lock()
+        if not hasattr(self, "_system_update_in_progress"):
+            self._system_update_in_progress = False
+
+    def _publish_system_update_progress(
+        self,
+        *,
+        phase: str,
+        phase_index: int,
+        phase_count: int,
+        percent: int,
+        line: str | None = None,
+        done: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Publish a system update progress event over SSE.
+
+        Args:
+            phase: Current update phase identifier.
+            phase_index: Zero-based index of the current phase.
+            phase_count: Total number of update phases.
+            percent: Overall progress percentage from 0 to 100.
+            line: Optional terminal output line to append.
+            done: Whether the update sequence has finished.
+            error: Optional error message when the update fails.
+        """
+        payload: dict[str, Any] = {
+            "phase": phase,
+            "phase_index": phase_index,
+            "phase_count": phase_count,
+            "percent": max(0, min(100, int(percent))),
+            "done": done,
+        }
+        if line is not None:
+            payload["line"] = line
+        if error is not None:
+            payload["error"] = error
+        self._publish_event("system_update_progress", payload)
+
+    def _run_update_command_streaming(
+        self,
+        command: list[str],
+        timeout: float,
+        *,
+        phase: str,
+        phase_index: int,
+        phase_count: int,
+        percent_start: int,
+        percent_end: int,
+    ) -> None:
+        """Run an update command and stream stdout/stderr lines over SSE.
+
+        Args:
+            command: Command argv to execute.
+            timeout: Maximum seconds to wait for the command.
+            phase: Phase identifier for progress events.
+            phase_index: Zero-based phase index.
+            phase_count: Total phase count.
+            percent_start: Progress percent at command start.
+            percent_end: Progress percent when the command completes.
+
+        Raises:
+            RuntimeError: If the command exits non-zero or times out.
+        """
+        display_command = " ".join(command)
+        self._publish_system_update_progress(
+            phase=phase,
+            phase_index=phase_index,
+            phase_count=phase_count,
+            percent=percent_start,
+            line=f"$ {display_command}",
+        )
+
+        process = subprocess.Popen(
             command,
             cwd=self._repo_root(),
-            check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout,
+            bufsize=1,
         )
-        output = "\n".join(
-            part.strip() for part in [result.stdout, result.stderr] if part.strip()
-        )
-        if result.returncode != 0:
-            raise RuntimeError(output or f"Command failed: {' '.join(command)}")
-        return output
+        deadline = time.monotonic() + timeout
+        assert process.stdout is not None
+
+        while True:
+            if time.monotonic() > deadline:
+                process.kill()
+                process.wait(timeout=5)
+                raise RuntimeError(f"Update command timed out: {display_command}")
+
+            line = process.stdout.readline()
+            if line:
+                self._publish_system_update_progress(
+                    phase=phase,
+                    phase_index=phase_index,
+                    phase_count=phase_count,
+                    percent=percent_start,
+                    line=line.rstrip("\n"),
+                )
+                continue
+
+            return_code = process.poll()
+            if return_code is not None:
+                remaining = process.stdout.read()
+                if remaining:
+                    for leftover_line in remaining.splitlines():
+                        self._publish_system_update_progress(
+                            phase=phase,
+                            phase_index=phase_index,
+                            phase_count=phase_count,
+                            percent=percent_start,
+                            line=leftover_line,
+                        )
+                if return_code != 0:
+                    raise RuntimeError(
+                        f"Command failed ({return_code}): {display_command}"
+                    )
+                self._publish_system_update_progress(
+                    phase=phase,
+                    phase_index=phase_index,
+                    phase_count=phase_count,
+                    percent=percent_end,
+                )
+                return
+
+            time.sleep(0.05)
+
+    def _execute_system_update(self) -> None:
+        """Run the full system update sequence and publish SSE progress."""
+        phase_count = len(SYSTEM_UPDATE_PHASES)
+        try:
+            for phase_index, (phase_name, command, timeout) in enumerate(
+                SYSTEM_UPDATE_PHASES
+            ):
+                percent_start = int((phase_index / phase_count) * 90)
+                percent_end = int(((phase_index + 1) / phase_count) * 90)
+                self._run_update_command_streaming(
+                    command,
+                    timeout,
+                    phase=phase_name,
+                    phase_index=phase_index,
+                    phase_count=phase_count,
+                    percent_start=percent_start,
+                    percent_end=percent_end,
+                )
+
+            self._publish_system_update_progress(
+                phase="complete",
+                phase_index=phase_count,
+                phase_count=phase_count,
+                percent=100,
+                line="Update completed successfully. Restarting backend...",
+                done=True,
+            )
+            self.log("System update completed successfully")
+        except Exception as error:
+            message = str(error)
+            self.log(f"System update failed: {message}")
+            self._publish_system_update_progress(
+                phase="error",
+                phase_index=0,
+                phase_count=phase_count,
+                percent=0,
+                line=message,
+                done=True,
+                error=message,
+            )
+        finally:
+            self._ensure_system_update_state()
+            with self._system_update_lock:
+                self._system_update_in_progress = False
 
     def run_system_update(self) -> tuple[dict, int]:
-        """Run git pull and apt package updates before the frontend restarts backend."""
+        """Start git pull and apt updates in a background thread; stream via SSE.
+
+        Returns:
+            tuple[dict, int]: Acceptance payload and HTTP status code.
+        """
+        self._ensure_system_update_state()
         status_payload, _ = self.system_update_status()
         if not status_payload.get("available"):
             return {"error": status_payload.get("reason", "WiFi internet required")}, 400
 
-        output_parts: list[str] = []
-        try:
-            output_parts.append("$ git pull")
-            output_parts.append(self._run_update_command(["git", "pull"], timeout=120.0))
-            output_parts.append("$ sudo apt update")
-            output_parts.append(
-                self._run_update_command(["sudo", "apt", "update"], timeout=300.0)
-            )
-            output_parts.append("$ sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y")
-            output_parts.append(
-                self._run_update_command(
-                    [
-                        "sudo",
-                        "env",
-                        "DEBIAN_FRONTEND=noninteractive",
-                        "apt",
-                        "upgrade",
-                        "-y",
-                    ],
-                    timeout=1800.0,
-                )
-            )
-        except subprocess.TimeoutExpired as error:
-            message = f"Update command timed out: {' '.join(error.cmd)}"
-            self.log(message)
-            return {"error": message, "output": "\n".join(output_parts)}, 504
-        except Exception as error:
-            message = str(error)
-            self.log(f"System update failed: {message}")
-            return {"error": message, "output": "\n".join(output_parts)}, 500
+        with self._system_update_lock:
+            if self._system_update_in_progress:
+                return {"error": "A system update is already in progress."}, 409
+            self._system_update_in_progress = True
 
-        output = "\n".join(part for part in output_parts if part)
-        self.log("System update completed successfully")
-        return {"success": True, "output": output}, 200
+        phase_count = len(SYSTEM_UPDATE_PHASES)
+        self._publish_system_update_progress(
+            phase="starting",
+            phase_index=0,
+            phase_count=phase_count,
+            percent=0,
+            line="Starting system update...",
+        )
+        update_thread = threading.Thread(
+            target=self._execute_system_update,
+            name="system-update",
+            daemon=True,
+        )
+        update_thread.start()
+        return {"started": True, "message": "System update started"}, 202
 
     def get_log_messages(self) -> tuple[dict, int]:
         """
