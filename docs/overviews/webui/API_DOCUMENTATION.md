@@ -478,14 +478,16 @@ The server uses Server-Sent Events (SSE) for real-time communication via the `/s
     "phase": "git_pull",
     "phase_index": 0,
     "phase_count": 3,
-    "percent": 30,
+    "percent": 0,
     "line": "Already up to date.",
     "done": false,
-    "error": null
+    "update_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 }
 ```
 
-Phases include `starting`, `git_pull`, `apt_update`, `apt_upgrade`, `complete`, and `error`. When `done` is true the frontend restarts the backend (success) or shows the failure terminal (error).
+`line` and `error` are optional. Phase-completion events omit `line` and advance `percent` (for example `percent: 30` after `git_pull` finishes). `error` is only present when the update fails. When `done` is true the frontend restarts the backend (success) or shows the failure terminal (error).
+
+Phases include `starting`, `git_pull`, `apt_update`, `apt_upgrade`, `complete`, and `error`.
 
 ## Data Models
 

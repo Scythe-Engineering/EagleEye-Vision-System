@@ -1,17 +1,25 @@
 import { BACKEND_BASE_URL } from "../config.js";
 
+const DEFAULT_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+
 /**
  * Uploads FormData with XMLHttpRequest so upload progress can be reported.
  *
- * @param {{url: string, formData: FormData, onProgress?: (percent: number) => void}} options
+ * @param {{url: string, formData: FormData, onProgress?: (percent: number) => void, timeoutMs?: number}} options
  * @returns {Promise<any>}
  */
-export function uploadWithProgress({ url, formData, onProgress }) {
+export function uploadWithProgress({
+    url,
+    formData,
+    onProgress,
+    timeoutMs = DEFAULT_UPLOAD_TIMEOUT_MS,
+}) {
     const requestUrl = url.startsWith("http") ? url : `${BACKEND_BASE_URL}${url}`;
 
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", requestUrl);
+        xhr.timeout = timeoutMs;
 
         xhr.upload.addEventListener("progress", (event) => {
             if (!event.lengthComputable || typeof onProgress !== "function") {
@@ -55,6 +63,13 @@ export function uploadWithProgress({ url, formData, onProgress }) {
         xhr.addEventListener("abort", () => {
             const error = new Error("Upload aborted");
             error.payload = {};
+            error.status = 0;
+            reject(error);
+        });
+
+        xhr.addEventListener("timeout", () => {
+            const error = new Error("Upload timed out");
+            error.payload = { error: "Upload timed out" };
             error.status = 0;
             reject(error);
         });

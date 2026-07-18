@@ -157,6 +157,8 @@ class EagleEyeInterface(
         self._general_conf_lock = threading.Lock()
         self._system_update_lock = threading.Lock()
         self._system_update_in_progress = False
+        self._system_update_id = None
+        self._latest_system_update_progress = None
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
         self._refresh_view_stream_settings()
@@ -793,6 +795,8 @@ class EagleEyeInterface(
             )
 
         self._publish_cached_pipeline_errors()
+        if hasattr(self, "_replay_cached_system_update_progress"):
+            self._replay_cached_system_update_progress()
 
         try:
             while True:

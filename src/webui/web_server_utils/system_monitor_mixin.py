@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import selectors
 import socket
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -136,19 +138,28 @@ class SystemMonitorMixin:
 
     def system_update_status(self) -> tuple[dict, int]:
         """Return whether system update can run over WiFi with internet."""
+        self._ensure_system_update_state()
         if not self._has_active_wifi_connection():
-            return {
+            payload: dict[str, Any] = {
                 "available": False,
                 "reason": "Connect to a WiFi network before updating.",
-            }, 200
-
-        if not self._has_internet_access():
-            return {
+            }
+        elif not self._has_internet_access():
+            payload = {
                 "available": False,
                 "reason": "Connected WiFi network does not appear to have internet access.",
-            }, 200
+            }
+        else:
+            payload = {
+                "available": True,
+                "reason": "WiFi internet access available.",
+            }
 
-        return {"available": True, "reason": "WiFi internet access available."}, 200
+        payload["in_progress"] = bool(self._system_update_in_progress)
+        payload["update_id"] = self._system_update_id
+        if self._latest_system_update_progress is not None:
+            payload["latest_progress"] = self._latest_system_update_progress
+        return payload, 200
 
     def _repo_root(self) -> Path:
         return Path(__file__).resolve().parents[3]
@@ -159,6 +170,10 @@ class SystemMonitorMixin:
             self._system_update_lock = threading.Lock()
         if not hasattr(self, "_system_update_in_progress"):
             self._system_update_in_progress = False
+        if not hasattr(self, "_system_update_id"):
+            self._system_update_id: str | None = None
+        if not hasattr(self, "_latest_system_update_progress"):
+            self._latest_system_update_progress: dict[str, Any] | None = None
 
     def _publish_system_update_progress(
         self,
@@ -182,6 +197,7 @@ class SystemMonitorMixin:
             done: Whether the update sequence has finished.
             error: Optional error message when the update fails.
         """
+        self._ensure_system_update_state()
         payload: dict[str, Any] = {
             "phase": phase,
             "phase_index": phase_index,
@@ -189,11 +205,23 @@ class SystemMonitorMixin:
             "percent": max(0, min(100, int(percent))),
             "done": done,
         }
+        if self._system_update_id is not None:
+            payload["update_id"] = self._system_update_id
         if line is not None:
             payload["line"] = line
         if error is not None:
             payload["error"] = error
+        self._latest_system_update_progress = payload
         self._publish_event("system_update_progress", payload)
+
+    def _replay_cached_system_update_progress(self) -> None:
+        """Republish the latest cached system-update event for SSE reconnects."""
+        self._ensure_system_update_state()
+        if self._latest_system_update_progress is None:
+            return
+        self._publish_event(
+            "system_update_progress", self._latest_system_update_progress
+        )
 
     def _run_update_command_streaming(
         self,
@@ -239,26 +267,36 @@ class SystemMonitorMixin:
         )
         deadline = time.monotonic() + timeout
         assert process.stdout is not None
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
 
-        while True:
-            if time.monotonic() > deadline:
-                process.kill()
-                process.wait(timeout=5)
-                raise RuntimeError(f"Update command timed out: {display_command}")
+        try:
+            while True:
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    process.kill()
+                    process.wait(timeout=5)
+                    raise RuntimeError(
+                        f"Update command timed out: {display_command}"
+                    )
 
-            line = process.stdout.readline()
-            if line:
-                self._publish_system_update_progress(
-                    phase=phase,
-                    phase_index=phase_index,
-                    phase_count=phase_count,
-                    percent=percent_start,
-                    line=line.rstrip("\n"),
-                )
-                continue
+                ready = selector.select(timeout=min(remaining_seconds, 0.5))
+                if ready:
+                    line = process.stdout.readline()
+                    if line:
+                        self._publish_system_update_progress(
+                            phase=phase,
+                            phase_index=phase_index,
+                            phase_count=phase_count,
+                            percent=percent_start,
+                            line=line.rstrip("\n"),
+                        )
+                        continue
 
-            return_code = process.poll()
-            if return_code is not None:
+                return_code = process.poll()
+                if return_code is None:
+                    continue
+
                 remaining = process.stdout.read()
                 if remaining:
                     for leftover_line in remaining.splitlines():
@@ -280,8 +318,8 @@ class SystemMonitorMixin:
                     percent=percent_end,
                 )
                 return
-
-            time.sleep(0.05)
+        finally:
+            selector.close()
 
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
@@ -339,10 +377,13 @@ class SystemMonitorMixin:
         if not status_payload.get("available"):
             return {"error": status_payload.get("reason", "WiFi internet required")}, 400
 
+        update_id = str(uuid.uuid4())
         with self._system_update_lock:
             if self._system_update_in_progress:
                 return {"error": "A system update is already in progress."}, 409
             self._system_update_in_progress = True
+            self._system_update_id = update_id
+            self._latest_system_update_progress = None
 
         phase_count = len(SYSTEM_UPDATE_PHASES)
         self._publish_system_update_progress(
@@ -358,7 +399,11 @@ class SystemMonitorMixin:
             daemon=True,
         )
         update_thread.start()
-        return {"started": True, "message": "System update started"}, 202
+        return {
+            "started": True,
+            "message": "System update started",
+            "update_id": update_id,
+        }, 202
 
     def get_log_messages(self) -> tuple[dict, int]:
         """

@@ -178,13 +178,13 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 
 - **Purpose**: Server-Sent Events stream
 - **Response**: Event stream with real-time updates
-- **Events**: `heartbeat`, `update_robot_transform`, `update_detected_objects`, `log_update`, `system_update_progress`, `pipeline_operation_errors`, `profiling_update`
+- **Events**: `heartbeat`, `update_robot_transform`, `update_camera_pose`, `update_detected_objects`, `log_update`, `system_status`, `system_update_progress`, `pipeline_operation_errors`, `profiling_update`
 - **Use**: Real-time data subscription
 
 #### `GET /system-update/status`
 
 - **Purpose**: Reports whether WiFi + internet allow a system update
-- **Response**: `{ available, reason }`
+- **Response**: `{ available, reason, in_progress, update_id, latest_progress }` — `latest_progress` is the cached terminal/progress event for reconnect recovery when present
 
 #### `POST /system-update/run`
 

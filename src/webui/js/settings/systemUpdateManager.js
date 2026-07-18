@@ -23,17 +23,23 @@ const PHASE_LABELS = {
     error: "Update failed",
 };
 
+const MAX_TERMINAL_LINES = 500;
+
 let initialized = false;
 let statusTimer = null;
 let updateAvailable = false;
 let updating = false;
 let statusReason = "Checking update availability...";
+/** @type {string | null} */
+let currentUpdateId = null;
 /** @type {HTMLElement | null} */
 let progressBarFill = null;
 /** @type {HTMLElement | null} */
 let progressLabel = null;
 /** @type {HTMLElement | null} */
 let terminalElement = null;
+/** @type {Text[]} */
+let terminalLineNodes = [];
 
 /**
  * Gets or creates the modal overlay elements used by the system update UI.
@@ -111,6 +117,18 @@ async function refreshUpdateStatus() {
         const payload = await fetchJson("/system-update/status");
         updateAvailable = payload.available === true;
         statusReason = payload.reason || "Update requires WiFi with internet access";
+
+        if (
+            payload.in_progress === true &&
+            payload.latest_progress &&
+            typeof payload.latest_progress === "object"
+        ) {
+            applyCachedUpdateProgress(
+                payload.latest_progress,
+                typeof payload.update_id === "string" ? payload.update_id : null,
+            );
+            return;
+        }
     } catch (error) {
         updateAvailable = false;
         statusReason = error.payload?.error || "Unable to check WiFi internet access";
@@ -142,11 +160,30 @@ function appendTerminalLine(line) {
     if (!terminalElement || !line) {
         return;
     }
-    if (terminalElement.textContent) {
-        terminalElement.textContent += `\n${line}`;
-    } else {
-        terminalElement.textContent = line;
+
+    if (terminalLineNodes.length > 0) {
+        terminalElement.appendChild(document.createTextNode("\n"));
     }
+    const lineNode = document.createTextNode(line);
+    terminalElement.appendChild(lineNode);
+    terminalLineNodes.push(lineNode);
+
+    while (terminalLineNodes.length > MAX_TERMINAL_LINES) {
+        const oldestLineNode = terminalLineNodes.shift();
+        if (!oldestLineNode) {
+            break;
+        }
+        const followingNewline = oldestLineNode.nextSibling;
+        oldestLineNode.remove();
+        if (
+            followingNewline &&
+            followingNewline.nodeType === Node.TEXT_NODE &&
+            followingNewline.textContent === "\n"
+        ) {
+            followingNewline.remove();
+        }
+    }
+
     terminalElement.scrollTop = terminalElement.scrollHeight;
 }
 
@@ -197,6 +234,7 @@ function renderLiveProgress() {
             "mt-4 h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141] font-mono",
         text: "",
     });
+    terminalLineNodes = [];
 
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
@@ -224,6 +262,8 @@ function renderError(message) {
     progressBarFill = null;
     progressLabel = null;
     terminalElement = null;
+    terminalLineNodes = [];
+    currentUpdateId = null;
     modal.appendChild(
         createElement("div", { className: "p-6" }, [
             createElement("h3", {
@@ -256,6 +296,15 @@ async function restartAfterUpdate() {
     try {
         await fetchJson("/restart-backend", { method: "POST" });
     } catch (error) {
+        if (typeof error.status === "number" && error.status > 0) {
+            const message =
+                error.payload?.error ||
+                error.payload?.message ||
+                error.message ||
+                "Failed to restart backend";
+            renderError(message);
+            return;
+        }
         console.warn("Restart request failed or connection closed:", error);
     }
     setTimeout(() => {
@@ -272,8 +321,20 @@ export function handleSystemUpdateProgress(data) {
         return;
     }
 
-    if (!updating && !data.done) {
+    if (!updating) {
         return;
+    }
+
+    if (
+        currentUpdateId &&
+        typeof data.update_id === "string" &&
+        data.update_id !== currentUpdateId
+    ) {
+        return;
+    }
+
+    if (!terminalElement) {
+        renderLiveProgress();
     }
 
     if (typeof data.line === "string" && data.line.length > 0) {
@@ -315,10 +376,30 @@ export function handleSystemUpdateProgress(data) {
 }
 
 /**
+ * Applies a cached progress payload from status or SSE reconnect recovery.
+ * @param {object} latestProgress
+ * @param {string | null} [updateId=null]
+ */
+function applyCachedUpdateProgress(latestProgress, updateId = null) {
+    if (!latestProgress || typeof latestProgress !== "object") {
+        return;
+    }
+    if (updateId) {
+        currentUpdateId = updateId;
+    } else if (typeof latestProgress.update_id === "string") {
+        currentUpdateId = latestProgress.update_id;
+    }
+    updating = true;
+    setButtonState();
+    handleSystemUpdateProgress(latestProgress);
+}
+
+/**
  * Runs the system update sequence and waits for SSE progress events.
  */
 async function runUpdate() {
     updating = true;
+    currentUpdateId = null;
     setButtonState();
     renderLiveProgress();
 
@@ -330,7 +411,10 @@ async function runUpdate() {
 
         appendTerminalLine("Checking WiFi internet access... OK");
         setProgress(2, "Starting update...");
-        await fetchJson("/system-update/run", { method: "POST" });
+        const startResult = await fetchJson("/system-update/run", { method: "POST" });
+        if (typeof startResult.update_id === "string") {
+            currentUpdateId = startResult.update_id;
+        }
     } catch (error) {
         const message =
             error.payload?.error || error.payload?.output || error.message || "Update failed";
