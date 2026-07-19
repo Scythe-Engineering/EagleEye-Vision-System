@@ -415,6 +415,12 @@ class EagleEyeInterface(
             methods=["GET"],
         )
         self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/distortion/feed",
+            "distortion_feed",
+            self.distortion_feed,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>/calibration/capture",
             "capture_calibration_frame",
             self.capture_calibration_frame,
