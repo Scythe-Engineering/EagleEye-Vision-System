@@ -136,6 +136,7 @@ class SystemMonitorMixin:
         return Path(__file__).resolve().parents[3]
 
     def _run_update_command(self, command: list[str], timeout: float) -> str:
+        """Run an update command from the repository root and return its output."""
         result = subprocess.run(
             command,
             cwd=self._repo_root(),
@@ -151,6 +152,49 @@ class SystemMonitorMixin:
             raise RuntimeError(output or f"Command failed: {' '.join(command)}")
         return output
 
+    def _pull_updates_preserving_pipeline_config(self) -> str:
+        """Pull repository updates while restoring the local pipeline configuration."""
+        repo_root = self._repo_root()
+        pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
+        relative_path = pipeline_path.relative_to(repo_root).as_posix()
+        pipeline_existed = pipeline_path.exists()
+        pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
+
+        status = self._run_update_command(
+            ["git", "status", "--porcelain", "--", relative_path],
+            timeout=30.0,
+        )
+        stash_created = bool(status)
+        if stash_created:
+            self._run_update_command(
+                [
+                    "git",
+                    "stash",
+                    "push",
+                    "--include-untracked",
+                    "--message",
+                    "EagleEye system update pipeline backup",
+                    "--",
+                    relative_path,
+                ],
+                timeout=30.0,
+            )
+
+        try:
+            return self._run_update_command(["git", "pull"], timeout=120.0)
+        finally:
+            if pipeline_contents is None:
+                pipeline_path.unlink(missing_ok=True)
+            else:
+                pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+                pipeline_path.write_bytes(pipeline_contents)
+
+            if stash_created:
+                self._run_update_command(
+                    ["git", "stash", "drop", "stash@{0}"],
+                    timeout=30.0,
+                )
+
     def run_system_update(self) -> tuple[dict, int]:
         """Run git pull and apt package updates before the frontend restarts backend."""
         status_payload, _ = self.system_update_status()
@@ -159,8 +203,9 @@ class SystemMonitorMixin:
 
         output_parts: list[str] = []
         try:
-            output_parts.append("$ git pull")
-            output_parts.append(self._run_update_command(["git", "pull"], timeout=120.0))
+            output_parts.append("$ git pull (preserving pipeline configuration)")
+            output_parts.append(self._pull_updates_preserving_pipeline_config())
+            output_parts.append("Restored src/config/pipeline_config.json")
             output_parts.append("$ sudo apt update")
             output_parts.append(
                 self._run_update_command(["sudo", "apt", "update"], timeout=300.0)
