@@ -20,6 +20,7 @@ class PnpLocalization:
         distortion_coefficients: np.ndarray,
         apriltag_map: Dict[int, Apriltag],
         jump_threshold: float = 2.0,
+        position_cache_enabled: bool = True,
     ) -> None:
         """Initialize the AprilTag pose estimator.
 
@@ -29,6 +30,8 @@ class PnpLocalization:
             apriltag_map (Dict[int, Apriltag]): Mapping of tag IDs to AprilTag objects.
             jump_threshold (float): Maximum distance threshold in meters for pose jumps.
                                    Poses beyond this threshold trigger cache clearing.
+            position_cache_enabled (bool): Whether prior poses may be used as an
+                extrinsic guess for subsequent pose estimates.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
         dist = distortion_coefficients.astype(np.float32, copy=False)
@@ -38,6 +41,7 @@ class PnpLocalization:
 
         self.apriltag_map = apriltag_map
         self.jump_threshold = jump_threshold
+        self.position_cache_enabled = position_cache_enabled
         self.last_pose = None
         self._last_camera_space_pose = None
         self._last_rvec = None
@@ -149,7 +153,8 @@ class PnpLocalization:
 
         # First attempt with extrinsic guess if available
         use_guess = (
-            self._last_camera_space_pose is not None
+            self.position_cache_enabled
+            and self._last_camera_space_pose is not None
             and self._last_rvec is not None
             and np.all(np.isfinite(self._last_camera_space_pose))
             and np.all(np.isfinite(self._last_rvec))
@@ -201,7 +206,7 @@ class PnpLocalization:
             camera_space_transform[:3, 3] = translation_vector.flatten().astype(
                 np.float32, copy=False
             )
-            if np.all(np.isfinite(rotation_vector)):
+            if self.position_cache_enabled and np.all(np.isfinite(rotation_vector)):
                 self._last_rvec = rotation_vector.astype(np.float32, copy=False)
 
         if camera_space_transform is None:
@@ -249,14 +254,16 @@ class PnpLocalization:
                     camera_space_transform[:3, 3] = translation_vector.flatten().astype(
                         np.float32, copy=False
                     )
-                    if np.all(np.isfinite(rotation_vector)):
+                    if self.position_cache_enabled and np.all(np.isfinite(rotation_vector)):
                         self._last_rvec = rotation_vector.astype(np.float32, copy=False)
 
                     global_camera_transform = PnpLocalization.fast_se3_inverse(
                         camera_space_transform
                     )
 
-        if np.all(np.isfinite(camera_space_transform)):
+        if self.position_cache_enabled and np.all(
+            np.isfinite(camera_space_transform)
+        ):
             self._last_camera_space_pose = camera_space_transform
 
         if not np.all(np.isfinite(global_camera_transform)):
@@ -271,7 +278,8 @@ class PnpLocalization:
                 )
             return None
 
-        self.last_pose = global_camera_transform
+        if self.position_cache_enabled:
+            self.last_pose = global_camera_transform
 
         # Reset counter on successful finite result
         self.non_finite_count = 0
