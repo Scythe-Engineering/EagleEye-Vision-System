@@ -65,6 +65,7 @@ Handles visual pipeline creation and configuration.
     - Connection line drawing
     - Removing a flowchart edge calls through to `PipelineStore` so drag-to-disconnect matches auto-save
     - Adding or removing an operation updates the flowchart incrementally (no full node tear-down) and only recenters when the first node is placed or on a full load/switch via `renderPipeline` with `centerView`
+    - Shift+drag on empty canvas draws a marquee selection; dragging a selected node moves the whole selection
     - Visual state updates
 
 - **`utils.js`**: Pipeline utility functions (47 lines)

@@ -21,6 +21,8 @@ export class FlowchartCanvas {
         this.nodesLayer = null;
 
         this.onViewportChange = options.onViewportChange || (() => {});
+        this.onMarqueeSelect = options.onMarqueeSelect || (() => {});
+        this.onCanvasBackgroundClick = options.onCanvasBackgroundClick || (() => {});
         this.interactiveGrid = null;
 
         // Cache container dimensions to avoid getBoundingClientRect during zoom/pan
@@ -129,17 +131,91 @@ export class FlowchartCanvas {
     }
 
     /**
-     * Set up panning, zooming, and view reset interactions.
+     * Set up panning, zooming, marquee selection, and view reset interactions.
      */
     setupPanZoom() {
         let isPanning = false;
-        let startX, startY;
+        let isMarqueeSelecting = false;
+        let startX = 0;
+        let startY = 0;
+        let panStartClientX = 0;
+        let panStartClientY = 0;
+        let panDidMove = false;
+        let marqueeStartClientX = 0;
+        let marqueeStartClientY = 0;
+        /** @type {HTMLElement | null} */
+        let marqueeElement = null;
         this.placeholderVisible = false;
 
         const resizeObserver = new ResizeObserver(() => {
             this.updateContainerRect();
         });
         resizeObserver.observe(this.container);
+
+        /**
+         * Creates the on-canvas marquee overlay element.
+         * @returns {HTMLElement}
+         */
+        const ensureMarqueeElement = () => {
+            if (marqueeElement) {
+                return marqueeElement;
+            }
+            marqueeElement = document.createElement("div");
+            marqueeElement.className = "flowchart-marquee-selection";
+            Object.assign(marqueeElement.style, {
+                position: "absolute",
+                left: "0",
+                top: "0",
+                width: "0",
+                height: "0",
+                border: "1.5px solid #f9c845",
+                borderRadius: "6px",
+                background:
+                    "linear-gradient(135deg, rgba(249, 200, 69, 0.16), rgba(249, 200, 69, 0.06))",
+                boxShadow:
+                    "0 0 0 1px rgba(249, 200, 69, 0.2), inset 0 0 24px rgba(249, 200, 69, 0.08), 0 8px 24px rgba(0, 0, 0, 0.35)",
+                pointerEvents: "none",
+                zIndex: "40",
+                display: "none",
+            });
+            this.container.appendChild(marqueeElement);
+            return marqueeElement;
+        };
+
+        /**
+         * Updates the marquee overlay from screen-space start/end points.
+         * @param {number} endClientX
+         * @param {number} endClientY
+         */
+        const updateMarqueeElement = (endClientX, endClientY) => {
+            const overlay = ensureMarqueeElement();
+            const rect = this.containerRect;
+            const startLocalX = marqueeStartClientX - rect.left;
+            const startLocalY = marqueeStartClientY - rect.top;
+            const endLocalX = endClientX - rect.left;
+            const endLocalY = endClientY - rect.top;
+            const left = Math.min(startLocalX, endLocalX);
+            const top = Math.min(startLocalY, endLocalY);
+            const width = Math.abs(endLocalX - startLocalX);
+            const height = Math.abs(endLocalY - startLocalY);
+            overlay.style.display = "block";
+            overlay.style.left = `${left}px`;
+            overlay.style.top = `${top}px`;
+            overlay.style.width = `${width}px`;
+            overlay.style.height = `${height}px`;
+        };
+
+        /**
+         * Hides and resets the marquee overlay.
+         */
+        const hideMarqueeElement = () => {
+            if (!marqueeElement) {
+                return;
+            }
+            marqueeElement.style.display = "none";
+            marqueeElement.style.width = "0";
+            marqueeElement.style.height = "0";
+        };
 
         this.container.addEventListener("mousedown", (e) => {
             if (e.button !== 0) return;
@@ -150,7 +226,20 @@ export class FlowchartCanvas {
             const isPort = e.target.closest(".port-connector");
 
             if (!isNode && !isButton && !isPort) {
+                if (e.shiftKey) {
+                    isMarqueeSelecting = true;
+                    marqueeStartClientX = e.clientX;
+                    marqueeStartClientY = e.clientY;
+                    this.container.style.cursor = "crosshair";
+                    updateMarqueeElement(e.clientX, e.clientY);
+                    e.preventDefault();
+                    return;
+                }
+
                 isPanning = true;
+                panDidMove = false;
+                panStartClientX = e.clientX;
+                panStartClientY = e.clientY;
                 this.container.style.cursor = "grabbing";
                 startX = e.clientX - this.translateX;
                 startY = e.clientY - this.translateY;
@@ -159,17 +248,50 @@ export class FlowchartCanvas {
         });
 
         globalThis.addEventListener("mousemove", (e) => {
+            if (isMarqueeSelecting) {
+                updateMarqueeElement(e.clientX, e.clientY);
+                return;
+            }
+
             if (!isPanning) return;
+
+            if (
+                Math.abs(e.clientX - panStartClientX) > 3 ||
+                Math.abs(e.clientY - panStartClientY) > 3
+            ) {
+                panDidMove = true;
+            }
 
             this.translateX = e.clientX - startX;
             this.translateY = e.clientY - startY;
             this.updateTransform();
         });
 
-        globalThis.addEventListener("mouseup", () => {
+        globalThis.addEventListener("mouseup", (e) => {
+            if (isMarqueeSelecting) {
+                isMarqueeSelecting = false;
+                this.container.style.cursor = "grab";
+                const startWorld = this.screenToWorld(
+                    marqueeStartClientX,
+                    marqueeStartClientY,
+                );
+                const endWorld = this.screenToWorld(e.clientX, e.clientY);
+                hideMarqueeElement();
+                this.onMarqueeSelect({
+                    x1: startWorld.x,
+                    y1: startWorld.y,
+                    x2: endWorld.x,
+                    y2: endWorld.y,
+                });
+                return;
+            }
+
             if (isPanning) {
                 isPanning = false;
                 this.container.style.cursor = "grab";
+                if (!panDidMove) {
+                    this.onCanvasBackgroundClick();
+                }
             }
         });
 
