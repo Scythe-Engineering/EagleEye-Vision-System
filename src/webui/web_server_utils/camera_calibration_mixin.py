@@ -390,6 +390,39 @@ class CameraCalibrationMixin:
             )
         return output
 
+    def _draw_straight_grid(self, frame: np.ndarray) -> np.ndarray:
+        """Overlay a straight reference grid on an undistorted frame."""
+        height, width = frame.shape[:2]
+        output = frame.copy()
+        for index in range(1, 10):
+            x = round(width * index / 10)
+            y = round(height * index / 10)
+            cv2.line(output, (x, 0), (x, height - 1), (0, 255, 255), 1, cv2.LINE_AA)
+            cv2.line(output, (0, y), (width - 1, y), (0, 255, 255), 1, cv2.LINE_AA)
+        return output
+
+    def _undistort_frame(
+        self, frame: np.ndarray, camera_matrix: np.ndarray, coefficients: np.ndarray
+    ) -> np.ndarray:
+        """Undistort a frame while retaining the camera's full field of view."""
+        height, width = frame.shape[:2]
+        output_matrix, _ = cv2.getOptimalNewCameraMatrix(
+            camera_matrix,
+            coefficients,
+            (width, height),
+            1.0,
+            (width, height),
+        )
+        map_x, map_y = cv2.initUndistortRectifyMap(
+            camera_matrix,
+            coefficients,
+            None,
+            output_matrix,
+            (width, height),
+            cv2.CV_32FC1,
+        )
+        return cv2.remap(frame, map_x, map_y, cv2.INTER_LINEAR)
+
     def _distortion_feed_generator(
         self, camera_bus_id: str, view: str
     ) -> Generator[bytes, Any, Any]:
@@ -412,7 +445,8 @@ class CameraCalibrationMixin:
                     matrix, calibration_size, (width, height)
                 )
                 if view == "undistorted":
-                    output = cv2.undistort(frame, active_matrix, coefficients)
+                    output = self._undistort_frame(frame, active_matrix, coefficients)
+                    output = self._draw_straight_grid(output)
                 else:
                     output = self._draw_distortion_grid(
                         frame, active_matrix, coefficients

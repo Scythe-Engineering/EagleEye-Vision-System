@@ -184,9 +184,9 @@
                         Camera Distortion Diagnostic
                     </h3>
                     <p class="text-sm text-[#ac8a2f]">
-                        Compare the rectified image with the camera image.
-                        Yellow grid curvature visualizes the saved distortion
-                        parameters.
+                        Compare the raw camera image with the corrected image.
+                        The warped raw grid visualizes the saved distortion; the
+                        corrected grid provides a straight reference.
                     </p>
                 </div>
                 <button
@@ -202,14 +202,14 @@
                     <figcaption
                         class="mb-2 text-sm font-semibold text-[#f9c845]"
                     >
-                        Undistorted View
+                        Distorted / Raw View with Parameter Grid
                     </figcaption>
                     <div
                         class="min-h-0 flex-1 bg-black border border-[#414141] rounded-md overflow-hidden flex items-center justify-center"
                     >
                         <img
-                            id="utilsUndistortedFeed"
-                            alt="Undistorted camera view"
+                            id="utilsDistortedFeed"
+                            alt="Raw camera view with distortion grid"
                             class="w-full h-full object-contain"
                         />
                     </div>
@@ -218,14 +218,14 @@
                     <figcaption
                         class="mb-2 text-sm font-semibold text-[#f9c845]"
                     >
-                        Distorted View with Parameter Grid
+                        Undistorted View with Straight Reference Grid
                     </figcaption>
                     <div
                         class="min-h-0 flex-1 bg-black border border-[#414141] rounded-md overflow-hidden flex items-center justify-center"
                     >
                         <img
-                            id="utilsDistortedFeed"
-                            alt="Camera view with distortion grid"
+                            id="utilsUndistortedFeed"
+                            alt="Undistorted camera view with straight grid"
                             class="w-full h-full object-contain"
                         />
                     </div>

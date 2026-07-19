@@ -73,3 +73,13 @@ def test_distortion_grid_draws_warped_lines() -> None:
 
     assert output.shape == frame.shape
     assert np.count_nonzero(output) > 0
+
+
+def test_straight_reference_grid_draws_lines() -> None:
+    harness = _CalibrationHarness()
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+
+    output = harness._draw_straight_grid(frame)
+
+    assert output.shape == frame.shape
+    assert np.count_nonzero(output) > 0
