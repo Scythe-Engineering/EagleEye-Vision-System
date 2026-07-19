@@ -70,6 +70,7 @@ from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
 from src.webui.web_server_utils.system_monitor_mixin import SystemMonitorMixin
+from src.webui.web_server_utils.terminal_mixin import TerminalMixin
 from src.webui.web_server_utils.test_video_mixin import TestVideoMixin
 from src.webui.web_server_utils.visualization_mixin import VisualizationMixin
 
@@ -87,6 +88,7 @@ class EagleEyeInterface(
     OperationConfigMixin,
     PipelineConfigMixin,
     SystemMonitorMixin,
+    TerminalMixin,
     TestVideoMixin,
     VisualizationMixin,
 ):
@@ -691,6 +693,24 @@ class EagleEyeInterface(
             "download_log_file",
             self.download_log_file,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/terminal/cwd",
+            "get_terminal_cwd",
+            self.get_terminal_cwd,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/terminal/reset",
+            "reset_terminal_cwd",
+            self.reset_terminal_cwd,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/terminal/execute",
+            "execute_terminal_command",
+            self.execute_terminal_command,
+            methods=["POST"],
         )
         self.app.add_url_rule(
             "/get-general-conf",

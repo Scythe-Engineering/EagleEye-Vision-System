@@ -427,6 +427,68 @@ Or if not found:
 
 - `200`: Success (before shutdown)
 
+#### GET `/terminal/cwd`
+
+**Description:** Returns the Raspberry Pi terminal session working directory and prompt  
+**Response:**
+
+```json
+{
+    "cwd": "/home/pi",
+    "prompt": "pi@eagleeye:~$",
+    "user": "pi",
+    "host": "eagleeye",
+    "output": "",
+    "error": ""
+}
+```
+
+**Status Codes:**
+
+- `200`: Success
+
+#### POST `/terminal/reset`
+
+**Description:** Resets the terminal working directory to the user home directory  
+**Response:** Same shape as `GET /terminal/cwd`
+
+**Status Codes:**
+
+- `200`: Success
+
+#### POST `/terminal/execute`
+
+**Description:** Executes a shell command in the persistent terminal working directory (supports `cd` and compound commands)  
+**Request Body:**
+
+```json
+{
+    "command": "ls -la"
+}
+```
+
+**Response:**
+
+```json
+{
+    "cwd": "/home/pi",
+    "prompt": "pi@eagleeye:~$",
+    "user": "pi",
+    "host": "eagleeye",
+    "output": "file.txt",
+    "error": "",
+    "exit_code": 0,
+    "success": true
+}
+```
+
+**Status Codes:**
+
+- `200`: Command finished (check `exit_code` / `success`)
+- `400`: Missing command
+- `408`: Command timed out
+- `500`: Execution failure
+
 #### GET `/sse/stream`
 
 **Description:** Server-Sent Events stream for real-time updates

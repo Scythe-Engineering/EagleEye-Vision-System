@@ -47,6 +47,14 @@ Utility module for serving static files with proper MIME types.
 - `serve_js()`: Serves JavaScript files
 - `serve_css()`: Serves CSS files
 
+### `terminal_mixin.py`
+Stateful Raspberry Pi shell session used by the Settings terminal panel.
+
+#### Methods
+- `get_terminal_cwd()`: Returns current cwd and prompt metadata
+- `reset_terminal_cwd()`: Resets cwd to the user home directory
+- `execute_terminal_command()`: Runs bash commands while preserving cwd across `cd`
+
 ### Draco Loader (`drako_loader/`)
 Handles 3D model compression and decompression for web delivery.
 
@@ -86,6 +94,9 @@ Handles 3D model compression and decompression for web delivery.
 ### Utility Endpoints
 - `POST /restart-backend` - Trigger backend restart
 - `GET /get-pipeline-objects` - Retrieve pipeline configuration
+- `GET /terminal/cwd` - Raspberry Pi terminal session state
+- `POST /terminal/reset` - Reset terminal working directory to home
+- `POST /terminal/execute` - Execute a shell command in the terminal session
 
 ## Realtime updates
 

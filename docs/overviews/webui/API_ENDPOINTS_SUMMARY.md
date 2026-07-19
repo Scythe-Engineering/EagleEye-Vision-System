@@ -172,6 +172,25 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Response**: Success message before shutdown
 - **Use**: System shutdown
 
+#### `GET /terminal/cwd`
+
+- **Purpose**: Returns the Raspberry Pi terminal session cwd and prompt
+- **Response**: JSON with `cwd`, `prompt`, `user`, and `host`
+- **Use**: Initialize the interactive terminal UI
+
+#### `POST /terminal/reset`
+
+- **Purpose**: Resets terminal cwd to the user home directory
+- **Response**: JSON with updated session state
+- **Use**: Restore a clean shell location
+
+#### `POST /terminal/execute`
+
+- **Purpose**: Runs a shell command in the persistent terminal session
+- **Body**: `{ "command": "ls -la" }`
+- **Response**: JSON with `output`, `error`, `exit_code`, `cwd`, and `prompt`
+- **Use**: Interactive Raspberry Pi terminal for navigation and system actions
+
 ### Real-time Data (SSE)
 
 #### `GET /sse/stream`

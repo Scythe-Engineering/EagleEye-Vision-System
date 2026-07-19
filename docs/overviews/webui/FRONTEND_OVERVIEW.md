@@ -84,6 +84,13 @@ Manages application settings and configuration.
     - User confirmation dialogs
     - Error handling for restart operations
 
+- **`terminalHandler.js`**: System logs and Raspberry Pi terminal
+
+    - Loads and streams system log history
+    - Executes shell commands via `/terminal/execute`
+    - Tracks persistent cwd/prompt and command history
+    - Clears display without resetting backend session state
+
 - **`loadSettings.js`**: Settings loading and display (39 lines)
 
     - Fetches settings from backend
