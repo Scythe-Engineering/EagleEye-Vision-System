@@ -12,7 +12,10 @@ from src.config.utils.operation import SKIP_PIPELINE_CYCLE, Operation
 from src.config.utils.thread_object import ThreadObject
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.secondary_operations.new_frame_gate import NewFrameGate
-from src.utils.camera_utils.camera_thread_manager import CameraThreadManager, CameraWorker
+from src.utils.camera_utils.camera_thread_manager import (
+    CameraThreadManager,
+    CameraWorker,
+)
 from src.utils.timing import TimedValue, TimingMetadata
 
 
@@ -56,8 +59,9 @@ def test_new_frame_gate_waits_for_the_camera_sequence_to_advance() -> None:
         worker.set_current_packet(second_packet)
         result = waiting_run.result(timeout=1.0)
 
-    assert result is SKIP_PIPELINE_CYCLE
-    assert gate.run(second_packet) is second_packet
+    assert isinstance(result, TimedValue)
+    assert result.timing.frame_seq == 2
+    assert np.array_equal(result.value, second_packet.value)
 
 
 def test_skip_signal_aborts_the_remaining_pipeline_cycle() -> None:

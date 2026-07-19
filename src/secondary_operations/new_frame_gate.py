@@ -66,9 +66,7 @@ class NewFrameGate(OperationInstance):
             self._last_frame_seq = input_seq
             return input_data
 
-        if (
-            self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id) is None
-        ):
+        if self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id) is None:
             raise ValueError(
                 f"No camera is registered for bus ID {self.camera_bus_id!r}"
             )
@@ -79,8 +77,22 @@ class NewFrameGate(OperationInstance):
                 self._last_frame_seq,
                 timeout_s=self.WAIT_TIMEOUT_S,
             )
-            if frame_available:
-                return SKIP_PIPELINE_CYCLE
+            if not frame_available:
+                continue
+
+            packet = self.camera_manager.get_current_packet_by_bus_id(
+                self.camera_bus_id
+            )
+            packet_seq = self._get_frame_seq(packet)
+            if (
+                packet is None
+                or packet_seq is None
+                or packet_seq <= self._last_frame_seq
+            ):
+                continue
+
+            self._last_frame_seq = packet_seq
+            return packet
 
         return SKIP_PIPELINE_CYCLE
 
