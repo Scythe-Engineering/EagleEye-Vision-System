@@ -603,6 +603,12 @@ class EagleEyeInterface(
             methods=["POST"],
         )
         self.app.add_url_rule(
+            "/reboot-system",
+            "reboot_system",
+            self.reboot_system,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
             "/line-profiling/start/<string:pipeline_name>/<string:operation_uuid>",
             "start_line_profiling",
             self.start_line_profiling,

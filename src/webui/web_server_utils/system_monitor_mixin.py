@@ -4,6 +4,8 @@ import json
 import os
 import socket
 import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,34 @@ class SystemMonitorMixin:
         """
         self.restart_callback()
         return {"message": "Backend restarted successfully"}, 200
+
+    def reboot_system(self) -> tuple[dict, int]:
+        """Reboot the host machine on Linux via ``sudo reboot``.
+
+        Returns:
+            tuple[dict, int]: Acceptance or error payload with HTTP status.
+        """
+        if sys.platform != "linux":
+            return {"error": "System reboot is only supported on Linux."}, 400
+
+        def execute_reboot() -> None:
+            time.sleep(0.5)
+            try:
+                subprocess.Popen(
+                    ["sudo", "reboot"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception as error:
+                self.log(f"Failed to initiate system reboot: {error}")
+
+        threading.Thread(
+            target=execute_reboot,
+            name="system-reboot",
+            daemon=True,
+        ).start()
+        self.log("System reboot initiated")
+        return {"message": "System reboot initiated"}, 200
 
     def set_restart_required(self) -> tuple[dict, int]:
         """

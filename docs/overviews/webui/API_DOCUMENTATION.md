@@ -389,6 +389,22 @@ Or if not found:
 
 - `200`: Success
 
+#### POST `/reboot-system`
+
+**Description:** Reboots the host machine via `sudo reboot` (Linux only). The reboot is started in a background thread so the HTTP response can return first.
+**Response:**
+
+```json
+{
+    "message": "System reboot initiated"
+}
+```
+
+**Status Codes:**
+
+- `200`: Success
+- `400`: Not running on Linux
+
 #### POST `/set_restart_required`
 
 **Description:** Sets a flag indicating that a backend restart is required (used after configuration changes)

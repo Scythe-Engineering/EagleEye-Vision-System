@@ -85,6 +85,7 @@ Handles 3D model compression and decompression for web delivery.
 
 ### Utility Endpoints
 - `POST /restart-backend` - Trigger backend restart
+- `POST /reboot-system` - Reboot the host machine (Linux only)
 - `GET /get-pipeline-objects` - Retrieve pipeline configuration
 
 ## Realtime updates

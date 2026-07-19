@@ -83,6 +83,7 @@ Manages application settings and configuration.
     - REST API calls to restart backend
     - User confirmation dialogs
     - Error handling for restart operations
+    - Settings tab also exposes **Reboot Computer**, which calls `POST /reboot-system` (`sudo reboot`, Linux only) after confirmation
 
 - **`loadSettings.js`**: Settings loading and display (39 lines)
 

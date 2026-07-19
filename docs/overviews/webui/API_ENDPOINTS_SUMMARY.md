@@ -154,6 +154,12 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Response**: Success message
 - **Use**: Apply configuration changes
 
+#### `POST /reboot-system`
+
+- **Purpose**: Reboots the host machine (`sudo reboot`, Linux only)
+- **Response**: Success message, or error when not on Linux
+- **Use**: Full computer reboot from the Settings tab
+
 #### `POST /set_restart_required`
 
 - **Purpose**: Sets restart required flag
