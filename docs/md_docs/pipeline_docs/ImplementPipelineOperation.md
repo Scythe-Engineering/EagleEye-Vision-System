@@ -110,6 +110,7 @@ Configuration definition structure:
     "class_name": "OperationClassName",
     "description": "Brief description of what the operation does",
     "category": "cat",
+    "folder": "Operation Group",
     "is_data_source": false,
     "input_nodes": [],
     "output_nodes": [],
@@ -131,7 +132,8 @@ Key elements:
 
 - **class_name**: Must match the Python class name exactly (main operations use "Definition" suffix, e.g., "MyOpDefinition")
 - **description**: Human-readable description of the operation's purpose
-- **category**: Operation category (e.g., "prep" for preprocessing, "det" for detection, "proc" for processing, "filt" for filtering, "net" for networking)
+- **category**: Operation category (e.g., "prep" for preprocessing, "det" for detection, "proc" for processing, "filt" for filtering, "net" for networking). Every operation that fits an existing category must specify it.
+- **folder**: Human-readable operation group shown in the pipeline creator (e.g., "Preprocessing", "Detection", "Localization", "Filtering", "Networking", or "Output"). Every operation that fits an existing folder must specify it.
 - **parameters**: Dictionary of parameter definitions with:
     - **type**: Data type ("str", "int", "float", "bool")
     - **description**: Parameter purpose explanation
@@ -248,6 +250,7 @@ Example data source config definition (`get_networktables_value_config_def.json`
 - [ ] For main operations: create `{operation_name}_config_def.json` in `src/main_operations/definitions/config_data/`.
 - [ ] For secondary operations: create `{operation_name}_config_def.json` in `src/secondary_operations/config_data/`.
 - [ ] Keep definitions thin; implementation lives under `src/modules/` when logic is non-trivial.
+- [ ] Assign every operation to an existing `category` and `folder` whenever applicable.
 - [ ] Provide constructor params via `action_params` and rely on automatic injection for `web_interface` / `compute_pool`.
 - [ ] Implement `run` and document I/O types.
 - [ ] Test by generating pipelines and feeding a small `np.ndarray` frame through `Pipeline.run`.
