@@ -153,6 +153,60 @@ export async function fetchPipelineConfig(pipelineName) {
 }
 
 /**
+ * Fetch the complete pipeline configuration as raw text.
+ *
+ * @returns {Promise<{content: string, revision: string}>} Raw content and revision.
+ */
+export async function fetchPipelineConfigJson() {
+    const response = await fetch(`${BACKEND_BASE_URL}/pipeline-config/json`);
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (
+        !response.ok ||
+        typeof payload.content !== "string" ||
+        typeof payload.revision !== "string"
+    ) {
+        throw new Error(payload.error || `HTTP error! status: ${response.status}`);
+    }
+    return payload;
+}
+
+/**
+ * Validate and save the complete raw pipeline configuration.
+ *
+ * @param {string} content - Complete pipeline_config.json text.
+ * @param {string} revision - Revision returned when the editor loaded the file.
+ * @returns {Promise<object>} Backend response payload.
+ */
+export async function savePipelineConfigJson(content, revision) {
+    const response = await fetch(`${BACKEND_BASE_URL}/pipeline-config/json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, revision }),
+    });
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (!response.ok) {
+        const location =
+            payload.line && payload.column
+                ? ` at line ${payload.line}, column ${payload.column}`
+                : "";
+        throw new Error(
+            `${payload.error || `HTTP error! status: ${response.status}`}${location}${payload.detail ? `: ${payload.detail}` : ""}`,
+        );
+    }
+    return payload;
+}
+
+/**
  * Save a pipeline configuration to the backend.
  *
  * @param {string} pipelineName - Pipeline name to save.

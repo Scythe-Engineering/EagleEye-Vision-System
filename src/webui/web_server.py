@@ -591,6 +591,18 @@ class EagleEyeInterface(
             methods=["POST"],
         )
         self.app.add_url_rule(
+            "/pipeline-config/json",
+            "get_pipeline_config_json",
+            self.get_pipeline_config_json,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/pipeline-config/json",
+            "save_pipeline_config_json",
+            self.save_pipeline_config_json,
+            methods=["PUT"],
+        )
+        self.app.add_url_rule(
             "/delete-pipeline/<string:pipeline_name>",
             "delete_pipeline_by_name",
             self.delete_pipeline_by_name,

@@ -20,6 +20,9 @@ export function cachePipelineCreatorElements() {
         "pipelineCameraNote",
     );
     elements.newPipelineButton = document.getElementById("newPipelineButton");
+    elements.pipelineJsonEditorButton = document.getElementById(
+        "pipelineJsonEditorButton",
+    );
     elements.deletePipelineButton = document.getElementById(
         "deletePipelineButton",
     );

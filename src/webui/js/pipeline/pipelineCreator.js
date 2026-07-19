@@ -53,6 +53,7 @@ import {
 } from "./creator/profilingController.js";
 import { fetchAvailableCameras as fetchAvailableCamerasApi } from "./creator/dataApi.js";
 import { registerSettingsPopup } from "./settingsPopup.js";
+import { initializePipelineJsonEditor } from "./creator/jsonEditorController.js";
 
 registerSettingsPopup();
 
@@ -176,6 +177,14 @@ export async function initPipelineCreator() {
         updateDeleteButtonVisibility,
         updateRunButton,
     };
+
+    initializePipelineJsonEditor({
+        button: creatorContext.elements.pipelineJsonEditorButton,
+        onSaved: async () => {
+            await refreshPipelineCreator(refreshCallbacks);
+            await checkBackendRestartStatus();
+        },
+    });
 
     creatorContext.elements.pipelineSelect?.addEventListener("change", () => {
         handlePipelineSelection({
