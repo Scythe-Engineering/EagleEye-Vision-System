@@ -20,8 +20,6 @@ class PnpCameraLocalizationDefinition(OperationInstance):
         self,
         camera_bus_id: str,
         apriltag_map_path: str,
-        jump_threshold: float = 2.0,
-        position_cache_enabled: bool = True,
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
         compute_pool: ComputePool | None = None,
@@ -31,9 +29,6 @@ class PnpCameraLocalizationDefinition(OperationInstance):
         Args:
             camera_bus_id: Camera bus ID used to resolve calibration files.
             apriltag_map_path: Path to the apriltag map file.
-            jump_threshold: Maximum distance threshold in meters for pose jumps.
-            position_cache_enabled: Whether to reuse the previous pose as an
-                extrinsic guess for subsequent estimates.
             camera_config_registry: Injected shared camera config registry.
         """
         self.web_interface = web_interface
@@ -66,8 +61,6 @@ class PnpCameraLocalizationDefinition(OperationInstance):
             camera_matrix=camera_matrix,
             distortion_coefficients=distortion_coefficients,
             apriltag_map=apriltag_map,
-            jump_threshold=jump_threshold,
-            position_cache_enabled=position_cache_enabled,
         )
 
     def run(self, detections: List[Detection]) -> Optional[np.ndarray]:

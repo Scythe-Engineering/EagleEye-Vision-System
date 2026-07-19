@@ -53,8 +53,7 @@
             "action_name": "pnp_camera_localization.py",
             "action_params": {
                 "camera_bus_id": "basic_test",
-                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json",
-                "jump_threshold": 2
+                "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json"
             },
             "position": {
                 "x": 860,
