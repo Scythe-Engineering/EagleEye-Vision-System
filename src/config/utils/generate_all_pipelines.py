@@ -54,6 +54,17 @@ def replace_values(config_data: dict) -> dict:
     return config_data
 
 
+def _load_pipeline_settings() -> dict[str, dict[str, Any]]:
+    """Load pipeline settings, defaulting to an empty mapping if unavailable."""
+    settings_path = os.path.join(str(current_path.parent), "pipeline_settings.json")
+    try:
+        with open(settings_path, "r", encoding="utf-8") as settings_file:
+            settings = json.load(settings_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
+
+
 def _get_device_input_camera_bus_ids(
     pipeline_name: str, pipeline_config: list[dict[str, Any]], logger: Logger
 ) -> list[str]:
@@ -157,6 +168,7 @@ def generate_all_pipelines(
 
     # Replace placeholders in the configuration data
     config_data = replace_values(config_data)
+    pipeline_settings = _load_pipeline_settings()
 
     pipelines: Dict[str, Pipeline] = {}
     pipeline_count = 0
@@ -166,6 +178,10 @@ def generate_all_pipelines(
             camera_bus_ids = _get_device_input_camera_bus_ids(
                 pipeline_name, config, logger
             )
+            settings = pipeline_settings.get(pipeline_name)
+            limit_frames = isinstance(settings, dict) and settings.get(
+                "limit_frames_to_camera_capture_speed"
+            ) is True
             pipeline = Pipeline(
                 config,
                 web_interface,
@@ -176,6 +192,7 @@ def generate_all_pipelines(
                 camera_config_registry=camera_config_registry,
                 camera_bus_ids=camera_bus_ids,
                 pipeline_name=pipeline_name,
+                limit_frames_to_camera_capture_speed=limit_frames,
             )
         except Exception:
             logger.log(

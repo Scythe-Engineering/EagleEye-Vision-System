@@ -233,6 +233,9 @@ class PipelineConfigMixin:
         restart_state = self._analyze_pipeline_restart_state(current_config)
         self.restart_required_for_config = restart_state["restart_required"]
         self._write_pipeline_config_file(current_config)
+        remove_settings = getattr(self, "remove_pipeline_settings", None)
+        if callable(remove_settings):
+            remove_settings(pipeline_name)
         return {"message": "Pipeline deleted successfully", **restart_state}, 200
 
     def _analyze_pipeline_restart_state(

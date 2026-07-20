@@ -21,7 +21,7 @@ from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.colors import Colors
 from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.logging.logger import Logger
-from src.utils.timing import unwrap_timed
+from src.utils.timing import TimedValue, unwrap_timed
 
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 debug_mode = False
 NT_COMMAND_PREFIX = "commands"
 NT_ACTIVE_COMMAND = "active"
+FrameToken = tuple[str | None, str | None, int]
 
 
 class Pipeline:
@@ -46,6 +47,7 @@ class Pipeline:
         camera_config_registry: CameraConfigRegistry | None = None,
         camera_bus_ids: list[str] | None = None,
         pipeline_name: str | None = None,
+        limit_frames_to_camera_capture_speed: bool = False,
     ) -> None:
         """Initialize the pipeline with configuration.
 
@@ -59,6 +61,8 @@ class Pipeline:
             camera_config_registry: Shared camera config registry for
                 camera intrinsics/extrinsics access.
             camera_bus_ids: USB bus IDs referenced by device_input operations.
+            limit_frames_to_camera_capture_speed: Whether connected components
+                should wait for all camera inputs to advance between runs.
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
@@ -69,6 +73,9 @@ class Pipeline:
         self.logger = logger
         self.camera_bus_ids = list(camera_bus_ids) if camera_bus_ids else []
         self.pipeline_name = pipeline_name or "unknown"
+        self.limit_frames_to_camera_capture_speed = bool(
+            limit_frames_to_camera_capture_speed
+        )
 
         self.thread_running = False
         self.thread_active = False
@@ -80,6 +87,15 @@ class Pipeline:
 
         if not self.operations:
             raise ValueError("No operations configured in pipeline")
+
+        self.device_input_uuids = tuple(
+            sorted(
+                operation.uuid
+                for operation in self.operations.values()
+                if operation.name == "device_input"
+            )
+        )
+        self._last_device_input_tokens: dict[str, FrameToken] = {}
 
         self.flow_manager = FlowManager(
             self.operations,
@@ -355,6 +371,61 @@ class Pipeline:
 
         return groups
 
+    def _current_device_input_token(self, operation_uuid: str) -> FrameToken | None:
+        """Return the latest packet identity for a Device Input operation."""
+        operation = self.operations[operation_uuid]
+        camera_bus_id = getattr(operation.instance, "camera_bus_id", None)
+        if not isinstance(camera_bus_id, str) or self.camera_manager is None:
+            return None
+        packet = self.camera_manager.get_current_packet_by_bus_id(camera_bus_id)
+        return self._frame_token(packet)
+
+    def _device_input_output_token(self, operation_uuid: str) -> FrameToken | None:
+        """Return the exact camera packet identity emitted in the last run."""
+        return self._frame_token(
+            self.flow_manager.operation_outputs.get(operation_uuid)
+        )
+
+    @staticmethod
+    def _frame_token(value: Any) -> FrameToken | None:
+        """Extract a camera packet token that survives worker replacement."""
+        if not isinstance(value, TimedValue) or value.timing.frame_seq is None:
+            return None
+        timing = value.timing
+        return (timing.camera_name, timing.bus_id, timing.frame_seq)
+
+    def _all_device_inputs_are_fresh(self) -> bool:
+        """Return whether every Device Input has advanced since the last run."""
+        for operation_uuid in self.device_input_uuids:
+            current_token = self._current_device_input_token(operation_uuid)
+            if current_token is None:
+                return False
+            if self._last_device_input_tokens.get(operation_uuid) == current_token:
+                return False
+        return True
+
+    def _record_device_input_tokens(self) -> None:
+        """Record the exact Device Input packets consumed by the completed run."""
+        for operation_uuid in self.device_input_uuids:
+            token = self._device_input_output_token(operation_uuid)
+            if token is not None:
+                self._last_device_input_tokens[operation_uuid] = token
+
+    def _wait_for_fresh_device_inputs(self) -> bool:
+        """Wait for fresh inputs and return whether the pipeline should run."""
+        if not self.device_input_uuids:
+            return True
+        if self.thread is None:
+            return self._all_device_inputs_are_fresh()
+
+        while self.limit_frames_to_camera_capture_speed:
+            if self._all_device_inputs_are_fresh():
+                return True
+            if not self.thread_running or not self._is_enabled_from_networktables():
+                return False
+            time.sleep(0.01)
+        return True
+
     def record_operation_init_error(
         self, operation_uuid: str, operation_name: str, message: str
     ) -> None:
@@ -440,12 +511,6 @@ class Pipeline:
 
             if (
                 hasattr(operation_class.__init__, "__code__")
-                and "pipeline" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["pipeline"] = self
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
                 and "network_table" in operation_class.__init__.__code__.co_varnames
             ):
                 init_params["network_table"] = self.network_table
@@ -511,7 +576,14 @@ class Pipeline:
         """
         start_time = time.time()
 
-        self.flow_manager.run_flow()
+        should_run = (
+            not self.limit_frames_to_camera_capture_speed
+            or self._wait_for_fresh_device_inputs()
+        )
+        if should_run:
+            self.flow_manager.run_flow()
+            if self.limit_frames_to_camera_capture_speed:
+                self._record_device_input_tokens()
 
         elapsed = time.time() - start_time
         with self.total_time_history_lock:

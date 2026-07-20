@@ -12,6 +12,7 @@ export const creatorContext = {
         pipelineSelect: null,
         pipelineCameraNote: null,
         newPipelineButton: null,
+        pipelineSettingsButton: null,
         deletePipelineButton: null,
         undoButton: null,
         redoButton: null,

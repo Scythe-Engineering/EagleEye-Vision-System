@@ -158,6 +158,13 @@ pipelines = generate_all_pipelines(web_interface, compute_pool)
 2. Each operation processes the frame and returns the output to the next operation.
 3. The final output could be a transformed frame, a pose matrix, or a domain-specific object, depending on your configuration.
 
+Pipeline Settings includes an optional **Limit frames to camera capture speed**
+mode. All `device_input` operations in a named pipeline must belong to the same
+connected graph. When enabled, the scheduler runs the complete pipeline again
+only after every `device_input` has published a new frame. Pipelines without a
+`device_input` continue running continuously. The setting is persisted in
+`src/config/pipeline_settings.json` and takes effect after a backend restart.
+
 For localization pipelines that publish to the 3D frontend, insert
 `camera_to_robot_pose.py` after `pnp_camera_localization.py` so the frontend
 receives robot pose rather than raw camera pose.

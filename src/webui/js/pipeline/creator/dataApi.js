@@ -66,7 +66,9 @@ export async function fetchAvailableOperations(pipelineStore) {
  */
 export async function fetchAvailableCameras(pipelineStore) {
     try {
-        const response = await fetch(`${BACKEND_BASE_URL}/get-available-cameras`);
+        const response = await fetch(
+            `${BACKEND_BASE_URL}/get-available-cameras`,
+        );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -114,7 +116,9 @@ export async function fetchPipelines(pipelineStore) {
 
         const pipelines = pipelineNames.map((name) => ({
             name,
-            displayName: name.replaceAll("_", " ").replaceAll(/\b\w/g, (l) => l.toUpperCase()),
+            displayName: name
+                .replaceAll("_", " ")
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
         }));
 
         pipelineStore.setPipelines(pipelines);
@@ -170,7 +174,9 @@ export async function fetchPipelineConfigJson() {
         typeof payload.content !== "string" ||
         typeof payload.revision !== "string"
     ) {
-        throw new Error(payload.error || `HTTP error! status: ${response.status}`);
+        throw new Error(
+            payload.error || `HTTP error! status: ${response.status}`,
+        );
     }
     return payload;
 }
@@ -240,6 +246,44 @@ export async function deletePipelineConfig(pipelineName) {
         {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
+        },
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Fetch settings for a single pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name whose settings to load.
+ * @returns {Promise<object>} Pipeline settings payload.
+ */
+export async function fetchPipelineSettings(pipelineName) {
+    const response = await fetch(
+        `${BACKEND_BASE_URL}/pipeline-settings/${encodeURIComponent(pipelineName)}`,
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Save settings for a single pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name whose settings to save.
+ * @param {{limit_frames_to_camera_capture_speed: boolean}} settings - Settings payload.
+ * @returns {Promise<object>} Backend response payload.
+ */
+export async function savePipelineSettings(pipelineName, settings) {
+    const response = await fetch(
+        `${BACKEND_BASE_URL}/pipeline-settings/${encodeURIComponent(pipelineName)}`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settings),
         },
     );
     if (!response.ok) {

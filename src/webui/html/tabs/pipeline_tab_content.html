@@ -153,14 +153,40 @@
                         </button>
                     </div>
 
-                    <!-- Delete Pipeline Button -->
-                    <button
-                        id="deletePipelineButton"
-                        class="hidden absolute top-4 right-4 z-20 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
-                        title="Delete current pipeline"
+                    <!-- Pipeline actions -->
+                    <div
+                        class="absolute top-4 right-4 z-20 flex items-center gap-2"
                     >
-                        Delete Pipeline
-                    </button>
+                        <button
+                            id="pipelineSettingsButton"
+                            class="hidden flex items-center justify-center w-9 h-9 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            title="Pipeline settings"
+                            aria-label="Pipeline settings"
+                        >
+                            <svg
+                                class="w-5 h-5"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path
+                                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.12 2.12-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V20.2h-3v-.08a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06-2.12-2.12.06-.06A1.65 1.65 0 0 0 7.12 15a1.65 1.65 0 0 0-1.51-1H5.5v-3h.11a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06L8.85 6l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V4.8h3v.08a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06 2.12 2.12-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1h.08v3h-.08a1.65 1.65 0 0 0-1.52 1z"
+                                ></path>
+                            </svg>
+                        </button>
+                        <button
+                            id="deletePipelineButton"
+                            class="hidden px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
+                            title="Delete current pipeline"
+                        >
+                            Delete Pipeline
+                        </button>
+                    </div>
 
                     <div
                         class="absolute top-4 left-4 z-20 flex gap-2 items-start"
