@@ -586,6 +586,8 @@ class Pipeline:
                 self._record_device_input_tokens()
 
         elapsed = time.time() - start_time
+        if should_run:
+            self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
         with self.total_time_history_lock:
             self.total_time_history.append(elapsed)
 

@@ -127,6 +127,18 @@ def test_direct_flow_records_profile_snapshot() -> None:
     _assert_profile_contract(snapshot)
 
 
+def test_profile_cycle_time_can_include_pipeline_input_wait() -> None:
+    flow_manager = _build_direct_flow_manager()
+    flow_manager.run_flow()
+
+    flow_manager.set_latest_profile_cycle_time(42.5)
+
+    snapshot = flow_manager.get_latest_profile_snapshot()
+    assert snapshot is not None
+    assert snapshot["cycle_time_ms"] == 42.5
+    assert snapshot["cycle_time_ms"] >= snapshot["frame_time_ms"]
+
+
 def test_threaded_flow_records_profile_snapshot() -> None:
     flow_manager = _build_threaded_flow_manager()
     assert flow_manager.num_threads > 1

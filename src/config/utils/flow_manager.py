@@ -733,6 +733,23 @@ class FlowManager:
                 f"{self.pipeline_name}: {error}{Colors.RESET}"
             )
 
+    def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
+        """Attach the full pipeline cycle time to the latest profile snapshot.
+
+        The flow runtime is measured inside this manager, while camera-input gating
+        happens in ``Pipeline`` before the flow starts. Keeping both measurements
+        lets the UI show operation runtime and an FPS that includes input wait time.
+
+        Args:
+            cycle_time_ms: Elapsed time from the start of input gating through the
+                completed flow execution.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is not None:
+                self._last_frame_profile["cycle_time_ms"] = float(
+                    max(cycle_time_ms, 0.0)
+                )
+
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
         """Get a copy of the latest profiling snapshot.
 

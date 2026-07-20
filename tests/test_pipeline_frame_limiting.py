@@ -150,6 +150,9 @@ def test_whole_pipeline_runs_only_when_all_camera_inputs_are_fresh() -> None:
                     )
                 )
 
+        def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
+            self.cycle_time_ms = cycle_time_ms
+
     flow_manager = RecordingFlowManager()
     pipeline.flow_manager = flow_manager
     manager.publish("a", 1)
@@ -184,6 +187,9 @@ def test_pipeline_without_device_inputs_continues_running() -> None:
             pipeline.flow_manager,
             "call_count",
             pipeline.flow_manager.call_count + 1,
+        ),
+        set_latest_profile_cycle_time=lambda cycle_time_ms: setattr(
+            pipeline.flow_manager, "cycle_time_ms", cycle_time_ms
         ),
     )
 
