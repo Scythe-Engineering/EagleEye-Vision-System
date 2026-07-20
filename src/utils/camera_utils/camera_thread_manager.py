@@ -82,6 +82,13 @@ class CameraWorker:
                 return None
             return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
 
+    def get_current_timing(self) -> TimingMetadata | None:
+        """Return current frame timing without copying the image."""
+        with self._lock:
+            if self._current_packet is None:
+                return None
+            return self._current_packet.timing
+
     def wait_for_new_frame(
         self, after_frame_seq: int, timeout_s: float | None = None
     ) -> bool:
@@ -497,6 +504,18 @@ class CameraThreadManager:
         if camera_name is None:
             return None
         return self.get_current_packet(camera_name)
+
+    def get_current_timing_by_bus_id(
+        self, bus_id: str
+    ) -> TimingMetadata | None:
+        """Get current frame timing without copying its image."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        worker = self.cameras.get(camera_name)
+        if worker is None:
+            return None
+        return worker.get_current_timing()
 
     def wait_for_new_frame_by_bus_id(
         self,

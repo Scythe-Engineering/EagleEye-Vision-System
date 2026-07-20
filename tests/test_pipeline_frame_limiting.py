@@ -34,6 +34,8 @@ class _CountingSource(OperationInstance):
 class _PacketManager:
     def __init__(self) -> None:
         self.packets: dict[str, TimedValue[np.ndarray]] = {}
+        self.wait_requests: list[tuple[str, int, float | None]] = []
+        self.on_wait: Any = None
 
     def publish(
         self,
@@ -59,6 +61,28 @@ class _PacketManager:
         self, bus_id: str
     ) -> TimedValue[np.ndarray] | None:
         return self.packets.get(bus_id)
+
+    def get_current_timing_by_bus_id(
+        self, bus_id: str
+    ) -> TimingMetadata | None:
+        packet = self.packets.get(bus_id)
+        return packet.timing if packet is not None else None
+
+    def wait_for_new_frame_by_bus_id(
+        self,
+        bus_id: str,
+        after_frame_seq: int,
+        timeout_s: float | None = None,
+    ) -> bool:
+        self.wait_requests.append((bus_id, after_frame_seq, timeout_s))
+        if self.on_wait is not None:
+            self.on_wait(bus_id)
+        timing = self.get_current_timing_by_bus_id(bus_id)
+        return (
+            timing is not None
+            and timing.frame_seq is not None
+            and timing.frame_seq > after_frame_seq
+        )
 
 
 def _two_camera_pipeline() -> tuple[Pipeline, _PacketManager]:
@@ -106,6 +130,24 @@ def test_pipeline_requires_every_device_input_to_advance() -> None:
 
     manager.publish("b", 2)
     assert pipeline._all_device_inputs_are_fresh()
+
+
+def test_fresh_input_gate_waits_for_camera_notification() -> None:
+    pipeline, manager = _two_camera_pipeline()
+    pipeline.flow_manager.operation_outputs = {
+        "source-a": manager.publish("a", 1),
+        "source-b": manager.publish("b", 1),
+    }
+    pipeline._record_device_input_tokens()
+    manager.publish("a", 2)
+    manager.on_wait = lambda bus_id: manager.publish(bus_id, 2)
+    pipeline.limit_frames_to_camera_capture_speed = True
+    pipeline.thread = object()
+    pipeline.thread_running = True
+    pipeline.pipeline_name = "test"
+
+    assert pipeline._wait_for_fresh_device_inputs()
+    assert manager.wait_requests == [("b", 1, 0.05)]
 
 
 def test_camera_identity_change_is_treated_as_a_new_stream() -> None:

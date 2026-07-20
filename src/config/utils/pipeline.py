@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Protocol, cast
 
 import numpy as np
 from line_profiler import profile
@@ -31,6 +31,12 @@ debug_mode = False
 NT_COMMAND_PREFIX = "commands"
 NT_ACTIVE_COMMAND = "active"
 FrameToken = tuple[str | None, str | None, int]
+
+
+class DeviceInputInstance(Protocol):
+    """Required interface for operations identified as device inputs."""
+
+    camera_bus_id: str
 
 
 class Pipeline:
@@ -374,11 +380,14 @@ class Pipeline:
     def _current_device_input_token(self, operation_uuid: str) -> FrameToken | None:
         """Return the latest packet identity for a Device Input operation."""
         operation = self.operations[operation_uuid]
-        camera_bus_id = getattr(operation.instance, "camera_bus_id", None)
-        if not isinstance(camera_bus_id, str) or self.camera_manager is None:
+        instance = cast(DeviceInputInstance, operation.instance)
+        camera_bus_id = instance.camera_bus_id
+        if self.camera_manager is None:
             return None
-        packet = self.camera_manager.get_current_packet_by_bus_id(camera_bus_id)
-        return self._frame_token(packet)
+        timing = self.camera_manager.get_current_timing_by_bus_id(camera_bus_id)
+        if timing is None or timing.frame_seq is None:
+            return None
+        return (timing.camera_name, timing.bus_id, timing.frame_seq)
 
     def _device_input_output_token(self, operation_uuid: str) -> FrameToken | None:
         """Return the exact camera packet identity emitted in the last run."""
@@ -423,7 +432,23 @@ class Pipeline:
                 return True
             if not self.thread_running or not self._is_enabled_from_networktables():
                 return False
-            time.sleep(0.01)
+
+            for operation_uuid in self.device_input_uuids:
+                current_token = self._current_device_input_token(operation_uuid)
+                last_token = self._last_device_input_tokens.get(operation_uuid)
+                if current_token is not None and current_token != last_token:
+                    continue
+
+                operation = self.operations[operation_uuid]
+                instance = cast(DeviceInputInstance, operation.instance)
+                camera_bus_id = instance.camera_bus_id
+                after_frame_seq = last_token[2] if last_token is not None else -1
+                self.camera_manager.wait_for_new_frame_by_bus_id(
+                    camera_bus_id,
+                    after_frame_seq,
+                    timeout_s=0.05,
+                )
+                break
         return True
 
     def record_operation_init_error(
