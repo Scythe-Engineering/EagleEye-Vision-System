@@ -327,6 +327,7 @@ export class FlowchartRenderer {
             onPipelineChange: options.onPipelineChange || (() => {}),
             autoSavePipeline: options.autoSavePipeline || (() => {}),
         };
+        this.readOnly = Boolean(options.readOnly);
 
         this.gridSpacing = options.gridSpacing || 20;
         this.nodeSpacingX = options.nodeSpacingX || 300;
@@ -514,6 +515,9 @@ export class FlowchartRenderer {
      * @param {DragEvent} e Drop event.
      */
     async handleDrop(e) {
+        if (this.readOnly) {
+            return;
+        }
         let dropData = null;
 
         try {
@@ -796,13 +800,18 @@ export class FlowchartRenderer {
     async createNode(item) {
         const node = new FlowchartNode(item, {
             gridSpacing: this.gridSpacing,
+            readOnly: this.readOnly,
             onDragStart: this.handleNodeDragStart.bind(this),
             onDragEnd: this.handleNodeDragEnd.bind(this),
             onPositionChange: this.handleNodePositionChange.bind(this),
             onSettingsClick: this.callbacks.openOperationSettings,
-            onRemoveClick: this.handleNodeRemove.bind(this),
+            onRemoveClick: this.readOnly
+                ? null
+                : this.handleNodeRemove.bind(this),
             onPortHover: this.handlePortHover.bind(this),
-            onPortClick: this.handlePortClick.bind(this),
+            onPortClick: this.readOnly
+                ? null
+                : this.handlePortClick.bind(this),
         });
 
         const element = await node.createElement();
@@ -880,6 +889,10 @@ export class FlowchartRenderer {
      * @param {{x:number,y:number}} position Final position.
      */
     handleNodeDragEnd(node, position) {
+        if (this.readOnly) {
+            node.element.style.zIndex = "10";
+            return;
+        }
         node.element.style.zIndex = "10";
 
         const item = this.pipeline.find(
@@ -1026,6 +1039,9 @@ export class FlowchartRenderer {
      * @param {MouseEvent} event Click event.
      */
     handlePortClick(node, portName, portType, event) {
+        if (this.readOnly) {
+            return;
+        }
         if (portType === "output") {
             // Check for existing connections from this output port
             const existingConnections = this.connections.getConnectionsForPort(
@@ -1432,6 +1448,9 @@ export class FlowchartRenderer {
      * @param {string} instanceId Node instance id.
      */
     handleNodeRemove(instanceId) {
+        if (this.readOnly) {
+            return;
+        }
         this.callbacks.removeFromPipeline(instanceId);
     }
 

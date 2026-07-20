@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { isDemoMode } from "../demoMode.js";
 import { setNetworkTablesConnected } from "../ui/connectionStatus.js";
 import { showDanger, showSuccess, showWarning } from "../ui/notificationSystem.js";
 
@@ -123,6 +124,11 @@ export async function loadSettings() {
 export function saveSettings() {
     const saveSettingsBtn = document.getElementById("saveSettingsBtn");
     if (!saveSettingsBtn) {
+        return;
+    }
+    if (isDemoMode()) {
+        saveSettingsBtn.setAttribute("disabled", "true");
+        saveSettingsBtn.classList.add("hidden");
         return;
     }
 

@@ -24,6 +24,7 @@ import {
     updateCameraPose,
 } from "./init3DView.js";
 import { BACKEND_BASE_URL } from "./config.js";
+import { loadDemoMode, isDemoMode } from "./demoMode.js";
 import {
     showSuccess,
     showWarning,
@@ -111,15 +112,20 @@ async function refreshPipelineCreator() {
 window.onload = async () => {
     const destroyTooltips = initializeTooltips();
 
+    await loadDemoMode();
     await populateFieldDropdown();
     setupSidebar();
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
-    initializeTestVideoManager();
-    initializeAssetFileManager();
-    initializeNetworkManager();
-    initializeSystemUpdateManager();
-    saveSettings();
+    if (!isDemoMode()) {
+        initializeTestVideoManager();
+        initializeAssetFileManager();
+        initializeNetworkManager();
+        initializeSystemUpdateManager();
+        saveSettings();
+    } else {
+        console.log("Demo mode: skipping mutable settings managers");
+    }
 
     const systemStatusModule = createSystemStatusModule();
     const faviconLink = document.getElementById("favicon");

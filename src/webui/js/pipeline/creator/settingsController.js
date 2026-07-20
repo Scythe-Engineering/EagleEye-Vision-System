@@ -1,6 +1,8 @@
 /**
  * Controller for opening and saving operation settings popups.
  */
+import { isDemoMode } from "../../demoMode.js";
+
 export function createOperationSettingsController({
     pipelineStore,
     updatePipelineCameraNote,
@@ -24,6 +26,7 @@ export function createOperationSettingsController({
         const operationUuid = settingsItem.uuid || settingsItem.instanceId;
         const isSecondary = settingsItem.isSecondary || false;
         const initialValues = { ...(settingsItem.config || {}) };
+        const readOnly = isDemoMode();
 
         if (!settingsItem.originalConfig) {
             settingsItem.originalConfig = { ...initialValues };
@@ -35,6 +38,10 @@ export function createOperationSettingsController({
          * @param {object} values - Settings values submitted by the popup.
          */
         const onSave = (values) => {
+            if (isDemoMode()) {
+                console.log("Demo mode: ignoring settings save");
+                return;
+            }
             console.log("Saved settings for", settingsItem, values);
             const isAutoSaveFlag = values._isAutoSave;
             const requiresRestart = values._requiresRestart;
@@ -97,6 +104,7 @@ export function createOperationSettingsController({
                     isSecondary,
                     initialValues,
                     onSave,
+                    readOnly,
                 });
             } catch (err) {
                 console.error("Failed to open SettingsPopup:", err);

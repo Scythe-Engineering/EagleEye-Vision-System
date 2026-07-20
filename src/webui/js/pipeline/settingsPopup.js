@@ -1241,11 +1241,22 @@ export function registerSettingsPopup() {
         originalValues,
         onSave,
         operationName = null,
+        readOnly = false,
     ) {
         modalBody.innerHTML = "";
         const fields = [];
 
         renderPortGroupsSummary(modalBody, config);
+
+        if (readOnly) {
+            modalBody.appendChild(
+                createElement("div", {
+                    className:
+                        "mb-3 rounded-md border border-[#f9c845]/40 bg-[#2a2a2a] px-3 py-2 text-xs text-[#f9c845]",
+                    text: "Demo mode: settings are view-only and cannot be changed.",
+                }),
+            );
+        }
 
         const params = config?.parameters || {};
         // Object.keys() preserves insertion order in ES2015+
@@ -1263,14 +1274,24 @@ export function registerSettingsPopup() {
             modalBody.appendChild(field.wrapper);
         });
 
-        // Set up auto-save event listeners
-        setupAutoSaveListeners(
-            modalBody,
-            fields,
-            originalValues,
-            onSave,
-            config,
-        );
+        if (readOnly) {
+            modalBody
+                .querySelectorAll("input, select, textarea, button")
+                .forEach((element) => {
+                    element.setAttribute("disabled", "true");
+                    if (element.tagName === "BUTTON") {
+                        element.classList.add("hidden");
+                    }
+                });
+        } else {
+            setupAutoSaveListeners(
+                modalBody,
+                fields,
+                originalValues,
+                onSave,
+                config,
+            );
+        }
 
         return () => {
             const result = {};
@@ -1648,11 +1669,13 @@ export function registerSettingsPopup() {
         isSecondary,
         initialValues,
         onSave,
+        readOnly = false,
     }) {
         console.log("[SETTINGS] Opening settings popup", {
             operationName,
             isSecondary,
             title,
+            readOnly,
             initialValuesKeys: Object.keys(initialValues || {}),
             timestamp: new Date().toISOString(),
         });
@@ -1823,6 +1846,7 @@ export function registerSettingsPopup() {
                         originalValues,
                         onSave,
                         operationName,
+                        readOnly,
                     );
 
                     const saveBtn = modal.querySelector("[data-action='save']");
@@ -1831,36 +1855,46 @@ export function registerSettingsPopup() {
                     );
 
                     if (saveBtn) {
-                        saveBtn.onclick = () => {
-                            const values = getValues();
-                            console.log(
-                                "[SETTINGS] Saving operation settings",
-                                {
-                                    operationName,
-                                    isSecondary,
-                                    savedValues: values,
-                                    timestamp: new Date().toISOString(),
-                                },
-                            );
-                            if (typeof onSave === "function") onSave(values);
-                            console.log(
-                                "[SETTINGS] Settings saved, closing popup",
-                                {
-                                    operationName,
-                                    timestamp: new Date().toISOString(),
-                                },
-                            );
-                            close();
-                        };
+                        if (readOnly) {
+                            saveBtn.classList.add("hidden");
+                            saveBtn.onclick = null;
+                        } else {
+                            saveBtn.onclick = () => {
+                                const values = getValues();
+                                console.log(
+                                    "[SETTINGS] Saving operation settings",
+                                    {
+                                        operationName,
+                                        isSecondary,
+                                        savedValues: values,
+                                        timestamp: new Date().toISOString(),
+                                    },
+                                );
+                                if (typeof onSave === "function") onSave(values);
+                                console.log(
+                                    "[SETTINGS] Settings saved, closing popup",
+                                    {
+                                        operationName,
+                                        timestamp: new Date().toISOString(),
+                                    },
+                                );
+                                close();
+                            };
+                        }
                     }
-                    if (cancelBtn) cancelBtn.onclick = () => close();
+                    if (cancelBtn) {
+                        cancelBtn.textContent = readOnly ? "Close" : "Cancel";
+                        cancelBtn.onclick = () => close();
+                    }
                 }
 
-                renderLineProfilingSection(
-                    body,
-                    selectedPipelineName,
-                    operationUuid,
-                );
+                if (!readOnly) {
+                    renderLineProfilingSection(
+                        body,
+                        selectedPipelineName,
+                        operationUuid,
+                    );
+                }
 
                 // Start visualization now that modal content is ready - wait for it to complete
                 await startVisIfReady();

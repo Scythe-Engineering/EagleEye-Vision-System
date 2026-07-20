@@ -1,9 +1,13 @@
 import { pipelineHistory } from "../pipelineHistory.js";
+import { isDemoMode } from "../../demoMode.js";
 
 /**
  * History controller for wiring pipeline undo/redo state to UI controls and keyboard shortcuts.
  */
 export function initializePipelineHistory(pipelineStore, callbacks) {
+    if (isDemoMode()) {
+        return;
+    }
     pipelineHistory.init(pipelineStore, callbacks);
 }
 
@@ -11,6 +15,9 @@ export function initializePipelineHistory(pipelineStore, callbacks) {
  * Bind the undo and redo buttons to the shared pipeline history instance.
  */
 export function bindHistoryButtons(undoButton, redoButton) {
+    if (isDemoMode()) {
+        return;
+    }
     pipelineHistory.setButtons(undoButton, redoButton);
 }
 
@@ -18,6 +25,9 @@ export function bindHistoryButtons(undoButton, redoButton) {
  * Attach global keyboard shortcuts for pipeline history actions.
  */
 export function attachHistoryKeyboardShortcuts() {
+    if (isDemoMode()) {
+        return;
+    }
     document.addEventListener("keydown", (event) => {
         const pipelineView = document.getElementById("view-pipeline");
         if (pipelineView?.classList.contains("hidden")) return;

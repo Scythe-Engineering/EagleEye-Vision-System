@@ -1,9 +1,25 @@
 import { BACKEND_BASE_URL } from "../../config.js";
+import { isDemoMode } from "../../demoMode.js";
 import { showDanger } from "../../ui/notificationSystem.js";
 
 /**
  * Data access helpers for the pipeline creator UI.
  */
+
+/**
+ * Reject mutating pipeline API calls while demo mode is active.
+ *
+ * @param {string} actionLabel - Human-readable action name for logging.
+ * @returns {boolean} True when the caller should abort the mutation.
+ */
+function rejectDemoMutation(actionLabel) {
+    if (!isDemoMode()) {
+        return false;
+    }
+    console.warn(`Demo mode blocked pipeline mutation: ${actionLabel}`);
+    showDanger("Demo mode is read-only. Changes are not saved.");
+    return true;
+}
 
 /**
  * Convert a backend operation name into a title-cased display name.
@@ -189,6 +205,9 @@ export async function fetchPipelineConfigJson() {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function savePipelineConfigJson(content, revision) {
+    if (rejectDemoMutation("savePipelineConfigJson")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(`${BACKEND_BASE_URL}/pipeline-config/json`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -220,6 +239,9 @@ export async function savePipelineConfigJson(content, revision) {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function savePipelineConfig(pipelineName, pipelineConfig) {
+    if (rejectDemoMutation("savePipelineConfig")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(
         `${BACKEND_BASE_URL}/save-pipeline-config/${encodeURIComponent(pipelineName)}`,
         {
@@ -241,6 +263,9 @@ export async function savePipelineConfig(pipelineName, pipelineConfig) {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function deletePipelineConfig(pipelineName) {
+    if (rejectDemoMutation("deletePipelineConfig")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(
         `${BACKEND_BASE_URL}/delete-pipeline/${encodeURIComponent(pipelineName)}`,
         {
@@ -278,6 +303,9 @@ export async function fetchPipelineSettings(pipelineName) {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function savePipelineSettings(pipelineName, settings) {
+    if (rejectDemoMutation("savePipelineSettings")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(
         `${BACKEND_BASE_URL}/pipeline-settings/${encodeURIComponent(pipelineName)}`,
         {
@@ -328,6 +356,9 @@ export async function getRestartRequired() {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function setRestartRequired(required) {
+    if (rejectDemoMutation("setRestartRequired")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(`${BACKEND_BASE_URL}/set_restart_required`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -345,6 +376,9 @@ export async function setRestartRequired(required) {
  * @returns {Promise<object>} Backend response payload.
  */
 export async function restartBackend() {
+    if (rejectDemoMutation("restartBackend")) {
+        throw new Error("Demo mode is read-only");
+    }
     const response = await fetch(`${BACKEND_BASE_URL}/restart-backend`, {
         method: "POST",
     });

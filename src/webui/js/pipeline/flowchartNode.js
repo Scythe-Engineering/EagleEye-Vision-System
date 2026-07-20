@@ -41,6 +41,7 @@ export class FlowchartNode {
         this.onRemoveClick = options.onRemoveClick || null;
         this.onPortHover = options.onPortHover || null;
         this.onPortClick = options.onPortClick || null;
+        this.readOnly = Boolean(options.readOnly);
 
         this.isDragging = false;
         this.isHovered = false;
@@ -1180,22 +1181,26 @@ export class FlowchartNode {
         }
 
         if (removeBtn) {
-            removeBtn.addEventListener("mouseenter", () => {
-                removeBtn.style.backgroundColor = "#404040";
-                const img = removeBtn.querySelector("img");
-                if (img) img.style.filter = "none";
-            });
-            removeBtn.addEventListener("mouseleave", () => {
-                removeBtn.style.backgroundColor = "transparent";
-                const img = removeBtn.querySelector("img");
-                if (img) img.style.filter = "grayscale(100%)";
-            });
-            removeBtn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                if (this.onRemoveClick) {
-                    this.onRemoveClick(this.instanceId);
-                }
-            });
+            if (this.readOnly) {
+                removeBtn.classList.add("hidden");
+            } else {
+                removeBtn.addEventListener("mouseenter", () => {
+                    removeBtn.style.backgroundColor = "#404040";
+                    const img = removeBtn.querySelector("img");
+                    if (img) img.style.filter = "none";
+                });
+                removeBtn.addEventListener("mouseleave", () => {
+                    removeBtn.style.backgroundColor = "transparent";
+                    const img = removeBtn.querySelector("img");
+                    if (img) img.style.filter = "grayscale(100%)";
+                });
+                removeBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (this.onRemoveClick) {
+                        this.onRemoveClick(this.instanceId);
+                    }
+                });
+            }
         }
     }
 
@@ -1216,6 +1221,7 @@ export class FlowchartNode {
     handleDragStart(event) {
         // Only handle left mouse button
         if (event.button !== 0) return;
+        if (this.readOnly) return;
 
         this.isDragging = true;
         // Find the canvas to get scale and translate

@@ -7,6 +7,7 @@ import {
     showSuccess,
     showWarning,
 } from "../../ui/notificationSystem.js";
+import { isDemoMode } from "../../demoMode.js";
 import { creatorContext } from "./context.js";
 import {
     getOperations,
@@ -260,6 +261,10 @@ function deviceInputsShareComponent(operations) {
  * @param {{showNotification?: boolean, requiresRestart?: boolean}} [options={}] - Save options.
  */
 async function autoSavePipelineImpl(options = {}) {
+    if (isDemoMode()) {
+        console.log("Demo mode: skipping pipeline auto-save");
+        return null;
+    }
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
         console.log("No pipeline selected, skipping auto-save");
@@ -329,6 +334,10 @@ async function createNewPipeline({
     updateDeleteButtonVisibility,
     autoSavePipeline,
 }) {
+    if (isDemoMode()) {
+        showDanger("Demo mode is read-only. Creating pipelines is disabled.");
+        return;
+    }
     const newPipelineName = prompt("Enter a name for the new pipeline:");
     if (!newPipelineName || newPipelineName.trim() === "") return;
     const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
@@ -395,6 +404,10 @@ async function deleteCurrentPipeline({
     updateDeleteButtonVisibility,
     updateRunButton,
 }) {
+    if (isDemoMode()) {
+        showDanger("Demo mode is read-only. Deleting pipelines is disabled.");
+        return;
+    }
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
         alert("No pipeline selected to delete.");

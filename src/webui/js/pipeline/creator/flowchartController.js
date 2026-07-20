@@ -3,6 +3,7 @@ import { FlowchartRenderer } from "../rendering.js";
 import { handleDragStart } from "../dragDrop.js";
 import { confirmDialog } from "../../ui/confirmationDialog.js";
 import { showDanger, showWarning } from "../../ui/notificationSystem.js";
+import { isDemoMode } from "../../demoMode.js";
 import { pipelineStore } from "../PipelineStore.js";
 import { creatorContext } from "./context.js";
 import { getDeviceInputNodes, getSelectedPipeline } from "./stateHelpers.js";
@@ -22,6 +23,10 @@ import { updateRestartIndicator } from "./restartController.js";
  * @returns {any} The underlying drag-start handler result.
  */
 function handleDragStartWithLogging(event, item, fromIndex = null, collection = null) {
+    if (isDemoMode()) {
+        event.preventDefault();
+        return;
+    }
     console.log("[PIPELINE] Drag start initiated", {
         draggedElement: event.target,
         itemInstanceId: item?.instanceId || null,
@@ -203,6 +208,7 @@ function initFlowchartRenderer({ openOperationSettings, updateRunButton, removeF
         gridSpacing: 20,
         nodeSpacingX: 300,
         nodeSpacingY: 150,
+        readOnly: isDemoMode(),
         openOperationSettings,
         updateRunButton,
         removeFromPipeline,

@@ -8,11 +8,9 @@ import {
 } from "../feeds/cameraFeedHandlers.js";
 import { initPipelineCreator } from "../pipeline/pipelineCreator.js";
 import { refreshLogMessages } from "../settings/terminalHandler.js";
-import {
-    initCameraConfigUtils,
-    refreshCameraConfigUtils,
-} from "../utils/cameraConfigUtils.js";
+import { initCameraConfigUtils, refreshCameraConfigUtils } from "../utils/cameraConfigUtils.js";
 import { getSelectedFieldModel } from "../dropdown/fieldDropdown.js";
+import { isDemoMode } from "../demoMode.js";
 
 const VIEWS = {
     THREE_D: "view-3d",
@@ -158,8 +156,10 @@ class ViewManager {
                 break;
             case VIEWS.UTILS:
                 pauseCameraFeeds();
-                initCameraConfigUtils();
-                refreshCameraConfigUtils();
+                if (!isDemoMode()) {
+                    initCameraConfigUtils();
+                    refreshCameraConfigUtils();
+                }
                 break;
             default:
                 pauseCameraFeeds();
