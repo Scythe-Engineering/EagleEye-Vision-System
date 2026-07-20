@@ -54,12 +54,11 @@ export function createPipelineSettingsController() {
 
     const limitFramesToggle = createElement("input", {
         type: "checkbox",
-        className:
-            "w-5 h-5 rounded border-[#555] bg-[#2a2a2a] text-[#f9c845] focus:ring-1 focus:ring-[#f9c845] shrink-0",
+        className: "w-5 h-5 shrink-0",
         "aria-describedby": "pipelineLimitFramesDescription",
     });
     const limitFramesLabel = createElement("label", {
-        className: "text-sm font-medium text-[#e4e4e4] cursor-pointer",
+        className: "text-sm font-medium text-[#f9c845] cursor-pointer",
         text: "Limit frames to camera capture speed",
     });
     const limitFramesDescription = createElement("p", {
