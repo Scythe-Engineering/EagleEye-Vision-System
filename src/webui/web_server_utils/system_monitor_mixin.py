@@ -14,9 +14,11 @@ from src.utils.colors import Colors
 from src.webui.web_server_utils.constants import (
     DEFAULT_GENERAL_CONF,
     DEFAULT_VIEW_STREAM_DOWNSCALE,
+    DEMO_MODE_KEY,
     MAX_VIEW_STREAM_DOWNSCALE,
     MIN_VIEW_STREAM_DOWNSCALE,
     VIEW_STREAM_DOWNSCALE_KEY,
+    resolve_demo_mode,
 )
 
 
@@ -549,7 +551,9 @@ class SystemMonitorMixin:
         Get the general configuration.
         """
         try:
-            return self._read_general_conf(), 200
+            config = self._read_general_conf()
+            config[DEMO_MODE_KEY] = resolve_demo_mode(config)
+            return config, 200
         except Exception as e:
             return {"error": str(e)}, 500
 

@@ -1,4 +1,5 @@
 {
     "network_table_address": "localhost",
-    "view_stream_downscale": 0.1
+    "view_stream_downscale": 0.1,
+    "demo_mode": true
 }

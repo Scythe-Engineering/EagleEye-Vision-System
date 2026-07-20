@@ -40,6 +40,7 @@ from src.webui.web_server_utils.constants import (
     CORS_ALLOWED_ORIGINS,
     DEFAULT_GENERAL_CONF,
     DEFAULT_VIEW_STREAM_DOWNSCALE,
+    DEMO_MODE_MUTATION_ALLOWLIST,
     GENERAL_CONF_PATH,  # noqa: F401 (for tests)
     PIPELINE_NOT_FOUND_MESSAGE,  # noqa: F401 (for tests)
     PROFILING_PUBLISH_INTERVAL_SECONDS,
@@ -50,6 +51,7 @@ from src.webui.web_server_utils.constants import (
     WEB_SERVER_HOST,
     WEB_SERVER_PORT,
     VIEW_STREAM_DOWNSCALE_KEY,
+    resolve_demo_mode,
 )
 
 # Re-export for external callers (main_backend.py, tests)
@@ -199,9 +201,15 @@ class EagleEyeInterface(
 
         logging.getLogger("werkzeug").addFilter(_SuppressHandshakeErrors())
 
-        # Simplified single-client SSE: one queue and a lock to guard it.
-        self._sse_queue: queue.Queue | None = None
+        # Multi-client SSE: each connected browser gets its own queue.
+        self._sse_queues: set[queue.Queue] = set()
         self._sse_queue_lock = threading.Lock()
+        try:
+            self._demo_mode_enabled = resolve_demo_mode(self._read_general_conf())
+        except Exception:
+            self._demo_mode_enabled = resolve_demo_mode()
+        if self._demo_mode_enabled:
+            self.log("Demo mode enabled: mutating API requests will be rejected")
         self._pipeline_error_lock = threading.Lock()
         self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
         self._pipeline_error_dirty_pipelines: set[str] = set()
@@ -223,6 +231,7 @@ class EagleEyeInterface(
 
         self._register_response_optimizations()
         self._register_error_handlers()
+        self._register_demo_mode_guard()
         self._register_routes()
 
         if dev_mode:
@@ -255,6 +264,37 @@ class EagleEyeInterface(
                 return e
             self.log(f"Error: {traceback.format_exc()}")
             return {"message": "Internal server error"}, 500
+
+    def _is_demo_mode_enabled(self) -> bool:
+        """Return whether demo/read-only mode is currently active.
+
+        Returns:
+            True when mutating requests should be blocked.
+        """
+        try:
+            return resolve_demo_mode(self._read_general_conf())
+        except Exception:
+            return bool(self._demo_mode_enabled)
+
+    def _register_demo_mode_guard(self) -> None:
+        """Reject mutating HTTP requests while demo/read-only mode is enabled."""
+
+        @self.app.before_request
+        def _block_mutations_in_demo_mode():
+            if request.method in {"GET", "HEAD", "OPTIONS"}:
+                return None
+            if not self._is_demo_mode_enabled():
+                return None
+            endpoint_name = request.endpoint or ""
+            if endpoint_name in DEMO_MODE_MUTATION_ALLOWLIST:
+                return None
+            return (
+                {
+                    "error": "Demo mode is read-only. Configuration changes are disabled.",
+                    "demo_mode": True,
+                },
+                403,
+            )
 
     def _register_response_optimizations(self) -> None:
         """Register low-bandwidth response optimizations for WebUI clients."""
@@ -809,14 +849,43 @@ class EagleEyeInterface(
         """
         return f"event: {event}\ndata: {data}\n\n".encode()
 
+    def _enqueue_sse_message(self, client_queue: queue.Queue, msg: bytes, event_name: str) -> None:
+        """Enqueue an SSE payload for one client, dropping the oldest item if full.
+
+        Args:
+            client_queue: Per-client SSE queue.
+            msg: Formatted SSE message bytes.
+            event_name: Event name used for diagnostic logging.
+        """
+        try:
+            client_queue.put_nowait(msg)
+        except queue.Full:
+            try:
+                client_queue.get_nowait()
+                client_queue.put_nowait(msg)
+                self.log(
+                    f"SSE queue full, dropped oldest event to add {event_name}"
+                )
+            except queue.Empty:
+                self.log(
+                    f"SSE queue unexpectedly empty when trying to drop oldest for {event_name}"
+                )
+            except queue.Full:
+                self.log(
+                    f"SSE queue still full after dropping oldest, dropping {event_name} event"
+                )
+        except Exception as error:
+            self.log(f"SSE publish error for {event_name}: {error}")
+
     def _sse_stream(self) -> Generator[bytes, Any, Any]:
+        """Yield SSE messages for one connected client.
+
+        Each browser connection gets an independent queue so multiple viewers
+        can receive the same live updates concurrently.
         """
-        Generator that yields SSE messages for a single client using a queue.
-        """
-        q: queue.Queue = queue.Queue(maxsize=100)
-        # assume single client: set queue, replacing any existing queue
+        client_queue: queue.Queue = queue.Queue(maxsize=100)
         with self._sse_queue_lock:
-            self._sse_queue = q
+            self._sse_queues.add(client_queue)
 
         with self._pipeline_error_lock:
             self._pipeline_error_dirty_pipelines.update(
@@ -828,7 +897,7 @@ class EagleEyeInterface(
         try:
             while True:
                 try:
-                    msg = q.get(timeout=1.0)
+                    msg = client_queue.get(timeout=1.0)
                     yield msg
                 except queue.Empty:
                     yield b": keepalive\n\n"
@@ -837,8 +906,7 @@ class EagleEyeInterface(
             pass
         finally:
             with self._sse_queue_lock:
-                if self._sse_queue is q:
-                    self._sse_queue = None
+                self._sse_queues.discard(client_queue)
 
     def _publish_event(self, event_name: str, data: object) -> None:
         """
@@ -857,27 +925,9 @@ class EagleEyeInterface(
             return
         msg = self._format_sse(event_name, payload)
         with self._sse_queue_lock:
-            q = self._sse_queue
-        if q is not None:
-            try:
-                q.put_nowait(msg)
-            except queue.Full:
-                try:
-                    q.get_nowait()
-                    q.put_nowait(msg)
-                    self.log(
-                        f"SSE queue full, dropped oldest event to add {event_name}"
-                    )
-                except queue.Empty:
-                    self.log(
-                        f"SSE queue unexpectedly empty when trying to drop oldest for {event_name}"
-                    )
-                except queue.Full:
-                    self.log(
-                        f"SSE queue still full after dropping oldest, dropping {event_name} event"
-                    )
-            except Exception as e:
-                self.log(f"SSE publish error for {event_name}: {e}")
+            subscriber_queues = list(self._sse_queues)
+        for client_queue in subscriber_queues:
+            self._enqueue_sse_message(client_queue, msg, event_name)
 
     def _sse_heartbeat_loop(self) -> None:
         """
