@@ -429,7 +429,7 @@ Or if not found:
 
 #### GET `/sse/stream`
 
-**Description:** Server-Sent Events stream for real-time updates
+**Description:** Server-Sent Events stream for real-time updates. Supports multiple concurrent browser clients; each connection receives a fan-out of the same events.
 **Response:** Event stream with real-time data
 **Content-Type:** `text/event-stream`
 **Events:**
@@ -445,6 +445,10 @@ Or if not found:
 **Status Codes:**
 
 - `200`: Success
+
+#### Demo mode
+
+When `demo_mode` is enabled (`general_conf.json` or `EAGLEEYE_DEMO_MODE=1`), mutating endpoints return `403` except `POST /get-operation-config-data-batch`, `POST /start-visualize/...`, and `POST /stop-visualize/...`.
 
 ## Server-Sent Events
 

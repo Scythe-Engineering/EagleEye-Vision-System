@@ -91,6 +91,13 @@ Handles 3D model compression and decompression for web delivery.
 
 ### Server-Sent Events (`GET /sse/stream`)
 - **Primary WebUI channel:** `EventSource` in the browser for heartbeats, `update_robot_transform`, `update_camera_pose`, `update_detected_objects`, `log_update`, `profiling_update`, `pipeline_operation_errors`, and related payloads.
+- **Multi-client:** Each browser connection gets its own SSE queue. Events are fan-out published to every connected subscriber so multiple viewers can share one live demo session.
+
+### Demo / read-only mode
+- Enabled by `"demo_mode": true` in `src/general_conf.json`, or by env `EAGLEEYE_DEMO_MODE=1` (env overrides config).
+- Mutating HTTP methods (`POST`/`PUT`/`DELETE`) return `403`, except ephemeral viewing helpers (`get_operation_config_data_batch`, `start_visualize`, `stop_visualize`).
+- Frontend hides save/edit controls and opens operation settings as view-only.
+- Simulated cameras come from `src/utils/sim_videos/*.mp4` (drop an MP4 named to match the pipeline `camera_bus_id`, then restart).
 
 ### Socket.IO (optional)
 - Flask-SocketIO runs the server; some tooling may attach a Socket.IO client (for example `profiling_update` when `globalThis.socket` is present).

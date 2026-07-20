@@ -135,7 +135,7 @@ webui/
 - **Python**: Core application logic
 - **Flask**: Web framework
 - **SocketIO**: Primary real-time communication for bidirectional messaging
-- **Server-Sent Events (SSE)**: Fallback real-time communication (single-client support)
+- **Server-Sent Events (SSE)**: Real-time communication with multi-client fan-out (each browser keeps its own event queue)
 - **Flask-CORS**: Cross-origin resource sharing
 - **OpenCV**: Camera processing and streaming
 - **NumPy**: Numerical computations

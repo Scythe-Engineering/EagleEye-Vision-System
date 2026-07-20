@@ -176,7 +176,13 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 
 #### `GET /sse/stream`
 
-- **Purpose**: Server-Sent Events stream
+- **Purpose**: Server-Sent Events stream (multi-client fan-out)
 - **Response**: Event stream with real-time updates
 - **Events**: `heartbeat`, `update_robot_transform`, `update_detected_objects`
-- **Use**: Real-time data subscription
+- **Use**: Real-time data subscription for one or many concurrent viewers
+
+### Demo mode
+
+- Enable with `"demo_mode": true` in `general_conf.json` or `EAGLEEYE_DEMO_MODE=1`
+- Mutating endpoints return `403` (except visualize start/stop and operation config batch fetch)
+- Drop demo MP4s in `src/utils/sim_videos/` matching pipeline `camera_bus_id` values
