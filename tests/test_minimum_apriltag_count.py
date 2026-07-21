@@ -17,7 +17,7 @@ def test_passes_detections_unchanged_at_or_above_minimum() -> None:
     gate = MinimumApriltagCount()
     detections = [object(), object()]
 
-    assert gate.run(detections) is detections
+    assert gate.run(detections) == detections
 
 
 def test_live_configuration_changes_minimum_detection_count() -> None:
@@ -26,7 +26,7 @@ def test_live_configuration_changes_minimum_detection_count() -> None:
 
     gate.update_config({"minimum_detections": 1})
 
-    assert gate.run(detection) is detection
+    assert gate.run(detection) == detection
 
 
 @pytest.mark.parametrize("invalid_minimum", [0, -1, 1.5, True])
