@@ -17,7 +17,10 @@ import {
 import { initializeTestVideoManager } from "./settings/testVideoManager.js";
 import { initializeAssetFileManager } from "./settings/assetFileManager.js";
 import { initializeNetworkManager } from "./settings/networkManager.js";
-import { initializeSystemUpdateManager } from "./settings/systemUpdateManager.js";
+import {
+    handleSystemUpdateProgress,
+    initializeSystemUpdateManager,
+} from "./settings/systemUpdateManager.js";
 import {
     updateRobotTransform,
     updateDetectedObjects,
@@ -356,6 +359,20 @@ window.onload = async () => {
             handleLogUpdate(data);
         } catch (err) {
             console.warn("Failed to parse SSE log_update event", err);
+        }
+    });
+
+    /**
+     * Processes system update progress updates from SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
+    es.addEventListener("system_update_progress", (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            handleSystemUpdateProgress(data);
+        } catch (err) {
+            console.warn("Failed to parse SSE system_update_progress event", err);
         }
     });
 

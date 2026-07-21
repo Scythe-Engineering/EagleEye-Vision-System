@@ -374,6 +374,61 @@ Or if not found:
 
 ### System Management
 
+#### GET `/system-update/info`
+
+**Description:** Fetches remote git state for the system update confirmation modal. Runs `git fetch origin --prune`, then returns the current short SHA, remote short SHA for the current branch, and all remote branches with short SHAs.
+**Response:**
+
+```json
+{
+    "available": true,
+    "current_branch": "ui-improvements",
+    "current_sha": "a8fff5e",
+    "remote_sha": "a8fff5e",
+    "update_needed": false,
+    "remote_branches": [
+        { "name": "main", "sha": "1dad397" },
+        { "name": "ui-improvements", "sha": "a8fff5e" }
+    ]
+}
+```
+
+**Status Codes:**
+
+- `200`: Success
+- `400`: WiFi/internet not available
+- `504`: Git fetch timed out
+- `500`: Failed to resolve git state
+
+#### POST `/system-update/run`
+
+**Description:** Starts a background system update that checks out the requested remote branch (`git fetch` + `git checkout -B <branch> origin/<branch>`), then runs `apt update` / non-interactive `apt upgrade`. Progress streams over SSE `system_update_progress`.
+**Request Body:**
+
+```json
+{
+    "branch": "ui-improvements"
+}
+```
+
+`branch` is optional; when omitted the current local branch is used.
+**Response:**
+
+```json
+{
+    "started": true,
+    "message": "System update started",
+    "update_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "branch": "ui-improvements"
+}
+```
+
+**Status Codes:**
+
+- `202`: Update started
+- `400`: WiFi/internet unavailable or invalid branch name
+- `409`: An update is already in progress
+
 #### POST `/restart-backend`
 
 **Description:** Triggers a backend system restart
@@ -467,6 +522,27 @@ The server uses Server-Sent Events (SSE) for real-time communication via the `/s
     ]
 }
 ```
+
+#### `system_update_progress`
+
+**Description:** Streams live system-update terminal lines and granular progress while `POST /system-update/run` executes in a background thread.  
+**Payload:**
+
+```json
+{
+    "phase": "git_pull",
+    "phase_index": 0,
+    "phase_count": 3,
+    "percent": 0,
+    "line": "Already up to date.",
+    "done": false,
+    "update_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+`line` and `error` are optional. Phase-completion events omit `line` and advance `percent` (for example `percent: 30` after `git_pull` finishes). `error` is only present when the update fails. When `done` is true the frontend restarts the backend (success) or shows the failure terminal (error).
+
+Phases include `starting`, `git_pull`, `apt_update`, `apt_upgrade`, `complete`, and `error`.
 
 ## Data Models
 

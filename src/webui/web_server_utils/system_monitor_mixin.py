@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import selectors
 import socket
 import subprocess
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +22,25 @@ from src.webui.web_server_utils.constants import (
     MIN_VIEW_STREAM_DOWNSCALE,
     VIEW_STREAM_DOWNSCALE_KEY,
 )
+
+SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
+    ("apt_update", ["sudo", "apt", "update"], 300.0),
+    (
+        "apt_upgrade",
+        [
+            "sudo",
+            "env",
+            "DEBIAN_FRONTEND=noninteractive",
+            "apt",
+            "upgrade",
+            "-y",
+        ],
+        1800.0,
+    ),
+]
+
+SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
+_GIT_BRANCH_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
 
 
 def _request():
@@ -118,27 +141,60 @@ class SystemMonitorMixin:
 
     def system_update_status(self) -> tuple[dict, int]:
         """Return whether system update can run over WiFi with internet."""
+        self._ensure_system_update_state()
         if not self._has_active_wifi_connection():
-            return {
+            payload: dict[str, Any] = {
                 "available": False,
                 "reason": "Connect to a WiFi network before updating.",
-            }, 200
-
-        if not self._has_internet_access():
-            return {
+            }
+        elif not self._has_internet_access():
+            payload = {
                 "available": False,
                 "reason": "Connected WiFi network does not appear to have internet access.",
-            }, 200
+            }
+        else:
+            payload = {
+                "available": True,
+                "reason": "WiFi internet access available.",
+            }
 
-        return {"available": True, "reason": "WiFi internet access available."}, 200
+        payload["in_progress"] = bool(self._system_update_in_progress)
+        payload["update_id"] = self._system_update_id
+        if self._latest_system_update_progress is not None:
+            payload["latest_progress"] = self._latest_system_update_progress
+        return payload, 200
 
     def _repo_root(self) -> Path:
         return Path(__file__).resolve().parents[3]
 
-    def _run_update_command(self, command: list[str], timeout: float) -> str:
-        """Run an update command from the repository root and return its output."""
+    def _ensure_system_update_state(self) -> None:
+        """Initialize system-update lock state if missing (e.g. in tests)."""
+        if not hasattr(self, "_system_update_lock"):
+            self._system_update_lock = threading.Lock()
+        if not hasattr(self, "_system_update_in_progress"):
+            self._system_update_in_progress = False
+        if not hasattr(self, "_system_update_id"):
+            self._system_update_id: str | None = None
+        if not hasattr(self, "_latest_system_update_progress"):
+            self._latest_system_update_progress: dict[str, Any] | None = None
+        if not hasattr(self, "_system_update_target_branch"):
+            self._system_update_target_branch: str | None = None
+
+    def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
+        """Run a git command in the repository root and return stdout.
+
+        Args:
+            args: Git arguments after ``git``.
+            timeout: Maximum seconds to wait for the command.
+
+        Returns:
+            str: Stripped stdout from the command.
+
+        Raises:
+            RuntimeError: If the command exits non-zero or times out.
+        """
         result = subprocess.run(
-            command,
+            ["git", *args],
             cwd=self._repo_root(),
             check=False,
             capture_output=True,
@@ -149,26 +205,339 @@ class SystemMonitorMixin:
             part.strip() for part in [result.stdout, result.stderr] if part.strip()
         )
         if result.returncode != 0:
-            raise RuntimeError(output or f"Command failed: {' '.join(command)}")
-        return output
+            raise RuntimeError(output or f"git {' '.join(args)} failed")
+        return result.stdout.strip()
 
-    def _pull_updates_preserving_pipeline_config(self) -> str:
-        """Pull repository updates while restoring the local pipeline configuration."""
+    def _normalize_git_branch_name(self, branch_name: str) -> str:
+        """Validate and normalize a git branch name for update targeting.
+
+        Args:
+            branch_name: Requested branch name from the client.
+
+        Returns:
+            str: Normalized branch name.
+
+        Raises:
+            ValueError: If the branch name is empty or unsafe.
+        """
+        normalized_branch_name = branch_name.strip()
+        if not normalized_branch_name:
+            raise ValueError("Branch name is required.")
+        if normalized_branch_name.startswith("-"):
+            raise ValueError("Branch name cannot start with '-'.")
+        if not _GIT_BRANCH_NAME_PATTERN.fullmatch(normalized_branch_name):
+            raise ValueError("Branch name contains invalid characters.")
+        return normalized_branch_name
+
+    def _list_remote_branches_with_shas(self) -> list[dict[str, str]]:
+        """List remote origin branches with short SHAs after a fetch.
+
+        Returns:
+            list[dict[str, str]]: Remote branches as ``{name, sha}`` entries.
+        """
+        ref_output = self._run_git_command(
+            [
+                "for-each-ref",
+                "--format=%(refname:short) %(objectname:short) %(objectname)",
+                "refs/remotes/origin",
+            ]
+        )
+        remote_branches: list[dict[str, str]] = []
+        for line in ref_output.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            ref_name, short_sha, full_sha = parts[0], parts[1], parts[2]
+            if ref_name in {"origin", "origin/HEAD"}:
+                continue
+            branch_name = ref_name.removeprefix("origin/")
+            if not branch_name or branch_name == "HEAD":
+                continue
+            remote_branches.append(
+                {"name": branch_name, "sha": short_sha, "full_sha": full_sha}
+            )
+        remote_branches.sort(key=lambda branch: branch["name"].lower())
+        return remote_branches
+
+    def system_update_info(self) -> tuple[dict, int]:
+        """Return current/remote git SHAs and remote branches for the update modal.
+
+        Returns:
+            tuple[dict, int]: Version/branch payload and HTTP status code.
+        """
+        status_payload, _ = self.system_update_status()
+        if not status_payload.get("available"):
+            return {
+                "error": status_payload.get("reason", "WiFi internet required"),
+                "available": False,
+            }, 400
+
+        try:
+            self._run_git_command(["fetch", "origin", "--prune"], timeout=60.0)
+            current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
+            current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
+            remote_branches = self._list_remote_branches_with_shas()
+            remote_full_sha_by_branch = {
+                branch["name"]: branch["full_sha"] for branch in remote_branches
+            }
+            remote_sha_by_branch = {
+                branch["name"]: branch["sha"] for branch in remote_branches
+            }
+            remote_sha = remote_sha_by_branch.get(current_branch)
+            remote_full_sha = remote_full_sha_by_branch.get(current_branch)
+            update_needed = (
+                remote_full_sha is None or remote_full_sha != current_sha_full
+            )
+            return {
+                "available": True,
+                "current_branch": current_branch,
+                "current_sha": current_sha,
+                "remote_sha": remote_sha,
+                "update_needed": update_needed,
+                "remote_branches": [
+                    {"name": branch["name"], "sha": branch["sha"]}
+                    for branch in remote_branches
+                ],
+            }, 200
+        except subprocess.TimeoutExpired:
+            return {"error": "Timed out while fetching remote git state."}, 504
+        except Exception as error:
+            message = str(error)
+            self.log(f"Failed to load system update info: {message}")
+            return {"error": message}, 500
+
+    def _publish_system_update_progress(
+        self,
+        *,
+        phase: str,
+        phase_index: int,
+        phase_count: int,
+        percent: int,
+        line: str | None = None,
+        done: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Publish a system update progress event over SSE.
+
+        Args:
+            phase: Current update phase identifier.
+            phase_index: Zero-based index of the current phase.
+            phase_count: Total number of update phases.
+            percent: Overall progress percentage from 0 to 100.
+            line: Optional terminal output line to append.
+            done: Whether the update sequence has finished.
+            error: Optional error message when the update fails.
+        """
+        self._ensure_system_update_state()
+        payload: dict[str, Any] = {
+            "phase": phase,
+            "phase_index": phase_index,
+            "phase_count": phase_count,
+            "percent": max(0, min(100, int(percent))),
+            "done": done,
+        }
+        if self._system_update_id is not None:
+            payload["update_id"] = self._system_update_id
+        if line is not None:
+            payload["line"] = line
+        if error is not None:
+            payload["error"] = error
+        self._latest_system_update_progress = payload
+        self._publish_event("system_update_progress", payload)
+
+    def _replay_cached_system_update_progress(self) -> None:
+        """Republish the latest cached system-update event for SSE reconnects."""
+        self._ensure_system_update_state()
+        if self._latest_system_update_progress is None:
+            return
+        self._publish_event(
+            "system_update_progress", self._latest_system_update_progress
+        )
+
+    def _run_update_command_streaming(
+        self,
+        command: list[str],
+        timeout: float,
+        *,
+        phase: str,
+        phase_index: int,
+        phase_count: int,
+        percent_start: int,
+        percent_end: int,
+    ) -> None:
+        """Run an update command and stream stdout/stderr lines over SSE.
+
+        Args:
+            command: Command argv to execute.
+            timeout: Maximum seconds to wait for the command.
+            phase: Phase identifier for progress events.
+            phase_index: Zero-based phase index.
+            phase_count: Total phase count.
+            percent_start: Progress percent at command start.
+            percent_end: Progress percent when the command completes.
+
+        Raises:
+            RuntimeError: If the command exits non-zero or times out.
+        """
+        display_command = " ".join(command)
+        self._publish_system_update_progress(
+            phase=phase,
+            phase_index=phase_index,
+            phase_count=phase_count,
+            percent=percent_start,
+            line=f"$ {display_command}",
+        )
+
+        process = subprocess.Popen(
+            command,
+            cwd=self._repo_root(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        deadline = time.monotonic() + timeout
+        assert process.stdout is not None
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+
+        try:
+            while True:
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    process.kill()
+                    process.wait(timeout=5)
+                    raise RuntimeError(
+                        f"Update command timed out: {display_command}"
+                    )
+
+                ready = selector.select(timeout=min(remaining_seconds, 0.5))
+                if ready:
+                    line = process.stdout.readline()
+                    if line:
+                        self._publish_system_update_progress(
+                            phase=phase,
+                            phase_index=phase_index,
+                            phase_count=phase_count,
+                            percent=percent_start,
+                            line=line.rstrip("\n"),
+                        )
+                        continue
+
+                return_code = process.poll()
+                if return_code is None:
+                    continue
+
+                remaining = process.stdout.read()
+                if remaining:
+                    for leftover_line in remaining.splitlines():
+                        self._publish_system_update_progress(
+                            phase=phase,
+                            phase_index=phase_index,
+                            phase_count=phase_count,
+                            percent=percent_start,
+                            line=leftover_line,
+                        )
+                if return_code != 0:
+                    raise RuntimeError(
+                        f"Command failed ({return_code}): {display_command}"
+                    )
+                self._publish_system_update_progress(
+                    phase=phase,
+                    phase_index=phase_index,
+                    phase_count=phase_count,
+                    percent=percent_end,
+                )
+                return
+        finally:
+            selector.close()
+
+    def _execute_system_update(self) -> None:
+        """Run the full system update sequence and publish SSE progress."""
+        phase_count = SYSTEM_UPDATE_PHASE_COUNT
+        target_branch = self._system_update_target_branch or "main"
+        try:
+            self._checkout_branch_preserving_pipeline_config(
+                target_branch,
+                phase_count=phase_count,
+            )
+
+            for apt_phase_index, (phase_name, command, timeout) in enumerate(
+                SYSTEM_UPDATE_APT_PHASES
+            ):
+                phase_index = apt_phase_index + 1
+                percent_start = int((phase_index / phase_count) * 90)
+                percent_end = int(((phase_index + 1) / phase_count) * 90)
+                self._run_update_command_streaming(
+                    command,
+                    timeout,
+                    phase=phase_name,
+                    phase_index=phase_index,
+                    phase_count=phase_count,
+                    percent_start=percent_start,
+                    percent_end=percent_end,
+                )
+
+            self._publish_system_update_progress(
+                phase="complete",
+                phase_index=phase_count,
+                phase_count=phase_count,
+                percent=100,
+                line="Update completed successfully. Restarting backend...",
+                done=True,
+            )
+            self.log("System update completed successfully")
+        except Exception as error:
+            message = str(error)
+            self.log(f"System update failed: {message}")
+            self._publish_system_update_progress(
+                phase="error",
+                phase_index=0,
+                phase_count=phase_count,
+                percent=0,
+                line=message,
+                done=True,
+                error=message,
+            )
+        finally:
+            self._ensure_system_update_state()
+            with self._system_update_lock:
+                self._system_update_in_progress = False
+
+    def _checkout_branch_preserving_pipeline_config(
+        self,
+        target_branch: str,
+        *,
+        phase_count: int,
+    ) -> None:
+        """Fetch and checkout a branch while restoring local pipeline configuration.
+
+        Args:
+            target_branch: Remote branch name to check out.
+            phase_count: Total update phase count for progress reporting.
+        """
         repo_root = self._repo_root()
         pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
         relative_path = pipeline_path.relative_to(repo_root).as_posix()
         pipeline_existed = pipeline_path.exists()
         pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
 
-        status = self._run_update_command(
-            ["git", "status", "--porcelain", "--", relative_path],
+        status = self._run_git_command(
+            ["status", "--porcelain", "--", relative_path],
             timeout=30.0,
         )
         stash_created = bool(status)
         if stash_created:
-            self._run_update_command(
+            self._publish_system_update_progress(
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent=0,
+                line="Backing up local pipeline configuration...",
+            )
+            self._run_git_command(
                 [
-                    "git",
                     "stash",
                     "push",
                     "--include-untracked",
@@ -181,7 +550,83 @@ class SystemMonitorMixin:
             )
 
         try:
-            return self._run_update_command(["git", "pull"], timeout=120.0)
+            self._run_update_command_streaming(
+                ["git", "fetch", "origin", "--prune"],
+                120.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=0,
+                percent_end=15,
+            )
+            self._run_update_command_streaming(
+                [
+                    "git",
+                    "checkout",
+                    "-B",
+                    target_branch,
+                    f"origin/{target_branch}",
+                ],
+                60.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=15,
+                percent_end=30,
+            )
+        finally:
+            if pipeline_contents is None:
+                pipeline_path.unlink(missing_ok=True)
+            else:
+                pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+                pipeline_path.write_bytes(pipeline_contents)
+                self._publish_system_update_progress(
+                    phase="git_pull",
+                    phase_index=0,
+                    phase_count=phase_count,
+                    percent=30,
+                    line="Restored src/config/pipeline_config.json",
+                )
+
+            if stash_created:
+                self._run_git_command(
+                    ["stash", "drop", "stash@{0}"],
+                    timeout=30.0,
+                )
+
+    def _pull_updates_preserving_pipeline_config(self) -> str:
+        """Pull repository updates while restoring the local pipeline configuration.
+
+        Returns:
+            str: Combined stdout from the git pull command.
+        """
+        repo_root = self._repo_root()
+        pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
+        relative_path = pipeline_path.relative_to(repo_root).as_posix()
+        pipeline_existed = pipeline_path.exists()
+        pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
+
+        status = self._run_git_command(
+            ["status", "--porcelain", "--", relative_path],
+            timeout=30.0,
+        )
+        stash_created = bool(status)
+        if stash_created:
+            self._run_git_command(
+                [
+                    "stash",
+                    "push",
+                    "--include-untracked",
+                    "--message",
+                    "EagleEye system update pipeline backup",
+                    "--",
+                    relative_path,
+                ],
+                timeout=30.0,
+            )
+
+        try:
+            return self._run_git_command(["pull"], timeout=120.0)
         finally:
             if pipeline_contents is None:
                 pipeline_path.unlink(missing_ok=True)
@@ -190,52 +635,65 @@ class SystemMonitorMixin:
                 pipeline_path.write_bytes(pipeline_contents)
 
             if stash_created:
-                self._run_update_command(
-                    ["git", "stash", "drop", "stash@{0}"],
+                self._run_git_command(
+                    ["stash", "drop", "stash@{0}"],
                     timeout=30.0,
                 )
 
     def run_system_update(self) -> tuple[dict, int]:
-        """Run git pull and apt package updates before the frontend restarts backend."""
+        """Start git checkout/pull and apt updates in a background thread; stream via SSE.
+
+        Returns:
+            tuple[dict, int]: Acceptance payload and HTTP status code.
+        """
+        self._ensure_system_update_state()
         status_payload, _ = self.system_update_status()
         if not status_payload.get("available"):
             return {"error": status_payload.get("reason", "WiFi internet required")}, 400
 
-        output_parts: list[str] = []
+        body = _request().get_json(silent=True) or {}
+        requested_branch = body.get("branch")
         try:
-            output_parts.append("$ git pull (preserving pipeline configuration)")
-            output_parts.append(self._pull_updates_preserving_pipeline_config())
-            output_parts.append("Restored src/config/pipeline_config.json")
-            output_parts.append("$ sudo apt update")
-            output_parts.append(
-                self._run_update_command(["sudo", "apt", "update"], timeout=300.0)
-            )
-            output_parts.append("$ sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y")
-            output_parts.append(
-                self._run_update_command(
-                    [
-                        "sudo",
-                        "env",
-                        "DEBIAN_FRONTEND=noninteractive",
-                        "apt",
-                        "upgrade",
-                        "-y",
-                    ],
-                    timeout=1800.0,
+            if isinstance(requested_branch, str) and requested_branch.strip():
+                target_branch = self._normalize_git_branch_name(requested_branch)
+            else:
+                target_branch = self._normalize_git_branch_name(
+                    self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
                 )
-            )
-        except subprocess.TimeoutExpired as error:
-            message = f"Update command timed out: {' '.join(error.cmd)}"
-            self.log(message)
-            return {"error": message, "output": "\n".join(output_parts)}, 504
+        except ValueError as error:
+            return {"error": str(error)}, 400
         except Exception as error:
-            message = str(error)
-            self.log(f"System update failed: {message}")
-            return {"error": message, "output": "\n".join(output_parts)}, 500
+            return {"error": f"Unable to resolve target branch: {error}"}, 500
 
-        output = "\n".join(part for part in output_parts if part)
-        self.log("System update completed successfully")
-        return {"success": True, "output": output}, 200
+        update_id = str(uuid.uuid4())
+        with self._system_update_lock:
+            if self._system_update_in_progress:
+                return {"error": "A system update is already in progress."}, 409
+            self._system_update_in_progress = True
+            self._system_update_id = update_id
+            self._system_update_target_branch = target_branch
+            self._latest_system_update_progress = None
+
+        phase_count = SYSTEM_UPDATE_PHASE_COUNT
+        self._publish_system_update_progress(
+            phase="starting",
+            phase_index=0,
+            phase_count=phase_count,
+            percent=0,
+            line=f"Starting system update on branch '{target_branch}'...",
+        )
+        update_thread = threading.Thread(
+            target=self._execute_system_update,
+            name="system-update",
+            daemon=True,
+        )
+        update_thread.start()
+        return {
+            "started": True,
+            "message": "System update started",
+            "update_id": update_id,
+            "branch": target_branch,
+        }, 202
 
     def get_log_messages(self) -> tuple[dict, int]:
         """
