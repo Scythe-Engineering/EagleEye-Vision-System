@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import selectors
 import socket
 import subprocess
@@ -22,8 +23,7 @@ from src.webui.web_server_utils.constants import (
     VIEW_STREAM_DOWNSCALE_KEY,
 )
 
-SYSTEM_UPDATE_PHASES: list[tuple[str, list[str], float]] = [
-    ("git_pull", ["git", "pull"], 120.0),
+SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
     ("apt_update", ["sudo", "apt", "update"], 300.0),
     (
         "apt_upgrade",
@@ -38,6 +38,9 @@ SYSTEM_UPDATE_PHASES: list[tuple[str, list[str], float]] = [
         1800.0,
     ),
 ]
+
+SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
+_GIT_BRANCH_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
 
 
 def _request():
@@ -174,6 +177,135 @@ class SystemMonitorMixin:
             self._system_update_id: str | None = None
         if not hasattr(self, "_latest_system_update_progress"):
             self._latest_system_update_progress: dict[str, Any] | None = None
+        if not hasattr(self, "_system_update_target_branch"):
+            self._system_update_target_branch: str | None = None
+
+    def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
+        """Run a git command in the repository root and return stdout.
+
+        Args:
+            args: Git arguments after ``git``.
+            timeout: Maximum seconds to wait for the command.
+
+        Returns:
+            str: Stripped stdout from the command.
+
+        Raises:
+            RuntimeError: If the command exits non-zero or times out.
+        """
+        result = subprocess.run(
+            ["git", *args],
+            cwd=self._repo_root(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = "\n".join(
+            part.strip() for part in [result.stdout, result.stderr] if part.strip()
+        )
+        if result.returncode != 0:
+            raise RuntimeError(output or f"git {' '.join(args)} failed")
+        return result.stdout.strip()
+
+    def _normalize_git_branch_name(self, branch_name: str) -> str:
+        """Validate and normalize a git branch name for update targeting.
+
+        Args:
+            branch_name: Requested branch name from the client.
+
+        Returns:
+            str: Normalized branch name.
+
+        Raises:
+            ValueError: If the branch name is empty or unsafe.
+        """
+        normalized_branch_name = branch_name.strip()
+        if not normalized_branch_name:
+            raise ValueError("Branch name is required.")
+        if normalized_branch_name.startswith("-"):
+            raise ValueError("Branch name cannot start with '-'.")
+        if not _GIT_BRANCH_NAME_PATTERN.fullmatch(normalized_branch_name):
+            raise ValueError("Branch name contains invalid characters.")
+        return normalized_branch_name
+
+    def _list_remote_branches_with_shas(self) -> list[dict[str, str]]:
+        """List remote origin branches with short SHAs after a fetch.
+
+        Returns:
+            list[dict[str, str]]: Remote branches as ``{name, sha}`` entries.
+        """
+        ref_output = self._run_git_command(
+            [
+                "for-each-ref",
+                "--format=%(refname:short) %(objectname:short) %(objectname)",
+                "refs/remotes/origin",
+            ]
+        )
+        remote_branches: list[dict[str, str]] = []
+        for line in ref_output.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            ref_name, short_sha, full_sha = parts[0], parts[1], parts[2]
+            if ref_name in {"origin", "origin/HEAD"}:
+                continue
+            branch_name = ref_name.removeprefix("origin/")
+            if not branch_name or branch_name == "HEAD":
+                continue
+            remote_branches.append(
+                {"name": branch_name, "sha": short_sha, "full_sha": full_sha}
+            )
+        remote_branches.sort(key=lambda branch: branch["name"].lower())
+        return remote_branches
+
+    def system_update_info(self) -> tuple[dict, int]:
+        """Return current/remote git SHAs and remote branches for the update modal.
+
+        Returns:
+            tuple[dict, int]: Version/branch payload and HTTP status code.
+        """
+        status_payload, _ = self.system_update_status()
+        if not status_payload.get("available"):
+            return {
+                "error": status_payload.get("reason", "WiFi internet required"),
+                "available": False,
+            }, 400
+
+        try:
+            self._run_git_command(["fetch", "origin", "--prune"], timeout=60.0)
+            current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
+            current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
+            remote_branches = self._list_remote_branches_with_shas()
+            remote_full_sha_by_branch = {
+                branch["name"]: branch["full_sha"] for branch in remote_branches
+            }
+            remote_sha_by_branch = {
+                branch["name"]: branch["sha"] for branch in remote_branches
+            }
+            remote_sha = remote_sha_by_branch.get(current_branch)
+            remote_full_sha = remote_full_sha_by_branch.get(current_branch)
+            update_needed = (
+                remote_full_sha is None or remote_full_sha != current_sha_full
+            )
+            return {
+                "available": True,
+                "current_branch": current_branch,
+                "current_sha": current_sha,
+                "remote_sha": remote_sha,
+                "update_needed": update_needed,
+                "remote_branches": [
+                    {"name": branch["name"], "sha": branch["sha"]}
+                    for branch in remote_branches
+                ],
+            }, 200
+        except subprocess.TimeoutExpired:
+            return {"error": "Timed out while fetching remote git state."}, 504
+        except Exception as error:
+            message = str(error)
+            self.log(f"Failed to load system update info: {message}")
+            return {"error": message}, 500
 
     def _publish_system_update_progress(
         self,
@@ -323,11 +455,38 @@ class SystemMonitorMixin:
 
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
-        phase_count = len(SYSTEM_UPDATE_PHASES)
+        phase_count = SYSTEM_UPDATE_PHASE_COUNT
+        target_branch = self._system_update_target_branch or "main"
         try:
-            for phase_index, (phase_name, command, timeout) in enumerate(
-                SYSTEM_UPDATE_PHASES
+            self._run_update_command_streaming(
+                ["git", "fetch", "origin", "--prune"],
+                120.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=0,
+                percent_end=15,
+            )
+            self._run_update_command_streaming(
+                [
+                    "git",
+                    "checkout",
+                    "-B",
+                    target_branch,
+                    f"origin/{target_branch}",
+                ],
+                60.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=15,
+                percent_end=30,
+            )
+
+            for apt_phase_index, (phase_name, command, timeout) in enumerate(
+                SYSTEM_UPDATE_APT_PHASES
             ):
+                phase_index = apt_phase_index + 1
                 percent_start = int((phase_index / phase_count) * 90)
                 percent_end = int(((phase_index + 1) / phase_count) * 90)
                 self._run_update_command_streaming(
@@ -367,7 +526,7 @@ class SystemMonitorMixin:
                 self._system_update_in_progress = False
 
     def run_system_update(self) -> tuple[dict, int]:
-        """Start git pull and apt updates in a background thread; stream via SSE.
+        """Start git checkout/pull and apt updates in a background thread; stream via SSE.
 
         Returns:
             tuple[dict, int]: Acceptance payload and HTTP status code.
@@ -377,21 +536,36 @@ class SystemMonitorMixin:
         if not status_payload.get("available"):
             return {"error": status_payload.get("reason", "WiFi internet required")}, 400
 
+        body = _request().get_json(silent=True) or {}
+        requested_branch = body.get("branch")
+        try:
+            if isinstance(requested_branch, str) and requested_branch.strip():
+                target_branch = self._normalize_git_branch_name(requested_branch)
+            else:
+                target_branch = self._normalize_git_branch_name(
+                    self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+                )
+        except ValueError as error:
+            return {"error": str(error)}, 400
+        except Exception as error:
+            return {"error": f"Unable to resolve target branch: {error}"}, 500
+
         update_id = str(uuid.uuid4())
         with self._system_update_lock:
             if self._system_update_in_progress:
                 return {"error": "A system update is already in progress."}, 409
             self._system_update_in_progress = True
             self._system_update_id = update_id
+            self._system_update_target_branch = target_branch
             self._latest_system_update_progress = None
 
-        phase_count = len(SYSTEM_UPDATE_PHASES)
+        phase_count = SYSTEM_UPDATE_PHASE_COUNT
         self._publish_system_update_progress(
             phase="starting",
             phase_index=0,
             phase_count=phase_count,
             percent=0,
-            line="Starting system update...",
+            line=f"Starting system update on branch '{target_branch}'...",
         )
         update_thread = threading.Thread(
             target=self._execute_system_update,
@@ -403,6 +577,7 @@ class SystemMonitorMixin:
             "started": True,
             "message": "System update started",
             "update_id": update_id,
+            "branch": target_branch,
         }, 202
 
     def get_log_messages(self) -> tuple[dict, int]:

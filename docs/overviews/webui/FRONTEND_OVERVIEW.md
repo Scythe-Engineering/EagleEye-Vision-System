@@ -86,7 +86,9 @@ Manages application settings and configuration.
     - Error handling for restart operations
 
 - **`systemUpdateManager.js`**: System update modal with live terminal output
-    - Confirms before `git pull` / `apt update` / `apt upgrade`
+    - Confirmation modal shows short SHA status (green check when current matches remote; both SHAs when mismatched)
+    - Remote branch dropdown sets the target branch for the next update
+    - Runs `git fetch` + `checkout -B` for the selected branch, then `apt update` / `apt upgrade`
     - Streams progress lines and percent over SSE (`system_update_progress`)
     - Restarts backend and reloads the page on success
 

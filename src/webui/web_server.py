@@ -159,6 +159,7 @@ class EagleEyeInterface(
         self._system_update_in_progress = False
         self._system_update_id = None
         self._latest_system_update_progress = None
+        self._system_update_target_branch = None
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
         self._refresh_view_stream_settings()
@@ -634,6 +635,12 @@ class EagleEyeInterface(
             "/system-update/status",
             "system_update_status",
             self.system_update_status,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/system-update/info",
+            "system_update_info",
+            self.system_update_info,
             methods=["GET"],
         )
         self.app.add_url_rule(

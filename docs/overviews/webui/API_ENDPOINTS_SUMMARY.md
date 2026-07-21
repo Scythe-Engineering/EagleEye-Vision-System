@@ -186,8 +186,15 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Purpose**: Reports whether WiFi + internet allow a system update
 - **Response**: `{ available, reason, in_progress, update_id, latest_progress }` — `latest_progress` is the cached terminal/progress event for reconnect recovery when present
 
+#### `GET /system-update/info`
+
+- **Purpose**: Fetches remote git state for the update confirmation modal
+- **Response**: `{ available, current_branch, current_sha, remote_sha, update_needed, remote_branches: [{ name, sha }] }`
+- **Use**: Show short SHA comparison and remote branch dropdown before updating
+
 #### `POST /system-update/run`
 
-- **Purpose**: Starts git pull / apt update / apt upgrade in a background thread
-- **Response**: `202` with `{ started: true }` when accepted; progress streams over SSE `system_update_progress`
+- **Purpose**: Starts git checkout of the selected branch / apt update / apt upgrade in a background thread
+- **Body**: `{ branch?: string }` — target remote branch (defaults to current branch)
+- **Response**: `202` with `{ started: true, update_id, branch }` when accepted; progress streams over SSE `system_update_progress`
 - **Use**: System update from the WebUI
