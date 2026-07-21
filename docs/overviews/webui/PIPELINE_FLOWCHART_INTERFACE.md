@@ -9,6 +9,7 @@ The Pipeline Flowchart Interface is a modern, visual pipeline creation and editi
 ### Visual Canvas
 - **Grid-based Layout**: 4000x4000px canvas with a subtle grid background for organized operation placement
 - **Scrollable Area**: Large workspace that allows for complex pipeline layouts beyond the initial viewport
+- **Viewport Persistence**: Pan/zoom is preserved when leaving and returning to the Pipeline tab; reconnect refreshes restore the previous viewport instead of recentering
 - **Minimap**: Small overview map (`flowchartMinimap.js`) synced with nodes, connections, and viewport for quick navigation
 - **Clean Interface**: Minimal UI with no zoom/pan controls, focusing on simplicity and ease of use
 

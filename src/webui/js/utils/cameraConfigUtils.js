@@ -3,8 +3,10 @@ import { BACKEND_BASE_URL } from "../config.js";
 import {
     showDanger,
     showSuccess,
+    showUploadToast,
     showWarning,
 } from "../ui/notificationSystem.js";
+import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
@@ -531,20 +533,22 @@ async function uploadIntrinsicsFile(file) {
         return;
     }
 
+    const formData = new FormData();
+    formData.append("file", file);
+    const uploadToast = showUploadToast({
+        label: `Uploading ${file.name}...`,
+    });
+
     try {
-        const formData = new FormData();
-        formData.append("file", file);
-        await fetchJson(
-            `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-        showSuccess("Intrinsics file uploaded");
+        await uploadWithProgress({
+            url: `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
+            formData,
+            onProgress: uploadToast.setProgress,
+        });
+        uploadToast.complete("Intrinsics file uploaded");
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
-        showDanger(`Failed to upload intrinsics: ${error.message}`);
+        uploadToast.fail(`Failed to upload intrinsics: ${error.message}`);
     }
 }
 

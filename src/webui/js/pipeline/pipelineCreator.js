@@ -107,7 +107,7 @@ export async function initPipelineCreator() {
     let renderPipelineView = null;
     let createPipelineView = null;
 
-    renderPipelineView = () =>
+    renderPipelineView = (options = {}) =>
         renderCurrentPipeline({
             openOperationSettings,
             handleFlowchartPipelineChange: (changeEvent) =>
@@ -120,6 +120,7 @@ export async function initPipelineCreator() {
             autoSavePipeline,
             updateRunButton,
             removeFromPipeline,
+            centerView: options.centerView !== false,
         });
 
     createPipelineView = () =>
@@ -162,9 +163,10 @@ export async function initPipelineCreator() {
         },
     );
 
-    const loadPipelineIntoBuilderWithRender = (pipelineName) =>
+    const loadPipelineIntoBuilderWithRender = (pipelineName, options = {}) =>
         loadPipelineIntoBuilder(pipelineName, {
             renderCurrentPipeline: renderPipelineView,
+            centerView: options.centerView,
         });
 
     const refreshCallbacks = {
