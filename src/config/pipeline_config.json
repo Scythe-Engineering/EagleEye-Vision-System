@@ -3,7 +3,7 @@
         {
             "action_name": "device_input.py",
             "action_params": {
-                "bus_id": "basic_test",
+                "camera_bus_id": "basic_test",
                 "frame_rotation": 0
             },
             "position": {
@@ -134,6 +134,28 @@
             "connections": [
                 {
                     "from_uuid": "op-moacz468-4kuo",
+                    "from_port": "detections",
+                    "to_uuid": "op-minimum-apriltags",
+                    "to_port": "detections",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "minimum_apriltag_count.py",
+            "action_params": {
+                "minimum_detections": 2
+            },
+            "position": {
+                "x": 700,
+                "y": -80
+            },
+            "uuid": "op-minimum-apriltags",
+            "connections": [
+                {
+                    "from_uuid": "op-minimum-apriltags",
                     "from_port": "detections",
                     "to_uuid": "op-moacyhnl-c6ju",
                     "to_port": "detections",

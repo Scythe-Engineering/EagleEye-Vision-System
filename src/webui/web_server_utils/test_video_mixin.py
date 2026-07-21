@@ -119,7 +119,7 @@ class TestVideoMixin:
                 action_params = operation.get("action_params", {})
                 if (
                     isinstance(action_params, dict)
-                    and str(action_params.get("bus_id", "")) == bus_id
+                    and str(action_params.get("camera_bus_id", "")) == bus_id
                 ):
                     references.add(str(pipeline_name))
 

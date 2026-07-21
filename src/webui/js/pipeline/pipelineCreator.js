@@ -6,6 +6,7 @@ import { cachePipelineCreatorElements } from "./creator/selectors.js";
 import { ensurePipelineCreatorStyles } from "./creator/styles.js";
 import { getSelectedPipeline } from "./creator/stateHelpers.js";
 import { createOperationSettingsController } from "./creator/settingsController.js";
+import { createPipelineSettingsController } from "./creator/pipelineSettingsController.js";
 import {
     applyBackendRestartState,
     checkBackendRestartStatus,
@@ -53,6 +54,7 @@ import {
 } from "./creator/profilingController.js";
 import { fetchAvailableCameras as fetchAvailableCamerasApi } from "./creator/dataApi.js";
 import { registerSettingsPopup } from "./settingsPopup.js";
+import { initializePipelineJsonEditor } from "./creator/jsonEditorController.js";
 
 registerSettingsPopup();
 
@@ -64,7 +66,10 @@ let isInitialized = false;
 function bindProfilingDetailsControls() {
     const { elements } = creatorContext;
 
-    document.addEventListener("backend-disconnected", closeProfilingDetailsPopup);
+    document.addEventListener(
+        "backend-disconnected",
+        closeProfilingDetailsPopup,
+    );
 
     elements.profilingDetailsBackdrop?.addEventListener("click", () => {
         closeProfilingDetailsPopup();
@@ -97,6 +102,7 @@ export async function initPipelineCreator() {
         updatePipelineCameraNote: () => {},
         autoSavePipeline,
     });
+    const openPipelineSettings = createPipelineSettingsController();
 
     let renderPipelineView = null;
     let createPipelineView = null;
@@ -146,13 +152,16 @@ export async function initPipelineCreator() {
         postRefreshCallback: () => postFlowchartStructureRefresh(),
     });
 
-    pipelineStore.subscribe("profiling:updated", ({ snapshot, pipelineName }) => {
-        const selectedPipeline = getSelectedPipeline();
-        if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
-            return;
-        }
-        scheduleProfilingUiApply(snapshot);
-    });
+    pipelineStore.subscribe(
+        "profiling:updated",
+        ({ snapshot, pipelineName }) => {
+            const selectedPipeline = getSelectedPipeline();
+            if (!selectedPipeline || selectedPipeline.name !== pipelineName) {
+                return;
+            }
+            scheduleProfilingUiApply(snapshot);
+        },
+    );
 
     const loadPipelineIntoBuilderWithRender = (pipelineName, options = {}) =>
         loadPipelineIntoBuilder(pipelineName, {
@@ -179,6 +188,14 @@ export async function initPipelineCreator() {
         updateRunButton,
     };
 
+    initializePipelineJsonEditor({
+        button: creatorContext.elements.pipelineJsonEditorButton,
+        onSaved: async () => {
+            await refreshPipelineCreator(refreshCallbacks);
+            await checkBackendRestartStatus();
+        },
+    });
+
     creatorContext.elements.pipelineSelect?.addEventListener("change", () => {
         handlePipelineSelection({
             loadPipelineIntoBuilder: loadPipelineIntoBuilderWithRender,
@@ -188,9 +205,16 @@ export async function initPipelineCreator() {
     creatorContext.elements.newPipelineButton?.addEventListener("click", () => {
         createNewPipeline(createPipelineCallbacks);
     });
-    creatorContext.elements.deletePipelineButton?.addEventListener("click", () => {
-        deleteCurrentPipeline(deletePipelineCallbacks);
-    });
+    creatorContext.elements.pipelineSettingsButton?.addEventListener(
+        "click",
+        () => void openPipelineSettings(),
+    );
+    creatorContext.elements.deletePipelineButton?.addEventListener(
+        "click",
+        () => {
+            deleteCurrentPipeline(deletePipelineCallbacks);
+        },
+    );
     bindHistoryButtons(
         creatorContext.elements.undoButton,
         creatorContext.elements.redoButton,
@@ -222,10 +246,14 @@ export async function initPipelineCreator() {
     await refreshPipelineCreator(refreshCallbacks);
     await checkBackendRestartStatus();
 
-    const pendingOperationErrors = Array.isArray(globalThis.pendingPipelineOperationErrors)
+    const pendingOperationErrors = Array.isArray(
+        globalThis.pendingPipelineOperationErrors,
+    )
         ? globalThis.pendingPipelineOperationErrors.splice(0)
         : [];
-    pendingOperationErrors.forEach((payload) => handleOperationErrorUpdate(payload));
+    pendingOperationErrors.forEach((payload) =>
+        handleOperationErrorUpdate(payload),
+    );
 
     isInitialized = true;
 

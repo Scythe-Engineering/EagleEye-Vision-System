@@ -1,0 +1,23 @@
+#!/bin/sh
+# Run the same backend and frontend checks as GitHub Actions before publishing commits.
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# Avoid Windows console encoding failures when Rust tooling emits Unicode diagnostics.
+export PYTHONUTF8=1
+
+echo "[pre-push] Synchronizing Python dependencies..."
+uv sync
+
+echo "[pre-push] Installing frontend dependencies..."
+npm install
+
+echo "[pre-push] Building the WebUI..."
+npm run build
+
+echo "[pre-push] Running backend tests..."
+uv run pytest
+
+echo "[pre-push] All CI checks passed."

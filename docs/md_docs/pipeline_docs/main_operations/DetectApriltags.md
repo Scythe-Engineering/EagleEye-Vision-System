@@ -24,8 +24,6 @@ Each detection is a `Detection` object containing:
 - `tag_id`: Integer ID of the detected AprilTag
 - `corners`: 4x2 numpy array of corner coordinates [(x,y), (x,y), ...]
 - `center`: 2-element array of tag center coordinates [x, y]
-- `pose_R`: 3x3 rotation matrix (if tag_size provided)
-- `pose_t`: 3-element translation vector (if tag_size provided)
 - `tag_family`: String name of the AprilTag family
 - `decision_margin`: Quality metric for detection confidence
 
@@ -34,8 +32,7 @@ Each detection is a `Detection` object containing:
 1. **Input Processing**: Accepts either direct image input or segmented input from temporal acceleration preprocessor
 2. **AprilTag Detection**: Uses pupil-apriltags library to detect markers in the specified family
 3. **Parameter Optimization**: Applies quad decimation, Gaussian blur, edge refinement, and decode sharpening
-4. **Pose Estimation**: Calculates 3D pose if tag size is known (optional)
-5. **Multi-threading**: Parallel processing for improved performance
+4. **Multi-threading**: Parallel processing for improved performance
 
 ## Parameters
 
@@ -216,6 +213,10 @@ Reliable fiducial detection in manufacturing environments:
     "decode_sharpening": 0.5
 }
 ```
+
+## Timing
+
+When this operation runs in a pipeline from `DeviceInput`, the pipeline runtime preserves the input frame's timing metadata on its detection-list output. The `Detection` objects themselves do not contain a capture timestamp; the timestamp is carried by the pipeline wrapper and can reach PnP and NetworkTables publishing.
 
 ## Limitations
 

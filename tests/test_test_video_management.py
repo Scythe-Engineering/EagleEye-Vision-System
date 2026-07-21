@@ -82,7 +82,7 @@ def test_get_test_videos_lists_mp4_and_pipeline_references(
             "VisionPipeline": [
                 {
                     "action_name": "device_input",
-                    "action_params": {"bus_id": "basic_test"},
+                    "action_params": {"camera_bus_id": "basic_test"},
                 }
             ]
         },
@@ -188,7 +188,7 @@ def test_delete_test_video_reports_references_and_supports_force(
             "UsedPipeline": [
                 {
                     "action_name": "device_input.py",
-                    "action_params": {"bus_id": "used"},
+                    "action_params": {"camera_bus_id": "used"},
                 }
             ]
         },

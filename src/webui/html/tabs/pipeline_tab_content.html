@@ -93,6 +93,13 @@
                             </button>
                         </div>
                         <button
+                            id="pipelineJsonEditorButton"
+                            class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            title="Directly edit and validate pipeline_config.json"
+                        >
+                            Edit JSON
+                        </button>
+                        <button
                             id="newPipelineButton"
                             class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
                             title="Create a new pipeline"
@@ -146,14 +153,41 @@
                         </button>
                     </div>
 
-                    <!-- Delete Pipeline Button -->
-                    <button
-                        id="deletePipelineButton"
-                        class="hidden absolute top-4 right-4 z-20 px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
-                        title="Delete current pipeline"
+                    <!-- Pipeline actions -->
+                    <div
+                        class="absolute top-4 right-4 z-20 flex items-center gap-2"
                     >
-                        Delete Pipeline
-                    </button>
+                        <button
+                            id="pipelineSettingsButton"
+                            class="hidden flex items-center justify-center w-9 h-9 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                            title="Pipeline settings"
+                            aria-label="Pipeline settings"
+                        >
+                            <svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                                ></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                        <button
+                            id="deletePipelineButton"
+                            class="hidden px-3 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors text-sm"
+                            title="Delete current pipeline"
+                        >
+                            Delete Pipeline
+                        </button>
+                    </div>
 
                     <div
                         class="absolute top-4 left-4 z-20 flex gap-2 items-start"

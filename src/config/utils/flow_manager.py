@@ -5,7 +5,7 @@ from time import perf_counter, perf_counter_ns, sleep, time
 from typing import Any, Callable
 from line_profiler import profile
 
-from src.config.utils.operation import Operation
+from src.config.utils.operation import SKIP_PIPELINE_CYCLE, Operation
 from src.config.utils.thread_object import ThreadObject
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
@@ -17,15 +17,15 @@ def recursive_forward_flow_register(
     time_step: int,
     time_step_groups: list[list[Operation]] | None = None,
 ) -> list[list[Operation]]:
-    """Recursive forward flow register.
-    
+    """Recursively register the forward flow of operations.
+
     Args:
-        operations (list[Operation]): Operations.
-        time_step (int): Time step.
-        time_step_groups (list[list[Operation]] | None): Time step groups.
-    
+        operations (dict[str, Operation]): The dictionary of operations to look at.
+        time_step (int): The current time step.
+
     Returns:
-        list[list[Operation]]: Result of recursive forward flow register."""
+        list[list[str]]: The forward flow of operations.
+    """
     if time_step_groups is None:
         time_step_groups = []
 
@@ -62,10 +62,14 @@ def recursive_forward_flow_register(
 
 
 def _validate_operation_timestep(operation: Operation) -> None:
-    """Validate operation timestep.
-    
+    """Validate that an operation has an execution timestep assigned.
+
     Args:
-        operation (Operation): Operation."""
+        operation: The operation to validate.
+
+    Raises:
+        ValueError: If operation has no execution timestep.
+    """
     if operation.execution_timestep is None:
         raise ValueError(
             f"Operation {operation.name} has no execution timestep assigned"
@@ -73,13 +77,19 @@ def _validate_operation_timestep(operation: Operation) -> None:
 
 
 def _get_downstream_timesteps(output_connections: list) -> list[int]:
-    """Get downstream timesteps.
-    
+    """Extract execution timesteps from downstream operations.
+
+    Skips default connections since they're temporal dependencies.
+
     Args:
-        output_connections (list): Output connections.
-    
+        output_connections: List of output connections from an operation.
+
     Returns:
-        list[int]: Result of get downstream timesteps."""
+        list[int]: List of execution timesteps from downstream operations.
+
+    Raises:
+        ValueError: If any downstream operation has no execution timestep.
+    """
     downstream_timesteps: list[int] = []
     for conn in output_connections:
         if conn.is_default:
@@ -90,13 +100,17 @@ def _get_downstream_timesteps(output_connections: list) -> list[int]:
 
 
 def _calculate_completion_timestep(operation: Operation) -> int:
-    """Calculate completion timestep.
-    
+    """Calculate the completion timestep for a single operation.
+
     Args:
-        operation (Operation): Operation.
-    
+        operation: The operation to calculate completion timestep for.
+
     Returns:
-        int: Result of calculate completion timestep."""
+        int: The completion timestep for the operation.
+
+    Raises:
+        ValueError: If operation or downstream operation has no execution timestep.
+    """
     _validate_operation_timestep(operation)
 
     output_connections = operation.get_output_connections()
@@ -114,10 +128,15 @@ def _calculate_completion_timestep(operation: Operation) -> int:
 def backward_flow_register(
     time_step_groups: list[list[Operation]],
 ) -> None:
-    """Backward flow register.
-    
+    """Calculate and set finish timestep for operations based on forward flow.
+
+    Uses the forward flow timesteps to determine the latest timestep by which
+    each operation must be complete. This is the minimum timestep of all
+    downstream operations minus 1.
+
     Args:
-        time_step_groups (list[list[Operation]]): Time step groups."""
+        time_step_groups: The forward flow time step groups from forward pass.
+    """
     for group in time_step_groups:
         for operation in group:
             finish_timestep = _calculate_completion_timestep(operation)
@@ -133,14 +152,15 @@ class FlowManager:
         on_operation_success: Callable[[Operation], None] | None = None,
         pipeline_name: str | None = None,
     ) -> None:
-        """Initialize the object.
-        
+        """Initialize the flow manager that schedules operations at runtime.
+
         Args:
-            operations (dict[str, Operation]): Operations.
-            logger (Logger): Logger.
-            on_operation_error (Callable[[Operation, str], None] | None): On operation error.
-            on_operation_success (Callable[[Operation], None] | None): On operation success.
-            pipeline_name (str | None): Pipeline name."""
+            operations: All operations configured in the flow.
+            logger: Shared logger instance for the system.
+            on_operation_error: Optional callback when an operation errors.
+            on_operation_success: Optional callback when an operation succeeds.
+            pipeline_name: Optional name of the pipeline or flow for logging.
+        """
         self.operations: dict[str, Operation] = operations
         self.logger = logger
         self.on_operation_error = on_operation_error
@@ -223,7 +243,11 @@ class FlowManager:
 
     @profile
     def run_flow(self) -> None:
-        """Run flow."""
+        """Run the flow of operations using timestep-based execution.
+
+        Automatically uses direct execution for single-threaded pipelines,
+        or threaded execution for multi-threaded pipelines.
+        """
         if self.num_threads == 1:
             self._run_flow_direct()
         else:
@@ -231,7 +255,7 @@ class FlowManager:
 
     @profile
     def _run_flow_direct(self) -> None:
-        """Run flow direct."""
+        """Direct execution without thread signaling for linear pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
         frame_start = perf_counter()
@@ -247,6 +271,8 @@ class FlowManager:
                     operation_start = perf_counter()
                     output = operation.run(input_for_op)
                     operation_end = perf_counter()
+                    if output is SKIP_PIPELINE_CYCLE:
+                        return
                     operation_time_by_uuid_ms[operation.uuid] = max(
                         (operation_end - operation_start) * 1000.0,
                         0.0,
@@ -286,13 +312,14 @@ class FlowManager:
 
     @profile
     def _run_flow_threaded(self) -> None:
-        """Run flow threaded."""
+        """Threaded execution for parallel pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
         frame_start = perf_counter()
         operation_time_by_uuid_ms: dict[str, float] = {}
         timestep_total_ms: dict[int, float] = {}
         cycle_id = perf_counter_ns()
+        active_thread_objects: set[ThreadObject] = set()
 
         max_timestep = len(self.execution_time_groups)
 
@@ -310,6 +337,7 @@ class FlowManager:
                     thread_obj.set_needs_processing(
                         input_for_op, current_timestep, cycle_id
                     )
+                    active_thread_objects.add(thread_obj)
                 except Exception as _:
                     sleep(1)  # wait a bit before trying again
                     raise ValueError(
@@ -324,7 +352,12 @@ class FlowManager:
                 if thread_obj is None:
                     raise ValueError(f"Operation {operation.name} has no thread object")
 
-                not_timed_out = thread_obj.wait_done_processing()
+                wait_timeout_s = (
+                    None
+                    if getattr(operation.instance, "allows_indefinite_wait", False)
+                    else 5.0
+                )
+                not_timed_out = thread_obj.wait_done_processing(wait_timeout_s)
                 if not not_timed_out:
                     # Reset thread state on timeout before raising error
                     thread_obj.reset_state()
@@ -351,6 +384,10 @@ class FlowManager:
                     )
 
                 output_data = thread_obj.get_output_data()
+                active_thread_objects.discard(thread_obj)
+                if output_data is SKIP_PIPELINE_CYCLE:
+                    self._discard_active_threaded_operations(active_thread_objects)
+                    return
                 self.operation_outputs[operation.uuid] = output_data
                 timing_uuid, execution_time_ms = thread_obj.get_last_cycle_timing(
                     cycle_id
@@ -376,14 +413,35 @@ class FlowManager:
             timestep_total_ms=timestep_total_ms,
         )
 
+    @staticmethod
+    def _discard_active_threaded_operations(
+        active_thread_objects: set[ThreadObject],
+    ) -> None:
+        """Wait for concurrent stale work and reset its threads before the next cycle."""
+        for thread_obj in active_thread_objects:
+            if not thread_obj.wait_done_processing():
+                thread_obj.reset_state()
+                raise ValueError(
+                    "Operation did not finish while discarding a skipped pipeline cycle"
+                )
+            thread_obj.get_output_data()
+
     def _gather_operation_inputs(self, operation: Operation) -> Any:
-        """Gather operation inputs.
-        
+        """Gather input data for an operation from upstream operations.
+
+        Default connections use previous frame outputs, non-default use current frame.
+        First frame: default inputs are skipped (None or missing dict key).
+        Data source operations return None (they generate their own data).
+
         Args:
-            operation (Operation): Operation.
-        
+            operation: The operation that needs inputs.
+
         Returns:
-            Any: Result of gather operation inputs."""
+            Input data for the operation (single value or dict of inputs), or None for data sources.
+
+        Raises:
+            ValueError: If operation has no input connections and is not a data source.
+        """
         # Data source operations generate their own data - no input gathering needed
         if operation.is_data_source:
             return None
@@ -423,10 +481,15 @@ class FlowManager:
             return inputs
 
     def _calculate_required_threads(self) -> int:
-        """Calculate required threads.
-        
+        """Calculate the number of threads needed to run all operations concurrently.
+
+        Analyzes the execution timeline to determine how many operations can run
+        simultaneously at any given timestep, accounting for operations that span
+        multiple timesteps.
+
         Returns:
-            int: Result of calculate required threads."""
+            int: The number of threads required based on maximum concurrent operations.
+        """
         num_operations_active_at_timestep: dict[int, int] = {}
 
         for operation in self.operations.values():
@@ -448,10 +511,16 @@ class FlowManager:
         )
 
     def forward_pass_operation_order(self) -> list[list[Operation]]:
-        """Forward pass operation order.
-        
+        """Returns the starting execution time of each operation in the flow.
+
+        Data sources execute one timestep before their data is needed to get the most
+        up-to-date value possible. Uses a two-pass approach:
+        1. First pass: Include data sources at timestep 0 so dependents can get timesteps
+        2. Second pass: Move data sources to min_dependent_timestep - 1 for fresh data
+
         Returns:
-            list[list[Operation]]: Result of forward pass operation order."""
+            list[list[Operation]]: Operations grouped by execution timestep.
+        """
         # Start with all data sources as first operations
         # Data sources have no inputs, so all_inputs_solved() returns True
         data_sources = self._find_data_source_operations()
@@ -493,13 +562,14 @@ class FlowManager:
         return execution_time_groups
 
     def _find_min_dependent_timestep(self, operation: Operation) -> int | None:
-        """Find min dependent timestep.
-        
+        """Find the minimum timestep among operations that depend on this operation.
+
         Args:
-            operation (Operation): Operation.
-        
+            operation: The operation to find dependent timesteps for.
+
         Returns:
-            int | None: Result of find min dependent timestep."""
+            The minimum timestep of dependent operations, or None if no dependents.
+        """
         dependent_timesteps: list[int] = []
 
         # Check direct downstream operations
@@ -514,17 +584,20 @@ class FlowManager:
         return min(dependent_timesteps) if dependent_timesteps else None
 
     def _find_data_source_operations(self) -> list[Operation]:
-        """Find data source operations.
-        
+        """Find all operations marked as data sources.
+
         Returns:
-            list[Operation]: Result of find data source operations."""
+            list[Operation]: List of data source operations.
+        """
         return [op for op in self.operations.values() if op.is_data_source]
 
     def get_thread_and_timestep_info(self) -> dict[str, dict[str, int]]:
-        """Get thread and timestep info.
-        
+        """Get thread number and execution timestep for each operation.
+
         Returns:
-            dict[str, dict[str, int]]: Result of get thread and timestep info."""
+            dict[str, dict[str, int]]: Dictionary mapping operation UUID to a dict with
+                'thread' (1-indexed thread number) and 'timestep' (execution timestep).
+        """
         result: dict[str, dict[str, int]] = {}
 
         for uuid, operation in self.operations.items():
@@ -547,13 +620,14 @@ class FlowManager:
         return result
 
     def _get_operation_thread_number(self, operation: Operation) -> int:
-        """Get operation thread number.
-        
+        """Get 1-indexed thread number for an operation.
+
         Args:
-            operation (Operation): Operation.
-        
+            operation: Operation to resolve.
+
         Returns:
-            int: Result of get operation thread number."""
+            Thread number, or 1 when unassigned.
+        """
         thread_obj = operation.assigned_thread_object
         if thread_obj is None:
             return 1
@@ -568,14 +642,15 @@ class FlowManager:
         operation_time_by_uuid_ms: dict[str, float],
         timestep_total_ms: dict[int, float],
     ) -> list[dict[str, Any]]:
-        """Build timestep rows.
-        
+        """Build timestep profiling rows from runtime metrics.
+
         Args:
-            operation_time_by_uuid_ms (dict[str, float]): Operation time by uuid ms.
-            timestep_total_ms (dict[int, float]): Timestep total ms.
-        
+            operation_time_by_uuid_ms: Operation runtime map for current frame.
+            timestep_total_ms: Timestep wall-clock duration map.
+
         Returns:
-            list[dict[str, Any]]: Result of build timestep rows."""
+            Timestep rows for profile payload.
+        """
         rows: list[dict[str, Any]] = []
         for timestep, operations in enumerate(self.execution_time_groups):
             candidate_rows: list[tuple[Operation, float]] = []
@@ -614,12 +689,13 @@ class FlowManager:
         operation_time_by_uuid_ms: dict[str, float],
         timestep_total_ms: dict[int, float],
     ) -> None:
-        """Record profile snapshot.
-        
+        """Record a lock-safe profiling snapshot for the current frame.
+
         Args:
-            frame_time_ms (float): Frame time ms.
-            operation_time_by_uuid_ms (dict[str, float]): Operation time by uuid ms.
-            timestep_total_ms (dict[int, float]): Timestep total ms."""
+            frame_time_ms: Frame wall-clock runtime.
+            operation_time_by_uuid_ms: Per-operation runtime map.
+            timestep_total_ms: Per-timestep wall-clock runtime map.
+        """
         try:
             operations_payload: dict[str, dict[str, Any]] = {}
             for operation in self.operations.values():
@@ -657,11 +733,29 @@ class FlowManager:
                 f"{self.pipeline_name}: {error}{Colors.RESET}"
             )
 
+    def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
+        """Attach the full pipeline cycle time to the latest profile snapshot.
+
+        The flow runtime is measured inside this manager, while camera-input gating
+        happens in ``Pipeline`` before the flow starts. Keeping both measurements
+        lets the UI show operation runtime and an FPS that includes input wait time.
+
+        Args:
+            cycle_time_ms: Elapsed time from the start of input gating through the
+                completed flow execution.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is not None:
+                self._last_frame_profile["cycle_time_ms"] = float(
+                    max(cycle_time_ms, 0.0)
+                )
+
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
-        """Get latest profile snapshot.
-        
+        """Get a copy of the latest profiling snapshot.
+
         Returns:
-            dict[str, Any] | None: Result of get latest profile snapshot."""
+            Latest profiling snapshot or None when unavailable.
+        """
         with self._profile_lock:
             if self._last_frame_profile is None:
                 return None

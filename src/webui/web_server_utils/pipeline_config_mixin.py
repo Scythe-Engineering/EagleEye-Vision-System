@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import tempfile
 import time
 from copy import deepcopy
 from typing import Any
@@ -23,8 +25,87 @@ class PipelineConfigMixin:
 
     def _load_pipeline_config_file(self) -> dict[str, list[dict[str, Any]]]:
         """Load the persisted pipeline configuration from disk."""
-        with open(self._pipeline_config_path(), "r") as f:
+        with open(self._pipeline_config_path(), "r", encoding="utf-8") as f:
             return json.load(f)
+
+    def _write_pipeline_config_text(self, content: str) -> None:
+        """Atomically replace the pipeline config with complete text content."""
+        config_path = self._pipeline_config_path()
+        file_descriptor, temporary_path = tempfile.mkstemp(
+            dir=os.path.dirname(config_path),
+            prefix=".pipeline_config.",
+            suffix=".tmp",
+            text=True,
+        )
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as config_file:
+                config_file.write(content)
+                config_file.flush()
+                os.fsync(config_file.fileno())
+            os.replace(temporary_path, config_path)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+
+    def _write_pipeline_config_file(
+        self, config: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        """Serialize and atomically write a pipeline configuration."""
+        self._write_pipeline_config_text(json.dumps(config, indent=4) + "\n")
+
+    @staticmethod
+    def _pipeline_config_revision(content: str) -> str:
+        """Return a stable revision token for optimistic editor saves."""
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def get_pipeline_config_json(self) -> tuple[dict[str, str], int]:
+        """Return the raw pipeline JSON text, including malformed content."""
+        with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
+            content = config_file.read()
+        return {
+            "content": content,
+            "revision": self._pipeline_config_revision(content),
+        }, 200
+
+    def save_pipeline_config_json(self) -> tuple[dict[str, Any], int]:
+        """Validate and save raw pipeline JSON submitted by the editor."""
+        payload = request.get_json(silent=True)
+        content = payload.get("content") if isinstance(payload, dict) else None
+        revision = payload.get("revision") if isinstance(payload, dict) else None
+        if not isinstance(content, str) or not isinstance(revision, str):
+            return {
+                "error": "Expected string fields 'content' and 'revision'"
+            }, 400
+
+        with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
+            current_content = config_file.read()
+        if revision != self._pipeline_config_revision(current_content):
+            return {
+                "error": "Pipeline configuration changed while the editor was open. Reload it before saving."
+            }, 409
+
+        try:
+            parsed_config = json.loads(content)
+        except json.JSONDecodeError as error:
+            return {
+                "error": "Pipeline configuration contains invalid JSON",
+                "line": error.lineno,
+                "column": error.colno,
+                "detail": error.msg,
+            }, 400
+
+        if not isinstance(parsed_config, dict):
+            return {"error": "Pipeline configuration must be a JSON object"}, 400
+
+        normalized_content = content.rstrip() + "\n"
+        self._write_pipeline_config_text(normalized_content)
+        self.restart_required_for_config = True
+        return {
+            "message": "Pipeline JSON saved successfully",
+            "revision": self._pipeline_config_revision(normalized_content),
+            "restart_required": True,
+            "runtime_id": getattr(self, "runtime_id", ""),
+        }, 200
 
     def _get_runtime_pipeline_config_baseline(
         self,
@@ -122,8 +203,7 @@ class PipelineConfigMixin:
         restart_state = self._analyze_pipeline_restart_state(current_config)
         self.restart_required_for_config = restart_state["restart_required"]
 
-        with open(self._pipeline_config_path(), "w") as f:
-            json.dump(current_config, f, indent=4)
+        self._write_pipeline_config_file(current_config)
 
         live_update_status = None
         pipeline_objects = self.pipeline_objects_callback()
@@ -152,8 +232,10 @@ class PipelineConfigMixin:
             return {"message": PIPELINE_NOT_FOUND_MESSAGE}, 404
         restart_state = self._analyze_pipeline_restart_state(current_config)
         self.restart_required_for_config = restart_state["restart_required"]
-        with open(self._pipeline_config_path(), "w") as f:
-            json.dump(current_config, f, indent=4)
+        self._write_pipeline_config_file(current_config)
+        remove_settings = getattr(self, "remove_pipeline_settings", None)
+        if callable(remove_settings):
+            remove_settings(pipeline_name)
         return {"message": "Pipeline deleted successfully", **restart_state}, 200
 
     def _analyze_pipeline_restart_state(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import ntcore
 import numpy as np
@@ -24,30 +24,20 @@ class FailureTracker:
     """Tracks consecutive failures for a camera feed."""
 
     def __init__(self, max_failures: int = 10) -> None:
-        """Initialize the object.
-        
-        Args:
-            max_failures (int): Max failures."""
         self.count = 0
         self.max_failures = max_failures
 
     def record_failure(self) -> bool:
-        """Record failure.
-        
-        Returns:
-            bool: Result of record failure."""
+        """Record a failure and return True if max failures exceeded."""
         self.count += 1
         return self.count >= self.max_failures
 
     def reset(self) -> None:
-        """Reset."""
+        """Reset the failure count."""
         self.count = 0
 
     def should_log(self) -> bool:
-        """Should log.
-        
-        Returns:
-            bool: Result of should log."""
+        """Return True if we should log this failure (first 3 only)."""
         return self.count <= 3
 
 
@@ -57,49 +47,96 @@ class CameraWorker:
     def __init__(
         self, camera_name: str, camera: Union[PhysicalCamera, VideoFileCamera]
     ) -> None:
-        """Initialize the object.
-        
-        Args:
-            camera_name (str): Camera name.
-            camera (Union[PhysicalCamera, VideoFileCamera]): Camera."""
         self.camera_name = camera_name
         self.camera = camera
         self.running = True
         self.thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
+        self._frame_available = threading.Condition(self._lock)
         self._current_packet: FramePacket | None = None
         self._last_cached_packet: FramePacket | None = None
-    def set_current_packet(self, packet: FramePacket) -> None:
-        """Set current packet.
-        
-        Args:
-            packet (FramePacket): Packet."""
+        self._frame_seq: int = 0
+
+    def next_frame_seq(self) -> int:
+        """Return the next monotonically increasing frame sequence number."""
         with self._lock:
+            self._frame_seq += 1
+            return self._frame_seq
+
+    def set_current_packet(self, packet: FramePacket) -> None:
+        """Store a frame packet and wake consumers waiting for a newer frame."""
+        with self._frame_available:
+            previous_seq = (
+                self._current_packet.timing.frame_seq
+                if self._current_packet is not None
+                else None
+            )
             self._current_packet = TimedValue(packet.value.copy(), packet.timing)
+            if packet.timing.frame_seq != previous_seq:
+                self._frame_available.notify_all()
 
     def get_current_packet(self) -> FramePacket | None:
-        """Get current packet.
-        
-        Returns:
-            FramePacket | None: Result of get current packet."""
+        """Thread-safe timestamped frame packet retrieval."""
         with self._lock:
             if self._current_packet is None:
                 return None
             return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
 
-    def set_cached_packet(self, packet: FramePacket) -> None:
-        """Set cached packet.
-        
+    def get_current_timing(self) -> TimingMetadata | None:
+        """Return current frame timing without copying the image."""
+        with self._lock:
+            if self._current_packet is None:
+                return None
+            return self._current_packet.timing
+
+    def wait_for_new_frame(
+        self, after_frame_seq: int, timeout_s: float | None = None
+    ) -> bool:
+        """Wait until a frame newer than ``after_frame_seq`` is available.
+
         Args:
-            packet (FramePacket): Packet."""
+            after_frame_seq: Last frame sequence consumed by the caller.
+            timeout_s: Maximum wait in seconds, or ``None`` to wait indefinitely.
+
+        Returns:
+            ``True`` when a newer frame is available, otherwise ``False``.
+        """
+
+        def frame_is_newer() -> bool:
+            """Return whether the current packet has a newer sequence number."""
+            if self._current_packet is None:
+                return False
+            frame_seq = self._current_packet.timing.frame_seq
+            return frame_seq is not None and frame_seq > after_frame_seq
+
+        with self._frame_available:
+            return self._frame_available.wait_for(frame_is_newer, timeout_s)
+
+    def set_current_frame(self, frame: np.ndarray, timestamp: float) -> None:
+        """Compatibility frame update using a millisecond timestamp."""
+        timing = TimingMetadata(
+            capture_nt_us=int(timestamp * 1000),
+            capture_monotonic_ns=time.monotonic_ns(),
+            frame_seq=self.next_frame_seq(),
+            camera_name=self.camera_name,
+            source="compatibility",
+        )
+        self.set_current_packet(TimedValue(frame, timing))
+
+    def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
+        """Thread-safe compatibility frame retrieval."""
+        packet = self.get_current_packet()
+        if packet is None:
+            return None
+        return (packet.value.copy(), packet.timing.capture_nt_us / 1000.0)
+
+    def set_cached_packet(self, packet: FramePacket) -> None:
+        """Thread-safe cached packet update."""
         with self._lock:
             self._last_cached_packet = TimedValue(packet.value.copy(), packet.timing)
 
     def get_cached_packet(self) -> FramePacket | None:
-        """Get cached packet.
-        
-        Returns:
-            FramePacket | None: Result of get cached packet."""
+        """Thread-safe cached packet retrieval."""
         with self._lock:
             if self._last_cached_packet is None:
                 return None
@@ -108,11 +145,24 @@ class CameraWorker:
                 self._last_cached_packet.timing,
             )
 
+    def set_cached_frame(self, frame: np.ndarray) -> None:
+        """Compatibility cached frame update."""
+        timing = TimingMetadata(
+            capture_nt_us=ntcore._now(),
+            capture_monotonic_ns=time.monotonic_ns(),
+            frame_seq=self.next_frame_seq(),
+            camera_name=self.camera_name,
+            source="compatibility-cache",
+        )
+        self.set_cached_packet(TimedValue(frame, timing))
+
+    def get_cached_frame(self) -> Optional[np.ndarray]:
+        """Thread-safe cached frame retrieval."""
+        packet = self.get_cached_packet()
+        return packet.value.copy() if packet is not None else None
+
     def start(self, worker_fn) -> None:
-        """Start.
-        
-        Args:
-            worker_fn: Worker fn."""
+        """Start the camera worker thread."""
         self.thread = threading.Thread(
             target=worker_fn,
             args=(self,),
@@ -122,10 +172,7 @@ class CameraWorker:
         self.thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
-        """Stop.
-        
-        Args:
-            timeout (float): Timeout."""
+        """Stop the camera worker thread."""
         self.running = False
         if self.thread:
             self.thread.join(timeout=timeout)
@@ -135,11 +182,13 @@ class CameraThreadManager:
     """Manages camera threads and serves them to the web interface."""
 
     def __init__(self, web_interface: EagleEyeInterface, logger: Logger) -> None:
-        """Initialize the object.
-        
+        """
+        Initialize the camera thread manager.
+
         Args:
-            web_interface (EagleEyeInterface): Web interface.
-            logger (Logger): Logger."""
+            web_interface: The web interface to serve camera feeds to.
+            logger: Logger instance for logging.
+        """
         self.web_interface = web_interface
         self.logger = logger
         self.cameras: Dict[str, CameraWorker] = {}
@@ -149,7 +198,9 @@ class CameraThreadManager:
         self._initialize_cameras()
 
     def _initialize_cameras(self) -> None:
-        """Initialize cameras."""
+        """
+        Register system and video file cameras with the manager.
+        """
         self.logger.log(f"{Colors.CYAN}Registering system cameras...{Colors.RESET}")
         system_cameras = add_system_cameras(
             self.web_interface,
@@ -165,10 +216,12 @@ class CameraThreadManager:
         self.known_cameras = system_cameras + video_file_cameras
 
     def camera_feed_worker(self, worker: CameraWorker) -> None:
-        """Camera feed worker.
-        
+        """
+        Worker function that continuously captures frames and updates the web interface.
+
         Args:
-            worker (CameraWorker): Worker."""
+            worker: The CameraWorker instance containing camera and state.
+        """
         camera_name = worker.camera_name
         camera = worker.camera
 
@@ -194,7 +247,14 @@ class CameraThreadManager:
                     failure_tracker.reset()
                     packet = TimedValue(
                         frame,
-                        TimingMetadata(capture_nt_us=ntcore._now()),
+                        TimingMetadata(
+                            capture_nt_us=ntcore._now(),
+                            capture_monotonic_ns=time.monotonic_ns(),
+                            frame_seq=worker.next_frame_seq(),
+                            camera_name=camera_name,
+                            bus_id=self.get_bus_id_for_camera_name(camera_name),
+                            source="camera",
+                        ),
                     )
                     worker.set_cached_packet(packet)
                     worker.set_current_packet(packet)
@@ -243,17 +303,18 @@ class CameraThreadManager:
         frame_width: int = 1280,
         frame_height: int = 720,
     ) -> bool:
-        """Start camera thread.
-        
+        """Start a thread for a specific camera.
+
         Args:
-            camera_name (str): Camera name.
-            video_file_path (Optional[str]): Video file path.
-            camera_index (Optional[int]): Camera index.
-            frame_width (int): Frame width.
-            frame_height (int): Frame height.
-        
+            camera_name: The name of the camera.
+            video_file_path: The path to the video file (for video file cameras).
+            camera_index: The index of the physical camera (for physical cameras).
+            frame_width: Desired frame width for physical cameras. Defaults to 1280.
+            frame_height: Desired frame height for physical cameras. Defaults to 720.
+
         Returns:
-            bool: Result of start camera thread."""
+            True if the thread was started successfully, False otherwise.
+        """
         try:
             if video_file_path:
                 camera = VideoFileCamera(
@@ -291,10 +352,12 @@ class CameraThreadManager:
             return False
 
     def stop_camera_thread(self, camera_name: str) -> None:
-        """Stop camera thread.
-        
+        """
+        Stop a specific camera thread.
+
         Args:
-            camera_name (str): Camera name."""
+            camera_name: The name of the camera to stop.
+        """
         if worker := self.cameras.pop(camera_name, None):
             self.logger.log(
                 f"{Colors.CYAN}Stopping camera thread for {camera_name}{Colors.RESET}"
@@ -302,7 +365,7 @@ class CameraThreadManager:
             worker.stop()
 
     def stop_all_cameras(self) -> None:
-        """Stop all cameras."""
+        """Stop all camera threads."""
         self.logger.log(f"{Colors.CYAN}Stopping all camera threads...{Colors.RESET}")
         camera_names = list(self.cameras.keys())
         for camera_name in camera_names:
@@ -310,15 +373,35 @@ class CameraThreadManager:
         self.logger.log(f"{Colors.CYAN}All camera threads stopped{Colors.RESET}")
 
     def get_current_packet(self, camera_name: str) -> FramePacket | None:
-        """Get current packet.
-        
-        Args:
-            camera_name (str): Camera name.
-        
-        Returns:
-            FramePacket | None: Result of get current packet."""
+        """Get the most current timestamped frame packet for a specific camera."""
         worker = self.cameras.get(camera_name)
         return worker.get_current_packet() if worker else None
+
+    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
+        """
+        Get the most current frame and timestamp for a specific camera.
+
+        Args:
+            camera_name: The name of the camera.
+
+        Returns:
+            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
+        """
+        worker = self.cameras.get(camera_name)
+        return worker.get_current_frame() if worker else None
+
+    def get_all_current_frames(self) -> Dict[str, Tuple[np.ndarray, float]]:
+        """
+        Get the most current frames and timestamps for all cameras.
+
+        Returns:
+            Dictionary mapping camera names to (frame, timestamp_ms_from_start) tuples.
+        """
+        result = {}
+        for name, worker in self.cameras.items():
+            if frame_data := worker.get_current_frame():
+                result[name] = frame_data
+        return result
 
     def get_start_time_ms(self) -> float:
         """
@@ -379,13 +462,12 @@ class CameraThreadManager:
         return True
 
     def get_camera_ready(self, camera_name: str) -> bool:
-        """Get camera ready.
-        
+        """
+        Get the ready state of a specific camera.
+
         Args:
-            camera_name (str): Camera name.
-        
-        Returns:
-            bool: Result of get camera ready."""
+            camera_name: The name of the camera.
+        """
         worker = self.cameras.get(camera_name)
         return worker.camera.camera_ready if worker else False
 
@@ -410,30 +492,61 @@ class CameraThreadManager:
         return self.bus_id_to_name.get(bus_id)
 
     def get_bus_id_for_camera_name(self, camera_name: str) -> str | None:
-        """Get bus id for camera name.
-        
-        Args:
-            camera_name (str): Camera name.
-        
-        Returns:
-            str | None: Result of get bus id for camera name."""
+        """Get the registered bus_id associated with a camera name."""
         for bus_id, registered_name in self.bus_id_to_name.items():
             if registered_name == camera_name:
                 return bus_id
         return None
 
     def get_current_packet_by_bus_id(self, bus_id: str) -> FramePacket | None:
-        """Get current packet by bus id.
-        
-        Args:
-            bus_id (str): Bus id.
-        
-        Returns:
-            FramePacket | None: Result of get current packet by bus id."""
+        """Get the current timestamped frame packet for a camera identified by bus_id."""
         camera_name = self.get_camera_name_by_bus_id(bus_id)
         if camera_name is None:
             return None
         return self.get_current_packet(camera_name)
+
+    def get_current_timing_by_bus_id(
+        self, bus_id: str
+    ) -> TimingMetadata | None:
+        """Get current frame timing without copying its image."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        worker = self.cameras.get(camera_name)
+        if worker is None:
+            return None
+        return worker.get_current_timing()
+
+    def wait_for_new_frame_by_bus_id(
+        self,
+        bus_id: str,
+        after_frame_seq: int,
+        timeout_s: float | None = None,
+    ) -> bool:
+        """Wait for a newer frame from a camera identified by bus ID."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return False
+        worker = self.cameras.get(camera_name)
+        if worker is None:
+            return False
+        return worker.wait_for_new_frame(after_frame_seq, timeout_s)
+
+    def get_current_frame_by_bus_id(
+        self, bus_id: str
+    ) -> Optional[Tuple[np.ndarray, float]]:
+        """Get the current frame for a camera identified by bus_id.
+
+        Args:
+            bus_id: The USB bus identifier for the camera.
+
+        Returns:
+            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
+        """
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
         """Get all registered bus IDs.

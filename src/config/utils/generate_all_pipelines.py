@@ -54,7 +54,18 @@ def replace_values(config_data: dict) -> dict:
     return config_data
 
 
-def _get_device_input_bus_ids(
+def _load_pipeline_settings() -> dict[str, dict[str, Any]]:
+    """Load pipeline settings, defaulting to an empty mapping if unavailable."""
+    settings_path = os.path.join(str(current_path.parent), "pipeline_settings.json")
+    try:
+        with open(settings_path, "r", encoding="utf-8") as settings_file:
+            settings = json.load(settings_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def _get_device_input_camera_bus_ids(
     pipeline_name: str, pipeline_config: list[dict[str, Any]], logger: Logger
 ) -> list[str]:
     """Collect bus IDs from a pipeline's device_input operations.
@@ -79,24 +90,24 @@ def _get_device_input_bus_ids(
         )
         return []
 
-    bus_ids: list[str] = []
+    camera_bus_ids: list[str] = []
     for device_config in device_input_configs:
         action_params = device_config.get("action_params", {})
-        bus_id = action_params.get("bus_id")
-        if isinstance(bus_id, str) and bus_id:
-            bus_ids.append(bus_id)
+        camera_bus_id = action_params.get("camera_bus_id")
+        if isinstance(camera_bus_id, str) and camera_bus_id:
+            camera_bus_ids.append(camera_bus_id)
         else:
             logger.log(
-                f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid bus_id in device_input{Colors.RESET}"
+                f"{Colors.RED}Error creating pipeline {pipeline_name}: invalid camera_bus_id in device_input{Colors.RESET}"
             )
 
-    if not bus_ids:
+    if not camera_bus_ids:
         return []
 
     logger.log(
-        f"{Colors.CYAN}Resolved device_input bus_ids for pipeline {pipeline_name}: {bus_ids}{Colors.RESET}"
+        f"{Colors.CYAN}Resolved device_input camera_bus_ids for pipeline {pipeline_name}: {camera_bus_ids}{Colors.RESET}"
     )
-    return bus_ids
+    return camera_bus_ids
 
 
 def generate_all_pipelines(
@@ -157,15 +168,20 @@ def generate_all_pipelines(
 
     # Replace placeholders in the configuration data
     config_data = replace_values(config_data)
+    pipeline_settings = _load_pipeline_settings()
 
     pipelines: Dict[str, Pipeline] = {}
     pipeline_count = 0
 
     for pipeline_name, config in config_data.items():
         try:
-            bus_ids = _get_device_input_bus_ids(
+            camera_bus_ids = _get_device_input_camera_bus_ids(
                 pipeline_name, config, logger
             )
+            settings = pipeline_settings.get(pipeline_name)
+            limit_frames = isinstance(settings, dict) and settings.get(
+                "limit_frames_to_camera_capture_speed"
+            ) is True
             pipeline = Pipeline(
                 config,
                 web_interface,
@@ -174,8 +190,9 @@ def generate_all_pipelines(
                 logger,
                 camera_manager,
                 camera_config_registry=camera_config_registry,
-                camera_bus_ids=bus_ids,
+                camera_bus_ids=camera_bus_ids,
                 pipeline_name=pipeline_name,
+                limit_frames_to_camera_capture_speed=limit_frames,
             )
         except Exception:
             logger.log(

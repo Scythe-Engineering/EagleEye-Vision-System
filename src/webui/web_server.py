@@ -69,6 +69,7 @@ from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
+from src.webui.web_server_utils.pipeline_settings_mixin import PipelineSettingsMixin
 from src.webui.web_server_utils.system_monitor_mixin import SystemMonitorMixin
 from src.webui.web_server_utils.test_video_mixin import TestVideoMixin
 from src.webui.web_server_utils.visualization_mixin import VisualizationMixin
@@ -86,6 +87,7 @@ class EagleEyeInterface(
     NetworkManagerMixin,
     OperationConfigMixin,
     PipelineConfigMixin,
+    PipelineSettingsMixin,
     SystemMonitorMixin,
     TestVideoMixin,
     VisualizationMixin,
@@ -155,6 +157,7 @@ class EagleEyeInterface(
         self.network_table_instance = network_table_instance
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
+        self._pipeline_settings_lock = threading.RLock()
         self._system_update_lock = threading.Lock()
         self._system_update_in_progress = False
         self._system_update_id = None
@@ -420,6 +423,12 @@ class EagleEyeInterface(
             methods=["GET"],
         )
         self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/distortion/feed",
+            "distortion_feed",
+            self.distortion_feed,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>/calibration/capture",
             "capture_calibration_frame",
             self.capture_calibration_frame,
@@ -594,6 +603,30 @@ class EagleEyeInterface(
             "save_pipeline_config_by_name",
             self.save_pipeline_config_by_name,
             methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/pipeline-config/json",
+            "get_pipeline_config_json",
+            self.get_pipeline_config_json,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/pipeline-config/json",
+            "save_pipeline_config_json",
+            self.save_pipeline_config_json,
+            methods=["PUT"],
+        )
+        self.app.add_url_rule(
+            "/pipeline-settings/<string:pipeline_name>",
+            "get_pipeline_settings",
+            self.get_pipeline_settings,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/pipeline-settings/<string:pipeline_name>",
+            "save_pipeline_settings",
+            self.save_pipeline_settings,
+            methods=["PUT"],
         )
         self.app.add_url_rule(
             "/delete-pipeline/<string:pipeline_name>",

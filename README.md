@@ -28,9 +28,24 @@ We welcome contributions to improve EagleEye Object Detection. To contribute:
 
 You can see the status of the current code in terms of cleanliness and issues at this link: [sonar cloud](https://sonarcloud.io/project/overview?id=Scythe-Engineering_EagleEye-Object-Detection)
 
+### Enable the pre-push checks
+
+After cloning, enable the repository's tracked Git hooks once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The pre-push hook runs the same dependency sync, WebUI production build, and
+full pytest suite used by GitHub Actions. Git cancels the push if any check
+fails. As with all local Git hooks, `git push --no-verify` explicitly bypasses
+this check; protected-branch CI should remain required as the authoritative
+gate.
+
 ## License
-EagleEye Framework © 2025 by (ScytheEngineering/FRC3322) is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
-![image](https://github.com/user-attachments/assets/e16050ce-11b1-4567-98d5-f94c44065c28)
+EagleEye Framework © 2025 by ScytheEngineering is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
+<img width="1606" height="979" alt="image" src="https://github.com/user-attachments/assets/00b03576-f924-415a-a8c5-8559e4f1a509" />
+
 
 
 ## Contributors

@@ -35,13 +35,6 @@ _EDN_TO_NWU_ROTATION = np.array(
 
 
 def _matrix_to_pose3d(matrix: np.ndarray) -> Pose3d:
-    """Matrix to pose3d.
-    
-    Args:
-        matrix (np.ndarray): Matrix.
-    
-    Returns:
-        Pose3d: Result of matrix to pose3d."""
     x, y, z = float(matrix[0, 3]), float(matrix[1, 3]), float(matrix[2, 3])
     R = matrix[:3, :3] @ _EDN_TO_NWU_ROTATION
     trace = float(R[0, 0] + R[1, 1] + R[2, 2])
@@ -68,27 +61,12 @@ def _matrix_to_pose3d(matrix: np.ndarray) -> Pose3d:
 
 
 def _matrix_to_pose2d(matrix: np.ndarray) -> Pose2d:
-    """Matrix to pose2d.
-    
-    Args:
-        matrix (np.ndarray): Matrix.
-    
-    Returns:
-        Pose2d: Result of matrix to pose2d."""
     x, y = float(matrix[0, 3]), float(matrix[1, 3])
     yaw = float(np.arctan2(matrix[1, 0], matrix[0, 0]))
     return Pose2d(Translation2d(x, y), Rotation2d(yaw))
 
 
 def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
-    """Dict to wpilib.
-    
-    Args:
-        value (dict): Value.
-        schema (str): Schema.
-    
-    Returns:
-        Any: Result of dict to wpilib."""
     keys = frozenset(value.keys())
     if schema == "rotation3d" and {"roll", "pitch", "yaw"} <= keys:
         return Rotation3d(float(value["roll"]), float(value["pitch"]), float(value["yaw"]))
@@ -126,14 +104,6 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
 
 
 def _coerce_wpilib(value: Any, schema: str) -> Any:
-    """Coerce wpilib.
-    
-    Args:
-        value (Any): Value.
-        schema (str): Schema.
-    
-    Returns:
-        Any: Result of coerce wpilib."""
     if schema in {"double", "float", "number"} and isinstance(value, int | float):
         return float(value)
     if schema in {"boolean", "bool"} and isinstance(value, bool):
@@ -172,13 +142,6 @@ class PublishToNetworktables(OperationInstance):
         schema: str = "auto",
         data_path: str | Sequence[str] | None = None,
     ) -> None:
-        """Initialize the object.
-        
-        Args:
-            network_table (Any): Network table.
-            target_key (str): Target key.
-            schema (str): Schema.
-            data_path (str | Sequence[str] | None): Data path."""
         self.network_table = network_table
         self.target_key = target_key
         self.schema = schema
@@ -187,23 +150,12 @@ class PublishToNetworktables(OperationInstance):
         self.uses_timed_inputs = True
 
     def run(self, data: Any) -> Any:
-        """Run.
-        
-        Args:
-            data (Any): Data.
-        
-        Returns:
-            Any: Result of run."""
         value = self._select_value(data)
         if value is not None:
             self._publish(value)
         return data
 
     def update_config(self, json_config: dict) -> None:
-        """Update config.
-        
-        Args:
-            json_config (dict): Json config."""
         if "target_key" in json_config:
             self.target_key = json_config["target_key"]
             self._publisher = None
@@ -213,10 +165,6 @@ class PublishToNetworktables(OperationInstance):
             self.data_path_tokens = self._normalize_path(json_config["data_path"])
 
     def _publish(self, value: Any) -> None:
-        """Publish.
-        
-        Args:
-            value (Any): Value."""
         timing = get_timing(value)
         raw_value = unwrap_timed(value)
         wpi_value = _coerce_wpilib(raw_value, self.schema)
@@ -232,13 +180,6 @@ class PublishToNetworktables(OperationInstance):
             self._publisher.set(wpi_value)
 
     def _create_publisher(self, wpi_value: Any) -> Any:
-        """Create publisher.
-        
-        Args:
-            wpi_value (Any): Wpi value.
-        
-        Returns:
-            Any: Result of create publisher."""
         if isinstance(wpi_value, list):
             if not wpi_value:
                 return None
@@ -261,13 +202,6 @@ class PublishToNetworktables(OperationInstance):
         return self.network_table.getStructTopic(self.target_key, type(wpi_value)).publish()
 
     def _normalize_path(self, data_path: str | Sequence[str] | None) -> list[str | int]:
-        """Normalize path.
-        
-        Args:
-            data_path (str | Sequence[str] | None): Data path.
-        
-        Returns:
-            list[str | int]: Result of normalize path."""
         if data_path is None:
             return []
         if isinstance(data_path, str):
@@ -284,13 +218,6 @@ class PublishToNetworktables(OperationInstance):
         return normalized
 
     def _select_value(self, data: Any) -> Any:
-        """Select value.
-        
-        Args:
-            data (Any): Data.
-        
-        Returns:
-            Any: Result of select value."""
         if not self.data_path_tokens:
             return data
         timing = get_timing(data)
@@ -316,13 +243,6 @@ class PublishToNetworktables(OperationInstance):
         return retime(current, timing) if timing is not None else current
 
     def _should_extract_sequence_field(self, data: Any) -> bool:
-        """Should extract sequence field.
-        
-        Args:
-            data (Any): Data.
-        
-        Returns:
-            bool: Result of should extract sequence field."""
         return (
             len(self.data_path_tokens) == 1
             and isinstance(self.data_path_tokens[0], str)
@@ -331,13 +251,6 @@ class PublishToNetworktables(OperationInstance):
         )
 
     def _extract_sequence_field(self, data: Sequence[Any]) -> Any:
-        """Extract sequence field.
-        
-        Args:
-            data (Sequence[Any]): Data.
-        
-        Returns:
-            Any: Result of extract sequence field."""
         field_name = self.data_path_tokens[0]
         try:
             return [

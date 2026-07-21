@@ -458,29 +458,9 @@ class SystemMonitorMixin:
         phase_count = SYSTEM_UPDATE_PHASE_COUNT
         target_branch = self._system_update_target_branch or "main"
         try:
-            self._run_update_command_streaming(
-                ["git", "fetch", "origin", "--prune"],
-                120.0,
-                phase="git_pull",
-                phase_index=0,
+            self._checkout_branch_preserving_pipeline_config(
+                target_branch,
                 phase_count=phase_count,
-                percent_start=0,
-                percent_end=15,
-            )
-            self._run_update_command_streaming(
-                [
-                    "git",
-                    "checkout",
-                    "-B",
-                    target_branch,
-                    f"origin/{target_branch}",
-                ],
-                60.0,
-                phase="git_pull",
-                phase_index=0,
-                phase_count=phase_count,
-                percent_start=15,
-                percent_end=30,
             )
 
             for apt_phase_index, (phase_name, command, timeout) in enumerate(
@@ -524,6 +504,141 @@ class SystemMonitorMixin:
             self._ensure_system_update_state()
             with self._system_update_lock:
                 self._system_update_in_progress = False
+
+    def _checkout_branch_preserving_pipeline_config(
+        self,
+        target_branch: str,
+        *,
+        phase_count: int,
+    ) -> None:
+        """Fetch and checkout a branch while restoring local pipeline configuration.
+
+        Args:
+            target_branch: Remote branch name to check out.
+            phase_count: Total update phase count for progress reporting.
+        """
+        repo_root = self._repo_root()
+        pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
+        relative_path = pipeline_path.relative_to(repo_root).as_posix()
+        pipeline_existed = pipeline_path.exists()
+        pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
+
+        status = self._run_git_command(
+            ["status", "--porcelain", "--", relative_path],
+            timeout=30.0,
+        )
+        stash_created = bool(status)
+        if stash_created:
+            self._publish_system_update_progress(
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent=0,
+                line="Backing up local pipeline configuration...",
+            )
+            self._run_git_command(
+                [
+                    "stash",
+                    "push",
+                    "--include-untracked",
+                    "--message",
+                    "EagleEye system update pipeline backup",
+                    "--",
+                    relative_path,
+                ],
+                timeout=30.0,
+            )
+
+        try:
+            self._run_update_command_streaming(
+                ["git", "fetch", "origin", "--prune"],
+                120.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=0,
+                percent_end=15,
+            )
+            self._run_update_command_streaming(
+                [
+                    "git",
+                    "checkout",
+                    "-B",
+                    target_branch,
+                    f"origin/{target_branch}",
+                ],
+                60.0,
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent_start=15,
+                percent_end=30,
+            )
+        finally:
+            if pipeline_contents is None:
+                pipeline_path.unlink(missing_ok=True)
+            else:
+                pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+                pipeline_path.write_bytes(pipeline_contents)
+                self._publish_system_update_progress(
+                    phase="git_pull",
+                    phase_index=0,
+                    phase_count=phase_count,
+                    percent=30,
+                    line="Restored src/config/pipeline_config.json",
+                )
+
+            if stash_created:
+                self._run_git_command(
+                    ["stash", "drop", "stash@{0}"],
+                    timeout=30.0,
+                )
+
+    def _pull_updates_preserving_pipeline_config(self) -> str:
+        """Pull repository updates while restoring the local pipeline configuration.
+
+        Returns:
+            str: Combined stdout from the git pull command.
+        """
+        repo_root = self._repo_root()
+        pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
+        relative_path = pipeline_path.relative_to(repo_root).as_posix()
+        pipeline_existed = pipeline_path.exists()
+        pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
+
+        status = self._run_git_command(
+            ["status", "--porcelain", "--", relative_path],
+            timeout=30.0,
+        )
+        stash_created = bool(status)
+        if stash_created:
+            self._run_git_command(
+                [
+                    "stash",
+                    "push",
+                    "--include-untracked",
+                    "--message",
+                    "EagleEye system update pipeline backup",
+                    "--",
+                    relative_path,
+                ],
+                timeout=30.0,
+            )
+
+        try:
+            return self._run_git_command(["pull"], timeout=120.0)
+        finally:
+            if pipeline_contents is None:
+                pipeline_path.unlink(missing_ok=True)
+            else:
+                pipeline_path.parent.mkdir(parents=True, exist_ok=True)
+                pipeline_path.write_bytes(pipeline_contents)
+
+            if stash_created:
+                self._run_git_command(
+                    ["stash", "drop", "stash@{0}"],
+                    timeout=30.0,
+                )
 
     def run_system_update(self) -> tuple[dict, int]:
         """Start git checkout/pull and apt updates in a background thread; stream via SSE.
