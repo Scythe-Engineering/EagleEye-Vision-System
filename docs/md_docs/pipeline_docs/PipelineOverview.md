@@ -76,9 +76,8 @@ Pipelines are instantiated by reading the pipeline config in `generate_all_pipel
         {
             "action_name": "pnp_camera_localization.py",
             "action_params": {
-                "camera_parameters_path": "/path/to/camera_parameters.json",
-                "apriltag_map_path": "/path/to/apriltag_map.json",
-                "jump_threshold": 2
+                "camera_bus_id": "front_cam",
+                "apriltag_map_path": "/path/to/apriltag_map.json"
             },
             "position": {
                 "x": 700,

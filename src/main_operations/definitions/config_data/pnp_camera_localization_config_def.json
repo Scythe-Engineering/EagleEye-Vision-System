@@ -25,22 +25,6 @@
             "default": "{project_root}/config/apriltag_map.fmap",
             "required": true,
             "restart_for_change": true
-        },
-        "jump_threshold": {
-            "type": "float",
-            "description": "Maximum distance threshold in meters for pose jumps. Poses beyond this threshold trigger cache clearing",
-            "default": 2.0,
-            "required": false,
-            "restart_for_change": false,
-            "min": 0.1,
-            "max": 10.0
-        },
-        "position_cache_enabled": {
-            "type": "bool",
-            "description": "Reuse the previous position as an initial guess. When disabled, each position is computed only from the current detections.",
-            "default": true,
-            "required": false,
-            "restart_for_change": true
         }
     }
 }
