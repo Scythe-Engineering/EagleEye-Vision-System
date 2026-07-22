@@ -192,7 +192,15 @@ class MainBackend:
         if not tpu_devices:
             return
 
-        from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
+        try:
+            from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
+        except ImportError as error:
+            self.logger.log(
+                f"{Colors.YELLOW}Warning: MemryX TPU hardware was detected, but the "
+                f"MemryX Python SDK is unavailable ({error}). Skipping MemryX devices."
+                f"{Colors.RESET}"
+            )
+            return
 
         for tpu_device in tpu_devices:
             if not tpu_device.startswith("memx:"):
