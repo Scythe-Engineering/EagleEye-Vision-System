@@ -10,26 +10,18 @@ import numpy as np
 from src.utils.timing import FramePacket, TimedValue, TimingMetadata
 
 
-class DummyComputePool:
-    """ComputePool stub to avoid importing torch-dependent modules."""
+class DummyDeviceRegistry:
+    """Minimal startup device inventory used by pipeline tests."""
 
-    def add_compute_device(self, compute_device: Any) -> None:
-        return None
+    def descriptors(self) -> tuple[Any, ...]:
+        return ()
 
-    def remove_compute_device(self, compute_device: Any) -> None:
-        return None
+    def get(self, device_id: str) -> Any:
+        raise KeyError(device_id)
 
-    def remove_compute_device_by_id(self, compute_device_id: str) -> None:
-        return None
 
-    def get_compute_device(self, compute_device_id: str) -> Any:
-        raise KeyError(compute_device_id)
-
-    def get_compute_devices_by_type(self, compute_device_type: str) -> list[Any]:
-        return []
-
-    def stop_all_devices(self) -> None:
-        return None
+class DummyModelLibrary:
+    """Marker model-library dependency for pipelines without detectors."""
 
 
 class FakeEagleEyeInterface:

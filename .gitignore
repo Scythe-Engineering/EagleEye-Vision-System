@@ -301,6 +301,9 @@ src/webui/static/*
 
 files/*
 !files/apriltag_map_path
+!files/models/
+files/models/*
+!files/models/manifest.json
 
 uv.lock
 package-lock.json

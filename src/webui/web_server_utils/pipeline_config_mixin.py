@@ -10,6 +10,7 @@ from typing import Any
 
 from flask import request
 
+from src.config.utils.port_validation import validate_pipeline_connections
 from src.webui.web_server_utils.constants import (
     PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS,
     PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL,
@@ -73,9 +74,7 @@ class PipelineConfigMixin:
         content = payload.get("content") if isinstance(payload, dict) else None
         revision = payload.get("revision") if isinstance(payload, dict) else None
         if not isinstance(content, str) or not isinstance(revision, str):
-            return {
-                "error": "Expected string fields 'content' and 'revision'"
-            }, 400
+            return {"error": "Expected string fields 'content' and 'revision'"}, 400
 
         with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
             current_content = config_file.read()
@@ -96,6 +95,26 @@ class PipelineConfigMixin:
 
         if not isinstance(parsed_config, dict):
             return {"error": "Pipeline configuration must be a JSON object"}, 400
+        for pipeline_name, pipeline_operations in parsed_config.items():
+            try:
+                validate_pipeline_connections(pipeline_operations)
+            except ValueError as error:
+                return {
+                    "error": "Pipeline ports or connections are invalid",
+                    "detail": f"{pipeline_name}: {error}",
+                }, 400
+
+            try:
+                for operation in pipeline_operations:
+                    self.validate_operation_params(
+                        operation.get("action_name", ""),
+                        operation.get("action_params", {}),
+                    )
+            except ValueError as error:
+                return {
+                    "error": "Pipeline operation parameters are invalid",
+                    "detail": f"{pipeline_name}: {error}",
+                }, 400
 
         normalized_content = content.rstrip() + "\n"
         self._write_pipeline_config_text(normalized_content)
@@ -197,6 +216,14 @@ class PipelineConfigMixin:
             return {
                 "message": "Pipeline config contains invalid operation configuration",
                 "invalid_operations": invalid_operations,
+            }, 400
+
+        try:
+            validate_pipeline_connections(updated_operations)
+        except ValueError as error:
+            return {
+                "message": "Pipeline ports or connections are invalid",
+                "detail": str(error),
             }, 400
 
         current_config[pipeline_name] = updated_operations

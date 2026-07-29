@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any, cast
 
@@ -10,7 +11,8 @@ import pytest
 from tests.utils.config_defaults import resolve_operation_defaults
 from tests.utils.dummy_data import dummy_frame
 from tests.utils.dummy_dependencies import (
-    DummyComputePool,
+    DummyDeviceRegistry,
+    DummyModelLibrary,
     FakeCameraThreadManager,
     FakeEagleEyeInterface,
     FakeNetworkTable,
@@ -28,7 +30,8 @@ from src.utils.logging.logger import Logger
 def _build_dummy_dependencies() -> dict[str, Any]:
     return {
         "web_interface": FakeEagleEyeInterface(),
-        "compute_pool": DummyComputePool(),
+        "device_registry": DummyDeviceRegistry(),
+        "model_library": DummyModelLibrary(),
         "network_table": FakeNetworkTable(),
         "camera_manager": FakeCameraThreadManager(default_frame=dummy_frame()),
         "logger": Logger(log_directory="logs/test"),
@@ -57,11 +60,10 @@ def test_operation_initialization(spec) -> None:
     init_params = defaults.action_params.copy()
     dependencies = _build_dummy_dependencies()
 
-    init_signature = getattr(operation_class.__init__, "__code__", None)
-    if init_signature is not None:
-        for name, value in dependencies.items():
-            if name in init_signature.co_varnames:
-                init_params[name] = value
+    init_parameters = inspect.signature(operation_class.__init__).parameters
+    for name, value in dependencies.items():
+        if name in init_parameters:
+            init_params[name] = value
 
     if spec.action_name == "device_input":
         dependencies["camera_manager"].add_camera(init_params.get("camera_name", "test_camera"))

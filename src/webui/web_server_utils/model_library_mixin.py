@@ -1,0 +1,225 @@
+"""HTTP handlers for the startup device registry and managed model library."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from flask import request
+
+from src.utils.model_library import (
+    ArtifactError,
+    ModelLibrary,
+    ModelLibraryError,
+    ModelMetadata,
+    ModelNotFoundError,
+    ModelReferencedError,
+)
+
+
+class ModelLibraryMixin:
+    """Expose model-library and device-registry services to the WebUI."""
+
+    device_registry: Any
+    model_library: ModelLibrary | None
+    restart_required_for_config: bool
+
+    def get_device_registry(self) -> tuple[dict[str, Any], int]:
+        """Return the immutable startup device inventory."""
+        if self.device_registry is None:
+            return {"error": "Device registry is not initialized"}, 503
+        devices = [
+            {
+                "id": descriptor.device_id,
+                "kind": descriptor.device_type,
+                "display_name": descriptor.display_name,
+                "physical_index": descriptor.physical_index,
+            }
+            for descriptor in self.device_registry.descriptors()
+        ]
+        return {"devices": devices}, 200
+
+    def _require_model_library(self) -> ModelLibrary:
+        """Return the configured model library or raise an actionable error."""
+        if self.model_library is None:
+            raise ModelLibraryError("Model library is not initialized")
+        return self.model_library
+
+    @staticmethod
+    def _serialize_model(
+        model: ModelMetadata, referenced_by: tuple[str, ...]
+    ) -> dict[str, Any]:
+        """Serialize immutable model metadata for the WebUI."""
+        return {
+            "id": model.model_id,
+            "display_name": model.display_name,
+            "class_names": (
+                list(model.class_names) if model.class_names is not None else None
+            ),
+            "artifacts": {
+                slot: {
+                    "filename": Path(relative_path).name,
+                    "path": relative_path,
+                }
+                for slot, relative_path in model.artifacts.items()
+            },
+            "mx3_profile": (
+                dict(model.mx3_profile) if model.mx3_profile is not None else None
+            ),
+            "referenced_by": list(referenced_by),
+        }
+
+    def get_model_library(self) -> tuple[dict[str, Any], int]:
+        """List all models with current pipeline references."""
+        try:
+            library = self._require_model_library()
+            models = library.list_models()
+            references_by_model = {
+                model.model_id: library.references(model.model_id) for model in models
+            }
+            serialized_models = [
+                self._serialize_model(
+                    model, references_by_model.get(model.model_id, ())
+                )
+                for model in models
+            ]
+            return {"models": serialized_models}, 200
+        except ModelLibraryError as error:
+            return {"error": str(error)}, 503
+
+    def create_model_library_entry(self) -> tuple[dict[str, Any], int]:
+        """Create a managed model metadata record."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "Request body must be an object"}, 400
+        try:
+            library = self._require_model_library()
+            model = library.create_model(
+                display_name=payload.get("display_name"),
+                class_names=payload.get("class_names"),
+                mx3_profile=payload.get("mx3_profile"),
+            )
+            return {
+                "id": model.model_id,
+                "model": self._serialize_model(model, ()),
+            }, 201
+        except ModelLibraryError as error:
+            return {"error": str(error)}, 400
+
+    def update_model_library_entry(self, model_id: str) -> tuple[dict[str, Any], int]:
+        """Rename or update class/profile metadata without changing model ID."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "Request body must be an object"}, 400
+        allowed_fields = {"display_name", "class_names", "mx3_profile"}
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            return {"error": f"Unknown model fields: {sorted(unknown_fields)}"}, 400
+        try:
+            library = self._require_model_library()
+            update_arguments = {
+                field: payload[field] for field in allowed_fields if field in payload
+            }
+            model = library.update_model(model_id, **update_arguments)
+            references = library.references(model_id)
+            restart_required = bool(
+                references
+                and ({"class_names", "mx3_profile"} & update_arguments.keys())
+            )
+            if restart_required:
+                self.restart_required_for_config = True
+            return {
+                "model": self._serialize_model(model, references),
+                "affected_pipelines": list(references) if restart_required else [],
+                "restart_required": restart_required,
+            }, 200
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except ModelLibraryError as error:
+            return {"error": str(error)}, 400
+
+    def delete_model_library_entry(self, model_id: str) -> tuple[dict[str, Any], int]:
+        """Delete an unreferenced model and all managed artifacts."""
+        try:
+            self._require_model_library().delete_model(model_id)
+            return {"success": True}, 200
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except ModelReferencedError as error:
+            return {"error": str(error)}, 409
+        except ModelLibraryError as error:
+            return {"error": str(error)}, 400
+
+    def upload_model_artifact(
+        self, model_id: str, slot: str
+    ) -> tuple[dict[str, Any], int]:
+        """Copy an uploaded artifact into a model's managed directory."""
+        uploaded_file = request.files.get("file")
+        if uploaded_file is None or not uploaded_file.filename:
+            return {"error": "No artifact file provided"}, 400
+        safe_filename = Path(uploaded_file.filename).name
+        if safe_filename != uploaded_file.filename:
+            return {"error": "Artifact filename must not contain a path"}, 400
+        try:
+            library = self._require_model_library()
+            model, referenced_by = library.import_artifact(
+                model_id,
+                slot,
+                uploaded_file.stream,
+                filename=safe_filename,
+            )
+            restart_required = bool(referenced_by)
+            if restart_required:
+                self.restart_required_for_config = True
+            return {
+                "model": self._serialize_model(model, referenced_by),
+                "affected_pipelines": list(referenced_by),
+                "restart_required": restart_required,
+            }, 200
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except (ArtifactError, ModelLibraryError) as error:
+            return {"error": str(error)}, 400
+
+    def delete_model_artifact(
+        self, model_id: str, slot: str
+    ) -> tuple[dict[str, Any], int]:
+        """Remove a managed artifact and mark referenced pipelines for restart."""
+        try:
+            library = self._require_model_library()
+            model, referenced_by = library.remove_artifact(model_id, slot)
+            restart_required = bool(referenced_by)
+            if restart_required:
+                self.restart_required_for_config = True
+            return {
+                "model": self._serialize_model(model, referenced_by),
+                "affected_pipelines": list(referenced_by),
+                "restart_required": restart_required,
+            }, 200
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except (ArtifactError, ModelLibraryError) as error:
+            return {"error": str(error)}, 400
+
+    def resolve_model_artifact(self, model_id: str) -> tuple[dict[str, Any], int]:
+        """Resolve and expose the deterministic artifact for a selected device."""
+        device_id = request.args.get("device_id", "")
+        if not device_id:
+            return {"error": "device_id query parameter is required"}, 400
+        if self.device_registry is None:
+            return {"error": "Device registry is not initialized"}, 503
+        try:
+            self.device_registry.get(device_id)
+            artifact = self._require_model_library().resolve_artifact(
+                model_id, device_id
+            )
+            return {
+                "artifact": {
+                    "slot": artifact.slot,
+                    "filename": artifact.path.name,
+                }
+            }, 200
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except (ArtifactError, ModelLibraryError, KeyError, RuntimeError) as error:
+            return {"error": str(error)}, 400

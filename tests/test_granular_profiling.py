@@ -40,19 +40,53 @@ class _NoneAbortOperation(OperationInstance):
 
 
 def _build_direct_flow_manager() -> FlowManager:
-    source = Operation(_SourceOperation(3), "op-source", "source", is_data_source=True)
-    transform = Operation(_PassOperation(), "op-transform", "transform")
+    source = Operation(
+        _SourceOperation(3),
+        "op-source",
+        "source",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    transform = Operation(
+        _PassOperation(), "op-transform", "transform", input_ports=("data",)
+    )
     Connection(source, "data", transform, "data", "any")
     operations = {source.uuid: source, transform.uuid: transform}
     return FlowManager(operations, Logger(log_directory="logs/test"), pipeline_name="Direct")
 
 
 def _build_threaded_flow_manager() -> FlowManager:
-    src_a = Operation(_SourceOperation(2), "op-a-src", "src_a", is_data_source=True)
-    src_b = Operation(_SourceOperation(5), "op-b-src", "src_b", is_data_source=True)
-    pass_a = Operation(_PassOperation(), "op-a-pass", "pass_a")
-    pass_b = Operation(_PassOperation(), "op-b-pass", "pass_b")
-    merge = Operation(_MergeOperation(), "op-merge", "merge")
+    src_a = Operation(
+        _SourceOperation(2),
+        "op-a-src",
+        "src_a",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    src_b = Operation(
+        _SourceOperation(5),
+        "op-b-src",
+        "src_b",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    pass_a = Operation(
+        _PassOperation(),
+        "op-a-pass",
+        "pass_a",
+        input_ports=("data",),
+        output_ports=("data",),
+    )
+    pass_b = Operation(
+        _PassOperation(),
+        "op-b-pass",
+        "pass_b",
+        input_ports=("data",),
+        output_ports=("data",),
+    )
+    merge = Operation(
+        _MergeOperation(), "op-merge", "merge", input_ports=("left", "right")
+    )
 
     Connection(src_a, "data", pass_a, "data", "any")
     Connection(src_b, "data", pass_b, "data", "any")
@@ -157,8 +191,9 @@ def test_none_abort_does_not_publish_profile_snapshot() -> None:
         "op-abort",
         "abort",
         is_data_source=True,
+        output_ports=("data",),
     )
-    passthrough = Operation(_PassOperation(), "op-pass", "pass")
+    passthrough = Operation(_PassOperation(), "op-pass", "pass", input_ports=("data",))
     Connection(source, "data", passthrough, "data", "any")
     flow_manager = FlowManager(
         {source.uuid: source, passthrough.uuid: passthrough},

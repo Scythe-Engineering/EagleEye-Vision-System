@@ -1,11 +1,13 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { registerFileManagerPopup } from "./fileManager.js";
+import { registerModelLibraryModal } from "./modelLibraryModal.js";
 
 /**
  * Builds and registers the settings popup UI for pipeline operations.
  */
 export function registerSettingsPopup() {
     registerFileManagerPopup();
+    registerModelLibraryModal();
 
     if (globalThis.SettingsPopup) {
         return globalThis.SettingsPopup;
@@ -700,6 +702,408 @@ export function registerSettingsPopup() {
     }
 
     /**
+     * Creates the common label row used by registry-backed pickers.
+     * @param {string} fieldId Input element ID.
+     * @param {string} labelText Visible field label.
+     * @param {boolean} required Whether the parameter is required.
+     * @returns {HTMLElement} Label row.
+     */
+    function buildRegistryLabel(fieldId, labelText, required) {
+        return createElement("div", { className: "flex items-center mb-2" }, [
+            createElement("label", {
+                for: fieldId,
+                className: "block text-sm font-medium text-[#f9c845] mb-1",
+                text: labelText,
+            }),
+            createElement("div", {
+                className: "text-xs text-[#ac8a2f] ml-auto",
+                text: required ? "Required" : "Optional",
+            }),
+        ]);
+    }
+
+    /** Adds the standard edited/restart indicators to a registry picker. */
+    function addRegistryChangeIndicators(
+        inputContainer,
+        input,
+        def,
+        originalValue,
+    ) {
+        const isEdited = input.value !== originalValue;
+        let restartIndicator = null;
+        if (def.restart_for_change) {
+            restartIndicator = createElement("span", {
+                className:
+                    "group/restart absolute left-0 top-1/2 z-20 inline-flex w-3 h-3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#f9c845]",
+                "aria-label": "Restart required to apply config change",
+                style: isEdited ? "" : "display: none;",
+            });
+            restartIndicator.appendChild(
+                createElement("span", {
+                    className:
+                        "pointer-events-none absolute left-full top-1/2 ml-2 w-max max-w-64 -translate-y-1/2 rounded-md border border-orange-300/60 bg-[#1f1f1f] px-2 py-1 text-xs leading-tight text-orange-100 opacity-0 shadow-lg transition-opacity duration-75 group-hover/restart:opacity-100 group-focus/restart:opacity-100",
+                    text: "Restart required to apply config change",
+                }),
+            );
+            inputContainer.appendChild(restartIndicator);
+        }
+        const editedIndicator = createElement("div", {
+            className:
+                "absolute -left-1 top-1/2 transform -translate-y-1/2 w-2 h-2 bg-yellow-400 rounded-full",
+            title: "This field has been modified from its default value",
+            style: isEdited && !def.restart_for_change ? "" : "display: none;",
+        });
+        inputContainer.appendChild(editedIndicator);
+
+        const updateIndicator = () => {
+            const edited = input.value !== originalValue;
+            editedIndicator.style.display =
+                edited && !def.restart_for_change ? "block" : "none";
+            if (restartIndicator) {
+                restartIndicator.style.display = edited
+                    ? "inline-flex"
+                    : "none";
+            }
+        };
+        input.addEventListener("input", updateIndicator);
+        input.addEventListener("change", updateIndicator);
+        input.addEventListener("registry-value-loaded", updateIndicator);
+    }
+
+    /**
+     * Builds a stable-ID device picker from the backend device registry.
+     * @param {string} name Parameter name.
+     * @param {object} def Parameter definition.
+     * @param {object} currentValues Current configuration values.
+     * @returns {{wrapper: HTMLElement, getValue: Function}} Field API.
+     */
+    function buildDeviceRegistryField(
+        name,
+        def,
+        currentValues,
+        originalValues,
+        fieldId,
+    ) {
+        const selectedId = String(currentValues?.[name] ?? def.default ?? "");
+        const originalId = String(originalValues?.[name] ?? def.default ?? "");
+        const input = createElement("select", {
+            id: fieldId,
+            required: def.required ? "required" : undefined,
+            className:
+                "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+        });
+        const status = createElement("div", {
+            className: "text-xs text-[#ac8a2f] mt-1",
+            text: "Loading device registry...",
+        });
+        const inputContainer = createElement(
+            "div",
+            {
+                className: "relative flex gap-2",
+            },
+            [input],
+        );
+        const wrapper = createElement("div", { className: "mb-4" }, [
+            buildRegistryLabel(fieldId, def.description || name, def.required),
+            inputContainer,
+            status,
+        ]);
+        addRegistryChangeIndicators(inputContainer, input, def, originalId);
+
+        /** Loads only backend-advertised device IDs into the picker. */
+        async function loadDevices() {
+            try {
+                const response = await fetch(
+                    `${BACKEND_BASE_URL}/device-registry`,
+                );
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const allowedKinds = Array.isArray(def.allowed_device_kinds)
+                    ? new Set(def.allowed_device_kinds.map(String))
+                    : null;
+                const devices = (
+                    Array.isArray(data.devices) ? data.devices : []
+                ).filter(
+                    (device) =>
+                        !allowedKinds || allowedKinds.has(String(device.kind)),
+                );
+                input.innerHTML = "";
+                input.appendChild(
+                    createElement("option", {
+                        value: "",
+                        text: devices.length
+                            ? "Select a registered device"
+                            : "No devices available",
+                    }),
+                );
+                devices.forEach((device) => {
+                    const id = String(device.id);
+                    const details = [
+                        device.kind,
+                        device.physical_index == null
+                            ? null
+                            : `#${device.physical_index}`,
+                    ]
+                        .filter(Boolean)
+                        .join(" ");
+                    input.appendChild(
+                        createElement("option", {
+                            value: id,
+                            text: details
+                                ? `${device.display_name || id} (${details})`
+                                : device.display_name || id,
+                        }),
+                    );
+                });
+                const knownIds = devices.map((device) => String(device.id));
+                if (selectedId && !knownIds.includes(selectedId)) {
+                    input.appendChild(
+                        createElement("option", {
+                            value: selectedId,
+                            text: `${selectedId} (configured device unavailable)`,
+                        }),
+                    );
+                    input.setCustomValidity(
+                        `Configured device '${selectedId}' is unavailable.`,
+                    );
+                    status.textContent = `Configured device '${selectedId}' is not in the device registry.`;
+                } else {
+                    input.setCustomValidity("");
+                    status.textContent = devices.length
+                        ? "Select a registered execution device."
+                        : "The device registry is empty.";
+                }
+                input.value = selectedId;
+                input.dispatchEvent(new Event("registry-value-loaded"));
+                if (def.model_param) {
+                    document
+                        .getElementById(`setting-${def.model_param}`)
+                        ?.dispatchEvent(new Event("device-registry-ready"));
+                }
+            } catch (error) {
+                input.innerHTML = "";
+                input.appendChild(
+                    createElement("option", {
+                        value: "",
+                        text: "Device registry unavailable",
+                    }),
+                );
+                if (selectedId) {
+                    input.appendChild(
+                        createElement("option", {
+                            value: selectedId,
+                            text: `${selectedId} (configured device unavailable)`,
+                        }),
+                    );
+                    input.value = selectedId;
+                    input.dispatchEvent(new Event("registry-value-loaded"));
+                    input.setCustomValidity(
+                        `Unable to verify configured device '${selectedId}'.`,
+                    );
+                }
+                status.textContent = `Unable to load devices: ${error.message}`;
+            }
+        }
+        input.addEventListener("change", () => input.setCustomValidity(""));
+        void loadDevices();
+        return { wrapper, getValue: () => input.value };
+    }
+
+    /**
+     * Builds a stable-ID model picker and artifact resolution status display.
+     * @param {string} name Parameter name.
+     * @param {object} def Parameter definition.
+     * @param {object} currentValues Current configuration values.
+     * @returns {{wrapper: HTMLElement, getValue: Function}} Field API.
+     */
+    function buildModelLibraryField(
+        name,
+        def,
+        currentValues,
+        originalValues,
+        fieldId,
+    ) {
+        const configuredId = String(currentValues?.[name] ?? def.default ?? "");
+        const originalId = String(originalValues?.[name] ?? def.default ?? "");
+        const input = createElement("select", {
+            id: fieldId,
+            required: def.required ? "required" : undefined,
+            className:
+                "flex-1 min-w-0 bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+        });
+        const manageButton = createElement("button", {
+            type: "button",
+            className:
+                "px-3 py-2 bg-[#f9c845] text-[#232323] rounded-md hover:bg-[#d4a83a] transition-colors text-sm font-medium whitespace-nowrap",
+            text: "Manage Library",
+        });
+        const status = createElement("div", {
+            className: "text-xs text-[#ac8a2f] mt-1",
+            text: "Loading model library...",
+        });
+        const inputContainer = createElement(
+            "div",
+            {
+                className: "relative flex gap-2",
+            },
+            [input, manageButton],
+        );
+        const wrapper = createElement("div", { className: "mb-4" }, [
+            buildRegistryLabel(fieldId, def.description || name, def.required),
+            inputContainer,
+            status,
+        ]);
+        addRegistryChangeIndicators(inputContainer, input, def, originalId);
+
+        /** Queries the backend for the artifact selected for the current model/device pair. */
+        async function refreshResolution() {
+            const deviceInput = def.device_param
+                ? document.getElementById(`setting-${def.device_param}`)
+                : null;
+            if (!def.device_param) {
+                status.textContent =
+                    "Model/device relationship is not configured for this field.";
+                return;
+            }
+            if (!input.value || !deviceInput?.value) {
+                status.textContent =
+                    "Select a model and registered device to resolve an artifact.";
+                return;
+            }
+            status.textContent = "Resolving artifact...";
+            try {
+                const response = await fetch(
+                    `${BACKEND_BASE_URL}/model-library/${encodeURIComponent(input.value)}/resolve?device_id=${encodeURIComponent(deviceInput.value)}`,
+                );
+                if (!response.ok) {
+                    let detail = `HTTP ${response.status}`;
+                    try {
+                        const data = await response.json();
+                        detail = data.error || data.detail || detail;
+                    } catch (_) {
+                        /* use status */
+                    }
+                    status.textContent = `No resolved artifact: ${detail}`;
+                    return;
+                }
+                const data = await response.json();
+                const artifact = data.artifact;
+                status.textContent = artifact
+                    ? `Resolved ${artifact.slot}: ${artifact.filename || artifact.path}`
+                    : "No artifact resolved for this model and device.";
+            } catch (error) {
+                status.textContent = `Artifact resolution unavailable: ${error.message}`;
+            }
+        }
+
+        /** Loads stable model IDs into the picker without accepting custom values. */
+        async function loadModels(selectedModelId = configuredId) {
+            try {
+                const response = await fetch(
+                    `${BACKEND_BASE_URL}/model-library`,
+                );
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const models = Array.isArray(data.models) ? data.models : [];
+                input.innerHTML = "";
+                input.appendChild(
+                    createElement("option", {
+                        value: "",
+                        text: "Select a model",
+                    }),
+                );
+                models.forEach((model) =>
+                    input.appendChild(
+                        createElement("option", {
+                            value: String(model.id),
+                            text: `${model.display_name || model.id} (${model.id})`,
+                        }),
+                    ),
+                );
+                const selectedId = String(selectedModelId || "");
+                if (
+                    selectedId &&
+                    !models.some((model) => String(model.id) === selectedId)
+                ) {
+                    input.appendChild(
+                        createElement("option", {
+                            value: selectedId,
+                            text: `${selectedId} (configured model unavailable)`,
+                        }),
+                    );
+                    input.setCustomValidity(
+                        `Configured model '${selectedId}' is unavailable.`,
+                    );
+                    status.textContent = `Configured model '${selectedId}' is not in the model library.`;
+                } else {
+                    input.setCustomValidity("");
+                    if (!models.length) {
+                        status.textContent =
+                            "No models are available. Use Manage Library to create one.";
+                    } else {
+                        void refreshResolution();
+                    }
+                }
+                input.value = selectedId;
+                input.dispatchEvent(new Event("registry-value-loaded"));
+            } catch (error) {
+                input.innerHTML = "";
+                input.appendChild(
+                    createElement("option", {
+                        value: "",
+                        text: "Model library unavailable",
+                    }),
+                );
+                if (configuredId) {
+                    input.appendChild(
+                        createElement("option", {
+                            value: configuredId,
+                            text: `${configuredId} (configured model unavailable)`,
+                        }),
+                    );
+                    input.value = configuredId;
+                    input.dispatchEvent(new Event("registry-value-loaded"));
+                    input.setCustomValidity(
+                        `Unable to verify configured model '${configuredId}'.`,
+                    );
+                }
+                status.textContent = `Unable to load models: ${error.message}`;
+            }
+        }
+
+        input.addEventListener("change", () => {
+            input.setCustomValidity("");
+            void refreshResolution();
+        });
+        input.addEventListener("device-registry-ready", () => {
+            void refreshResolution();
+        });
+        manageButton.addEventListener("click", () => {
+            globalThis.ModelLibraryModal?.open({
+                selectedModelId: input.value,
+                onSelect: (model) => {
+                    // Refresh first so newly created models have a real option.
+                    void loadModels(String(model.id)).then(() => {
+                        input.dispatchEvent(
+                            new Event("change", { bubbles: true }),
+                        );
+                    });
+                },
+            });
+        });
+        // The device control can occur before or after this field in a config schema.
+        queueMicrotask(() => {
+            if (def.device_param) {
+                document
+                    .getElementById(`setting-${def.device_param}`)
+                    ?.addEventListener("change", refreshResolution);
+            }
+        });
+        void loadModels();
+        return { wrapper, getValue: () => input.value };
+    }
+
+    /**
      * Builds the appropriate form field for a parameter definition.
      */
     function buildField(
@@ -734,6 +1138,26 @@ export function registerSettingsPopup() {
             JSON.stringify(currentValue) !== JSON.stringify(originalValue);
 
         const isPathParameter = name.endsWith("_path") && def.type === "str";
+
+        // Registry-backed model/device settings intentionally do not expose custom IDs.
+        if (def.ui_hint === "model_library") {
+            return buildModelLibraryField(
+                name,
+                def,
+                currentValues,
+                originalValues,
+                fieldId,
+            );
+        }
+        if (def.ui_hint === "device_registry") {
+            return buildDeviceRegistryField(
+                name,
+                def,
+                currentValues,
+                originalValues,
+                fieldId,
+            );
+        }
 
         // Handle UI hints for specialized editors
         if (def.ui_hint === "hsv_picker") {
@@ -1055,7 +1479,8 @@ export function registerSettingsPopup() {
                 if (typeof def.max === "number") attrs.max = String(def.max);
                 if (typeof def.step === "number") attrs.step = String(def.step);
                 else if (type === "int") attrs.step = "1";
-                else if (type === "float") attrs.step = inputType === "range" ? "0.001" : "any";
+                else if (type === "float")
+                    attrs.step = inputType === "range" ? "0.001" : "any";
             }
             input = createElement("input", attrs);
             if (inputType === "checkbox") {
@@ -1795,7 +2220,8 @@ export function registerSettingsPopup() {
                 } else {
                     const effectiveInitialValues = { ...(initialValues || {}) };
                     const cameraBusIdParam = config?.parameters?.camera_bus_id;
-                    const currentCameraBusId = effectiveInitialValues.camera_bus_id;
+                    const currentCameraBusId =
+                        effectiveInitialValues.camera_bus_id;
                     const shouldPrefillCameraBusId =
                         cameraBusIdParam?.type === "str" &&
                         normalizedOperationName !== "device_input" &&
@@ -1809,7 +2235,8 @@ export function registerSettingsPopup() {
                                 operationUuid,
                             );
                         if (inferredCameraBusId) {
-                            effectiveInitialValues.camera_bus_id = inferredCameraBusId;
+                            effectiveInitialValues.camera_bus_id =
+                                inferredCameraBusId;
                         }
                     }
 
@@ -2064,10 +2491,24 @@ export function registerSettingsPopup() {
             },
         });
         modal.appendChild(
-            createElement("div", { className: "flex items-center justify-between p-4 border-b border-[#333]" }, [
-                createElement("h3", { className: "text-lg font-semibold text-[#f9c845]", text: "Line Profiling Report" }),
-                createElement("div", { className: "flex gap-2" }, [copyBtn, downloadBtn, closeBtn]),
-            ]),
+            createElement(
+                "div",
+                {
+                    className:
+                        "flex items-center justify-between p-4 border-b border-[#333]",
+                },
+                [
+                    createElement("h3", {
+                        className: "text-lg font-semibold text-[#f9c845]",
+                        text: "Line Profiling Report",
+                    }),
+                    createElement("div", { className: "flex gap-2" }, [
+                        copyBtn,
+                        downloadBtn,
+                        closeBtn,
+                    ]),
+                ],
+            ),
         );
         modal.appendChild(pre);
         overlay.appendChild(modal);
@@ -2100,23 +2541,34 @@ export function registerSettingsPopup() {
         });
 
         async function refreshStatus() {
-            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/status`);
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/line-profiling/status`,
+            );
             const data = await response.json();
             const active = data.active_session;
-            const isThis = active?.pipeline_name === pipelineName && active?.operation_uuid === operationUuid;
+            const isThis =
+                active?.pipeline_name === pipelineName &&
+                active?.operation_uuid === operationUuid;
             statusEl.textContent = `Status: ${isThis ? "running" : active ? "another operation is running" : "idle"}`;
             startBtn.disabled = !pipelineName || !!active;
             stopBtn.disabled = !isThis;
         }
 
         startBtn.onclick = async () => {
-            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/start/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`, { method: "POST" });
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/line-profiling/start/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`,
+                { method: "POST" },
+            );
             const data = await response.json();
-            if (!response.ok || !data.success) alert(data.error || "Failed to start line profiling");
+            if (!response.ok || !data.success)
+                alert(data.error || "Failed to start line profiling");
             await refreshStatus();
         };
         stopBtn.onclick = async () => {
-            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/stop/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`, { method: "POST" });
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/line-profiling/stop/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`,
+                { method: "POST" },
+            );
             const data = await response.json();
             if (!response.ok || !data.success) {
                 alert(data.error || "Failed to stop line profiling");
@@ -2126,16 +2578,35 @@ export function registerSettingsPopup() {
             await refreshStatus();
         };
         reportBtn.onclick = async () => {
-            const response = await fetch(`${BACKEND_BASE_URL}/line-profiling/report/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`);
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/line-profiling/report/${encodeURIComponent(pipelineName)}/${encodeURIComponent(operationUuid)}`,
+            );
             const data = await response.json();
-            if (!response.ok || !data.success) alert(data.error || "No report available");
+            if (!response.ok || !data.success)
+                alert(data.error || "No report available");
             else showLineProfilingReport(data.report || "");
         };
 
-        section.appendChild(createElement("div", { className: "text-sm font-semibold text-[#f9c845]", text: "Line Profiling" }));
-        section.appendChild(createElement("div", { className: "text-xs text-yellow-200", text: "Line profiling adds runtime overhead." }));
+        section.appendChild(
+            createElement("div", {
+                className: "text-sm font-semibold text-[#f9c845]",
+                text: "Line Profiling",
+            }),
+        );
+        section.appendChild(
+            createElement("div", {
+                className: "text-xs text-yellow-200",
+                text: "Line profiling adds runtime overhead.",
+            }),
+        );
         section.appendChild(statusEl);
-        section.appendChild(createElement("div", { className: "flex gap-2 flex-wrap" }, [startBtn, stopBtn, reportBtn]));
+        section.appendChild(
+            createElement("div", { className: "flex gap-2 flex-wrap" }, [
+                startBtn,
+                stopBtn,
+                reportBtn,
+            ]),
+        );
         body.appendChild(section);
         refreshStatus().catch((err) => {
             console.warn("Failed to load line profiling status", err);

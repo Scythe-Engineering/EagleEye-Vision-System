@@ -7,7 +7,8 @@ from typing import Any, cast
 from src.config.utils.pipeline import Pipeline
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from tests.utils.dummy_dependencies import (
-    DummyComputePool,
+    DummyDeviceRegistry,
+    DummyModelLibrary,
     FakeCameraThreadManager,
     FakeEagleEyeInterface,
     FakeNetworkTable,
@@ -32,9 +33,10 @@ def _make_pipeline(config: list[dict[str, Any]], logger: CapturingLogger) -> Pip
     return Pipeline(
         config,
         cast(Any, FakeEagleEyeInterface()),
-        cast(Any, DummyComputePool()),
         cast(Any, FakeNetworkTable()),
         cast(Any, logger),
+        cast(Any, DummyDeviceRegistry()),
+        cast(Any, DummyModelLibrary()),
         cast(Any, camera_manager),
         camera_config_registry=CameraConfigRegistry(),
         camera_bus_ids=["basic_test"],

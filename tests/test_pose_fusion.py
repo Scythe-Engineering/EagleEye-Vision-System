@@ -32,10 +32,7 @@ def create_test_pose(x: float, y: float, z: float, yaw: float) -> np.ndarray:
 
 def test_single_pose():
     """Test fusion with single pose input."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
     pose = create_test_pose(1.0, 2.0, 0.0, 0.5)
 
     result = fusion.run(pose)
@@ -46,10 +43,7 @@ def test_single_pose():
 
 def test_two_similar_poses():
     """Test fusion with two similar poses."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
     pose1 = create_test_pose(1.0, 2.0, 0.0, 0.5)
     pose2 = create_test_pose(1.1, 2.1, 0.0, 0.52)
 
@@ -63,8 +57,7 @@ def test_multiple_poses_with_outlier():
     """Test fusion with 5 poses where 1 is an outlier."""
     fusion = PoseFusion(
         web_interface=MagicMock(),
-        compute_pool=MagicMock(),
-        outlier_threshold=0.5
+        outlier_threshold=0.5,
     )
 
     pose1 = create_test_pose(1.0, 2.0, 0.0, 0.5)
@@ -92,10 +85,7 @@ def test_multiple_poses_with_outlier():
 
 def test_none_input():
     """Test fusion with None input."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
 
     result = fusion.run(None)
 
@@ -104,10 +94,7 @@ def test_none_input():
 
 def test_invalid_pose_shape():
     """Test fusion rejects invalid pose shapes."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
 
     result = fusion.run(np.array([[1, 2], [3, 4]]))
 
@@ -116,10 +103,7 @@ def test_invalid_pose_shape():
 
 def test_mixed_valid_and_invalid():
     """Test fusion filters out invalid poses."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
 
     pose1 = create_test_pose(1.0, 2.0, 0.0, 0.5)
     invalid = np.array([[1, 2], [3, 4]])
@@ -132,10 +116,7 @@ def test_mixed_valid_and_invalid():
 
 def test_weighted_averaging():
     """Test that fusion properly weights poses by distance from cluster."""
-    fusion = PoseFusion(
-        web_interface=MagicMock(),
-        compute_pool=MagicMock()
-    )
+    fusion = PoseFusion(web_interface=MagicMock())
 
     center_pose = create_test_pose(1.0, 2.0, 0.0, 0.5)
     nearby_pose = create_test_pose(1.05, 2.05, 0.0, 0.51)
@@ -155,9 +136,8 @@ def test_update_config():
     """Test update_config method."""
     fusion = PoseFusion(
         web_interface=MagicMock(),
-        compute_pool=MagicMock(),
         outlier_threshold=1.0,
-        rotation_weight=0.5
+        rotation_weight=0.5,
     )
 
     fusion.update_config({"outlier_threshold": 2.0, "rotation_weight": 0.8})

@@ -4,7 +4,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 from src.main_operations.definitions.base.base_class import OperationInstance
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 
 
@@ -17,17 +16,13 @@ class RobotLocalToFieldTransform(OperationInstance):
         Detections in field coordinates with updated position data.
     """
 
-    def __init__(
-        self, web_interface: EagleEyeInterface, compute_pool: ComputePool
-    ) -> None:
+    def __init__(self, web_interface: EagleEyeInterface) -> None:
         """Initialize robot-local to field transform operation.
 
         Args:
             web_interface: Web interface for runtime updates.
-            compute_pool: Compute pool available for device operations.
         """
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self._latest_robot_transform: np.ndarray | None = None
 
     @staticmethod

@@ -1,203 +1,313 @@
-from pathlib import Path
-import traceback
-from typing import List, Optional, Dict, Any
+"""Synchronous Ultralytics YOLO detection for explicit CPU and CUDA devices."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 
-from src.utils.device_management_utils.compute_device import ComputeDevice
-from src.utils.colors import Colors
-from src.main_operations.modules.object_detection.utils.yolov10.yolov10_ops import (
-    YoloV10,
-)
+from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
+from src.utils.model_library import ModelLibrary
+
+Detection = dict[str, Any]
+ModelFactory = Callable[[str], Any]
 
 
 class ObjectDetectionImplementation:
-    """Performs object detection on frames using YOLOv10-style postprocessing.
-
-    This implementation loads a model onto a provided ComputeDevice and performs
-    simplified YOLOv10-style preprocessing and postprocessing.
-
-    Input frame format: np.ndarray BGR (H, W, 3), dtype=uint8.
-    Output detections: list of {
-        "bbox": (x1, y1, x2, y2),  # as percentages (0-1) of image dimensions
-        "score": confidence,
-        "class_id": class_id,
-    }.
-    """
+    """Own and run one Ultralytics detection model on one selected device."""
 
     def __init__(
         self,
-        model_path: Optional[str],
-        device: Optional[ComputeDevice],
-        target_width: int = 416,
-        target_height: int = 416,
-        conf_threshold: float = 0.4,
+        model_id: str,
+        device_id: str,
+        device_registry: DeviceRegistry,
+        model_library: ModelLibrary,
+        confidence_threshold: float = 0.25,
+        iou_threshold: float = 0.45,
         max_detections: int = 100,
-        post_processing_model_path: Optional[str] = None,
-        is_grayscale: bool = False,
+        image_size: int = 0,
+        *,
+        model_factory: ModelFactory | None = None,
     ) -> None:
-        """Initialize the YOLOv10-style object detection implementation.
+        """Load a managed YOLO model for synchronous detection.
 
         Args:
-            model_path: Path to model weights recognized by the device.
-            device: Compute device capable of `load_model` and `run` calls.
-            target_width: Target model input width in pixels.
-            target_height: Target model input height in pixels.
-            conf_threshold: Confidence threshold used for filtering detections.
-            max_detections: Maximum number of detections to return.
-            post_processing_model_path: Path to ONNX post-processing model.
-            is_grayscale: Whether the model expects grayscale input (single channel) instead of RGB.
+            model_id: Stable managed model ID.
+            device_id: Exact canonical device ID.
+            device_registry: Startup hardware inventory.
+            model_library: Managed model and artifact resolver.
+            confidence_threshold: Minimum confidence in the inclusive range [0, 1].
+            iou_threshold: Non-maximum-suppression IoU threshold in [0, 1].
+            max_detections: Maximum detections returned for one frame.
+            image_size: Optional square Ultralytics image-size override. Zero uses
+                model/export metadata.
+            model_factory: Optional Ultralytics-compatible factory for focused tests.
+
+        Raises:
+            ValueError: If configuration is invalid or MX3 is selected.
+            RuntimeError: If the artifact cannot be loaded on the exact device.
         """
-        if target_width <= 0 or target_height <= 0:
-            raise ValueError("target_width and target_height must be positive integers")
-        if not (0.0 <= conf_threshold <= 1.0):
-            raise ValueError("conf_threshold must be in [0.0, 1.0]")
-
-        self.model_path = model_path
-        self.device = device
-        self.post_processing_model_path = post_processing_model_path
-        self.is_grayscale = is_grayscale
-        self.target_width = target_width
-        self.target_height = target_height
-        self.conf_threshold = conf_threshold
-        self.max_detections = max_detections
-
-        # Check if we should use ultralytics directly
-        self._use_ultralytics = (
-            model_path is not None
-            and post_processing_model_path is None
-            and self._is_onnx_or_pt_model(model_path)
+        self._validate_configuration(
+            model_id=model_id,
+            device_id=device_id,
+            confidence_threshold=confidence_threshold,
+            iou_threshold=iou_threshold,
+            max_detections=max_detections,
+            image_size=image_size,
         )
-
-        if self._use_ultralytics:
-            self._init_ultralytics_model()
-        else:
-            self._init_yolov10_ops()
-            if self.device is not None and self.model_path is not None:
-                self._load_model()
-
-        # Register thread access for devices that support it (e.g., MX3)
-        self.stream_idx: int = 0
-        if self.device is not None and hasattr(self.device, "register_thread_access"):
-            self.stream_idx = self.device.register_thread_access() # type: ignore
-            print(
-                f"{Colors.GREEN}Assigned stream index: {self.stream_idx}{Colors.RESET}"
+        self.model_id = model_id
+        self.device_id = device_id
+        self.device_descriptor = device_registry.get(device_id)
+        if self.device_descriptor.device_type == "mx3":
+            raise ValueError(
+                "Synchronous Object Detection does not support MX3. "
+                "Legacy MX3 inference was removed; use MX3 Async Object Detection "
+                "when Stage 2 support is available."
+            )
+        if self.device_descriptor.device_type not in {"cpu", "cuda"}:
+            raise ValueError(
+                f"Unsupported object-detection device: {self.device_descriptor.device_id}"
             )
 
-    def _load_model(self) -> None:
-        """Load the model onto the device if available."""
-        assert self.device is not None
-        assert self.model_path is not None
+        self.model_metadata = model_library.get_model(model_id)
+        self.resolved_artifact = model_library.resolve_artifact(model_id, device_id)
+        self.confidence_threshold = float(confidence_threshold)
+        self.iou_threshold = float(iou_threshold)
+        self.max_detections = int(max_detections)
+        self.image_size = int(image_size)
+        self._onnx_cuda_verified = False
 
-        self.model_name = Path(self.model_path).stem
-
+        factory = model_factory or self._load_ultralytics_factory()
         try:
-            from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
+            self.model = factory(str(self.resolved_artifact.path))
+        except Exception as error:
+            raise RuntimeError(
+                f"Failed to load model {model_id!r} from "
+                f"{self.resolved_artifact.path}: {error}"
+            ) from error
 
-            if isinstance(self.device, MX3Accelerator):
-                self.device.load_model(
-                    self.model_path,
-                    (self.target_height, self.target_width),
-                    self.post_processing_model_path,
-                )
-            else:
-                self.device.load_model(
-                    self.model_path, (self.target_height, self.target_width)
-                )
-        except ImportError:
-            self.device.load_model(
-                self.model_path, (self.target_height, self.target_width)
+        model_task = getattr(self.model, "task", None)
+        if model_task != "detect":
+            raise ValueError(
+                f"Model {model_id!r} has unsupported task {model_task!r}; "
+                "only Ultralytics YOLO detection models are supported"
             )
 
-    def _is_onnx_or_pt_model(self, model_path: str) -> bool:
-        """Check if the model file is ONNX or PyTorch format."""
-        model_extension = Path(model_path).suffix.lower()
-        return model_extension in [".onnx", ".pt"]
+    @staticmethod
+    def _validate_configuration(
+        *,
+        model_id: str,
+        device_id: str,
+        confidence_threshold: float,
+        iou_threshold: float,
+        max_detections: int,
+        image_size: int,
+    ) -> None:
+        """Validate detector configuration before loading model artifacts."""
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("model_id is required")
+        if not isinstance(device_id, str) or not device_id:
+            raise ValueError("device_id is required")
+        if not 0.0 <= float(confidence_threshold) <= 1.0:
+            raise ValueError("confidence_threshold must be in [0.0, 1.0]")
+        if not 0.0 <= float(iou_threshold) <= 1.0:
+            raise ValueError("iou_threshold must be in [0.0, 1.0]")
+        if isinstance(max_detections, bool) or int(max_detections) < 1:
+            raise ValueError("max_detections must be a positive integer")
+        if isinstance(image_size, bool) or int(image_size) < 0:
+            raise ValueError("image_size must be zero or a positive integer")
 
-    def _init_ultralytics_model(self) -> None:
-        """Initialize ultralytics YOLO model for direct inference."""
+    @staticmethod
+    def _load_ultralytics_factory() -> ModelFactory:
+        """Import and return the required Ultralytics YOLO constructor."""
         try:
             from ultralytics import YOLO
+        except ImportError as error:
+            raise RuntimeError(
+                "The ultralytics package is required for Object Detection"
+            ) from error
+        return YOLO
 
-            self.ultralytics_model = YOLO(self.model_path)
-            print(
-                f"{Colors.GREEN}Loaded YOLO model with ultralytics: {self.model_path}{Colors.RESET}"
+    @staticmethod
+    def _verify_onnx_provider_device(session: Any, device: DeviceDescriptor) -> None:
+        """Verify ONNX Runtime's CUDA provider index when it exposes options."""
+        get_provider_options = getattr(session, "get_provider_options", None)
+        if not callable(get_provider_options):
+            return
+        provider_options = get_provider_options()
+        cuda_options = provider_options.get("CUDAExecutionProvider", {})
+        active_device = cuda_options.get("device_id")
+        if active_device is not None and int(active_device) != device.physical_index:
+            raise RuntimeError(
+                "ONNX Runtime activated the wrong CUDA device: "
+                f"expected {device.physical_index}, got {active_device}"
             )
-        except ImportError:
-            raise ImportError(
-                "ultralytics package is required for direct ONNX/.pt model loading. "
-                "Install with: pip install ultralytics"
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to load model with ultralytics: {e}")
 
-    def _init_yolov10_ops(self) -> None:
-        """Initialize YOLOv10 operations for preprocessing and postprocessing."""
-        self.yolov10_ops = YoloV10(
-            original_image_shape=None,  # set at inference time
-            input_shape=(
-                self.target_height,
-                self.target_width,
-                3 if not self.is_grayscale else 1,
-            ),
-            max_det=self.max_detections,
-            conf_threshold=self.conf_threshold,
-        )
-
-    def run(self, frame: np.ndarray) -> List[Dict[str, Any]]:
-        """Run detection on a single frame using YOLOv10-style postprocessing.
+    def update_live_settings(
+        self,
+        *,
+        confidence_threshold: float | None = None,
+        iou_threshold: float | None = None,
+        max_detections: int | None = None,
+    ) -> None:
+        """Apply the per-inference settings that need no model reload.
 
         Args:
-            frame: Input BGR frame.
+            confidence_threshold: New minimum confidence, when supplied.
+            iou_threshold: New non-maximum-suppression IoU threshold, when supplied.
+            max_detections: New per-frame detection cap, when supplied.
 
-        Returns:
-            List of detections as {
-                "bbox": (x1, y1, x2, y2),  # as percentages (0-1) of image dimensions
-                "score": confidence,
-                "class_id": class_id,
-            }.
+        Raises:
+            ValueError: If a supplied value is outside its documented range.
         """
-        if self._use_ultralytics:
-            # Use ultralytics for direct inference
-            results = self.ultralytics_model.predict(
-                source=frame,
-                verbose=False,
-                conf=self.conf_threshold,
-                iou=0.45,
-                max_det=self.max_detections,
-            )
-            # ultralytics results are in pixel coordinates, convert to percentages
-            height, width = frame.shape[:2]
-            detections = []
-            for r in results:
-                for box in r.boxes:
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    score = box.conf[0].item()
-                    class_id = box.cls[0].item()
-                    # Convert to percentages
-                    x1_pct = x1 / width
-                    y1_pct = y1 / height
-                    x2_pct = x2 / width
-                    y2_pct = y2 / height
-                    detections.append(
-                        {
-                            "bbox": (x1_pct, y1_pct, x2_pct, y2_pct),
-                            "score": score,
-                            "class_id": class_id,
-                        }
-                    )
-            return detections
-        else:
-            input_tensor = self.yolov10_ops.preprocess(frame)
-            outputs = self.device.run(
-                self.model_name,
-                input_tensor,
-                (self.target_height, self.target_width),
-                self.stream_idx,
-            )
+        if confidence_threshold is not None:
+            if not 0.0 <= float(confidence_threshold) <= 1.0:
+                raise ValueError("confidence_threshold must be in [0.0, 1.0]")
+            self.confidence_threshold = float(confidence_threshold)
+        if iou_threshold is not None:
+            if not 0.0 <= float(iou_threshold) <= 1.0:
+                raise ValueError("iou_threshold must be in [0.0, 1.0]")
+            self.iou_threshold = float(iou_threshold)
+        if max_detections is not None:
+            if isinstance(max_detections, bool) or int(max_detections) < 1:
+                raise ValueError("max_detections must be a positive integer")
+            self.max_detections = int(max_detections)
 
-            try:
-                return self.yolov10_ops.postprocess(outputs)
-            except Exception as e:
-                print(f"Error running model: {traceback.format_exc()}")
-                raise e
+    def run(self, frame: np.ndarray) -> list[Detection]:
+        """Run synchronous inference and return normalized Python detections."""
+        if not isinstance(frame, np.ndarray) or frame.ndim not in (2, 3):
+            raise ValueError("Object Detection requires a NumPy image frame")
+        if frame.shape[0] <= 0 or frame.shape[1] <= 0:
+            raise ValueError("Object Detection received an empty frame")
+
+        predict_arguments: dict[str, Any] = {
+            "source": frame,
+            "verbose": False,
+            "conf": self.confidence_threshold,
+            "iou": self.iou_threshold,
+            "max_det": self.max_detections,
+            "device": self.device_id,
+        }
+        if self.image_size:
+            predict_arguments["imgsz"] = self.image_size
+
+        try:
+            results = self.model.predict(**predict_arguments)
+        except Exception as error:
+            raise RuntimeError(
+                f"Inference failed for model {self.model_id!r} on "
+                f"{self.device_id}: {error}"
+            ) from error
+
+        if self.resolved_artifact.slot == "onnx" and self.device_id.startswith("cuda:"):
+            self._verify_ultralytics_onnx_provider()
+
+        return self._normalize_results(results, frame.shape[1], frame.shape[0])
+
+    def _verify_ultralytics_onnx_provider(self) -> None:
+        """Verify Ultralytics' actual lazy ONNX backend did not fall back to CPU."""
+        if self._onnx_cuda_verified:
+            return
+        predictor = getattr(self.model, "predictor", None)
+        backend = getattr(predictor, "model", None)
+        session = getattr(backend, "session", None)
+        get_providers = getattr(session, "get_providers", None)
+        if not callable(get_providers):
+            raise RuntimeError(
+                "Unable to verify the active ONNX Runtime provider used by "
+                "Ultralytics; refusing possible CPU fallback"
+            )
+        active_providers = get_providers()
+        if not active_providers or active_providers[0] != "CUDAExecutionProvider":
+            raise RuntimeError(
+                "Ultralytics ONNX inference did not activate CUDAExecutionProvider; "
+                f"active providers: {active_providers}"
+            )
+        self._verify_onnx_provider_device(session, self.device_descriptor)
+        self._onnx_cuda_verified = True
+
+    def _normalize_results(
+        self,
+        results: Sequence[Any],
+        frame_width: int,
+        frame_height: int,
+    ) -> list[Detection]:
+        """Convert Ultralytics detection boxes to the stable output contract."""
+        normalization = np.array(
+            [frame_width, frame_height, frame_width, frame_height],
+            dtype=np.float64,
+        )
+        detections: list[Detection] = []
+        for result in results:
+            if any(
+                getattr(result, attribute, None) is not None
+                for attribute in ("masks", "keypoints", "probs")
+            ):
+                raise ValueError(
+                    "Only YOLO detection outputs are supported; received a "
+                    "segmentation, pose, or classification result"
+                )
+            boxes = getattr(result, "boxes", None)
+            if boxes is None:
+                raise ValueError(
+                    "Model result does not expose detection boxes; arbitrary "
+                    "ONNX detectors are not supported"
+                )
+            coordinates = self._as_float_array(getattr(boxes, "xyxy", None))
+            confidences = self._as_float_array(getattr(boxes, "conf", None)).reshape(-1)
+            class_ids = self._as_float_array(getattr(boxes, "cls", None)).reshape(-1)
+            if coordinates.size == 0:
+                continue
+            if coordinates.ndim != 2 or coordinates.shape[1] != 4:
+                raise ValueError("Malformed Ultralytics detection box output")
+            if not len(coordinates) == len(confidences) == len(class_ids):
+                raise ValueError(
+                    "Ultralytics returned mismatched box, confidence, and class counts"
+                )
+
+            normalized_boxes = np.clip(coordinates / normalization, 0.0, 1.0).tolist()
+            confidence_values = confidences.tolist()
+            class_id_values = class_ids.astype(int).tolist()
+            names = self._class_name_mapping(result)
+            for box_index, normalized_box in enumerate(normalized_boxes):
+                class_id = class_id_values[box_index]
+                detection: Detection = {
+                    "bbox": normalized_box,
+                    "confidence": confidence_values[box_index],
+                    "class_id": class_id,
+                }
+                class_name = names.get(class_id)
+                if class_name is not None:
+                    detection["class_name"] = str(class_name)
+                detections.append(detection)
+        return detections
+
+    @staticmethod
+    def _as_float_array(value: Any) -> np.ndarray:
+        """Convert one batched tensor-like detection field into a float array."""
+        if value is None:
+            raise ValueError("Ultralytics detection boxes are missing a required field")
+        if hasattr(value, "detach"):
+            value = value.detach()
+        if hasattr(value, "cpu"):
+            value = value.cpu()
+        if hasattr(value, "numpy"):
+            value = value.numpy()
+        return np.asarray(value, dtype=np.float64)
+
+    def _class_name_mapping(self, result: Any) -> dict[int, str]:
+        """Resolve ordered library names before model-provided class labels."""
+        if self.model_metadata.class_names:
+            return {
+                index: class_name
+                for index, class_name in enumerate(self.model_metadata.class_names)
+            }
+        names = getattr(result, "names", None)
+        if names is None:
+            names = getattr(self.model, "names", None)
+        if isinstance(names, Mapping):
+            return {int(key): str(value) for key, value in names.items()}
+        if isinstance(names, Sequence) and not isinstance(names, (str, bytes)):
+            return {index: str(value) for index, value in enumerate(names)}
+        return {}

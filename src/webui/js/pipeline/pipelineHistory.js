@@ -176,7 +176,10 @@ class PipelineHistory {
         this._cancelPendingCommit();
         this.isApplyingHistory = true;
         try {
-            this.pipelineStore.loadPipelineData(snapshot.nodes, snapshot.connections);
+            await this.pipelineStore.loadPipelineData(
+                snapshot.nodes,
+                snapshot.connections,
+            );
             if (this.renderCallback) await this.renderCallback();
             if (this.autoSaveCallback) this.autoSaveCallback();
             if (this.postRefreshCallback) await this.postRefreshCallback();

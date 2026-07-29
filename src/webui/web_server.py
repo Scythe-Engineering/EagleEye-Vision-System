@@ -67,6 +67,7 @@ from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
 from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
+from src.webui.web_server_utils.model_library_mixin import ModelLibraryMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
 from src.webui.web_server_utils.pipeline_settings_mixin import PipelineSettingsMixin
@@ -85,6 +86,7 @@ class EagleEyeInterface(
     CameraStreamMixin,
     LineProfilingMixin,
     NetworkManagerMixin,
+    ModelLibraryMixin,
     OperationConfigMixin,
     PipelineConfigMixin,
     PipelineSettingsMixin,
@@ -99,6 +101,8 @@ class EagleEyeInterface(
         dev_mode: bool = False,
         logger: Logger | None = None,
         network_table_instance: Any | None = None,
+        device_registry: Any | None = None,
+        model_library: Any | None = None,
     ):
         """
         Initialize the EagleEyeInterface.
@@ -111,6 +115,8 @@ class EagleEyeInterface(
             dev_mode (bool): Whether to run in development mode.
             logger: Logger instance for logging.
             network_table_instance: Optional ntcore NetworkTableInstance for status reporting.
+            device_registry: Immutable startup inference-device inventory.
+            model_library: Managed model library service.
         """
         self.logger = logger
         self.log = self.logger.log if self.logger is not None else print
@@ -155,6 +161,8 @@ class EagleEyeInterface(
         self.runtime_id = f"{os.getpid()}-{time.time_ns()}"
         self.last_log_message_count = 0
         self.network_table_instance = network_table_instance
+        self.device_registry = device_registry
+        self.model_library = model_library
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
         self._pipeline_settings_lock = threading.RLock()
@@ -567,6 +575,54 @@ class EagleEyeInterface(
             "get_operation_config_data_batch",
             self.get_operation_config_data_batch,
             methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/device-registry",
+            "get_device_registry",
+            self.get_device_registry,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library",
+            "get_model_library",
+            self.get_model_library,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library",
+            "create_model_library_entry",
+            self.create_model_library_entry,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>",
+            "update_model_library_entry",
+            self.update_model_library_entry,
+            methods=["PATCH"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>",
+            "delete_model_library_entry",
+            self.delete_model_library_entry,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/artifacts/<string:slot>",
+            "upload_model_artifact",
+            self.upload_model_artifact,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/artifacts/<string:slot>",
+            "delete_model_artifact",
+            self.delete_model_artifact,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/resolve",
+            "resolve_model_artifact",
+            self.resolve_model_artifact,
+            methods=["GET"],
         )
         self.app.add_url_rule(
             "/get-operation-files/<path:operation_name>/<path:parameter_name>",

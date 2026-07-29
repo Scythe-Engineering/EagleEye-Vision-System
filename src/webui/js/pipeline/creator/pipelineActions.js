@@ -136,7 +136,7 @@ async function loadPipelineIntoBuilder(
             }
         });
 
-        pipelineStore.loadPipelineData(pipelineConfig, allConnections);
+        await pipelineStore.loadPipelineData(pipelineConfig, allConnections);
         await renderCurrentPipeline?.({ centerView });
         updateRunButton();
         updatePipelineCameraNote();

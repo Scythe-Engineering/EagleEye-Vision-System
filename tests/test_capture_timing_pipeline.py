@@ -12,7 +12,6 @@ from src.secondary_operations.device_input import DeviceInput
 from src.utils.timing import TimedValue, TimingMetadata
 from tests.utils.dummy_data import dummy_frame
 from tests.utils.dummy_dependencies import (
-    DummyComputePool,
     FakeCameraThreadManager,
     FakeEagleEyeInterface,
 )
@@ -37,7 +36,6 @@ def test_device_input_returns_frame_packet_with_capture_timing() -> None:
 
     packet = DeviceInput(
         web_interface=FakeEagleEyeInterface(),
-        compute_pool=DummyComputePool(),
         camera_manager=manager,
         camera_bus_id="1",
     ).run(None)

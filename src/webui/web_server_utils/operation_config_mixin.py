@@ -7,6 +7,10 @@ from typing import Any, List
 
 from flask import request
 
+from src.config.utils.port_validation import (
+    DynamicPortGroup,
+    resolve_dynamic_port_group,
+)
 from src.webui.web_server_utils.apriltag_map_sanitizer import sanitize_apriltag_map_file
 from src.webui.web_server_utils.constants import SRC_DIR
 
@@ -205,6 +209,24 @@ class OperationConfigMixin:
 
         return result, 200
 
+    @staticmethod
+    def _resolve_dynamic_group_safely(
+        config_data: dict[str, Any], direction: str
+    ) -> DynamicPortGroup | None:
+        """Resolve a dynamic group, tolerating malformed definitions when serving.
+
+        Args:
+            config_data: Raw operation configuration definition.
+            direction: Either ``input`` or ``output``.
+
+        Returns:
+            The resolved group, or ``None`` when absent or malformed.
+        """
+        try:
+            return resolve_dynamic_port_group(config_data, direction)
+        except ValueError:
+            return None
+
     def _normalize_dynamic_group_config(
         self, config_data: dict[str, Any]
     ) -> dict[str, Any]:
@@ -267,43 +289,26 @@ class OperationConfigMixin:
             coupled_groups = coupled_groups.lower() == "true"
         normalized_group["coupled_groups"] = bool(coupled_groups)
 
-        input_nodes = config_data.get("input_nodes") or []
-        output_nodes = config_data.get("output_nodes") or []
-
-        input_base_name = normalized_group.get(
-            "input_base_name"
-        ) or normalized_group.get("input_node")
-        output_base_name = normalized_group.get(
-            "output_base_name"
-        ) or normalized_group.get("output_node")
-
-        if not input_base_name:
-            if input_nodes:
-                candidate = input_nodes[-1]
-                if isinstance(candidate, dict):
-                    input_base_name = candidate.get("name")
-                elif isinstance(candidate, str):
-                    input_base_name = candidate
-            if not input_base_name:
-                input_base_name = "data"
+        resolved_input_group = self._resolve_dynamic_group_safely(config_data, "input")
+        resolved_output_group = self._resolve_dynamic_group_safely(
+            config_data, "output"
+        )
+        input_base_name = (
+            resolved_input_group.base_name if resolved_input_group else None
+        ) or "data"
         normalized_group["input_base_name"] = input_base_name
-
-        if not output_base_name:
-            if output_nodes:
-                candidate = output_nodes[-1]
-                if isinstance(candidate, dict):
-                    output_base_name = candidate.get("name")
-                elif isinstance(candidate, str):
-                    output_base_name = candidate
-            if not output_base_name:
-                output_base_name = input_base_name
-        normalized_group["output_base_name"] = output_base_name
+        normalized_group["output_base_name"] = (
+            resolved_output_group.base_name if resolved_output_group else None
+        ) or input_base_name
 
         config_data["dynamic_group"] = normalized_group
         return config_data
 
     def _validate_numeric_operation_params(
-        self, operation_name: str, action_params: dict[str, Any], config_def: dict[str, Any]
+        self,
+        operation_name: str,
+        action_params: dict[str, Any],
+        config_def: dict[str, Any],
     ) -> list[str]:
         """Validate numeric operation parameters against config definition bounds."""
         errors: list[str] = []
@@ -333,6 +338,132 @@ class OperationConfigMixin:
                 errors.append(f"{param} must be <= {maximum}")
         return errors
 
+    def _operation_resource_warnings(
+        self,
+        operation_name: str,
+        action_params: dict[str, Any],
+        config_def: dict[str, Any],
+    ) -> list[str]:
+        """Report device and managed-model problems without blocking a save.
+
+        Configurations may legitimately reference hardware or artifacts that are
+        absent while authoring, so unresolvable references are reported and the
+        pipeline fails explicitly at start instead.
+
+        Args:
+            operation_name: Operation name used in log messages.
+            action_params: Configured operation parameters.
+            config_def: Operation configuration definition.
+
+        Returns:
+            Human-readable warnings, empty when every reference resolves.
+        """
+        parameters = config_def.get("parameters") or {}
+        device_parameters = [
+            name
+            for name, definition in parameters.items()
+            if isinstance(definition, dict)
+            and definition.get("ui_hint") == "device_registry"
+        ]
+        model_parameters = [
+            name
+            for name, definition in parameters.items()
+            if isinstance(definition, dict)
+            and definition.get("ui_hint") == "model_library"
+        ]
+        if not device_parameters and not model_parameters:
+            return []
+
+        device_registry = getattr(self, "device_registry", None)
+        model_library = getattr(self, "model_library", None)
+
+        warnings: list[str] = []
+        for parameter_name in device_parameters:
+            device_id = action_params.get(parameter_name)
+            if not isinstance(device_id, str) or not device_id:
+                warnings.append(
+                    f"{operation_name}.{parameter_name}: no device selected"
+                )
+                continue
+            if device_registry is None:
+                warnings.append(
+                    f"{operation_name}.{parameter_name}: device registry is unavailable"
+                )
+                continue
+
+            allowed_kinds = parameters[parameter_name].get("allowed_device_kinds")
+            try:
+                descriptor = device_registry.get(device_id)
+            except (KeyError, RuntimeError, TypeError) as error:
+                warnings.append(f"{operation_name}.{parameter_name}: {error}")
+                continue
+            if descriptor is None:
+                warnings.append(
+                    f"{operation_name}.{parameter_name}: unknown device ID "
+                    f"{device_id!r}"
+                )
+                continue
+            # The WebUI exposes this descriptor value as ``device.kind``.
+            device_kind = descriptor.device_type
+            if isinstance(allowed_kinds, list) and device_kind not in allowed_kinds:
+                warnings.append(
+                    f"{operation_name}.{parameter_name}: {descriptor.device_id} "
+                    f"has kind {device_kind!r}, expected one of {allowed_kinds}"
+                )
+
+        selected_device_id = next(
+            (action_params.get(name) for name in device_parameters),
+            None,
+        )
+        for parameter_name in model_parameters:
+            model_id = action_params.get(parameter_name)
+            if not isinstance(model_id, str) or not model_id:
+                warnings.append(f"{operation_name}.{parameter_name}: no model selected")
+                continue
+            if not isinstance(selected_device_id, str) or not selected_device_id:
+                continue
+            if model_library is None:
+                warnings.append(
+                    f"{operation_name}.{parameter_name}: model library is unavailable"
+                )
+                continue
+            try:
+                model_library.resolve_artifact(model_id, selected_device_id)
+            except (KeyError, RuntimeError) as error:
+                warnings.append(f"{operation_name}.{parameter_name}: {error}")
+        return warnings
+
+    def validate_operation_params(
+        self, operation_name: str, action_params: dict[str, Any]
+    ) -> None:
+        """Validate one operation's parameters and log unresolved references.
+
+        Args:
+            operation_name: Operation name or filename.
+            action_params: Configured operation parameters.
+
+        Raises:
+            ValueError: If a parameter violates its declared type or bounds.
+        """
+        config_def = self.get_operation_config_data(operation_name, True)
+        if not config_def or "parameters" not in config_def:
+            config_def = self.get_operation_config_data(operation_name, False)
+        if not config_def or "parameters" not in config_def:
+            return
+
+        validation_errors = self._validate_numeric_operation_params(
+            operation_name, action_params, config_def
+        )
+        if validation_errors:
+            raise ValueError(
+                f"Invalid configuration for {operation_name}: "
+                + "; ".join(validation_errors)
+            )
+        for warning in self._operation_resource_warnings(
+            operation_name, action_params, config_def
+        ):
+            self.log(f"Warning: {warning}")
+
     def _reorder_operation_params(
         self, operation_name: str, action_params: dict[str, Any]
     ) -> dict[str, Any]:
@@ -352,14 +483,7 @@ class OperationConfigMixin:
                 config_def = self.get_operation_config_data(operation_name, False)
 
             if config_def and "parameters" in config_def:
-                validation_errors = self._validate_numeric_operation_params(
-                    operation_name, action_params, config_def
-                )
-                if validation_errors:
-                    raise ValueError(
-                        f"Invalid configuration for {operation_name}: "
-                        + "; ".join(validation_errors)
-                    )
+                self.validate_operation_params(operation_name, action_params)
 
                 param_order = list(config_def["parameters"].keys())
                 reordered_params = {}
@@ -390,8 +514,6 @@ class OperationConfigMixin:
         extension_map = {
             "camera_parameters_path": [".json"],
             "apriltag_map_path": [".fmap", ".json"],
-            "model_path": [".onnx", ".dfp", ".pt"],
-            "post_processing_model_path": [".onnx"],
         }
         return extension_map.get(parameter_name, [])
 
@@ -488,14 +610,18 @@ class OperationConfigMixin:
                     "error": f"No file extensions defined for parameter {parameter_name}"
                 }, 400
 
-            file_ext = Path(file.filename).suffix.lower()
+            safe_filename = Path(file.filename).name
+            if safe_filename != file.filename:
+                return {"error": "Filename must not contain a path"}, 400
+
+            file_ext = Path(safe_filename).suffix.lower()
             if file_ext not in allowed_extensions:
                 return {
                     "error": f"Invalid file extension. Allowed: {', '.join(allowed_extensions)}"
                 }, 400
 
             parameter_dir = self._ensure_parameter_directory(parameter_name)
-            file_path = parameter_dir / file.filename
+            file_path = parameter_dir / safe_filename
 
             file.save(str(file_path))
             if parameter_name == "apriltag_map_path":
@@ -503,18 +629,18 @@ class OperationConfigMixin:
                 if fixes:
                     self.log(
                         f"Auto-fixed {fixes} invalid AprilTag map transform values in "
-                        f"{file.filename}"
+                        f"{safe_filename}"
                     )
 
             self.log(
-                f"Uploaded file {file.filename} for {operation_name}/{parameter_name}"
+                f"Uploaded file {safe_filename} for {operation_name}/{parameter_name}"
             )
 
             relative_path = parameter_dir.relative_to(Path(SRC_DIR).parent)
-            full_path = f"{{project_root}}/{relative_path}/{file.filename}"
+            full_path = f"{{project_root}}/{relative_path}/{safe_filename}"
             return {
                 "success": True,
-                "filename": file.filename,
+                "filename": safe_filename,
                 "path": full_path,
             }, 200
         except Exception as e:
@@ -536,6 +662,8 @@ class OperationConfigMixin:
             Tuple of (response dict, status code).
         """
         try:
+            if Path(filename).name != filename:
+                return {"error": "Filename must not contain a path"}, 400
             parameter_dir = self._ensure_parameter_directory(parameter_name)
             file_path = parameter_dir / filename
 

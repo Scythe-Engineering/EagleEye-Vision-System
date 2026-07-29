@@ -1,5 +1,64 @@
 // Central store for pipeline state, nodes, connections, and related UI events.
+import { getCachedConfig, prefetchConfigs } from "./operationConfigCache.js";
 import { uid } from "./utils.js";
+
+/** Return a declared port name from a string or object declaration. */
+function declaredPortName(node) {
+    return typeof node === "object" && node?.name
+        ? String(node.name)
+        : String(node);
+}
+
+/** Validate a static or indexed dynamic port against cached operation metadata. */
+function isDeclaredPort(config, direction, portName) {
+    if (!config || typeof config !== "object") return false;
+    const nodes = Array.isArray(config[`${direction}_nodes`])
+        ? config[`${direction}_nodes`]
+        : [];
+    const dynamicGroup =
+        config.dynamic_group && typeof config.dynamic_group === "object"
+            ? config.dynamic_group
+            : null;
+    let dynamicBase = null;
+    let dynamicEnabled = false;
+    let dynamicMaximum = null;
+    if (dynamicGroup) {
+        if (direction === "input") {
+            dynamicEnabled = dynamicGroup.input_dynamic_group !== false;
+            dynamicBase =
+                dynamicGroup.input_base_name ||
+                dynamicGroup.input_node ||
+                dynamicGroup.input_prefix ||
+                null;
+            dynamicMaximum = dynamicGroup.max_inputs;
+        } else {
+            dynamicEnabled = Boolean(
+                dynamicGroup.output_dynamic_group ||
+                    dynamicGroup.mirrored_output_group,
+            );
+            dynamicBase =
+                dynamicGroup.output_base_name ||
+                dynamicGroup.output_node ||
+                dynamicGroup.output_prefix ||
+                null;
+            dynamicMaximum = dynamicGroup.max_outputs;
+        }
+        if (!dynamicBase && nodes.length) {
+            dynamicBase = declaredPortName(nodes.at(-1));
+        }
+    }
+
+    const staticNames = nodes
+        .map(declaredPortName)
+        .filter((name) => !dynamicEnabled || name !== dynamicBase);
+    if (staticNames.includes(portName)) return true;
+    if (!dynamicEnabled || !dynamicBase) return false;
+    const escapedBase = dynamicBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = portName.match(new RegExp(`^${escapedBase}_(\\d+)$`));
+    if (!match || Number(match[1]) < 1) return false;
+    const maximum = Number.parseInt(dynamicMaximum, 10);
+    return !Number.isFinite(maximum) || Number(match[1]) <= maximum;
+}
 
 class PipelineNode {
     /**
@@ -371,12 +430,17 @@ class PipelineStore {
             if (!currentUuid || visited.has(currentUuid)) continue;
             visited.add(currentUuid);
 
-            const upstreamNode = this.state.currentPipeline.nodes.get(currentUuid);
+            const upstreamNode =
+                this.state.currentPipeline.nodes.get(currentUuid);
             if (!upstreamNode) continue;
 
             if (this.isDeviceInputNode(upstreamNode)) {
                 const busId = upstreamNode.config?.camera_bus_id;
-                if (busId !== undefined && busId !== null && String(busId) !== "") {
+                if (
+                    busId !== undefined &&
+                    busId !== null &&
+                    String(busId) !== ""
+                ) {
                     deviceInputBusIds.add(String(busId));
                 }
                 continue;
@@ -406,7 +470,10 @@ class PipelineStore {
             const originalConfig = node.originalConfig || {};
             const exposesCameraBusId =
                 Object.prototype.hasOwnProperty.call(config, "camera_bus_id") ||
-                Object.prototype.hasOwnProperty.call(originalConfig, "camera_bus_id");
+                Object.prototype.hasOwnProperty.call(
+                    originalConfig,
+                    "camera_bus_id",
+                );
             const currentValue = config.camera_bus_id;
 
             if (
@@ -465,6 +532,37 @@ class PipelineStore {
                 fromId,
                 toId,
             });
+            return null;
+        }
+
+        const sourceNode = this.state.currentPipeline.nodes.get(fromUuid);
+        const destinationNode = this.state.currentPipeline.nodes.get(toUuid);
+        const sourceConfig = getCachedConfig(
+            sourceNode?.operationId,
+            Boolean(sourceNode?.isSecondary),
+        );
+        const destinationConfig = getCachedConfig(
+            destinationNode?.operationId,
+            Boolean(destinationNode?.isSecondary),
+        );
+        if (sourceConfig == null) {
+            console.warn(
+                `Connection output port could not be validated: config unavailable for ${sourceNode?.operationId ?? fromId}`,
+            );
+        } else if (!isDeclaredPort(sourceConfig, "output", fromPort)) {
+            console.error(
+                `Connection rejected: ${fromPort} is not a declared output port`,
+            );
+            return null;
+        }
+        if (destinationConfig == null) {
+            console.warn(
+                `Connection input port could not be validated: config unavailable for ${destinationNode?.operationId ?? toId}`,
+            );
+        } else if (!isDeclaredPort(destinationConfig, "input", toPort)) {
+            console.error(
+                `Connection rejected: ${toPort} is not a declared input port`,
+            );
             return null;
         }
 
@@ -901,8 +999,9 @@ class PipelineStore {
      *
      * @param {Array<Object>} configItems Serialized node config items.
      * @param {Array<Object>} [connectionsData=[]] Serialized connection items.
+     * @returns {Promise<void>} Resolves once persisted connections are restored.
      */
-    loadPipelineData(configItems, connectionsData = []) {
+    async loadPipelineData(configItems, connectionsData = []) {
         this.clearPipeline();
 
         const uuidToNode = new Map();
@@ -924,6 +1023,19 @@ class PipelineStore {
                 }
             }
         });
+
+        const operationsToPrefetch = [
+            ...new Map(
+                Array.from(uuidToNode.values()).map((node) => [
+                    `${node.operationId}:${node.isSecondary ? 1 : 0}`,
+                    {
+                        name: node.operationId,
+                        isSecondary: Boolean(node.isSecondary),
+                    },
+                ]),
+            ).values(),
+        ];
+        await prefetchConfigs(operationsToPrefetch);
 
         this.suppressCameraAutoSelect = true;
         try {

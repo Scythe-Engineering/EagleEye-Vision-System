@@ -24,9 +24,8 @@ from src.utils.camera_utils.camera_thread_manager import (  # noqa: E402
 from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
     CameraConfigRegistry,
 )
-from src.utils.device_management_utils.compute_pool import ComputePool  # noqa: E402
-from src.utils.device_management_utils.cpu import CPU  # noqa: E402
-from src.utils.get_available_devices import get_available_devices  # noqa: E402
+from src.utils.device_registry import DeviceRegistry  # noqa: E402
+from src.utils.model_library import ModelLibrary  # noqa: E402
 from src.webui.web_server import DEFAULT_GENERAL_CONF, EagleEyeInterface  # noqa: E402
 import ntcore  # noqa: E402
 
@@ -42,12 +41,6 @@ if not build_success:
     logger.log(f"{Colors.RED}{error_msg}{Colors.RESET}")
     raise RuntimeError(error_msg)
 logger.log(f"{Colors.GREEN}Rust implementations built successfully.{Colors.RESET}")
-
-# Discover hardware devices early for compute pool initialization
-available_devices = get_available_devices(logger=logger)
-logger.log(
-    f"{Colors.CYAN}Detected Available Devices:{Colors.RESET} {available_devices}"
-)
 
 current_dir = Path(__file__).parent
 
@@ -69,10 +62,11 @@ with general_conf_path.open("r", encoding="utf-8") as f:
 
 class MainBackend:
     def __init__(self, logger: Logger):
-        try:
-            self.logger = logger
-            self.pipelines: Dict[str, Pipeline] = {}
+        self.logger = logger
+        self.pipelines: Dict[str, Pipeline] = {}
+        self.camera_manager: CameraThreadManager | None = None
 
+        try:
             self.logger.log(
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
@@ -83,12 +77,28 @@ class MainBackend:
             network_tables_inst.setServer(general_conf["network_table_address"])
             self.network_table = network_tables_inst.getTable("EagleEye")
 
+            # Hardware discovery happens once during backend initialization.
+            self.device_registry = DeviceRegistry.discover(logger=self.logger)
+            self.model_library = ModelLibrary(
+                root=current_dir.parent / "files" / "models",
+                pipeline_config_path=pipeline_conf_path,
+            )
+            descriptor_ids = [
+                descriptor.device_id
+                for descriptor in self.device_registry.descriptors()
+            ]
+            self.logger.log(
+                f"{Colors.CYAN}Detected inference devices: {descriptor_ids}{Colors.RESET}"
+            )
+
             # Web interface, camera manager, and known camera cache
             self.web_interface = EagleEyeInterface(
                 restart_callback=self.restart,
                 pipeline_objects_callback=self.get_pipelines,
                 logger=self.logger,
                 network_table_instance=network_tables_inst,
+                device_registry=self.device_registry,
+                model_library=self.model_library,
             )
             self.camera_manager = CameraThreadManager(
                 self.web_interface, logger=self.logger
@@ -114,17 +124,14 @@ class MainBackend:
                     f"{Colors.YELLOW}Proceeding with pipeline creation despite camera readiness timeout.{Colors.RESET}"
                 )
 
-            # Compute pool setup
-            self.compute_pool = ComputePool()
-            self._initialize_compute_devices()
-
             # Pipeline creation and start-up
             self.pipelines = generate_all_pipelines(
                 self.web_interface,
-                self.compute_pool,
                 self.network_table,
                 self.camera_manager,
                 self.camera_config_registry,
+                self.device_registry,
+                self.model_library,
                 logger=self.logger,
             )
 
@@ -137,9 +144,7 @@ class MainBackend:
                     )
                     continue
                 missing_bus_ids = [
-                    bus_id
-                    for bus_id in bus_ids
-                    if bus_id not in available_bus_ids
+                    bus_id for bus_id in bus_ids if bus_id not in available_bus_ids
                 ]
                 if missing_bus_ids:
                     self.logger.log(
@@ -160,96 +165,9 @@ class MainBackend:
                 self.logger.log(
                     f"{Colors.CYAN}Detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
-        except KeyboardInterrupt:
+        except BaseException:
             self.shutdown()
-
-    def _initialize_compute_devices(self) -> None:
-        """
-        Initialize and add all available compute devices to the compute pool.
-        """
-        # Add CPU device if available
-        if available_devices.get("CPU"):
-            cpu_device = CPU()
-            self.compute_pool.add_compute_device(cpu_device)
-            self.logger.log(
-                f"{Colors.GREEN}Added CPU device: {available_devices['CPU'][0]}{Colors.RESET}"
-            )
-
-        # Set logger for MX3 module if available
-        if available_devices.get("MX3"):
-            from src.utils.device_management_utils.mx3_accelerator import set_mx3_logger
-
-            set_mx3_logger(self.logger)
-
-        self._initialize_tpu_devices()
-        self._initialize_gpu_devices()
-
-    def _initialize_tpu_devices(self) -> None:
-        """
-        Add TPU devices to the compute pool.
-        """
-        tpu_devices = available_devices.get("TPU", [])
-        if not tpu_devices:
-            return
-
-        from src.utils.device_management_utils.mx3_accelerator import MX3Accelerator
-
-        for tpu_device in tpu_devices:
-            if not tpu_device.startswith("memx:"):
-                self.logger.log(
-                    f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
-                )
-                continue
-
-            try:
-                # Extract device index from memx:X
-                device_parts = tpu_device.split(":", 1)
-                if len(device_parts) != 2:
-                    self.logger.log(
-                        f"{Colors.YELLOW}Warning: Invalid TPU device format '{tpu_device}', expected 'memx:X'. Skipping.{Colors.RESET}"
-                    )
-                    continue
-
-                device_index = device_parts[1]
-                mx3_device = MX3Accelerator(
-                    device_id=f"MX3_{device_index}", logger=self.logger
-                )
-                self.compute_pool.add_compute_device(mx3_device)
-
-                self.logger.log(
-                    f"{Colors.GREEN}Added Memryx TPU device: {tpu_device}{Colors.RESET}"
-                )
-            except Exception as e:
-                self.logger.log(
-                    f"{Colors.YELLOW}Warning: Failed to add TPU device '{tpu_device}': {e}. Skipping.{Colors.RESET}"
-                )
-
-    def _initialize_gpu_devices(self) -> None:
-        """
-        Add GPU devices to the compute pool.
-        """
-        gpu_devices = available_devices.get("GPU", [])
-        if not gpu_devices:
-            return
-
-        from src.utils.device_management_utils.gpu import GPU
-
-        for gpu_index, gpu_device_name in enumerate(gpu_devices):
-            try:
-                gpu_device = GPU(device_id=f"GPU_{gpu_index}")
-                self.compute_pool.add_compute_device(gpu_device)
-
-                self.logger.log(
-                    f"{Colors.GREEN}Added GPU device {gpu_index}: {gpu_device_name}{Colors.RESET}"
-                )
-            except RuntimeError as e:
-                self.logger.log(
-                    f"{Colors.YELLOW}Warning: Failed to add GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                )
-            except Exception as e:
-                self.logger.log(
-                    f"{Colors.YELLOW}Warning: Unexpected error adding GPU device '{gpu_device_name}': {e}. Skipping.{Colors.RESET}"
-                )
+            raise
 
     def get_pipelines(self) -> Dict[str, Pipeline]:
         """
@@ -258,38 +176,42 @@ class MainBackend:
         return self.pipelines
 
     def shutdown(self, restart_service: bool = False) -> None:
-        """
-        Shutdown the backend.
+        """Stop camera workers and optionally restart the systemd service.
 
         Args:
-            restart_service: If True, trigger a systemctl restart of the service after shutdown.
+            restart_service: Restart the system service after cameras stop.
         """
+        if self.camera_manager is not None:
+            self.camera_manager.stop_all_cameras()
+
         if restart_service:
+            service_name = os.environ.get("SERVICE_NAME", "eagleeye")
             self.logger.log(
-                f"{Colors.CYAN}Restarting systemctl service...{Colors.RESET}"
+                f"{Colors.CYAN}Restarting systemctl service: {service_name}{Colors.RESET}"
             )
             try:
-                # Get the service name from environment or use a default
-                service_name = os.environ.get("SERVICE_NAME", "eagleeye")
                 subprocess.run(
                     ["sudo", "systemctl", "restart", service_name],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
-                self.logger.log(
-                    f"{Colors.GREEN}Successfully restarted systemctl service: {service_name}{Colors.RESET}"
+            except subprocess.CalledProcessError as error:
+                error_message = (
+                    f"Failed to restart systemctl service: {service_name}, "
+                    f"return code: {error.returncode}"
                 )
-            except subprocess.CalledProcessError as e:
-                error_msg = f"Failed to restart systemctl service: {service_name}, return code: {e.returncode}"
-                if e.stdout:
-                    error_msg += f", stdout: {e.stdout}"
-                if e.stderr:
-                    error_msg += f", stderr: {e.stderr}"
-                self.logger.log(f"{Colors.RED}{error_msg}{Colors.RESET}")
-                raise RuntimeError(error_msg) from e
+                if error.stdout:
+                    error_message += f", stdout: {error.stdout}"
+                if error.stderr:
+                    error_message += f", stderr: {error.stderr}"
+                self.logger.log(f"{Colors.RED}{error_message}{Colors.RESET}")
+                raise RuntimeError(error_message) from error
 
-        return None
+            self.logger.log(
+                f"{Colors.GREEN}Successfully restarted systemctl service: "
+                f"{service_name}{Colors.RESET}"
+            )
 
     def restart(self) -> None:
         """
@@ -299,13 +221,16 @@ class MainBackend:
 
 
 def main() -> None:
-    """Main function to initialize and continuously monitor for cameras."""
+    """Initialize the backend and stop it on process interruption."""
+    backend: MainBackend | None = None
     try:
         backend = MainBackend(logger=logger)
         while True:
             sleep(1)
     except KeyboardInterrupt:
-        if "backend" in globals():
+        pass
+    finally:
+        if backend is not None:
             backend.shutdown()
 
 

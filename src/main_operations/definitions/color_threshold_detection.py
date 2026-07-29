@@ -6,7 +6,6 @@ from typing import List, Dict, Any, Optional
 from src.main_operations.modules.object_detection.color_threshold_detection.implementation import (
     ColorThresholdDetectionImplementation,
 )
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 from src.main_operations.definitions.base.base_class import OperationInstance
@@ -44,7 +43,6 @@ class ColorThresholdDetectionDefinition(OperationInstance):
         morphology_iterations: int = 2,
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
-        compute_pool: ComputePool | None = None,
     ) -> None:
         """Initialize color threshold detection operation.
 
@@ -70,7 +68,6 @@ class ColorThresholdDetectionDefinition(OperationInstance):
         self.camera_bus_id = camera_bus_id
         self.camera_config_registry = camera_config_registry
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
 
         self.camera_matrix: Optional[np.ndarray] = None
         self.distortion_coefficients: Optional[np.ndarray] = None

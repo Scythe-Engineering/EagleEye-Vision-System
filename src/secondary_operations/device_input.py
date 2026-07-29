@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.timing import FramePacket, TimedValue
 from src.webui.web_server import EagleEyeInterface
 
@@ -35,7 +34,7 @@ class DeviceInput(OperationInstance):
             (height, width, 3) for color images.
 
     Example:
-        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "1", 90)
+        >>> device_input = DeviceInput(web_interface, camera_manager, "1", 90)
         >>> frame = device_input.run(None)
         >>> if frame is not None:
         ...     print(frame.shape)  # e.g., (720, 1280, 3)
@@ -46,7 +45,6 @@ class DeviceInput(OperationInstance):
     def __init__(
         self,
         web_interface: EagleEyeInterface,
-        compute_pool: ComputePool,
         camera_manager: "CameraThreadManager",
         camera_bus_id: str,
         frame_rotation: int = 0,
@@ -55,13 +53,11 @@ class DeviceInput(OperationInstance):
 
         Args:
             web_interface: Web interface for runtime updates.
-            compute_pool: Compute pool available for device operations.
             camera_manager: Camera thread manager to fetch frames from.
             camera_bus_id: USB bus identifier for the camera to read frames from.
             frame_rotation: Rotation angle in degrees (0, 90, 180, or 270). Defaults to 0.
         """
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self.camera_manager = camera_manager
         self.camera_bus_id = camera_bus_id
         self.frame_rotation = self._normalize_rotation(frame_rotation)
