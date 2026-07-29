@@ -9,8 +9,31 @@ import {
 } from "../ui/modal.js";
 
 const ARTIFACT_SLOTS = ["pt", "onnx", "engine", "mx3_dfp", "mx3_postprocessor"];
+const ARTIFACT_LABELS = {
+    pt: "PyTorch (.pt)",
+    onnx: "ONNX (.onnx)",
+    engine: "TensorRT (.engine)",
+    mx3_dfp: "MX3 DFP (.dfp)",
+    mx3_postprocessor: "MX3 postprocessor (.onnx)",
+};
 const INPUT_CLASS =
     "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]";
+
+/**
+ * Detects the artifact slot represented by a selected model filename.
+ * @param {string} filename Selected file name.
+ * @returns {string} Model-library artifact slot.
+ */
+export function detectArtifactSlot(filename) {
+    const lowerName = filename.toLowerCase();
+    if (lowerName.endsWith(".pt")) return "pt";
+    if (lowerName.endsWith(".engine")) return "engine";
+    if (lowerName.endsWith(".dfp")) return "mx3_dfp";
+    if (lowerName.endsWith(".onnx")) {
+        return lowerName.includes("postprocess") ? "mx3_postprocessor" : "onnx";
+    }
+    throw new Error("Choose a .pt, .onnx, .engine, or .dfp model file.");
+}
 
 /**
  * Registers the reusable model-library management modal.
@@ -29,6 +52,8 @@ export function registerModelLibraryModal() {
     let listEl;
     let editorEl;
     let messageEl;
+    let draftValues = null;
+    const pendingArtifacts = new Map();
 
     /**
      * Returns an error message from an API response without assuming its shape.
@@ -129,7 +154,7 @@ export function registerModelLibraryModal() {
      * @param {string} modelId Stable model ID.
      * @param {string} slot Artifact slot name.
      * @param {File} file Selected artifact file.
-     * @returns {Promise<void>}
+     * @returns {Promise<object>} Upload response payload.
      */
     async function uploadArtifact(modelId, slot, file) {
         const formData = new FormData();
@@ -139,13 +164,7 @@ export function registerModelLibraryModal() {
             { method: "POST", body: formData },
         );
         if (!response.ok) throw new Error(await responseError(response));
-        const data = await response.json();
-        await refresh();
-        setMessage(
-            data.restart_required
-                ? `${slot} uploaded. Affected pipelines require backend restart.`
-                : `${slot} uploaded.`,
-        );
+        return response.json();
     }
 
     /**
@@ -183,6 +202,8 @@ export function registerModelLibraryModal() {
                 text: "New Model",
                 onClick: () => {
                     selectedModelId = null;
+                    draftValues = null;
+                    pendingArtifacts.clear();
                     render();
                 },
             }),
@@ -202,6 +223,8 @@ export function registerModelLibraryModal() {
                 className: `w-full text-left p-3 border-b border-[#414141] hover:bg-[#2a2a2a] ${active ? "bg-[#3a3218]" : ""}`,
                 onClick: () => {
                     selectedModelId = model.id;
+                    draftValues = null;
+                    pendingArtifacts.clear();
                     render();
                 },
             });
@@ -238,7 +261,7 @@ export function registerModelLibraryModal() {
         const nameInput = createElement("input", {
             className: INPUT_CLASS,
             type: "text",
-            value: model?.display_name || "",
+            value: model?.display_name || draftValues?.displayName || "",
             placeholder: "Display name",
         });
         const classesInput = createElement("textarea", {
@@ -246,15 +269,22 @@ export function registerModelLibraryModal() {
             placeholder: "One class name per line (optional)",
             text: Array.isArray(model?.class_names)
                 ? model.class_names.join("\n")
-                : "",
+                : draftValues?.classNames || "",
         });
         const profileInput = createElement("textarea", {
             className: `${INPUT_CLASS} min-h-24 font-mono text-xs`,
             placeholder: "Optional MX3 profile JSON",
             text: model?.mx3_profile
                 ? JSON.stringify(model.mx3_profile, null, 2)
-                : "",
+                : draftValues?.mx3Profile || "",
         });
+        const preserveDraft = () => {
+            draftValues = {
+                displayName: nameInput.value,
+                classNames: classesInput.value,
+                mx3Profile: profileInput.value,
+            };
+        };
         const form = createElement("div", { className: "space-y-3" }, [
             title,
             createElement("label", {
@@ -276,9 +306,11 @@ export function registerModelLibraryModal() {
         const saveButton = createElement("button", {
             type: "button",
             className:
-                "px-3 py-2 bg-[#f9c845] text-[#232323] rounded hover:bg-[#d4a83a] text-sm font-medium",
+                "px-3 py-2 bg-[#f9c845] text-[#232323] rounded hover:bg-[#d4a83a] disabled:opacity-50 text-sm font-medium",
             text: isNew ? "Create Model" : "Save Details",
             onClick: async () => {
+                saveButton.disabled = true;
+                saveButton.textContent = isNew ? "Creating…" : "Saving…";
                 try {
                     const payload = modelPayload(
                         nameInput,
@@ -302,97 +334,185 @@ export function registerModelLibraryModal() {
                         data.model?.id ||
                         model?.id ||
                         selectedModelId;
+
+                    const queuedArtifacts = created
+                        ? [...pendingArtifacts.entries()]
+                        : [];
+                    pendingArtifacts.clear();
+                    draftValues = null;
+                    const uploadFailures = [];
+                    let restartRequired = data.restart_required;
+                    for (const [slot, file] of queuedArtifacts) {
+                        try {
+                            const upload = await uploadArtifact(
+                                selectedModelId,
+                                slot,
+                                file,
+                            );
+                            restartRequired ||= upload.restart_required;
+                        } catch (error) {
+                            uploadFailures.push(
+                                `${file.name}: ${error.message}`,
+                            );
+                        }
+                    }
+
                     await refresh();
-                    setMessage(
-                        created
-                            ? "Model created."
-                            : data.restart_required
-                              ? "Model details saved. Affected pipelines require backend restart."
-                              : "Model details saved.",
-                    );
+                    if (uploadFailures.length) {
+                        setMessage(
+                            `Model created, but some formats could not be uploaded: ${uploadFailures.join("; ")}`,
+                            true,
+                        );
+                    } else {
+                        setMessage(
+                            created
+                                ? queuedArtifacts.length
+                                    ? "Model created and formats uploaded."
+                                    : "Model created."
+                                : restartRequired
+                                  ? "Model details saved. Affected pipelines require backend restart."
+                                  : "Model details saved.",
+                        );
+                    }
                 } catch (error) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = isNew
+                        ? "Create Model"
+                        : "Save Details";
                     setMessage(error.message, true);
                 }
             },
         });
         form.appendChild(saveButton);
 
-        if (model) {
-            const artifacts = model.artifacts || {};
-            form.appendChild(
-                createElement("h4", {
-                    className: "text-sm font-semibold text-[#f9c845] pt-2",
-                    text: "Artifacts",
+        const artifacts = model?.artifacts || {};
+        form.appendChild(
+            createElement("h4", {
+                className: "text-sm font-semibold text-[#f9c845] pt-3",
+                text: "Model formats",
+            }),
+        );
+        const fileInput = createElement("input", {
+            type: "file",
+            accept: ".pt,.onnx,.engine,.dfp",
+            className: "hidden",
+            "aria-label": "Choose a model file",
+            onChange: async () => {
+                const file = fileInput.files?.[0];
+                if (!file) return;
+                try {
+                    const slot = detectArtifactSlot(file.name);
+                    if (model) {
+                        uploadButton.disabled = true;
+                        uploadButton.textContent = "Uploading…";
+                        const data = await uploadArtifact(model.id, slot, file);
+                        await refresh();
+                        setMessage(
+                            data.restart_required
+                                ? `${ARTIFACT_LABELS[slot]} uploaded. Affected pipelines require backend restart.`
+                                : `${ARTIFACT_LABELS[slot]} uploaded.`,
+                        );
+                    } else {
+                        preserveDraft();
+                        pendingArtifacts.set(slot, file);
+                        renderEditor(null);
+                        setMessage(
+                            `${ARTIFACT_LABELS[slot]} is ready to upload after the model is created.`,
+                        );
+                    }
+                } catch (error) {
+                    fileInput.value = "";
+                    setMessage(error.message, true);
+                    uploadButton.disabled = false;
+                    uploadButton.textContent = "Upload Model";
+                }
+            },
+        });
+        const uploadButton = createElement("button", {
+            type: "button",
+            className:
+                "w-fit px-3 py-2 bg-[#333] text-white rounded hover:bg-[#444] disabled:opacity-50 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            text: "Upload Model",
+            onClick: () => fileInput.click(),
+        });
+        form.appendChild(
+            createElement("div", { className: "flex flex-col gap-2" }, [
+                uploadButton,
+                fileInput,
+                createElement("p", {
+                    className: "text-xs text-[#c7a84f]",
+                    text: "Supported formats: .pt, .onnx, .engine, and .dfp",
                 }),
-            );
-            ARTIFACT_SLOTS.forEach((slot) => {
-                const artifact = artifacts[slot];
-                const row = createElement("div", {
-                    className: "border border-[#414141] rounded p-2 space-y-2",
-                });
-                row.appendChild(
+            ]),
+        );
+
+        const listedArtifacts = ARTIFACT_SLOTS.flatMap((slot) => {
+            const artifact = artifacts[slot];
+            const pendingFile = isNew ? pendingArtifacts.get(slot) : null;
+            if (!artifact && !pendingFile) return [];
+            const row = createElement("div", {
+                className:
+                    "flex flex-wrap items-center justify-between gap-2 border border-[#414141] rounded p-2",
+            });
+            row.appendChild(
+                createElement("div", { className: "min-w-0" }, [
                     createElement("div", {
                         className: "text-sm text-white",
-                        text: `${slot}: ${artifact?.filename || "not uploaded"}`,
+                        text: ARTIFACT_LABELS[slot],
                     }),
-                );
-                const fileInput = createElement("input", {
-                    type: "file",
-                    className: "text-xs text-gray-300 w-full",
-                });
-                const uploadButton = createElement("button", {
+                    createElement("div", {
+                        className: "text-xs text-[#c7a84f] break-all",
+                        text: pendingFile
+                            ? `${pendingFile.name} · Pending`
+                            : artifact.filename,
+                    }),
+                ]),
+            );
+            row.appendChild(
+                createElement("button", {
                     type: "button",
                     className:
-                        "px-2 py-1 bg-[#333] text-white rounded hover:bg-[#444] text-xs",
-                    text: "Upload",
+                        "px-2 py-1 bg-red-700 text-white rounded hover:bg-red-600 text-xs focus:outline-none focus:ring-2 focus:ring-red-300",
+                    text: pendingFile ? "Clear" : "Remove",
                     onClick: async () => {
-                        if (!fileInput.files?.[0]) {
-                            setMessage(`Choose a file for ${slot}.`, true);
+                        if (pendingFile) {
+                            preserveDraft();
+                            pendingArtifacts.delete(slot);
+                            renderEditor(null);
                             return;
                         }
                         try {
-                            await uploadArtifact(
-                                model.id,
-                                slot,
-                                fileInput.files[0],
-                            );
+                            await removeArtifact(model.id, slot);
                         } catch (error) {
                             setMessage(
-                                `Could not upload ${slot}: ${error.message}`,
+                                `Could not remove ${ARTIFACT_LABELS[slot]}: ${error.message}`,
                                 true,
                             );
                         }
                     },
-                });
-                row.appendChild(
-                    createElement(
-                        "div",
-                        { className: "flex gap-2 items-center" },
-                        [fileInput, uploadButton],
-                    ),
-                );
-                if (artifact) {
-                    row.appendChild(
-                        createElement("button", {
-                            type: "button",
-                            className:
-                                "px-2 py-1 bg-red-700 text-white rounded hover:bg-red-600 text-xs",
-                            text: "Remove",
-                            onClick: async () => {
-                                try {
-                                    await removeArtifact(model.id, slot);
-                                } catch (error) {
-                                    setMessage(
-                                        `Could not remove ${slot}: ${error.message}`,
-                                        true,
-                                    );
-                                }
-                            },
-                        }),
-                    );
-                }
-                form.appendChild(row);
-            });
+                }),
+            );
+            return [row];
+        });
+        if (listedArtifacts.length) {
+            form.appendChild(
+                createElement(
+                    "div",
+                    { className: "space-y-2" },
+                    listedArtifacts,
+                ),
+            );
+        } else {
+            form.appendChild(
+                createElement("p", {
+                    className:
+                        "rounded border border-dashed border-[#414141] p-3 text-sm text-gray-300",
+                    text: "No model formats uploaded yet.",
+                }),
+            );
+        }
+
+        if (model) {
             const references = Array.isArray(model.referenced_by)
                 ? model.referenced_by
                 : [];
@@ -455,6 +575,8 @@ export function registerModelLibraryModal() {
 
     /** Hides the model-library modal. */
     function close() {
+        draftValues = null;
+        pendingArtifacts.clear();
         hideModal(overlay);
     }
 
@@ -473,8 +595,9 @@ export function registerModelLibraryModal() {
         overlayId: "modelLibraryOverlay",
         modalId: "modelLibraryModal",
         overlayClassName:
-            "fixed inset-0 bg-black bg-opacity-50 z-[60] hidden flex items-center justify-center",
-        overlayStyle: null,
+            "fixed inset-0 z-[60] hidden flex items-center justify-center",
+        overlayStyle:
+            "background-color: rgba(0, 0, 0, 0.25); backdrop-filter: blur(6px);",
         modalClassName:
             "bg-[#1a1a1a] rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[90vh] flex flex-col border border-[#414141]",
     }));
@@ -492,17 +615,20 @@ export function registerModelLibraryModal() {
     header.appendChild(
         createElement("button", {
             type: "button",
-            className: "text-gray-300 hover:text-white text-xl",
+            className:
+                "text-gray-300 hover:text-white text-xl focus:outline-none focus:ring-2 focus:ring-[#f9c845] rounded",
             text: "×",
+            "aria-label": "Close Model Library",
             onClick: close,
         }),
     );
     messageEl = createElement("div", { className: "hidden" });
     listEl = createElement("div", {
-        className: "w-full md:w-2/5 border-r border-[#414141] overflow-y-auto",
+        className:
+            "eagle-scrollbar w-full md:w-2/5 border-r border-[#414141] overflow-y-auto",
     });
     editorEl = createElement("div", {
-        className: "w-full md:w-3/5 p-4 overflow-y-auto",
+        className: "eagle-scrollbar w-full md:w-3/5 p-4 overflow-y-auto",
     });
     modal.appendChild(header);
     modal.appendChild(
