@@ -9,7 +9,7 @@ alwaysApply: false
 
 - [ ] **Choose Operation Type** - Determine if this is a main operation (complex, >200 lines) or secondary operation (simple, <200 lines)
 - [ ] **Create Implementation File** - Place in `src/main_operations/definitions/` or `src/secondary_operations/` with correct naming
-- [ ] **Implement Constructor** - Include automatic injection parameters (`web_interface`, `compute_pool`) and operation-specific params
+- [ ] **Implement Constructor** - Request only required injectable services and operation-specific params
 - [ ] **Implement Run Method** - Create `run(self, input)` method with proper input/output types and documentation
 - [ ] **Create Config Definition** - Add `{operation_name}_config_def.json` file with parameters, validation, and metadata
 - [ ] **Update Pipeline Config** - Add operation entry to `src/config/pipeline_config.json` with `action_name` and `action_params`
@@ -40,14 +40,13 @@ alwaysApply: false
 
 ### Automatic Injection
 
-- Include `web_interface` parameter → injects `EagleEyeInterface`
-- Include `compute_pool` parameter → injects `ComputePool`
-- Use parameter names (not annotations) for injection detection
+- Request only services the operation uses (`web_interface`, `device_registry`, `model_library`, `network_table`, camera services, or `logger`)
+- Injection inspects exact constructor parameters, not local variables
 
 ### Parameter Sources
 
 - Operation-specific params via `action_params` in `pipeline_config.json`
-- Injected params for `web_interface` and `compute_pool`
+- Shared services are injected only for matching constructor parameters
 - All other parameters must come from `action_params`
 
 ## Run Method Contract
@@ -97,25 +96,20 @@ Each category directory contains operation-specific subdirectories with implemen
 ### Example Structure
 
 ```python
-# src/main_operations/modules/object_detection/yolo_detection/implementation.py
-class YoloDetectionImplementation:
-    def __init__(self, model_path: str, device: object, confidence_threshold: float = 0.5):
-        self.model_path = model_path
-        self.device = device
-        self.confidence_threshold = confidence_threshold
+# src/main_operations/modules/{category}/{operation_name}/implementation.py
+class ExampleImplementation:
+    def __init__(self, threshold: float = 0.5):
+        self.threshold = threshold
 
     def run(self, frame: np.ndarray) -> list:
-        # Heavy detection logic here
-        return detections
+        return []
 
-# src/main_operations/definitions/yolo_detection.py
-from src.main_operations.modules.object_detection.yolo_detection.implementation import YoloDetectionImplementation
-from src.utils.device_management_utils.compute_pool import ComputePool
+# src/main_operations/definitions/{operation_name}.py
+from src.main_operations.modules.{category}.{operation_name}.implementation import ExampleImplementation
 
-class YoloDetectionDefinition:
-    def __init__(self, model_path: str, device_id: str, compute_pool: ComputePool, confidence_threshold: float = 0.5):
-        device = compute_pool.get_compute_device(device_id)
-        self.delegate = YoloDetectionImplementation(model_path, device, confidence_threshold)
+class ExampleDefinition:
+    def __init__(self, threshold: float = 0.5):
+        self.delegate = ExampleImplementation(threshold)
 
     def run(self, frame: np.ndarray) -> list:
         return self.delegate.run(frame)

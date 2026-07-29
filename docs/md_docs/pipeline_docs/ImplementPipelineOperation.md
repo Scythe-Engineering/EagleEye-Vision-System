@@ -15,10 +15,9 @@ and standalone dynamic outputs), see
 ### Constructor args and automatic injection
 
 - Supply operation-specific parameters via `action_params` in `pipeline_config.json`.
-- If the constructor parameter name includes `web_interface`, the pipeline will inject `EagleEyeInterface` automatically.
-- If it includes `compute_pool`, the pipeline will inject `ComputePool` automatically.
-- Parameter names (not annotations) are used for injection; other args must come from `action_params`.
-- These injection points are optional: omit `web_interface` or `compute_pool` from your constructor when the operation does not need those shared resources, and the pipeline will simply not inject them.
+- The pipeline inspects actual constructor parameters and injects requested backend services by exact parameter name: `web_interface`, `device_registry`, `model_library`, `network_table`, camera services, and `logger`.
+- Other arguments must come from `action_params`.
+- Injection is optional. Do not declare or store a shared service that the operation does not use.
 
 ### run contract
 
@@ -57,10 +56,11 @@ Minimal example — implementation:
 ```python
 # src/modules/my_op/implementation.py
 import numpy as np
+
 class MyOpImplementation:
-    def __init__(self, model_path: str, device: object, threshold: float = 0.1):
-        self.model_path = model_path
-        self.device = device
+    def __init__(self, threshold: float = 0.1):
+        self.threshold = threshold
+
     def run(self, frame: np.ndarray) -> np.ndarray:
         return frame
 ```
@@ -70,11 +70,11 @@ Minimal example — wrapper (definition):
 ```python
 # src/main_operations/definitions/my_op.py
 from src.modules.my_op.implementation import MyOpImplementation
-from src.utils.device_management_utils.compute_pool import ComputePool
+
 class MyOpDefinition:
-    def __init__(self, model_path: str, device_id: str, compute_pool: ComputePool, threshold: float = 0.1):
-        device = compute_pool.get_compute_device(device_id)
-        self.delegate = MyOpImplementation(model_path, device, threshold)
+    def __init__(self, threshold: float = 0.1):
+        self.delegate = MyOpImplementation(threshold)
+
     def run(self, frame):
         return self.delegate.run(frame)
 ```
@@ -87,8 +87,6 @@ Single action entry in `src/config/pipeline_config.json`:
 {
     "action_name": "my_op",
     "action_params": {
-        "model_path": "/models/model.onnx",
-        "device_id": "MX3",
         "threshold": 0.1
     }
 }
@@ -175,41 +173,7 @@ Example with parameters from secondary operation (`velocity_based_filtering_conf
 }
 ```
 
-Example with parameters from main operation (`apriltag_cnn_preprocessor_config_def.json`):
-
-```json
-{
-    "class_name": "ApriltagCnnPreprocessorDefinition",
-    "description": "Enhances AprilTag detection speed by preprocessing camera images with a convolutional neural network to crop the input image to the area of interest",
-    "category": "prep",
-    "parameters": {
-        "model_path": {
-            "type": "str",
-            "description": "Path to the trained model weights file",
-            "default": "{project_root}/models/apriltag_cnn/model.pth",
-            "required": true,
-            "restart_for_change": true
-        },
-        "device_id": {
-            "type": "str",
-            "description": "The id of the computation device for processing",
-            "options": ["CPU", "CUDA", "MX3_001", "CORAL"],
-            "default": "MX3_001",
-            "required": true,
-            "restart_for_change": true
-        },
-        "conf_threshold": {
-            "type": "float",
-            "description": "Confidence threshold for predictions (0.0 to 1.0)",
-            "default": 0.15,
-            "min": 0.0,
-            "max": 1.0,
-            "required": false,
-            "restart_for_change": false
-        }
-    }
-}
-```
+For managed detection models, use a required stable `model_id` with `ui_hint: "model_library"` and a required canonical `device_id` with `ui_hint: "device_registry"`. Do not expose arbitrary model paths or old device aliases.
 
 ### Data Source Operations
 
@@ -251,7 +215,8 @@ Example data source config definition (`get_networktables_value_config_def.json`
 - [ ] For secondary operations: create `{operation_name}_config_def.json` in `src/secondary_operations/config_data/`.
 - [ ] Keep definitions thin; implementation lives under `src/modules/` when logic is non-trivial.
 - [ ] Assign every operation to an existing `category` and `folder` whenever applicable.
-- [ ] Provide constructor params via `action_params` and rely on automatic injection for `web_interface` / `compute_pool`.
+- [ ] Provide operation params via `action_params` and request only backend services the operation actually uses.
+- [ ] Return a mapping keyed by every declared output when defining multiple outputs; single-output dictionaries remain ordinary payloads.
 - [ ] Implement `run` and document I/O types.
 - [ ] Test by generating pipelines and feeding a small `np.ndarray` frame through `Pipeline.run`.
 

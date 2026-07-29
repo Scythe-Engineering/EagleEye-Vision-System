@@ -86,6 +86,28 @@ The EagleEye WebUI provides a comprehensive REST API and Server-Sent Events (SSE
 - **Response**: JSON array of robot names
 - **Use**: Robot model selection
 
+### Inference Devices and Model Library
+
+#### `GET /device-registry`
+
+Returns the immutable startup inventory with canonical IDs (`cpu`, `cuda:N`, and `mx3:N`) and separate hardware display labels.
+
+#### `GET|POST /model-library`
+
+Lists managed models or creates a model metadata record with a stable ID.
+
+#### `PATCH|DELETE /model-library/<model_id>`
+
+Updates model display metadata without changing references, or deletes an unreferenced model.
+
+#### `POST|DELETE /model-library/<model_id>/artifacts/<slot>`
+
+Replaces or removes one managed artifact slot. Referenced pipelines are marked as requiring restart.
+
+#### `GET /model-library/<model_id>/resolve?device_id=<canonical_id>`
+
+Shows the artifact selected by deterministic device-specific priority.
+
 ### Pipeline Management
 
 #### `GET /get-available-operations`
