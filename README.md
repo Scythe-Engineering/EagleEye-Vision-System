@@ -50,5 +50,3 @@ EagleEye Framework © 2025 by ScytheEngineering is licensed under CC BY-NC 4.0. 
 
 ## Contributors
 - [DarkEden-coding](https://github.com/DarkEden-coding) - Main Contributor
-
-[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=Scythe-Engineering_EagleEye-Object-Detection)](https://sonarcloud.io/summary/new_code?id=Scythe-Engineering_EagleEye-Object-Detection) [![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg)](https://sonarcloud.io/summary/new_code?id=Scythe-Engineering_EagleEye-Object-Detection)
