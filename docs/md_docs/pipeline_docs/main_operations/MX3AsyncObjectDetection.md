@@ -38,6 +38,14 @@ The managed model requires an `mx3_dfp`, an optional cropped `mx3_postprocessor`
 
 `yolo_nms_xyxy` expects the post-model output to contain rows of `[x1, y1, x2, y2, confidence, class_id]` in model-input pixel coordinates. Unsupported profiles fail explicitly.
 
+## Compiling an ONNX model
+
+Upload the ONNX artifact in **Model Library**, then select **Compile for MX3** beside it. Guided mode uses the detected static input size and the YOLO26 profile above. Advanced mode exposes the supported compiler and runtime-profile settings.
+
+Compilation runs one job at a time through the local `mx_nc` installed in the deployed uv environment. The popup may be closed while it runs; reopening it restores the current stage, progress, and compiler log. A successful job installs the generated DFP and optional `_post.onnx` atomically. Replacing an existing MX3 bundle requires confirmation, and referenced pipelines require a backend restart.
+
+Other ONNX architectures may compile, but this operation still requires the profile and output contract documented above.
+
 ## Runtime behavior
 
 All streams selecting the same `mx3:N` and DFP share one local-mode `MxAccl` runtime with distinct stream IDs. Selecting different DFPs on one physical MX3 fails. Pipeline disable pauses only its stream; re-enable resumes from the newest camera frame. Runtime failures require a pipeline/service restart and never fall back to CPU.

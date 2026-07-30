@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { registerMx3CompilationModal } from "./mx3CompilationModal.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -56,6 +57,7 @@ export function registerModelLibraryModal() {
     let editorEl;
     let messageEl;
     let draftValues = null;
+    let captureDraft = () => {};
     const pendingArtifacts = new Map();
 
     /**
@@ -257,6 +259,9 @@ export function registerModelLibraryModal() {
     function renderEditor(model) {
         editorEl.innerHTML = "";
         const isNew = !model;
+        const currentModelId = model?.id ?? null;
+        const matchingDraft =
+            draftValues?.modelId === currentModelId ? draftValues : null;
         const title = createElement("h3", {
             className: "text-lg font-semibold text-[#f9c845]",
             text: isNew ? "New Model" : "Edit Model",
@@ -264,30 +269,37 @@ export function registerModelLibraryModal() {
         const nameInput = createElement("input", {
             className: INPUT_CLASS,
             type: "text",
-            value: model?.display_name || draftValues?.displayName || "",
+            value: matchingDraft?.displayName || model?.display_name || "",
             placeholder: "Display name",
         });
         const classesInput = createElement("textarea", {
             className: `${INPUT_CLASS} min-h-20`,
             placeholder: "One class name per line (optional)",
-            text: Array.isArray(model?.class_names)
-                ? model.class_names.join("\n")
-                : draftValues?.classNames || "",
+            text:
+                matchingDraft?.classNames ??
+                (Array.isArray(model?.class_names)
+                    ? model.class_names.join("\n")
+                    : ""),
         });
         const profileInput = createElement("textarea", {
             className: `${INPUT_CLASS} min-h-24 font-mono text-xs`,
             placeholder: "Optional MX3 profile JSON",
-            text: model?.mx3_profile
-                ? JSON.stringify(model.mx3_profile, null, 2)
-                : draftValues?.mx3Profile || "",
+            text:
+                matchingDraft?.mx3Profile ??
+                (model?.mx3_profile
+                    ? JSON.stringify(model.mx3_profile, null, 2)
+                    : ""),
         });
+        /** Preserves the current editor values across a compilation refresh. */
         const preserveDraft = () => {
             draftValues = {
+                modelId: currentModelId,
                 displayName: nameInput.value,
                 classNames: classesInput.value,
                 mx3Profile: profileInput.value,
             };
         };
+        captureDraft = preserveDraft;
         const form = createElement("div", { className: "space-y-3" }, [
             title,
             createElement("label", {
@@ -471,7 +483,37 @@ export function registerModelLibraryModal() {
                     }),
                 ]),
             );
-            row.appendChild(
+            const artifactActions = createElement("div", {
+                className: "flex items-center gap-2",
+            });
+            if (slot === "onnx" && model && !pendingFile) {
+                const activeElsewhere =
+                    isCompilationActive && compilation?.model_id !== model.id;
+                artifactActions.appendChild(
+                    createElement("button", {
+                        type: "button",
+                        id: `mx3Compile-${model.id}`,
+                        className:
+                            "px-2 py-1 bg-[#f9c845] text-[#232323] rounded hover:bg-[#d4a83a] disabled:opacity-50 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+                        text:
+                            isCompilationActive &&
+                            compilation?.model_id === model.id
+                                ? "View compilation"
+                                : "Compile for MX3",
+                        title: activeElsewhere
+                            ? "Another MX3 compilation is active; open its status"
+                            : "",
+                        onClick: (event) => {
+                            preserveDraft();
+                            mx3CompilationModal.open(
+                                model,
+                                event.currentTarget,
+                            );
+                        },
+                    }),
+                );
+            }
+            artifactActions.appendChild(
                 createElement("button", {
                     type: "button",
                     className:
@@ -495,6 +537,7 @@ export function registerModelLibraryModal() {
                     },
                 }),
             );
+            row.appendChild(artifactActions);
             return [row];
         });
         if (listedArtifacts.length) {
@@ -579,7 +622,9 @@ export function registerModelLibraryModal() {
     /** Hides the model-library modal. */
     function close() {
         draftValues = null;
+        captureDraft = () => {};
         pendingArtifacts.clear();
+        mx3CompilationModal.close();
         hideModal(overlay);
     }
 
@@ -593,6 +638,35 @@ export function registerModelLibraryModal() {
         showModal(overlay);
         void refresh();
     }
+
+    let compilation = null;
+    let isCompilationActive = false;
+    const mx3CompilationModal = registerMx3CompilationModal({
+        onStatusChange: (status) => {
+            captureDraft();
+            const wasActive = isCompilationActive;
+            const previousModelId = compilation?.model_id;
+            compilation = status;
+            isCompilationActive = [
+                "running",
+                "cancelling",
+                "queued",
+                "pending",
+                "starting",
+                "installing",
+            ].includes(String(status?.state || "").toLowerCase());
+            if (
+                wasActive !== isCompilationActive ||
+                previousModelId !== compilation?.model_id
+            ) {
+                render();
+            }
+        },
+        onSucceeded: () => {
+            captureDraft();
+            void refresh();
+        },
+    });
 
     ({ overlay, modal } = getOrCreateModalElements({
         overlayId: "modelLibraryOverlay",
@@ -648,7 +722,10 @@ export function registerModelLibraryModal() {
         ),
     );
     closeOnBackdropClick(overlay, close);
-    closeOnEscape(overlay, close);
+    closeOnEscape(overlay, () => {
+        if (!mx3CompilationModal.isOpen()) close();
+    });
+    document.addEventListener("backend-disconnected", close);
 
     const popup = { open, close, refresh };
     globalThis.ModelLibraryModal = popup;

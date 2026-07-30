@@ -67,6 +67,7 @@ class MainBackend:
         self.pipelines: Dict[str, Pipeline] = {}
         self.camera_manager: CameraThreadManager | None = None
         self.mx3_coordinator: Mx3RuntimeCoordinator | None = None
+        self.web_interface: EagleEyeInterface | None = None
 
         try:
             self.logger.log(
@@ -181,7 +182,16 @@ class MainBackend:
         return self.pipelines
 
     def shutdown(self, restart_service: bool = False) -> None:
-        """Stop pipelines, MX3 runtimes, cameras, then optionally restart."""
+        """Stop compilation, pipelines, MX3 runtimes, cameras, then optionally restart."""
+        if (
+            self.web_interface is not None
+            and self.web_interface.mx3_compiler is not None
+        ):
+            try:
+                self.web_interface.mx3_compiler.shutdown()
+            except Exception as error:
+                self.logger.log(f"MX3 compiler shutdown failed: {error}")
+
         for pipeline in tuple(self.pipelines.values()):
             try:
                 pipeline.stop()

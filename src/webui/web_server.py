@@ -19,6 +19,7 @@ from werkzeug.serving import make_server
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.mx3_compiler import Mx3CompilerService
 from src.utils.camera_utils.camera_config_manager import (
     CameraConfigRegistry,
 )
@@ -163,6 +164,9 @@ class EagleEyeInterface(
         self.network_table_instance = network_table_instance
         self.device_registry = device_registry
         self.model_library = model_library
+        self.mx3_compiler = (
+            Mx3CompilerService(model_library) if model_library is not None else None
+        )
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
         self._pipeline_settings_lock = threading.RLock()
@@ -171,6 +175,7 @@ class EagleEyeInterface(
         self._system_update_id = None
         self._latest_system_update_progress = None
         self._system_update_target_branch = None
+        self._last_mx3_compilation_publish = 0.0
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
         self._refresh_view_stream_settings()
@@ -334,7 +339,9 @@ class EagleEyeInterface(
         self.app.add_url_rule(
             "/background.webp",
             "background",
-            lambda: send_from_directory(str(Path(__file__).resolve().parent / "assets"), "background.webp"),
+            lambda: send_from_directory(
+                str(Path(__file__).resolve().parent / "assets"), "background.webp"
+            ),
         )
         self.app.add_url_rule(
             "/assets/<path:filename>",
@@ -623,6 +630,24 @@ class EagleEyeInterface(
             "resolve_model_artifact",
             self.resolve_model_artifact,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library/mx3-compilation",
+            "get_mx3_compilation",
+            self.get_mx3_compilation,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/mx3-compilation",
+            "start_mx3_compilation",
+            self.start_mx3_compilation,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/mx3-compilation/<string:job_id>",
+            "cancel_mx3_compilation",
+            self.cancel_mx3_compilation,
+            methods=["DELETE"],
         )
         self.app.add_url_rule(
             "/get-operation-files/<path:operation_name>/<path:parameter_name>",

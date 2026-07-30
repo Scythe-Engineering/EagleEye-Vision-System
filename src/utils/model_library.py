@@ -91,6 +91,19 @@ class ModelLibrary:
         if not self.manifest_path.exists():
             self._write_manifest({"version": 1, "models": {}})
         self._load_manifest()
+        self._cleanup_stale_generated_artifacts()
+
+    def _cleanup_stale_generated_artifacts(self) -> None:
+        """Remove superseded generated MX3 files left from earlier compilations."""
+        active_paths = {
+            relative_path
+            for record in self._load_manifest()["models"].values()
+            for relative_path in record["artifacts"].values()
+        }
+        for pattern in ("*/mx3_dfp-*.dfp", "*/mx3_postprocessor-*.onnx"):
+            for path in self.root.glob(pattern):
+                if path.relative_to(self.root).as_posix() not in active_paths:
+                    path.unlink(missing_ok=True)
 
     def _load_manifest(self) -> dict[str, Any]:
         """Load and minimally validate the model manifest."""
@@ -373,6 +386,161 @@ class ModelLibrary:
             if previous_relative_path and previous_relative_path != relative_path:
                 (self.root / previous_relative_path).unlink(missing_ok=True)
             return self._public_metadata(record), self.references(model_id)
+
+    def install_mx3_bundle(
+        self,
+        model_id: str,
+        dfp_source: str | os.PathLike[str],
+        postprocessor_source: str | os.PathLike[str] | None,
+        profile: Mapping[str, Any],
+        *,
+        overwrite: bool = False,
+        expected_bundle: tuple[str | None, str | None, Mapping[str, Any] | None]
+        | None = None,
+        expected_onnx: tuple[str, int, int] | None = None,
+    ) -> tuple[ModelMetadata, tuple[str, ...]]:
+        """Atomically make a compiled DFP, optional post model, and profile current.
+
+        The files receive generation-specific names before a single manifest swap.
+        Consequently readers see either the old complete MX3 bundle or the new
+        complete bundle, never a partially copied compilation result.  Replacing
+        a bundle is deliberately opt-in because active pipelines must be
+        restarted to consume the new manifest entry.
+        """
+        from src.utils.mx3_runtime import Mx3Profile, Mx3RuntimeError
+
+        try:
+            normalized_profile = Mx3Profile.from_metadata(profile).to_metadata()
+        except Mx3RuntimeError as error:
+            raise ArtifactError(f"Invalid MX3 profile: {error}") from error
+
+        dfp_path = Path(dfp_source)
+        post_path = (
+            Path(postprocessor_source) if postprocessor_source is not None else None
+        )
+        if (
+            not dfp_path.is_file()
+            or dfp_path.suffix.lower() != ".dfp"
+            or dfp_path.stat().st_size == 0
+        ):
+            raise ArtifactError(
+                "MX3 bundle DFP source must be a non-empty existing .dfp file"
+            )
+        if post_path is not None and (
+            not post_path.is_file()
+            or post_path.suffix.lower() != ".onnx"
+            or post_path.stat().st_size == 0
+        ):
+            raise ArtifactError(
+                "MX3 bundle postprocessor source must be an existing .onnx file"
+            )
+
+        with self._lock:
+            data = self._load_manifest()
+            record = data["models"].get(model_id)
+            if record is None:
+                raise ModelNotFoundError(f"Unknown model ID: {model_id!r}")
+            if expected_onnx is not None:
+                current_onnx = record["artifacts"].get("onnx")
+                if current_onnx is None:
+                    raise ArtifactError(
+                        "ONNX artifact changed while compilation was running"
+                    )
+                current_onnx_path = self._managed_artifact_path(current_onnx)
+                current_onnx_state = (
+                    current_onnx,
+                    current_onnx_path.stat().st_size,
+                    current_onnx_path.stat().st_mtime_ns,
+                )
+                if current_onnx_state != expected_onnx:
+                    raise ArtifactError(
+                        "ONNX artifact changed while compilation was running"
+                    )
+
+            current_bundle = (
+                record["artifacts"].get("mx3_dfp"),
+                record["artifacts"].get("mx3_postprocessor"),
+                record.get("mx3_profile"),
+            )
+            if expected_bundle is not None and current_bundle != expected_bundle:
+                raise ArtifactError(
+                    "MX3 artifacts or profile changed while compilation was running"
+                )
+            has_existing_bundle = any(value is not None for value in current_bundle)
+            if has_existing_bundle and not overwrite:
+                raise ArtifactError(
+                    "MX3 artifacts or profile already exist; explicit overwrite is required"
+                )
+
+            model_directory = self.root / model_id
+            model_directory.mkdir(parents=True, exist_ok=True)
+            generation = uuid.uuid4().hex
+            new_paths = {
+                "mx3_dfp": model_directory / f"mx3_dfp-{generation}.dfp",
+            }
+            if post_path is not None:
+                new_paths["mx3_postprocessor"] = (
+                    model_directory / f"mx3_postprocessor-{generation}.onnx"
+                )
+            temporary_paths: list[Path] = []
+            installed_paths: list[Path] = []
+            manifest_committed = False
+            try:
+                for slot, source_path in (
+                    ("mx3_dfp", dfp_path),
+                    ("mx3_postprocessor", post_path),
+                ):
+                    if source_path is None:
+                        continue
+                    descriptor, temporary_name = tempfile.mkstemp(
+                        dir=model_directory,
+                        prefix=f".{slot}-{generation}-",
+                        suffix=".tmp",
+                    )
+                    temporary_path = Path(temporary_name)
+                    temporary_paths.append(temporary_path)
+                    with os.fdopen(descriptor, "wb") as output_stream:
+                        with source_path.open("rb") as input_stream:
+                            shutil.copyfileobj(input_stream, output_stream)
+                        output_stream.flush()
+                        os.fsync(output_stream.fileno())
+                for slot, temporary_path in zip(new_paths, temporary_paths):
+                    os.replace(temporary_path, new_paths[slot])
+                    installed_paths.append(new_paths[slot])
+
+                previous_paths = {
+                    record["artifacts"].get("mx3_dfp"),
+                    record["artifacts"].get("mx3_postprocessor"),
+                }
+                record["artifacts"]["mx3_dfp"] = (
+                    new_paths["mx3_dfp"].relative_to(self.root).as_posix()
+                )
+                if post_path is None:
+                    record["artifacts"].pop("mx3_postprocessor", None)
+                else:
+                    record["artifacts"]["mx3_postprocessor"] = (
+                        new_paths["mx3_postprocessor"].relative_to(self.root).as_posix()
+                    )
+                record["mx3_profile"] = normalized_profile
+                self._write_manifest(data)
+                manifest_committed = True
+            except BaseException:
+                if not manifest_committed:
+                    for path in temporary_paths + installed_paths:
+                        path.unlink(missing_ok=True)
+                raise
+
+            references = self.references(model_id)
+            if not references:
+                for previous_relative_path in previous_paths:
+                    if not previous_relative_path:
+                        continue
+                    previous_path = self.root / previous_relative_path
+                    if previous_path.name.startswith(
+                        ("mx3_dfp-", "mx3_postprocessor-")
+                    ):
+                        previous_path.unlink(missing_ok=True)
+            return self._public_metadata(record), references
 
     def remove_artifact(
         self, model_id: str, slot: str

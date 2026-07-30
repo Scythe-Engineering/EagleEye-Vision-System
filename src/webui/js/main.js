@@ -221,6 +221,7 @@ window.onload = async () => {
         );
         setBackendConnected(true);
         hideConnectionLostOverlay();
+        document.dispatchEvent(new CustomEvent("mx3-compilation-reconnected"));
         if (wasDisconnected) {
             console.log("SSE reconnected after disconnection");
             // Brief delay to allow connection to stabilize before refreshing views
@@ -375,6 +376,37 @@ window.onload = async () => {
             console.warn("Failed to parse SSE system_update_progress event", err);
         }
     });
+
+    /**
+     * Forwards MX3 compiler status updates to consumers without importing UI modules.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
+    const handleMx3CompilationProgress = (e) => {
+        try {
+            document.dispatchEvent(
+                new CustomEvent("mx3-compilation-progress", {
+                    detail: JSON.parse(e.data),
+                }),
+            );
+        } catch (err) {
+            console.warn(
+                "Failed to parse SSE mx3_compilation_progress event",
+                err,
+            );
+        }
+    };
+    if (typeof globalThis.mx3CompilationSseHandler === "function") {
+        es.removeEventListener(
+            "mx3_compilation_progress",
+            globalThis.mx3CompilationSseHandler,
+        );
+    }
+    es.addEventListener(
+        "mx3_compilation_progress",
+        handleMx3CompilationProgress,
+    );
+    globalThis.mx3CompilationSseHandler = handleMx3CompilationProgress;
 
     /**
      * Processes pipeline operation error updates from SSE.

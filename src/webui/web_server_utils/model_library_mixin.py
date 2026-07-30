@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from flask import request
 
+from src.utils.mx3_compiler import (
+    Mx3CompileStatus,
+    Mx3CompilerBusyError,
+    Mx3CompilerError,
+    Mx3CompilerService,
+)
 from src.utils.model_library import (
     ArtifactError,
     ModelLibrary,
@@ -22,7 +29,10 @@ class ModelLibraryMixin:
 
     device_registry: Any
     model_library: ModelLibrary | None
+    mx3_compiler: Mx3CompilerService | None
     restart_required_for_config: bool
+    _last_mx3_compilation_publish: float
+    _publish_event: Callable[[str, object], None]
 
     def get_device_registry(self) -> tuple[dict[str, Any], int]:
         """Return the immutable startup device inventory."""
@@ -44,6 +54,27 @@ class ModelLibraryMixin:
         if self.model_library is None:
             raise ModelLibraryError("Model library is not initialized")
         return self.model_library
+
+    def _require_mx3_compiler(self) -> Mx3CompilerService:
+        """Return the local compiler service or fail with deployment context."""
+        if self.mx3_compiler is None:
+            raise Mx3CompilerError(
+                "MX3 compiler is unavailable without a model library"
+            )
+        return self.mx3_compiler
+
+    def _publish_mx3_compilation_progress(self, status: Mx3CompileStatus) -> None:
+        """Publish a compiler snapshot and flag referenced pipelines for restart."""
+        if status.restart_required:
+            self.restart_required_for_config = True
+        now = time.monotonic()
+        if (
+            status.state in {"running", "cancelling"}
+            and now - self._last_mx3_compilation_publish < 0.25
+        ):
+            return
+        self._last_mx3_compilation_publish = now
+        self._publish_event("mx3_compilation_progress", status.to_dict(log_limit=5))
 
     @staticmethod
     def _serialize_model(
@@ -200,6 +231,60 @@ class ModelLibraryMixin:
             return {"error": str(error)}, 404
         except (ArtifactError, ModelLibraryError) as error:
             return {"error": str(error)}, 400
+
+    def get_mx3_compilation(self) -> tuple[dict[str, Any], int]:
+        """Return the retained state of the current or most recent compilation."""
+        try:
+            return {"compilation": self._require_mx3_compiler().status().to_dict()}, 200
+        except Mx3CompilerError as error:
+            return {"error": str(error)}, 503
+
+    def start_mx3_compilation(self, model_id: str) -> tuple[dict[str, Any], int]:
+        """Start one validated local ONNX-to-MX3 compilation job."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "Request body must be an object"}, 400
+        unknown_fields = set(payload) - {"settings", "profile", "overwrite"}
+        if unknown_fields:
+            return {
+                "error": f"Unknown compilation fields: {sorted(unknown_fields)}"
+            }, 400
+        settings = payload.get("settings")
+        profile = payload.get("profile")
+        overwrite = payload.get("overwrite", False)
+        if settings is not None and not isinstance(settings, dict):
+            return {"error": "settings must be an object"}, 400
+        if profile is not None and not isinstance(profile, dict):
+            return {"error": "profile must be an object"}, 400
+        if not isinstance(overwrite, bool):
+            return {"error": "overwrite must be a boolean"}, 400
+        try:
+            status = self._require_mx3_compiler().start_compile(
+                model_id,
+                settings,
+                profile=profile,
+                overwrite=overwrite,
+                callback=self._publish_mx3_compilation_progress,
+            )
+            return {"compilation": status.to_dict()}, 202
+        except ModelNotFoundError as error:
+            return {"error": str(error)}, 404
+        except Mx3CompilerBusyError as error:
+            return {"error": str(error)}, 409
+        except (Mx3CompilerError, ArtifactError, ModelLibraryError) as error:
+            return {"error": str(error)}, 400
+
+    def cancel_mx3_compilation(self, job_id: str) -> tuple[dict[str, Any], int]:
+        """Cancel the matching active compilation without affecting newer work."""
+        try:
+            compiler = self._require_mx3_compiler()
+            current = compiler.status()
+            if current.job_id != job_id:
+                return {"error": "Unknown MX3 compilation job"}, 404
+            status = compiler.cancel()
+            return {"compilation": status.to_dict()}, 202
+        except Mx3CompilerError as error:
+            return {"error": str(error)}, 503
 
     def resolve_model_artifact(self, model_id: str) -> tuple[dict[str, Any], int]:
         """Resolve and expose the deterministic artifact for a selected device."""

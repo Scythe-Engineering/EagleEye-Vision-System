@@ -113,6 +113,23 @@ class Mx3Profile:
             max_inflight=positive_int("max_inflight", 8),
         )
 
+    def to_metadata(self) -> dict[str, Any]:
+        """Serialize this validated profile in the manifest/runtime format."""
+        return {
+            "input_width": self.input_width,
+            "input_height": self.input_height,
+            "color_order": self.color_order,
+            "layout": self.layout,
+            "normalization": self.normalization,
+            "use_model_shape": list(self.use_model_shape),
+            "decoder": self.decoder,
+            "adjustable_controls": {
+                "confidence": self.adjustable_confidence,
+                "max_detections": self.adjustable_max_detections,
+            },
+            "max_inflight": self.max_inflight,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class _InflightPacket:
