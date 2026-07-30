@@ -8,6 +8,7 @@ assert.equal(
     detectArtifactSlot("robot_postprocessor.onnx"),
     "mx3_postprocessor",
 );
+assert.equal(detectArtifactSlot("robot_post.onnx"), "mx3_postprocessor");
 assert.equal(detectArtifactSlot("robot.engine"), "engine");
 assert.equal(detectArtifactSlot("robot.dfp"), "mx3_dfp");
 assert.throws(() => detectArtifactSlot("robot.zip"), /Choose a/);

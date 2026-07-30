@@ -30,7 +30,10 @@ export function detectArtifactSlot(filename) {
     if (lowerName.endsWith(".engine")) return "engine";
     if (lowerName.endsWith(".dfp")) return "mx3_dfp";
     if (lowerName.endsWith(".onnx")) {
-        return lowerName.includes("postprocess") ? "mx3_postprocessor" : "onnx";
+        return lowerName.includes("postprocess") ||
+            lowerName.endsWith("_post.onnx")
+            ? "mx3_postprocessor"
+            : "onnx";
     }
     throw new Error("Choose a .pt, .onnx, .engine, or .dfp model file.");
 }

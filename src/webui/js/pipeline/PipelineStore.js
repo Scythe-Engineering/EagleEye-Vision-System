@@ -401,6 +401,112 @@ class PipelineStore {
     }
 
     /**
+     * Returns a node's declared docking contract, if it has one. The fallback
+     * keeps older operation lists usable while the definition cache is loading.
+     *
+     * @param {PipelineNode|object|null} node Pipeline node.
+     * @returns {{source_action:string,source_port:string,target_port:string}|null}
+     */
+    getDockingMetadata(node) {
+        if (!node) return null;
+        const config = getCachedConfig(
+            node.operationId,
+            Boolean(node.isSecondary),
+        );
+        const docking = config?.docking;
+        if (
+            docking?.source_action &&
+            docking?.source_port &&
+            docking?.target_port
+        ) {
+            return docking;
+        }
+
+        // MX3's contract is fixed; this is only used before its config fetch
+        // completes, not persisted as a separate kind of connection.
+        if (
+            this.normalizeOperationId(node.operationId) ===
+            "mx3_async_object_detection"
+        ) {
+            return {
+                source_action: "device_input",
+                source_port: "frame",
+                target_port: "frame",
+            };
+        }
+        return null;
+    }
+
+    /**
+     * Checks whether a connection fulfills a target node's docking contract.
+     *
+     * @param {object} connection Serialized in-memory connection.
+     * @returns {boolean} True when the connection docks its target.
+     */
+    isDockingConnection(connection) {
+        const source = this.state.currentPipeline.nodes.get(
+            connection?.fromUuid,
+        );
+        const target = this.state.currentPipeline.nodes.get(connection?.toUuid);
+        const docking = this.getDockingMetadata(target);
+        return Boolean(
+            source &&
+                docking &&
+                this.normalizeOperationId(source.operationId) ===
+                    this.normalizeOperationId(docking.source_action) &&
+                connection.fromPort === docking.source_port &&
+                connection.toPort === docking.target_port,
+        );
+    }
+
+    /**
+     * Returns docking errors for targets that require a direct dock connection.
+     * This public hook is consumed by save/start controls.
+     *
+     * @returns {Array<{uuid:string,message:string}>} Validation errors.
+     */
+    getDockingValidationErrors() {
+        const errors = [];
+        const sourceOwners = new Map();
+        for (const node of this.state.currentPipeline.nodes.values()) {
+            if (!this.getDockingMetadata(node)) continue;
+            const dockingConnection = Array.from(
+                this.state.currentPipeline.connections.values(),
+            ).find(
+                (connection) =>
+                    connection.toUuid === node.uuid &&
+                    this.isDockingConnection(connection),
+            );
+            if (!dockingConnection || dockingConnection.isDefault) {
+                errors.push({
+                    uuid: node.uuid,
+                    message: `${node.name || node.operationId} must be connected directly to a Device Input frame.`,
+                });
+                continue;
+            }
+            if (sourceOwners.has(dockingConnection.fromUuid)) {
+                errors.push({
+                    uuid: node.uuid,
+                    message: "A Device Input can dock only one MX3 detector.",
+                });
+            } else {
+                sourceOwners.set(dockingConnection.fromUuid, node.uuid);
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * Validates all required docking relationships.
+     *
+     * @returns {{valid:boolean,errors:Array<{uuid:string,message:string}>}}
+     */
+    validateDocking() {
+        const errors = this.getDockingValidationErrors();
+        return { valid: errors.length === 0, errors };
+    }
+
+    /**
      * Infer a camera bus ID for a node from exactly one upstream device_input.
      *
      * @param {string} identifier Node UUID or instance ID.
@@ -571,6 +677,28 @@ class PipelineStore {
         if (this.state.currentPipeline.connections.has(connectionKey)) {
             console.warn("Connection already exists:", connectionKey);
             return connectionKey;
+        }
+
+        const prospectiveConnection = {
+            fromUuid,
+            fromPort,
+            toUuid,
+            toPort,
+        };
+        if (this.isDockingConnection(prospectiveConnection)) {
+            const alreadyDocked = Array.from(
+                this.state.currentPipeline.connections.values(),
+            ).some(
+                (connection) =>
+                    connection.fromUuid === fromUuid &&
+                    this.isDockingConnection(connection),
+            );
+            if (alreadyDocked) {
+                console.error(
+                    "Connection rejected: a Device Input can dock only one MX3 detector",
+                );
+                return null;
+            }
         }
 
         const existingToConnection = Array.from(
