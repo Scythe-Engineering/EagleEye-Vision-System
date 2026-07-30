@@ -99,7 +99,7 @@ class PhysicalCamera(Camera):
                 f"Error opening camera at index {self.camera_index} with name {self.name}"
             )
 
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
 
