@@ -42,4 +42,4 @@ CUDA ONNX is accepted only when `onnxruntime-gpu` activates `CUDAExecutionProvid
 
 ## MX3
 
-Legacy synchronous MX3 inference has been removed. Selecting `mx3:N` for this operation produces an explicit unsupported error. Asynchronous MX3 support belongs to the Stage 2 `MX3 Async Object Detection` operation.
+Legacy synchronous MX3 inference has been removed. Selecting `mx3:N` for this operation produces an explicit unsupported error. Use the separate `MX3 Async Object Detection` operation.
