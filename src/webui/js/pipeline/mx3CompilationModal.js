@@ -131,6 +131,8 @@ export function registerMx3CompilationModal({
      */
     function renderCompilationStatus() {
         if (!compilationStatusEl) return;
+        const compilerLogOpen =
+            compilationStatusEl.querySelector("details")?.open ?? false;
         const active = isCompilationActive();
         const startButton = compilationModal?.querySelector(
             "[data-compilation-start]",
@@ -210,6 +212,7 @@ export function registerMx3CompilationModal({
             const details = createElement("details", {
                 className: "mt-2 text-xs",
             });
+            details.open = compilerLogOpen;
             details.appendChild(
                 createElement("summary", {
                     className: "cursor-pointer text-[#f9c845]",
