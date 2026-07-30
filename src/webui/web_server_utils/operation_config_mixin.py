@@ -131,10 +131,12 @@ class OperationConfigMixin:
                 attr = getattr(module, attr_name)
                 if (
                     isinstance(attr, type)
+                    and attr.__module__ == module.__name__
                     and issubclass(attr, OperationInstance)
                     and attr is not OperationInstance
+                    and attr.visualize is not OperationInstance.visualize
                 ):
-                    return attr.visualize is not OperationInstance.visualize
+                    return True
         except Exception as e:
             self.log(f"Warning: Could not detect visualization for {filename}: {e}")
         return False

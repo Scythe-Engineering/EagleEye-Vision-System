@@ -9,9 +9,17 @@ import numpy as np
 import pytest
 
 from src.config.utils.port_validation import validate_pipeline_connections
+from src.main_operations.definitions.mx3_async_object_detection import (
+    Mx3AsyncObjectDetectionDefinition,
+)
 from src.utils.model_library import ResolvedArtifact
-from src.utils.mx3_runtime import Mx3RuntimeCoordinator, Mx3RuntimeError
+from src.utils.mx3_runtime import (
+    Mx3ResultPacket,
+    Mx3RuntimeCoordinator,
+    Mx3RuntimeError,
+)
 from src.utils.timing import TimedValue, TimingMetadata
+from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 
 
 PROFILE = {
@@ -177,6 +185,46 @@ def test_fake_mx3_streams_preserve_frame_correlation_and_shutdown(tmp_path) -> N
         first.wait_for_next()
     coordinator.stop()
     assert accelerator.stopped.is_set()
+
+
+def test_mx3_operation_is_advertised_as_visualizable() -> None:
+    mixin = OperationConfigMixin()
+
+    assert mixin._operation_has_visualization(
+        "mx3_async_object_detection.py", is_secondary=False
+    )
+
+
+def test_mx3_operation_visualizes_detections_on_the_inference_frame() -> None:
+    timing = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=2)
+    inference_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    result = Mx3ResultPacket(
+        frame=TimedValue(inference_frame, timing),
+        detections=TimedValue(
+            [
+                {
+                    "bbox": [0.1, 0.2, 0.5, 0.6],
+                    "confidence": 0.9,
+                    "class_id": 0,
+                    "class_name": "note",
+                }
+            ],
+            timing,
+        ),
+    )
+    operation = Mx3AsyncObjectDetectionDefinition.__new__(
+        Mx3AsyncObjectDetectionDefinition
+    )
+    operation._result_lock = threading.Lock()
+    operation._last_result = result
+    operation.class_colors = {}
+
+    visualization = operation.visualize(np.full_like(inference_frame, 255))
+
+    assert visualization is not None
+    assert np.any(visualization != inference_frame)
+    assert np.all(inference_frame == 0)
+    assert np.all(visualization[99, 99] == 0)
 
 
 def test_coordinator_rejects_different_dfps_on_one_physical_mx3(tmp_path) -> None:
