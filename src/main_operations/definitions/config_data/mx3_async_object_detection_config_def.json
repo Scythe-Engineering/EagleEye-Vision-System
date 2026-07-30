@@ -1,0 +1,62 @@
+{
+    "class_name": "Mx3AsyncObjectDetectionDefinition",
+    "description": "Asynchronous MemryX MX3 YOLO detection docked directly to Device Input. Outputs the exact inference frame and its normalized detections.",
+    "category": "det",
+    "folder": "Detection",
+    "docking": {
+        "source_action": "device_input",
+        "source_port": "frame",
+        "target_port": "frame"
+    },
+    "input_nodes": [
+        {
+            "name": "frame",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "frame",
+        "detections"
+    ],
+    "parameters": {
+        "model_id": {
+            "type": "str",
+            "description": "Managed model with an MX3 DFP and profile",
+            "default": "",
+            "required": true,
+            "restart_for_change": true,
+            "ui_hint": "model_library",
+            "device_param": "device_id"
+        },
+        "device_id": {
+            "type": "str",
+            "description": "Physical MX3 device",
+            "default": "",
+            "required": true,
+            "restart_for_change": true,
+            "ui_hint": "device_registry",
+            "model_param": "model_id",
+            "allowed_device_kinds": [
+                "mx3"
+            ]
+        },
+        "confidence_threshold": {
+            "type": "float",
+            "description": "Minimum detection confidence when supported by the profile",
+            "default": 0.25,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0,
+            "restart_for_change": false
+        },
+        "max_detections": {
+            "type": "int",
+            "description": "Maximum decoded detections when supported by the profile",
+            "default": 100,
+            "required": false,
+            "min": 1,
+            "max": 1000,
+            "restart_for_change": false
+        }
+    }
+}

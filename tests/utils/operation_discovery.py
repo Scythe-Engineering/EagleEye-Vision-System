@@ -105,6 +105,7 @@ def build_exclusion_list() -> set[str]:
 
     return {
         "object_detection",
+        "mx3_async_object_detection",
         "yolo_detection",
         "yolo_object_detection",
     }

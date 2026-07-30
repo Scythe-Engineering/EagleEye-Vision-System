@@ -26,6 +26,7 @@ from src.utils.camera_utils.camera_config_manager import (  # noqa: E402
 )
 from src.utils.device_registry import DeviceRegistry  # noqa: E402
 from src.utils.model_library import ModelLibrary  # noqa: E402
+from src.utils.mx3_runtime import Mx3RuntimeCoordinator  # noqa: E402
 from src.webui.web_server import DEFAULT_GENERAL_CONF, EagleEyeInterface  # noqa: E402
 import ntcore  # noqa: E402
 
@@ -65,6 +66,7 @@ class MainBackend:
         self.logger = logger
         self.pipelines: Dict[str, Pipeline] = {}
         self.camera_manager: CameraThreadManager | None = None
+        self.mx3_coordinator: Mx3RuntimeCoordinator | None = None
 
         try:
             self.logger.log(
@@ -83,6 +85,7 @@ class MainBackend:
                 root=current_dir.parent / "files" / "models",
                 pipeline_config_path=pipeline_conf_path,
             )
+            self.mx3_coordinator = Mx3RuntimeCoordinator(logger=self.logger)
             descriptor_ids = [
                 descriptor.device_id
                 for descriptor in self.device_registry.descriptors()
@@ -133,7 +136,9 @@ class MainBackend:
                 self.device_registry,
                 self.model_library,
                 logger=self.logger,
+                mx3_coordinator=self.mx3_coordinator,
             )
+            self.mx3_coordinator.start()
 
             available_bus_ids = set(self.camera_manager.get_all_bus_ids())
             for pipeline_name, pipeline in self.pipelines.items():
@@ -176,11 +181,24 @@ class MainBackend:
         return self.pipelines
 
     def shutdown(self, restart_service: bool = False) -> None:
-        """Stop camera workers and optionally restart the systemd service.
+        """Stop pipelines, MX3 runtimes, cameras, then optionally restart."""
+        for pipeline in tuple(self.pipelines.values()):
+            try:
+                pipeline.stop()
+            except Exception as error:
+                self.logger.log(f"Pipeline shutdown failed: {error}")
+        for pipeline in tuple(self.pipelines.values()):
+            try:
+                pipeline.close()
+            except Exception as error:
+                self.logger.log(f"Pipeline async close failed: {error}")
 
-        Args:
-            restart_service: Restart the system service after cameras stop.
-        """
+        if self.mx3_coordinator is not None:
+            try:
+                self.mx3_coordinator.stop()
+            except Exception as error:
+                self.logger.log(f"MX3 shutdown failed: {error}")
+
         if self.camera_manager is not None:
             self.camera_manager.stop_all_cameras()
 

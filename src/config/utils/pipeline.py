@@ -12,6 +12,7 @@ import numpy as np
 from line_profiler import profile
 import ntcore
 
+from src.config.utils.async_docking import AsyncDockedOperation
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
@@ -25,6 +26,7 @@ from src.utils.colors import Colors
 from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
 from src.utils.model_library import ModelLibrary
+from src.utils.mx3_runtime import Mx3RuntimeCoordinator
 from src.utils.timing import TimedValue, unwrap_timed
 
 if TYPE_CHECKING:
@@ -55,6 +57,7 @@ class Pipeline:
         device_registry: DeviceRegistry,
         model_library: ModelLibrary,
         camera_manager: CameraThreadManager | None = None,
+        mx3_coordinator: Mx3RuntimeCoordinator | None = None,
         camera_config_registry: CameraConfigRegistry | None = None,
         camera_bus_ids: list[str] | None = None,
         pipeline_name: str | None = None,
@@ -81,6 +84,7 @@ class Pipeline:
         self.network_table = network_table
         self.device_registry = device_registry
         self.model_library = model_library
+        self.mx3_coordinator = mx3_coordinator
         self.camera_manager = camera_manager
         self.camera_config_registry = camera_config_registry
         self.logger = logger
@@ -110,6 +114,13 @@ class Pipeline:
             )
         )
         self._last_device_input_tokens: dict[str, FrameToken] = {}
+        self.async_docked_operations = tuple(
+            operation
+            for operation in self.operations.values()
+            if isinstance(operation.instance, AsyncDockedOperation)
+        )
+        self._async_operations_active = False
+        self._bind_async_docked_operations()
 
         self.flow_manager = FlowManager(
             self.operations,
@@ -369,6 +380,66 @@ class Pipeline:
 
         return groups
 
+    def _bind_async_docked_operations(self) -> None:
+        """Bind asynchronous operations to their validated direct sources."""
+        for operation in self.async_docked_operations:
+            instance = cast(AsyncDockedOperation, operation.instance)
+            source_connections = [
+                connection
+                for connection in operation.input_connections
+                if connection.to_port == instance.dock_target_port
+            ]
+            if len(source_connections) != 1:
+                raise ValueError(
+                    f"Docked operation {operation.uuid} has no unique source binding"
+                )
+            source = source_connections[0].from_operation
+            if source.name != instance.dock_source_action:
+                raise ValueError(
+                    f"Docked operation {operation.uuid} requires "
+                    f"{instance.dock_source_action}"
+                )
+            instance.bind(source.instance, self._async_should_remain_active)
+
+    def _async_should_remain_active(self) -> bool:
+        """Return whether callback and graph waiters should remain active."""
+        return self.thread_running and self._is_enabled_from_networktables()
+
+    def _set_async_operations_active(self, active: bool) -> None:
+        """Apply one pipeline activation transition to all docked operations."""
+        if active == self._async_operations_active:
+            return
+        if not active:
+            for operation in self.async_docked_operations:
+                cast(AsyncDockedOperation, operation.instance).deactivate()
+            self._async_operations_active = False
+            return
+
+        activated: list[Operation] = []
+        try:
+            for operation in self.async_docked_operations:
+                cast(AsyncDockedOperation, operation.instance).activate()
+                activated.append(operation)
+            self._async_operations_active = True
+        except Exception:
+            for operation in activated:
+                cast(AsyncDockedOperation, operation.instance).deactivate()
+            raise
+
+    def close(self) -> None:
+        """Close asynchronous operation bindings after the pipeline thread stops."""
+        self._set_async_operations_active(False)
+        for operation in self.async_docked_operations:
+            cast(AsyncDockedOperation, operation.instance).close()
+
+    def _terminal_async_failure(self) -> BaseException | None:
+        """Return the first terminal asynchronous backend failure."""
+        for operation in self.async_docked_operations:
+            error = cast(AsyncDockedOperation, operation.instance).terminal_error
+            if error is not None:
+                return error
+        return None
+
     def _current_device_input_token(self, operation_uuid: str) -> FrameToken | None:
         """Return the latest packet identity for a Device Input operation."""
         operation = self.operations[operation_uuid]
@@ -546,6 +617,7 @@ class Pipeline:
                 ),
                 "device_registry": self.device_registry,
                 "model_library": self.model_library,
+                "mx3_coordinator": self.mx3_coordinator,
                 "logger": self.logger,
             }
             for parameter_name, dependency in injectable_dependencies.items():
@@ -655,6 +727,18 @@ class Pipeline:
         Returns:
             The frame from device_input, or None if not found or no frame available.
         """
+        target_operation = self.operations.get(target_operation_uuid or "")
+        if (
+            target_operation is not None
+            and target_operation.routes_output_ports
+            and "frame" in target_operation.output_ports
+        ):
+            matched_frame = unwrap_timed(
+                self._stored_frame_output(target_operation.uuid)
+            )
+            if matched_frame is not None:
+                return matched_frame
+
         target_device_input = self._find_upstream_device_input(target_operation_uuid)
         if target_device_input is not None:
             return unwrap_timed(self._stored_frame_output(target_device_input.uuid))
@@ -762,11 +846,13 @@ class Pipeline:
         while self.thread_running:
             try:
                 if not self._is_enabled_from_networktables():
+                    self._set_async_operations_active(False)
                     with self.thread_state_lock:
                         self.thread_active = False
                     time.sleep(0.05)
                     continue
 
+                self._set_async_operations_active(True)
                 with self.thread_state_lock:
                     self.thread_active = True
 
@@ -791,9 +877,12 @@ class Pipeline:
                             }
                 else:
                     self.run()
-            except Exception as _:
+            except Exception:
+                terminal_error = self._terminal_async_failure()
                 with self.thread_state_lock:
                     self.thread_active = False
+                    if terminal_error is not None:
+                        self.thread_running = False
                 if self.logger:
                     self.logger.log(
                         f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
@@ -801,6 +890,7 @@ class Pipeline:
 
             time.sleep(0.001)
 
+        self._set_async_operations_active(False)
         with self.thread_state_lock:
             self.thread_active = False
 
@@ -862,11 +952,12 @@ class Pipeline:
             self.set_visualize = False
 
     def stop(self) -> None:
-        """Stop the pipeline thread."""
+        """Stop the pipeline thread and pause asynchronous bindings."""
         with self.thread_state_lock:
             self.thread_running = False
             self.thread_active = False
             thread = self.thread
+        self._set_async_operations_active(False)
         if thread is not None:
             thread.join()
             with self.thread_state_lock:

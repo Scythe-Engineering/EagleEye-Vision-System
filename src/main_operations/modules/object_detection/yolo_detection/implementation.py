@@ -62,8 +62,7 @@ class ObjectDetectionImplementation:
         if self.device_descriptor.device_type == "mx3":
             raise ValueError(
                 "Synchronous Object Detection does not support MX3. "
-                "Legacy MX3 inference was removed; use MX3 Async Object Detection "
-                "when Stage 2 support is available."
+                "Legacy MX3 inference was removed; use MX3 Async Object Detection."
             )
         if self.device_descriptor.device_type not in {"cpu", "cuda"}:
             raise ValueError(

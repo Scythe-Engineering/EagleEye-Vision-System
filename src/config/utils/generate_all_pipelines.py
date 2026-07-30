@@ -13,6 +13,7 @@ from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
 from src.utils.model_library import ModelLibrary
+from src.utils.mx3_runtime import Mx3RuntimeCoordinator
 from src.utils.colors import Colors
 
 # Find project root by walking up from this file's directory until we find 'src'
@@ -119,6 +120,7 @@ def generate_all_pipelines(
     device_registry: DeviceRegistry,
     model_library: ModelLibrary,
     logger: Logger,
+    mx3_coordinator: Mx3RuntimeCoordinator | None = None,
     pipeline_config: str | None = None,
 ) -> Dict[str, Pipeline]:
     """Generate all pipelines from the pipeline_config.json file.
@@ -181,9 +183,10 @@ def generate_all_pipelines(
                 pipeline_name, config, logger
             )
             settings = pipeline_settings.get(pipeline_name)
-            limit_frames = isinstance(settings, dict) and settings.get(
-                "limit_frames_to_camera_capture_speed"
-            ) is True
+            limit_frames = (
+                isinstance(settings, dict)
+                and settings.get("limit_frames_to_camera_capture_speed") is True
+            )
             pipeline = Pipeline(
                 config,
                 web_interface,
@@ -192,6 +195,7 @@ def generate_all_pipelines(
                 device_registry,
                 model_library,
                 camera_manager,
+                mx3_coordinator=mx3_coordinator,
                 camera_config_registry=camera_config_registry,
                 camera_bus_ids=camera_bus_ids,
                 pipeline_name=pipeline_name,

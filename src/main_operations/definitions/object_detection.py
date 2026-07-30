@@ -5,10 +5,12 @@ from __future__ import annotations
 from threading import Lock
 from typing import Any
 
-import cv2
 import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.main_operations.modules.object_detection.utils.detection_visualization import (
+    draw_detections,
+)
 from src.main_operations.modules.object_detection.yolo_detection.implementation import (
     Detection,
     ObjectDetectionImplementation,
@@ -81,74 +83,4 @@ class ObjectDetectionDefinition(OperationInstance):
         """Draw the latest normalized detections on a frame."""
         with self.last_detections_lock:
             detections = self.last_detections
-        if not detections:
-            return frame
-
-        height, width = frame.shape[:2]
-        for detection in detections:
-            x1, y1, x2, y2 = detection["bbox"]
-            class_id = detection["class_id"]
-            color = self.class_colors.get(class_id)
-            if color is None:
-                color = self._color_for_class(class_id)
-                self.class_colors[class_id] = color
-            pixel_box = (
-                int(x1 * width),
-                int(y1 * height),
-                int(x2 * width),
-                int(y2 * height),
-            )
-            cv2.rectangle(
-                frame,
-                (pixel_box[0], pixel_box[1]),
-                (pixel_box[2], pixel_box[3]),
-                color,
-                3,
-            )
-            class_label = detection.get("class_name", f"Class {class_id}")
-            label = f"{class_label}: {detection['confidence']:.2f}"
-            self._draw_label(frame, pixel_box[0], pixel_box[1], label, color)
-        return frame
-
-    @staticmethod
-    def _color_for_class(class_id: int) -> tuple[int, int, int]:
-        """Derive a deterministic bright BGR color for one class ID."""
-        hue = (class_id * 47) % 180
-        color_pixel = np.array([[[hue, 200, 255]]], dtype=np.uint8)
-        blue, green, red = cv2.cvtColor(color_pixel, cv2.COLOR_HSV2BGR)[0][0]
-        return int(blue), int(green), int(red)
-
-    @staticmethod
-    def _draw_label(
-        frame: np.ndarray,
-        x: int,
-        y: int,
-        label: str,
-        color: tuple[int, int, int],
-    ) -> None:
-        """Draw a readable label immediately above a bounding box."""
-        font_scale = 0.6
-        thickness = 2
-        (text_width, text_height), baseline = cv2.getTextSize(
-            label,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            thickness,
-        )
-        text_y = max(y - 8, text_height + baseline + 4)
-        cv2.rectangle(
-            frame,
-            (x, text_y - text_height - baseline - 4),
-            (x + text_width + 6, text_y + baseline + 2),
-            color,
-            -1,
-        )
-        cv2.putText(
-            frame,
-            label,
-            (x + 3, text_y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            font_scale,
-            (0, 0, 0),
-            thickness,
-        )
+        return draw_detections(frame, detections, self.class_colors)

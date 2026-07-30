@@ -294,6 +294,8 @@ def validate_pipeline_connections(
         output_ports_by_uuid[from_uuid].append(from_port)
         input_ports_by_uuid[to_uuid].append(to_port)
 
+    _validate_docking_relationships(operations, definitions, connections)
+
     return {
         operation_uuid: resolve_operation_ports(
             definitions[operation_uuid],
@@ -302,3 +304,47 @@ def validate_pipeline_connections(
         )
         for operation_uuid in operations
     }
+
+
+def _validate_docking_relationships(
+    operations: dict[str, dict[str, Any]],
+    definitions: dict[str, dict[str, Any]],
+    connections: list[dict[str, Any]],
+) -> None:
+    """Validate direct, exclusive source bindings for docked operations."""
+    source_owners: set[str] = set()
+    for operation_uuid, definition in definitions.items():
+        docking = definition.get("docking")
+        if not isinstance(docking, dict):
+            continue
+        source_action = docking.get("source_action")
+        source_port = docking.get("source_port")
+        target_port = docking.get("target_port")
+        matching = [
+            connection
+            for connection in connections
+            if connection.get("to_uuid") == operation_uuid
+            and connection.get("to_port") == target_port
+        ]
+        if len(matching) != 1:
+            raise ValueError(
+                f"Docked operation {operation_uuid} must bind directly to one "
+                f"{source_action}:{source_port} output"
+            )
+        connection = matching[0]
+        source_uuid = connection["from_uuid"]
+        actual_action = str(operations[source_uuid]["action_name"]).removesuffix(".py")
+        if (
+            actual_action != source_action
+            or connection.get("from_port") != source_port
+            or connection.get("is_default", False)
+        ):
+            raise ValueError(
+                f"Docked operation {operation_uuid} requires a non-default "
+                f"{source_action}:{source_port} connection"
+            )
+        if source_uuid in source_owners:
+            raise ValueError(
+                f"Device Input {source_uuid} already has a docked asynchronous operation"
+            )
+        source_owners.add(source_uuid)

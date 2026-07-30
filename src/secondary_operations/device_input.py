@@ -1,4 +1,5 @@
-from typing import Any, TYPE_CHECKING
+import time
+from typing import Any, Callable, TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -124,6 +125,40 @@ class DeviceInput(OperationInstance):
             return self._apply_rotation(frame)
         return None
 
+    def wait_for_next_packet(
+        self,
+        after_frame_seq: int,
+        should_continue: Callable[[], bool],
+    ) -> FramePacket | None:
+        """Wait for and return the newest unique transformed camera packet.
+
+        This dedicated callback-facing API never calls the graph-level ``run``
+        method and intentionally drops intermediate captured frames.
+        """
+        while should_continue():
+            frame_available = self.camera_manager.wait_for_new_frame_by_bus_id(
+                self.camera_bus_id,
+                after_frame_seq,
+                timeout_s=0.05,
+            )
+            if not frame_available:
+                time.sleep(0.02)
+            if not should_continue():
+                return None
+            packet = self.camera_manager.get_current_packet_by_bus_id(
+                self.camera_bus_id
+            )
+            if (
+                packet is not None
+                and packet.timing.frame_seq is not None
+                and packet.timing.frame_seq > after_frame_seq
+            ):
+                return TimedValue(
+                    self._apply_rotation(packet.value),
+                    packet.timing,
+                )
+        return None
+
     def update_config(self, json_config: dict[str, Any]) -> None:
         """Update runtime-configurable settings for the operation.
 
@@ -132,9 +167,7 @@ class DeviceInput(OperationInstance):
                 - camera_bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """
-        self.camera_bus_id = json_config.get(
-            "camera_bus_id", self.camera_bus_id
-        )
+        self.camera_bus_id = json_config.get("camera_bus_id", self.camera_bus_id)
 
         if "frame_rotation" in json_config:
             try:
