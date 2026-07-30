@@ -378,7 +378,7 @@ class Mx3CompilerService:
         if self.compiler_path is not None:
             candidates.append(self.compiler_path)
         executable_name = "mx_nc.exe" if os.name == "nt" else "mx_nc"
-        candidates.append(Path(sys.executable).resolve().parent / executable_name)
+        candidates.append(Path(sys.executable).parent / executable_name)
         path_match = shutil.which(executable_name)
         if path_match:
             candidates.append(Path(path_match))
