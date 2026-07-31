@@ -15,8 +15,15 @@
     "parameters": {
         "camera_bus_id": {
             "type": "str",
-            "description": "Camera USB bus ID used to resolve intrinsics plus pitch and height from camera extrinsics.",
+            "description": "Camera USB bus ID used to resolve intrinsics and mounting extrinsics.",
             "required": true,
+            "restart_for_change": false
+        },
+        "ground_level": {
+            "type": "float",
+            "description": "Ground-plane height in robot coordinates, in meters.",
+            "default": 0.0,
+            "required": false,
             "restart_for_change": false
         }
     }

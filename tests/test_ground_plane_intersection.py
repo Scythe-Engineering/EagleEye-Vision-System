@@ -6,12 +6,15 @@ import json
 
 import pytest
 
+from src.secondary_operations.camera_local_to_robot_transform import (
+    CameraLocalToRobotTransform,
+)
 from src.secondary_operations.ground_plane_intersection import GroundPlaneIntersection
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 
 
-def test_ground_plane_uses_selected_camera_extrinsics(tmp_path) -> None:
-    """Ground plane projection should read height/pitch from camera extrinsics."""
+def test_ground_plane_outputs_camera_local_intersection(tmp_path) -> None:
+    """Ground projection should return the intersection in camera coordinates."""
     camera_dir = tmp_path / "cam0"
     camera_dir.mkdir()
     intrinsics_path = camera_dir / "intrinsics.json"
@@ -55,4 +58,7 @@ def test_ground_plane_uses_selected_camera_extrinsics(tmp_path) -> None:
     detections = operation.run([{"bbox": [0.45, 0.45, 0.55, 0.5]}])
 
     assert len(detections) == 1
-    assert detections[0]["position_3d"] == pytest.approx([0.0, 0.0, 2.0])
+    assert detections[0]["position_3d"] == pytest.approx([0.0, 0.0, 2.0**1.5])
+
+    robot_detections = CameraLocalToRobotTransform("cam0", registry).run(detections)
+    assert robot_detections[0]["position_3d"] == pytest.approx([2.0, 0.0, 0.0])
