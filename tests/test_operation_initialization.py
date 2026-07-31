@@ -24,6 +24,7 @@ from tests.utils.operation_discovery import (
     is_rust_operation,
     import_operation_class,
 )
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.logging.logger import Logger
 
 
@@ -34,6 +35,7 @@ def _build_dummy_dependencies() -> dict[str, Any]:
         "model_library": DummyModelLibrary(),
         "network_table": FakeNetworkTable(),
         "camera_manager": FakeCameraThreadManager(default_frame=dummy_frame()),
+        "camera_config_registry": CameraConfigRegistry(),
         "logger": Logger(log_directory="logs/test"),
     }
 

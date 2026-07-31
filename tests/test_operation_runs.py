@@ -28,6 +28,7 @@ from tests.utils.operation_inputs import (
     get_fallback_input,
     get_operation_input_builders,
 )
+from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.logging.logger import Logger
 
 
@@ -38,6 +39,7 @@ def _build_dummy_dependencies() -> dict[str, Any]:
         "model_library": DummyModelLibrary(),
         "network_table": FakeNetworkTable(),
         "camera_manager": FakeCameraThreadManager(default_frame=dummy_frame()),
+        "camera_config_registry": CameraConfigRegistry(),
         "logger": Logger(log_directory="logs/test"),
     }
 
