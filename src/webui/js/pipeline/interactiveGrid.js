@@ -43,6 +43,9 @@ export class InteractiveGrid {
         this.distanceCache = new Map();
         this.cacheResolution = 20; // Cache distance every 20 world units
         this.dotCache = new Map();
+        this.litDots = null;
+        this.litDotSpacing = 0;
+        this.litDotsDirty = true;
         this.containerRect = { width: 0, height: 0, left: 0, top: 0 };
 
         // Viewport transform state
@@ -166,6 +169,7 @@ export class InteractiveGrid {
         }));
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.litDotsDirty = true;
         this.requestRedraw();
     }
 
@@ -176,6 +180,7 @@ export class InteractiveGrid {
         this.focusArea = area;
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.litDotsDirty = true;
         this.requestRedraw();
     }
 
@@ -186,6 +191,7 @@ export class InteractiveGrid {
         this.focusArea = null;
         this.distanceCache.clear();
         this.dotCache.clear();
+        this.litDotsDirty = true;
         this.requestRedraw();
     }
 
@@ -391,15 +397,85 @@ export class InteractiveGrid {
 
     /**
      * Calculate dot grid spacing based on zoom level.
-     * Doubles the world spacing while dots would be closer than ~10px on
+     * Doubles the world spacing while dots would be closer than ~5px on
      * screen, keeping the per-frame dot count bounded when zoomed out.
      */
     getDotSpacing() {
         let spacing = this.gridSpacing;
-        while (spacing * this.scale < 10) {
+        while (spacing * this.scale < 5) {
             spacing *= 2;
         }
         return spacing;
+    }
+
+    /**
+     * Rebuild the cached list of dots with nonzero base opacity.
+     *
+     * Dots only light up within operationFadeDistance of an operation (or
+     * focusAreaFadeDistance of the focus area), so instead of scanning the
+     * whole viewport we enumerate just those neighborhoods once and reuse
+     * the result every frame until the pipeline or zoom level changes.
+     * Returns null (full-viewport scan) when neither operations nor a focus
+     * area exist, since then every dot is visible at base opacity.
+     */
+    buildLitDots(spacing) {
+        this.litDotSpacing = spacing;
+        this.litDotsDirty = false;
+
+        let sources;
+        if (this.operationPositions.length > 0) {
+            sources = this.operationPositions.map((op) => ({
+                ...op,
+                fade: this.operationFadeDistance,
+            }));
+        } else if (this.focusArea) {
+            sources = [{ ...this.focusArea, fade: this.focusAreaFadeDistance }];
+        } else {
+            this.litDots = null;
+            return;
+        }
+
+        this.litDots = [];
+        const seen = new Set();
+        for (const src of sources) {
+            const minX = Math.floor((src.x - src.fade) / spacing) * spacing;
+            const maxX =
+                Math.ceil((src.x + src.width + src.fade) / spacing) * spacing;
+            const minY = Math.floor((src.y - src.fade) / spacing) * spacing;
+            const maxY =
+                Math.ceil((src.y + src.height + src.fade) / spacing) * spacing;
+
+            for (let x = minX; x <= maxX; x += spacing) {
+                for (let y = minY; y <= maxY; y += spacing) {
+                    const key = `${x},${y}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+
+                    const { size, opacity } = this.calculateBaseDotProperties(
+                        x,
+                        y,
+                    );
+                    if (opacity > 0.01) {
+                        this.litDots.push({ x, y, size, opacity });
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Draw a single dot at the given world coordinates.
+     */
+    drawDot(worldX, worldY, size, opacity) {
+        const screen = this.worldToScreen(worldX, worldY);
+
+        // Keep dot size more consistent across zoom levels
+        const scaledSize = size * Math.max(0.8, Math.min(1.2, this.scale));
+
+        this.ctx.fillStyle = `rgba(128, 128, 128, ${opacity})`;
+        this.ctx.beginPath();
+        this.ctx.arc(screen.x, screen.y, scaledSize, 0, Math.PI * 2);
+        this.ctx.fill();
     }
 
     /**
@@ -504,37 +580,98 @@ export class InteractiveGrid {
 
         // Calculate grid range in world coordinates
         const dotSpacing = this.getDotSpacing();
+        if (this.litDotsDirty || dotSpacing !== this.litDotSpacing) {
+            this.buildLitDots(dotSpacing);
+        }
+
+        const mouseWorld = this.screenToWorld(
+            this.mouseScreenX,
+            this.mouseScreenY,
+        );
+        const cursorRadiusSq =
+            this.cursorInfluenceRadius * this.cursorInfluenceRadius;
+
+        // Grid-aligned viewport bounds, inclusive of partially visible edge
+        // cells so clipping matches a full floor/ceil scan.
         const startX = Math.floor(topLeft.x / dotSpacing) * dotSpacing;
         const startY = Math.floor(topLeft.y / dotSpacing) * dotSpacing;
         const endX = Math.ceil(bottomRight.x / dotSpacing) * dotSpacing;
         const endY = Math.ceil(bottomRight.y / dotSpacing) * dotSpacing;
 
-        // Draw dots
-        for (let worldX = startX; worldX <= endX; worldX += dotSpacing) {
-            for (let worldY = startY; worldY <= endY; worldY += dotSpacing) {
-                const { size, opacity } = this.calculateDotProperties(
-                    worldX,
-                    worldY,
-                );
+        if (this.litDots) {
+            // Draw cached lit dots straight from the cache; only dots near
+            // the cursor need per-frame recomputation and are handled below.
+            // ponytail: linear viewport clip over litDots; bucket into chunks
+            // if pipelines grow to hundreds of operations
+            for (const dot of this.litDots) {
+                if (
+                    dot.x < startX ||
+                    dot.x > endX ||
+                    dot.y < startY ||
+                    dot.y > endY
+                ) {
+                    continue;
+                }
+                const dx = dot.x - mouseWorld.x;
+                const dy = dot.y - mouseWorld.y;
+                if (dx * dx + dy * dy <= cursorRadiusSq) continue;
+                this.drawDot(dot.x, dot.y, dot.size, dot.opacity);
+            }
 
-                if (opacity > 0.01) {
-                    // Convert world position to screen position for drawing
-                    const screen = this.worldToScreen(worldX, worldY);
+            // Scan only the cells around the cursor for cursor-influenced
+            // dots (both lit dots skipped above and dark dots lighting up).
+            const r = this.cursorInfluenceRadius;
+            const cMinX = Math.max(
+                Math.floor((mouseWorld.x - r) / dotSpacing) * dotSpacing,
+                startX,
+            );
+            const cMaxX = Math.min(
+                Math.ceil((mouseWorld.x + r) / dotSpacing) * dotSpacing,
+                endX,
+            );
+            const cMinY = Math.max(
+                Math.floor((mouseWorld.y - r) / dotSpacing) * dotSpacing,
+                startY,
+            );
+            const cMaxY = Math.min(
+                Math.ceil((mouseWorld.y + r) / dotSpacing) * dotSpacing,
+                endY,
+            );
 
-                    // Keep dot size more consistent across zoom levels
-                    const scaledSize =
-                        size * Math.max(0.8, Math.min(1.2, this.scale));
-
-                    this.ctx.fillStyle = `rgba(128, 128, 128, ${opacity})`;
-                    this.ctx.beginPath();
-                    this.ctx.arc(
-                        screen.x,
-                        screen.y,
-                        scaledSize,
-                        0,
-                        Math.PI * 2,
+            for (let worldX = cMinX; worldX <= cMaxX; worldX += dotSpacing) {
+                for (
+                    let worldY = cMinY;
+                    worldY <= cMaxY;
+                    worldY += dotSpacing
+                ) {
+                    const dx = worldX - mouseWorld.x;
+                    const dy = worldY - mouseWorld.y;
+                    if (dx * dx + dy * dy > cursorRadiusSq) continue;
+                    const { size, opacity } = this.calculateDotProperties(
+                        worldX,
+                        worldY,
                     );
-                    this.ctx.fill();
+                    if (opacity > 0.01) {
+                        this.drawDot(worldX, worldY, size, opacity);
+                    }
+                }
+            }
+        } else {
+            // No operations or focus area: every dot is visible at base
+            // opacity, so scan the whole viewport.
+            for (let worldX = startX; worldX <= endX; worldX += dotSpacing) {
+                for (
+                    let worldY = startY;
+                    worldY <= endY;
+                    worldY += dotSpacing
+                ) {
+                    const { size, opacity } = this.calculateDotProperties(
+                        worldX,
+                        worldY,
+                    );
+                    if (opacity > 0.01) {
+                        this.drawDot(worldX, worldY, size, opacity);
+                    }
                 }
             }
         }
