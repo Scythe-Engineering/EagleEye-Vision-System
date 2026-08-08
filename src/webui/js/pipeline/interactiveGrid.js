@@ -390,6 +390,19 @@ export class InteractiveGrid {
     }
 
     /**
+     * Calculate dot grid spacing based on zoom level.
+     * Doubles the world spacing while dots would be closer than ~10px on
+     * screen, keeping the per-frame dot count bounded when zoomed out.
+     */
+    getDotSpacing() {
+        let spacing = this.gridSpacing;
+        while (spacing * this.scale < 10) {
+            spacing *= 2;
+        }
+        return spacing;
+    }
+
+    /**
      * Calculate cross grid spacing based on zoom level
      * Spacing doubles at thresholds: 1x, 0.5x, 0.25x, etc.
      */
@@ -490,22 +503,15 @@ export class InteractiveGrid {
         const bottomRight = this.screenToWorld(width, height);
 
         // Calculate grid range in world coordinates
-        const startX =
-            Math.floor(topLeft.x / this.gridSpacing) * this.gridSpacing;
-        const startY =
-            Math.floor(topLeft.y / this.gridSpacing) * this.gridSpacing;
-        const endX =
-            Math.ceil(bottomRight.x / this.gridSpacing) * this.gridSpacing;
-        const endY =
-            Math.ceil(bottomRight.y / this.gridSpacing) * this.gridSpacing;
+        const dotSpacing = this.getDotSpacing();
+        const startX = Math.floor(topLeft.x / dotSpacing) * dotSpacing;
+        const startY = Math.floor(topLeft.y / dotSpacing) * dotSpacing;
+        const endX = Math.ceil(bottomRight.x / dotSpacing) * dotSpacing;
+        const endY = Math.ceil(bottomRight.y / dotSpacing) * dotSpacing;
 
         // Draw dots
-        for (let worldX = startX; worldX <= endX; worldX += this.gridSpacing) {
-            for (
-                let worldY = startY;
-                worldY <= endY;
-                worldY += this.gridSpacing
-            ) {
+        for (let worldX = startX; worldX <= endX; worldX += dotSpacing) {
+            for (let worldY = startY; worldY <= endY; worldY += dotSpacing) {
                 const { size, opacity } = this.calculateDotProperties(
                     worldX,
                     worldY,
