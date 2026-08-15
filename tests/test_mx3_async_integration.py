@@ -14,6 +14,7 @@ from src.main_operations.definitions.mx3_async_object_detection import (
     Mx3AsyncObjectDetectionDefinition,
 )
 from src.utils.model_library import ResolvedArtifact
+from src.utils import mx3_runtime
 from src.utils.mx3_runtime import (
     Mx3ResultPacket,
     Mx3RuntimeCoordinator,
@@ -398,3 +399,32 @@ def test_failed_coordinator_startup_is_reported_to_every_caller(
         coordinator.start()
     with pytest.raises(Mx3RuntimeError, match="accelerator unavailable"):
         coordinator.start()
+
+
+def test_undelivered_pause_outputs_expire_instead_of_stalling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped output must not hold an in-flight slot forever."""
+    monkeypatch.setattr(mx3_runtime, "DISCARD_TIMEOUT_SECONDS", 0.0)
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
+    binding = coordinator.register_stream(
+        0,
+        _artifact(tmp_path),
+        FakeSource([1, 2, 3, 4]),
+        None,
+        0.25,
+        10,
+        lambda: True,
+    )
+    binding.activate()
+
+    # Fill the profile's in-flight budget, then pause without any output.
+    binding.input_callback(0)
+    binding.input_callback(0)
+    binding.deactivate()
+    assert binding._pending_discards == PROFILE["max_inflight"]
+
+    binding.activate()
+    assert binding.input_callback(0) is not None
+    assert binding._pending_discards == 0
+    coordinator.stop()

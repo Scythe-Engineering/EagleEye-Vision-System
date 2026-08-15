@@ -232,3 +232,31 @@ def test_synchronous_detector_rejects_legacy_mx3(tmp_path: Path) -> None:
             model_library=library,
             model_factory=lambda _path, **_kwargs: _FakeModel(),
         )
+
+
+def test_synchronous_detector_rejects_fractional_limits(tmp_path: Path) -> None:
+    """A fractional limit must be rejected, not silently truncated."""
+    library = ModelLibrary(tmp_path / "models")
+    model = library.create_model("ONNX Detector")
+    _import_artifact(library, model.model_id, tmp_path, "onnx", ".onnx")
+    registry = DeviceRegistry([DeviceDescriptor("cpu", "CPU", "cpu", None)])
+
+    with pytest.raises(ValueError, match="max_detections must be a positive integer"):
+        ObjectDetectionImplementation(
+            model_id=model.model_id,
+            device_id="cpu",
+            device_registry=registry,
+            model_library=library,
+            max_detections=1.9,
+            model_factory=lambda _path, **_kwargs: _FakeModel(),
+        )
+
+    detector = ObjectDetectionImplementation(
+        model_id=model.model_id,
+        device_id="cpu",
+        device_registry=registry,
+        model_library=library,
+        model_factory=lambda _path, **_kwargs: _FakeModel(),
+    )
+    with pytest.raises(ValueError, match="max_detections must be a positive integer"):
+        detector.update_live_settings(max_detections=2.5)

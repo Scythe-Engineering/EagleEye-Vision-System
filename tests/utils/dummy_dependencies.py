@@ -281,6 +281,8 @@ class FakeCameraWorker:
     camera_index: int = 0
     frame: Optional[np.ndarray] = None
     timestamp: float = 0.0
+    running: bool = True
+    thread: Optional[object] = None
 
     def get_current_packet(self) -> FramePacket | None:
         """Return the latest frame with deterministic timing metadata.
@@ -334,6 +336,36 @@ class FakeCameraThreadManager:
             camera_index=len(self.camera_objects),
             frame=frame if frame is not None else self.default_frame,
         )
+
+    @property
+    def cameras(self) -> Dict[str, FakeCameraWorker]:
+        """Expose workers under the name used by ``CameraThreadManager``.
+
+        Returns:
+            Dict[str, FakeCameraWorker]: Registered workers keyed by name.
+        """
+        return self.camera_objects
+
+    def wait_for_new_frame_by_bus_id(
+        self,
+        bus_id: str,
+        after_frame_seq: int,
+        timeout_s: Optional[float] = None,
+    ) -> bool:
+        """Report whether a newer frame exists for a camera bus ID.
+
+        Args:
+            bus_id: Camera bus identifier.
+            after_frame_seq: Last frame sequence consumed by the caller.
+            timeout_s: Accepted for interface parity; the fake never blocks.
+
+        Returns:
+            bool: ``True`` when a newer packet is available.
+        """
+        packet = self.get_current_packet_by_bus_id(bus_id)
+        if packet is None or packet.timing.frame_seq is None:
+            return False
+        return packet.timing.frame_seq > after_frame_seq
 
     def register_bus_id(self, bus_id: str, camera_name: str) -> None:
         """Associate a deterministic bus ID with a camera name.
