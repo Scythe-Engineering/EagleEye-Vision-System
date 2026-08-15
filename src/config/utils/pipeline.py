@@ -18,6 +18,7 @@ from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
 from src.config.utils.port_validation import (
     load_operation_config_definition,
+    normalize_action_name,
     validate_pipeline_connections,
 )
 from src.main_operations.definitions.base.base_class import OperationInstance
@@ -121,15 +122,21 @@ class Pipeline:
             if isinstance(operation.instance, AsyncDockedOperation)
         )
         self._async_operations_active = False
-        self._bind_async_docked_operations()
+        # Binding reserves shared MX3 streams, so a later construction failure
+        # must release them instead of leaving orphan streams registered.
+        try:
+            self._bind_async_docked_operations()
 
-        self.flow_manager = FlowManager(
-            self.operations,
-            self.logger,
-            on_operation_error=self.record_operation_error,
-            on_operation_success=self.clear_operation_error,
-            pipeline_name=self.pipeline_name,
-        )
+            self.flow_manager = FlowManager(
+                self.operations,
+                self.logger,
+                on_operation_error=self.record_operation_error,
+                on_operation_success=self.clear_operation_error,
+                pipeline_name=self.pipeline_name,
+            )
+        except BaseException:
+            self._close_async_docked_operations()
+            raise
 
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
@@ -178,7 +185,7 @@ class Pipeline:
 
         # Gather all connections and operations from config
         for operation_config in self.pipeline_config:
-            action_name = operation_config["action_name"].removesuffix(".py")
+            action_name = normalize_action_name(operation_config["action_name"])
             action_params = operation_config.get("action_params", {})
             action_uuid = operation_config.get("uuid", None)
 
@@ -402,6 +409,14 @@ class Pipeline:
                 )
             instance.bind(source.instance, self._async_should_remain_active)
 
+    def _close_async_docked_operations(self) -> None:
+        """Close every async binding reserved before a construction failure."""
+        for operation in getattr(self, "async_docked_operations", ()):
+            try:
+                cast(AsyncDockedOperation, operation.instance).unbind()
+            except Exception:  # noqa: BLE001 - rollback must not mask the cause
+                continue
+
     def _async_should_remain_active(self) -> bool:
         """Return whether callback and graph waiters should remain active."""
         return self.thread_running and self._is_enabled_from_networktables()
@@ -579,7 +594,7 @@ class Pipeline:
             ValueError: If action_name is not recognized or module cannot be imported.
         """
         try:
-            action_name = action_name.removesuffix(".py")
+            action_name = normalize_action_name(action_name)
             class_name = self._snake_to_camel(action_name)
 
             # Try to import from main_operations/definitions first

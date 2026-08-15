@@ -46,3 +46,13 @@ class AsyncDockedOperation(OperationInstance, ABC, Generic[AsyncResult]):
     @abstractmethod
     def close(self) -> None:
         """Permanently close this binding and wake all waiters."""
+
+    def unbind(self) -> None:
+        """Release everything ``bind`` reserved before the runtime started.
+
+        Pipeline construction binds operations incrementally, so a later
+        failure must return reserved backend resources instead of leaving them
+        registered.  Implementations that reserve shared runtime state override
+        this to release it; closing is the safe default.
+        """
+        self.close()

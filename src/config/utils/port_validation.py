@@ -34,6 +34,21 @@ class DynamicPortGroup:
     maximum: int | None
 
 
+def normalize_action_name(action_name: str) -> str:
+    """Return the single canonical action name used for lookup and import.
+
+    Definition files are resolved by base name while operations are imported as
+    dotted modules, so both consumers must agree on one normalized value.
+
+    Args:
+        action_name: Operation filename or normalized action name.
+
+    Returns:
+        Action name without a directory prefix or ``.py`` suffix.
+    """
+    return Path(action_name).name.removesuffix(".py")
+
+
 def load_operation_config_definition(action_name: str) -> dict[str, Any]:
     """Load an operation's configuration definition by action name.
 
@@ -55,7 +70,7 @@ def load_operation_config_definition(action_name: str) -> dict[str, Any]:
 @lru_cache(maxsize=None)
 def _read_operation_config_definition(action_name: str) -> dict[str, Any]:
     """Read and parse one operation definition from disk exactly once."""
-    normalized_name = Path(action_name).name.removesuffix(".py")
+    normalized_name = normalize_action_name(action_name)
     filename = f"{normalized_name}_config_def.json"
     for directory in CONFIG_DIRECTORIES:
         config_path = directory / filename
@@ -249,6 +264,14 @@ def validate_pipeline_connections(
             raise ValueError(f"Duplicate operation UUID: {operation_uuid}")
         if not isinstance(action_name, str) or not action_name:
             raise ValueError(f"Operation {operation_uuid} has no action_name")
+        # Definitions are resolved by base name while runtime instantiation
+        # imports a dotted module, so a path-qualified action name would pass
+        # validation and then fail to start.
+        if action_name.removesuffix(".py") != normalize_action_name(action_name):
+            raise ValueError(
+                f"Operation {operation_uuid} action_name must not contain a path: "
+                f"{action_name!r}"
+            )
         operations[operation_uuid] = operation
         definitions[operation_uuid] = load_operation_config_definition(action_name)
         raw_connections = operation.get("connections", [])
@@ -269,7 +292,13 @@ def validate_pipeline_connections(
     for connection in connections:
         if not isinstance(connection, dict):
             raise ValueError("Every connection must be an object")
-        required_fields = ("from_uuid", "from_port", "to_uuid", "to_port")
+        required_fields = (
+            "from_uuid",
+            "from_port",
+            "to_uuid",
+            "to_port",
+            "data_type",
+        )
         if any(
             not isinstance(connection.get(field), str) or not connection[field]
             for field in required_fields
@@ -333,7 +362,9 @@ def _validate_docking_relationships(
             )
         connection = matching[0]
         source_uuid = connection["from_uuid"]
-        actual_action = str(operations[source_uuid]["action_name"]).removesuffix(".py")
+        actual_action = normalize_action_name(
+            str(operations[source_uuid]["action_name"])
+        )
         if (
             actual_action != source_action
             or connection.get("from_port") != source_port
