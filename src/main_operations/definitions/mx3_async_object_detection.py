@@ -130,6 +130,16 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
         if self.binding is not None:
             self.binding.close()
 
+    def unbind(self) -> None:
+        """Return this operation's reserved stream to the shared coordinator."""
+        if self.binding is None:
+            return
+        binding, self.binding = self.binding, None
+        try:
+            self.coordinator.unregister_stream(binding)
+        except Exception:
+            binding.close()
+
     def update_config(self, json_config: dict[str, Any]) -> None:
         """Apply changed decoder controls to an initialized stream binding.
 

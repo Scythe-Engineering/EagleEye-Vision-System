@@ -244,9 +244,17 @@ def detect_onnx_input_size(onnx_path: str | os.PathLike[str]) -> tuple[int, int]
         raise Mx3CompilerError(
             "YOLO26 compilation requires a static four-dimensional ONNX input"
         )
-    if dimensions[1] in {1, 3, 4}:
+    channel_first = dimensions[1] in {1, 3, 4}
+    channel_last = dimensions[3] in {1, 3, 4}
+    if channel_first and channel_last:
+        # Both axes are plausible channel counts, so the layout cannot be
+        # derived without guessing which dimensions are the spatial ones.
+        raise Mx3CompilerError(
+            "Ambiguous ONNX input layout; provide an explicit MX3 profile"
+        )
+    if channel_first:
         height, width = dimensions[2], dimensions[3]
-    elif dimensions[3] in {1, 3, 4}:
+    elif channel_last:
         height, width = dimensions[1], dimensions[2]
     else:
         raise Mx3CompilerError("Cannot identify image channels in the ONNX input shape")
@@ -302,6 +310,24 @@ class Mx3CompilerService:
             raise Mx3CompilerError(
                 "MX3 artifacts or profile already exist; explicit overwrite is required"
             )
+        expected_bundle = (
+            model.artifacts.get("mx3_dfp"),
+            model.artifacts.get("mx3_postprocessor"),
+            model.mx3_profile,
+        )
+        # The ONNX artifact can be replaced or removed between resolution and
+        # startup; report that race as a controlled compiler failure.
+        try:
+            expected_onnx = (
+                model.artifacts["onnx"],
+                source.stat().st_size,
+                source.stat().st_mtime_ns,
+            )
+        except (KeyError, OSError) as error:
+            raise Mx3CompilerError(
+                "ONNX artifact changed while compilation was starting"
+            ) from error
+
         with self._lock:
             if self._shutting_down:
                 raise Mx3CompilerError("MX3 compiler service is shutting down")
@@ -311,16 +337,6 @@ class Mx3CompilerService:
             self._callback = callback
             self._status = Mx3CompileStatus(
                 "running", uuid.uuid4().hex, model_id, "Preparing compiler", 0.0, ()
-            )
-            expected_bundle = (
-                model.artifacts.get("mx3_dfp"),
-                model.artifacts.get("mx3_postprocessor"),
-                model.mx3_profile,
-            )
-            expected_onnx = (
-                model.artifacts["onnx"],
-                source.stat().st_size,
-                source.stat().st_mtime_ns,
             )
             thread = threading.Thread(
                 target=self._run_compile,

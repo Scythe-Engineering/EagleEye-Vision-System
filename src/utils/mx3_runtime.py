@@ -32,6 +32,9 @@ class TransformedFrameSource(Protocol):
     ) -> FramePacket | None:
         """Return the newest transformed packet newer than ``after_frame_seq``."""
 
+    def latest_frame_seq(self) -> int | None:
+        """Return the newest captured frame sequence without consuming it."""
+
 
 @dataclass(frozen=True, slots=True)
 class Mx3Profile:
@@ -176,6 +179,7 @@ class Mx3StreamBinding:
         self._activation = 0
         self._last_frame_seq = -1
         self._inflight: deque[_InflightPacket] = deque()
+        self._pending_discards = 0
         self._completed: Mx3ResultPacket | None = None
         self._completed_generation = 0
         self._consumed_generation = 0
@@ -189,11 +193,16 @@ class Mx3StreamBinding:
 
     def activate(self) -> None:
         """Resume callbacks using only frames captured after activation."""
+        boundary = self._source_frame_seq()
         with self._condition:
             if self._closed:
                 raise Mx3RuntimeError("MX3 stream is closed")
             if self._error is not None:
                 raise self._error
+            # Frames captured while paused are stale, so resume from the source's
+            # current sequence instead of the one consumed before the pause.
+            if boundary is not None and boundary > self._last_frame_seq:
+                self._last_frame_seq = boundary
             self._active = True
             self._completed = None
             self._consumed_generation = self._completed_generation
@@ -205,10 +214,25 @@ class Mx3StreamBinding:
             if self._active:
                 self._active = False
                 self._activation += 1
+            # The accelerator still owns these submissions and delivers their
+            # outputs in order, so count them as discards instead of dropping
+            # the correlation entirely and mispairing a later frame.
+            self._pending_discards += len(self._inflight)
             self._inflight.clear()
             self._completed = None
             self._consumed_generation = self._completed_generation
             self._condition.notify_all()
+
+    def _source_frame_seq(self) -> int | None:
+        """Return the source's newest frame sequence when it exposes one."""
+        latest_frame_seq = getattr(self.source, "latest_frame_seq", None)
+        if not callable(latest_frame_seq):
+            return None
+        try:
+            frame_seq = latest_frame_seq()
+        except Exception:
+            return None
+        return frame_seq if isinstance(frame_seq, int) else None
 
     def close(self) -> None:
         """Permanently stop this stream and wake every blocked callback/waiter."""
@@ -233,23 +257,29 @@ class Mx3StreamBinding:
         confidence_threshold: float | None = None,
         max_detections: int | None = None,
     ) -> None:
-        """Apply profile-supported decoder controls."""
+        """Apply profile-supported decoder controls atomically.
+
+        Every supplied value is validated before any is applied so a rejected
+        update never leaves the decoder running a partially changed setting.
+        """
+        if confidence_threshold is not None:
+            if not self.profile.adjustable_confidence:
+                raise Mx3RuntimeError(
+                    "This MX3 profile does not support confidence updates"
+                )
+            if not 0.0 <= confidence_threshold <= 1.0:
+                raise ValueError("confidence_threshold must be between 0 and 1")
+        if max_detections is not None:
+            if not self.profile.adjustable_max_detections:
+                raise Mx3RuntimeError(
+                    "This MX3 profile does not support max_detections updates"
+                )
+            if max_detections < 1:
+                raise ValueError("max_detections must be positive")
         with self._condition:
             if confidence_threshold is not None:
-                if not self.profile.adjustable_confidence:
-                    raise Mx3RuntimeError(
-                        "This MX3 profile does not support confidence updates"
-                    )
-                if not 0.0 <= confidence_threshold <= 1.0:
-                    raise ValueError("confidence_threshold must be between 0 and 1")
                 self.confidence_threshold = float(confidence_threshold)
             if max_detections is not None:
-                if not self.profile.adjustable_max_detections:
-                    raise Mx3RuntimeError(
-                        "This MX3 profile does not support max_detections updates"
-                    )
-                if max_detections < 1:
-                    raise ValueError("max_detections must be positive")
                 self.max_detections = int(max_detections)
 
     def _can_feed(self) -> bool:
@@ -277,7 +307,8 @@ class Mx3StreamBinding:
                         continue
                     activation = self._activation
                     while (
-                        len(self._inflight) >= self.profile.max_inflight
+                        len(self._inflight) + self._pending_discards
+                        >= self.profile.max_inflight
                         and self._active
                         and not self._closed
                         and self._error is None
@@ -321,6 +352,11 @@ class Mx3StreamBinding:
         try:
             with self._condition:
                 if self._closed:
+                    return
+                if self._pending_discards > 0:
+                    # Output belongs to a packet submitted before the last pause.
+                    self._pending_discards -= 1
+                    self._condition.notify_all()
                     return
                 if not self._inflight:
                     if not self._active:
@@ -501,6 +537,16 @@ class _Mx3Runtime:
             self.bindings.append(binding)
             return binding
 
+    def remove_binding(self, binding: Mx3StreamBinding) -> bool:
+        """Drop one reserved stream before start and renumber the remainder."""
+        with self._lock:
+            if self.started or binding not in self.bindings:
+                return False
+            self.bindings.remove(binding)
+            for stream_id, remaining in enumerate(self.bindings):
+                remaining.stream_id = stream_id
+            return True
+
     def _log(self, message: str) -> None:
         """Write a runtime lifecycle message when a backend logger is available."""
         if self.logger is not None:
@@ -607,6 +653,7 @@ class Mx3RuntimeCoordinator:
         self.accelerator_factory = accelerator_factory
         self._runtimes: dict[int, _Mx3Runtime] = {}
         self._started = False
+        self._start_error: Mx3RuntimeError | None = None
         self._lock = threading.RLock()
 
     def register_stream(
@@ -650,15 +697,52 @@ class Mx3RuntimeCoordinator:
                 should_remain_active,
             )
 
+    def unregister_stream(self, binding: Mx3StreamBinding) -> None:
+        """Release a stream reserved by a pipeline that failed to initialize.
+
+        Args:
+            binding: Stream previously returned by :meth:`register_stream`.
+
+        Raises:
+            Mx3RuntimeError: If the shared runtimes have already started.
+        """
+        with self._lock:
+            if self._started:
+                raise Mx3RuntimeError("Cannot unregister MX3 streams after startup")
+            for physical_index, runtime in list(self._runtimes.items()):
+                if runtime.remove_binding(binding):
+                    if not runtime.bindings:
+                        del self._runtimes[physical_index]
+                    break
+        binding.close()
+
     def start(self) -> None:
         """Start all runtimes after every pipeline has reserved its stream."""
         with self._lock:
+            if self._start_error is not None:
+                raise self._start_error
             if self._started:
                 return
             self._started = True
             runtimes = tuple(self._runtimes.values())
-        for runtime in runtimes:
-            runtime.start()
+        started: list[_Mx3Runtime] = []
+        try:
+            for runtime in runtimes:
+                runtime.start()
+                started.append(runtime)
+        except BaseException as error:
+            # Startup is all-or-nothing: leave no runtime processing frames and
+            # make every later start() report the original failure instead of
+            # silently returning as if the coordinator were healthy.
+            with self._lock:
+                self._start_error = (
+                    error
+                    if isinstance(error, Mx3RuntimeError)
+                    else Mx3RuntimeError(f"Failed to start MX3 runtimes: {error}")
+                )
+            for runtime in started:
+                runtime.stop()
+            raise
 
     def close_waiters(self) -> None:
         """Wake all callback and pipeline waiters before vendor shutdown."""
