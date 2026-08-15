@@ -33,7 +33,10 @@ class PipelineHistory {
      *   postRefreshCallback: () => Promise<void>,
      * }} callbacks
      */
-    init(pipelineStore, { renderCallback, autoSaveCallback, postRefreshCallback }) {
+    init(
+        pipelineStore,
+        { renderCallback, autoSaveCallback, postRefreshCallback },
+    ) {
         this.pipelineStore = pipelineStore;
         this.renderCallback = renderCallback;
         this.autoSaveCallback = autoSaveCallback;
@@ -117,7 +120,10 @@ class PipelineHistory {
         if (this.isApplyingHistory) return;
 
         clearTimeout(this.commitTimer);
-        this.commitTimer = setTimeout(() => this._commitCurrentChange(), HISTORY_DEBOUNCE_MS);
+        this.commitTimer = setTimeout(
+            () => this._commitCurrentChange(),
+            HISTORY_DEBOUNCE_MS,
+        );
     }
 
     /**
@@ -220,8 +226,15 @@ class PipelineHistory {
         const previousSnapshot = this.undoStack.pop();
         this.redoStack.push(this.currentSnapshot);
 
-        await this._applySnapshot(previousSnapshot);
-        this._updateButtons();
+        try {
+            await this._applySnapshot(previousSnapshot);
+        } catch (error) {
+            this.redoStack.pop();
+            this.undoStack.push(previousSnapshot);
+            throw error;
+        } finally {
+            this._updateButtons();
+        }
     }
 
     /**
@@ -234,8 +247,15 @@ class PipelineHistory {
         const nextSnapshot = this.redoStack.pop();
         this.undoStack.push(this.currentSnapshot);
 
-        await this._applySnapshot(nextSnapshot);
-        this._updateButtons();
+        try {
+            await this._applySnapshot(nextSnapshot);
+        } catch (error) {
+            this.undoStack.pop();
+            this.redoStack.push(nextSnapshot);
+            throw error;
+        } finally {
+            this._updateButtons();
+        }
     }
 
     /**

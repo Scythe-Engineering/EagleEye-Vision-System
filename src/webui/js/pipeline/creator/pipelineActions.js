@@ -271,12 +271,6 @@ async function autoSavePipelineImpl(options = {}) {
     }
     try {
         const pipelineConfig = pipelineStore.exportToConfig();
-        const dockingValidation = pipelineStore.validateDocking();
-        if (!dockingValidation.valid) {
-            showDanger(`Cannot save: ${dockingValidation.errors[0].message}`);
-            updateRunButton();
-            return null;
-        }
         if (!deviceInputsShareComponent(pipelineConfig)) {
             showDanger(
                 "Cannot save: connect all Device Input operations through the pipeline graph.",

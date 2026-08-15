@@ -882,8 +882,16 @@ export class FlowchartNode {
      * @param {{docked:boolean, invalid:boolean}} state Dock state.
      */
     setDockState({ docked = false, invalid = false } = {}) {
-        this.isDocked = Boolean(docked);
-        this.isDockInvalid = Boolean(invalid);
+        const normalizedDocked = Boolean(docked);
+        const normalizedInvalid = Boolean(invalid);
+        if (
+            normalizedDocked === this.isDocked &&
+            normalizedInvalid === this.isDockInvalid
+        ) {
+            return;
+        }
+        this.isDocked = normalizedDocked;
+        this.isDockInvalid = normalizedInvalid;
         this.applyDockState();
     }
 

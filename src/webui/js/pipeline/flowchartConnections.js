@@ -123,6 +123,33 @@ export class FlowchartConnections {
             isDocked = false,
         } = options;
         if (this.connections.has(connectionId)) {
+            const existing = this.connections.get(connectionId);
+            if (existing) {
+                existing.isDefault = Boolean(isDefault);
+                existing.isDocked = Boolean(isDocked);
+                existing.dockDots.style.display = existing.isDocked
+                    ? "block"
+                    : "none";
+                existing.labelGroup.style.display = existing.isDocked
+                    ? "none"
+                    : "";
+                if (existing.isDocked) {
+                    existing.path.removeAttribute("marker-end");
+                } else {
+                    existing.path.setAttribute(
+                        "marker-end",
+                        "url(#flowchart-arrow)",
+                    );
+                }
+                if (existing.isDefault && !existing.isDocked) {
+                    existing.path.setAttribute("stroke-dasharray", "5,5");
+                } else {
+                    existing.path.removeAttribute("stroke-dasharray");
+                }
+                if (customWaypoints) {
+                    existing.customWaypoints = customWaypoints;
+                }
+            }
             this.updateConnection(
                 connectionId,
                 fromNode,
@@ -130,18 +157,8 @@ export class FlowchartConnections {
                 toNode,
                 toPortName,
             );
-            const existing = this.connections.get(connectionId);
-            if (existing) {
-                existing.isDefault = isDefault;
-                if (isDefault) {
-                    existing.path.setAttribute("stroke-dasharray", "5,5");
-                } else {
-                    existing.path.removeAttribute("stroke-dasharray");
-                }
-                if (customWaypoints) {
-                    existing.customWaypoints = customWaypoints;
-                    this.updateConnectionWithWaypoints(connectionId);
-                }
+            if (existing?.customWaypoints) {
+                this.updateConnectionWithWaypoints(connectionId);
             }
             return;
         }

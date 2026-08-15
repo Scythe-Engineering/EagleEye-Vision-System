@@ -6,6 +6,7 @@ import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
 import { findCycles, findUnreachableIslands } from "./graphUtils.js";
 import { pipelineStore } from "./PipelineStore.js";
+import { resolveDockingContract } from "./dockingContract.js";
 import { prefetchConfigs } from "./operationConfigCache.js";
 import { hideTooltip, showTooltip } from "../ui/tooltip.js";
 
@@ -873,16 +874,11 @@ export class FlowchartRenderer {
      * @returns {object|null} Docking metadata.
      */
     getDockingMetadata(node) {
-        if (node?.docking) return node.docking;
-        return String(node?.operationData?.id || "")
-            .replace(/\.py$/, "")
-            .toLowerCase() === "mx3_async_object_detection"
-            ? {
-                  source_action: "device_input",
-                  source_port: "frame",
-                  target_port: "frame",
-              }
-            : null;
+        return resolveDockingContract(
+            node?.operationData?.id,
+            node?.docking,
+            pipelineStore.normalizeOperationId.bind(pipelineStore),
+        );
     }
 
     /**
@@ -896,16 +892,11 @@ export class FlowchartRenderer {
         const source = this.nodes.get(connection?.fromNodeId);
         const target = this.nodes.get(connection?.toNodeId);
         const docking = this.getDockingMetadata(target);
-        const normalize = (value) =>
-            String(value || "")
-                .replace(/\.py$/, "")
-                .toLowerCase()
-                .replace(/\s+/g, "_");
         return Boolean(
             source &&
                 docking &&
-                normalize(source.operationData.id) ===
-                    normalize(docking.source_action) &&
+                pipelineStore.normalizeOperationId(source.operationData.id) ===
+                    pipelineStore.normalizeOperationId(docking.source_action) &&
                 connection.fromPortName === docking.source_port &&
                 connection.toPortName === docking.target_port,
         );

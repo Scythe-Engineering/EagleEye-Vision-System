@@ -1,5 +1,6 @@
 // Central store for pipeline state, nodes, connections, and related UI events.
 import { getCachedConfig, prefetchConfigs } from "./operationConfigCache.js";
+import { resolveDockingContract } from "./dockingContract.js";
 import { uid } from "./utils.js";
 
 /** Return a declared port name from a string or object declaration. */
@@ -53,6 +54,7 @@ function isDeclaredPort(config, direction, portName) {
         .filter((name) => !dynamicEnabled || name !== dynamicBase);
     if (staticNames.includes(portName)) return true;
     if (!dynamicEnabled || !dynamicBase) return false;
+    if (portName === dynamicBase) return true;
     const escapedBase = dynamicBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const match = portName.match(new RegExp(`^${escapedBase}_(\\d+)$`));
     if (!match || Number(match[1]) < 1) return false;
@@ -413,28 +415,11 @@ class PipelineStore {
             node.operationId,
             Boolean(node.isSecondary),
         );
-        const docking = config?.docking;
-        if (
-            docking?.source_action &&
-            docking?.source_port &&
-            docking?.target_port
-        ) {
-            return docking;
-        }
-
-        // MX3's contract is fixed; this is only used before its config fetch
-        // completes, not persisted as a separate kind of connection.
-        if (
-            this.normalizeOperationId(node.operationId) ===
-            "mx3_async_object_detection"
-        ) {
-            return {
-                source_action: "device_input",
-                source_port: "frame",
-                target_port: "frame",
-            };
-        }
-        return null;
+        return resolveDockingContract(
+            node.operationId,
+            config?.docking,
+            this.normalizeOperationId.bind(this),
+        );
     }
 
     /**
@@ -707,7 +692,7 @@ class PipelineStore {
 
         if (existingToConnection) {
             const existingKey = `${existingToConnection.fromUuid}-${existingToConnection.fromPort}-${existingToConnection.toUuid}-${existingToConnection.toPort}`;
-            this.removeConnection(existingKey);
+            this.removeConnection(existingKey, { notify: false });
         }
 
         const connection = {
@@ -768,25 +753,28 @@ class PipelineStore {
      * Remove a connection.
      *
      * @param {string} connectionKey Connection key.
+     * @param {{notify?: boolean}} [options={}] Event notification options.
      * @returns {boolean} True when removed.
      */
-    removeConnection(connectionKey) {
+    removeConnection(connectionKey, options = {}) {
         if (!this.state.currentPipeline.connections.has(connectionKey)) {
             return false;
         }
 
         this.state.currentPipeline.connections.delete(connectionKey);
 
-        this.emit("connection:removed", { key: connectionKey });
-        this.emit("connections:changed", {
-            type: "removed",
-            key: connectionKey,
-        });
-        this.emit("pipeline:changed", {
-            type: "connection:removed",
-            key: connectionKey,
-        });
-        this.autoSelectCameraBusIds();
+        if (options.notify !== false) {
+            this.emit("connection:removed", { key: connectionKey });
+            this.emit("connections:changed", {
+                type: "removed",
+                key: connectionKey,
+            });
+            this.emit("pipeline:changed", {
+                type: "connection:removed",
+                key: connectionKey,
+            });
+            this.autoSelectCameraBusIds();
+        }
 
         return true;
     }
