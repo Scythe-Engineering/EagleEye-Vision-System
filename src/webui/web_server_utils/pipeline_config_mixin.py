@@ -95,7 +95,20 @@ class PipelineConfigMixin:
 
         if not isinstance(parsed_config, dict):
             return {"error": "Pipeline configuration must be a JSON object"}, 400
+        try:
+            current_config = json.loads(current_content)
+        except json.JSONDecodeError:
+            current_config = {}
         for pipeline_name, pipeline_operations in parsed_config.items():
+            # Existing, byte-for-byte equivalent serialized pipelines were already
+            # accepted by an earlier save and need not block an unrelated edit.
+            if (
+                isinstance(current_config, dict)
+                and pipeline_name in current_config
+                and json.dumps(current_config[pipeline_name], sort_keys=True)
+                == json.dumps(pipeline_operations, sort_keys=True)
+            ):
+                continue
             try:
                 validate_pipeline_connections(pipeline_operations)
             except ValueError as error:
@@ -106,9 +119,13 @@ class PipelineConfigMixin:
 
             try:
                 for operation in pipeline_operations:
+                    if not isinstance(operation, dict):
+                        raise ValueError("operation must be an object")
+                    action_params = operation.get("action_params", {})
+                    if not isinstance(action_params, dict):
+                        raise ValueError("action_params must be an object")
                     self.validate_operation_params(
-                        operation.get("action_name", ""),
-                        operation.get("action_params", {}),
+                        operation.get("action_name", ""), action_params
                     )
             except ValueError as error:
                 return {
@@ -175,6 +192,8 @@ class PipelineConfigMixin:
         """
         current_config = self._load_pipeline_config_file()
         new_data = request.get_json()
+        if not isinstance(new_data, list):
+            return {"message": "Pipeline config must be an array"}, 400
 
         if pipeline_name not in current_config:
             current_config[pipeline_name] = []
@@ -183,11 +202,16 @@ class PipelineConfigMixin:
         updated_operations = []
         invalid_operations = []
         for operation in new_data:
+            if not isinstance(operation, dict):
+                return {"message": "Pipeline operation must be an object"}, 400
             operation_uuid = operation["uuid"]
             operation_name = operation["action_name"]
+            operation_params_payload = operation.get("action_params", {})
+            if not isinstance(operation_params_payload, dict):
+                return {"message": "Operation action_params must be an object"}, 400
             try:
                 operation_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
+                    operation_name, operation_params_payload
                 )
             except ValueError as exc:
                 invalid_operations.append(
