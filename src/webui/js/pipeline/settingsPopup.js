@@ -810,6 +810,10 @@ export function registerSettingsPopup() {
         ]);
         addRegistryChangeIndicators(inputContainer, input, def, originalId);
 
+        // IDs the registry actually advertises; a retained unavailable ID is
+        // deliberately excluded so re-selecting it cannot clear its error.
+        const registeredIds = new Set();
+
         /** Loads only backend-advertised device IDs into the picker. */
         async function loadDevices() {
             try {
@@ -856,6 +860,8 @@ export function registerSettingsPopup() {
                     );
                 });
                 const knownIds = devices.map((device) => String(device.id));
+                registeredIds.clear();
+                knownIds.forEach((id) => registeredIds.add(id));
                 if (selectedId && !knownIds.includes(selectedId)) {
                     input.appendChild(
                         createElement("option", {
@@ -901,10 +907,19 @@ export function registerSettingsPopup() {
                         `Unable to verify configured device '${selectedId}'.`,
                     );
                 }
+                registeredIds.clear();
                 status.textContent = `Unable to load devices: ${error.message}`;
             }
         }
-        input.addEventListener("change", () => input.setCustomValidity(""));
+        input.addEventListener("change", () => {
+            if (input.value && !registeredIds.has(input.value)) {
+                input.setCustomValidity(
+                    `Configured device '${input.value}' is unavailable.`,
+                );
+                return;
+            }
+            input.setCustomValidity("");
+        });
         void loadDevices();
         return { wrapper, getValue: () => input.value };
     }
@@ -996,6 +1011,10 @@ export function registerSettingsPopup() {
             }
         }
 
+        // IDs the library actually advertises; a retained unavailable ID is
+        // deliberately excluded so re-selecting it cannot clear its error.
+        const availableModelIds = new Set();
+
         /** Loads stable model IDs into the picker without accepting custom values. */
         async function loadModels(selectedModelId = configuredId) {
             try {
@@ -1019,6 +1038,10 @@ export function registerSettingsPopup() {
                             text: `${model.display_name || model.id} (${model.id})`,
                         }),
                     ),
+                );
+                availableModelIds.clear();
+                models.forEach((model) =>
+                    availableModelIds.add(String(model.id)),
                 );
                 const selectedId = String(selectedModelId || "");
                 const isUnavailable =
@@ -1071,12 +1094,19 @@ export function registerSettingsPopup() {
                         `Unable to verify configured model '${configuredId}'.`,
                     );
                 }
+                availableModelIds.clear();
                 status.textContent = `Unable to load models: ${error.message}`;
             }
         }
 
         input.addEventListener("change", () => {
-            input.setCustomValidity("");
+            if (input.value && !availableModelIds.has(input.value)) {
+                input.setCustomValidity(
+                    `Configured model '${input.value}' is unavailable.`,
+                );
+            } else {
+                input.setCustomValidity("");
+            }
             void refreshResolution();
         });
         input.addEventListener("device-registry-ready", () => {

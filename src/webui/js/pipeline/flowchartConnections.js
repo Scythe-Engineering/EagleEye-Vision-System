@@ -670,10 +670,11 @@ export class FlowchartConnections {
     updateDockMarker(connection, from, to) {
         const dots = connection.dockDots?.querySelectorAll("circle") || [];
         const centerX = (from.x + to.x) / 2;
-        const centerY = (from.y + to.y) / 2;
         dots.forEach((dot, index) => {
+            // Each dot continues its own marker segment, which ends at that
+            // endpoint's Y coordinate rather than at the midpoint.
             dot.setAttribute("cx", String(centerX + (index === 0 ? -3 : 3)));
-            dot.setAttribute("cy", String(centerY));
+            dot.setAttribute("cy", String(index === 0 ? from.y : to.y));
         });
     }
 
