@@ -129,7 +129,7 @@ The `position` field stores the x,y coordinates of each operation node in the vi
 
 Notes:
 
-- The framework inspects actual constructor parameters and injects only requested backend services such as `web_interface`, `device_registry`, `model_library`, `network_table`, camera services, and `logger`.
+- The framework inspects actual constructor parameters and injects only requested backend services such as `web_interface`, `device_registry`, `model_library`, `network_table`, `mx3_coordinator`, camera services, and `logger`.
 - The modules are loaded in this order: first try `src.main_operations.definitions.{action_name}`; if not found, fall back to `src.secondary_operations.{action_name}`.
 - Operation input/output declarations are validated when pipelines are saved and constructed. Connections from multi-output operations route only the selected `from_port`; a dictionary returned by a single-output operation remains one payload.
 

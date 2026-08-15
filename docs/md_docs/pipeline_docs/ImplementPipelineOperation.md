@@ -10,12 +10,12 @@ and standalone dynamic outputs), see
 
 - Main operations (definitions): put the wrapper in `src/main_operations/definitions/{operation_name}.py` and name the class `CamelCaseDefinition` (e.g., `MyOpDefinition`).
 - Secondary operations: put the class in `src/secondary_operations/{operation_name}.py` and name it `CamelCase` (e.g., `MyFilter`).
-- For complex logic, implement under `src/modules/{operation_name}/implementation.py` and keep the definition as a thin wrapper.
+- For complex logic, implement under `src/main_operations/modules/{category}/{operation_name}/implementation.py` and keep the definition as a thin wrapper.
 
 ### Constructor args and automatic injection
 
 - Supply operation-specific parameters via `action_params` in `pipeline_config.json`.
-- The pipeline inspects actual constructor parameters and injects requested backend services by exact parameter name: `web_interface`, `device_registry`, `model_library`, `network_table`, camera services, and `logger`.
+- The pipeline inspects actual constructor parameters and injects requested backend services by exact parameter name: `web_interface`, `device_registry`, `model_library`, `network_table`, `mx3_coordinator`, camera services, and `logger`.
 - Other arguments must come from `action_params`.
 - Injection is optional. Do not declare or store a shared service that the operation does not use.
 
@@ -48,13 +48,13 @@ and standalone dynamic outputs), see
 
 - Keep definitions short: instantiate a module implementation and delegate `run`.
 - Example structure:
-    - `src/modules/{operation_name}/implementation.py` -> heavy logic class `XxxImplementation`.
+    - `src/main_operations/modules/{category}/{operation_name}/implementation.py` -> heavy logic class `XxxImplementation`.
     - `src/main_operations/definitions/{operation_name}.py` -> wrapper `XxxDefinition` that resolves devices/resources and calls `self.delegate.run(...)`.
 
 Minimal example — implementation:
 
 ```python
-# src/modules/my_op/implementation.py
+# src/main_operations/modules/{category}/{operation_name}/implementation.py
 import numpy as np
 
 class MyOpImplementation:
@@ -69,7 +69,7 @@ Minimal example — wrapper (definition):
 
 ```python
 # src/main_operations/definitions/my_op.py
-from src.modules.my_op.implementation import MyOpImplementation
+from src.main_operations.modules.{category}.{operation_name}.implementation import MyOpImplementation
 
 class MyOpDefinition:
     def __init__(self, threshold: float = 0.1):
@@ -213,9 +213,9 @@ Example data source config definition (`get_networktables_value_config_def.json`
 - [ ] Place wrapper in `src/main_operations/definitions/` or class in `src/secondary_operations/`.
 - [ ] For main operations: create `{operation_name}_config_def.json` in `src/main_operations/definitions/config_data/`.
 - [ ] For secondary operations: create `{operation_name}_config_def.json` in `src/secondary_operations/config_data/`.
-- [ ] Keep definitions thin; implementation lives under `src/modules/` when logic is non-trivial.
+- [ ] Keep definitions thin; implementation lives under `src/main_operations/modules/{category}/{operation_name}/` when logic is non-trivial.
 - [ ] Assign every operation to an existing `category` and `folder` whenever applicable.
-- [ ] Provide operation params via `action_params` and request only backend services the operation actually uses.
+- [ ] Provide operation params via `action_params` and request only backend services (including `mx3_coordinator` when needed) that the operation actually uses.
 - [ ] Return a mapping keyed by every declared output when defining multiple outputs; single-output dictionaries remain ordinary payloads.
 - [ ] Implement `run` and document I/O types.
 - [ ] Test by generating pipelines and feeding a small `np.ndarray` frame through `Pipeline.run`.
