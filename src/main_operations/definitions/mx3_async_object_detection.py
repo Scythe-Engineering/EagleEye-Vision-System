@@ -19,6 +19,7 @@ from src.utils.mx3_runtime import (
     Mx3Profile,
     Mx3ResultPacket,
     Mx3RuntimeCoordinator,
+    Mx3RuntimeError,
     Mx3StreamBinding,
     TransformedFrameSource,
 )
@@ -137,7 +138,8 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
         binding, self.binding = self.binding, None
         try:
             self.coordinator.unregister_stream(binding)
-        except Exception:
+        except Mx3RuntimeError:
+            # The runtimes already started, so the stream can only be closed.
             binding.close()
 
     def update_config(self, json_config: dict[str, Any]) -> None:

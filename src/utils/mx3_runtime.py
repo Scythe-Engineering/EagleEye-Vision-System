@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -16,6 +17,10 @@ from src.utils.model_library import ResolvedArtifact
 from src.utils.timing import FramePacket, TimedValue
 
 Detection = dict[str, Any]
+
+# Upper bound on how long a paused stream waits for outputs the accelerator
+# accepted but may never deliver.
+DISCARD_TIMEOUT_SECONDS = 2.0
 
 
 class Mx3RuntimeError(RuntimeError):
@@ -180,6 +185,7 @@ class Mx3StreamBinding:
         self._last_frame_seq = -1
         self._inflight: deque[_InflightPacket] = deque()
         self._pending_discards = 0
+        self._discard_deadline: float | None = None
         self._completed: Mx3ResultPacket | None = None
         self._completed_generation = 0
         self._consumed_generation = 0
@@ -217,11 +223,32 @@ class Mx3StreamBinding:
             # The accelerator still owns these submissions and delivers their
             # outputs in order, so count them as discards instead of dropping
             # the correlation entirely and mispairing a later frame.
-            self._pending_discards += len(self._inflight)
-            self._inflight.clear()
+            if self._inflight:
+                self._pending_discards += len(self._inflight)
+                self._discard_deadline = time.monotonic() + DISCARD_TIMEOUT_SECONDS
+                self._inflight.clear()
             self._completed = None
             self._consumed_generation = self._completed_generation
             self._condition.notify_all()
+
+    def _expire_pending_discards(self) -> None:
+        """Stop waiting for outputs the accelerator never delivered.
+
+        The vendor API does not guarantee an output callback for every accepted
+        input across a pause, so an undelivered output would otherwise hold a
+        permanent slot and eventually stall the stream.  Give up after a bounded
+        wait; a very late output can then mispair one frame, which is recoverable
+        where a frozen stream is not.
+
+        The caller must hold ``self._condition``.
+        """
+        if self._pending_discards <= 0 or self._discard_deadline is None:
+            return
+        if time.monotonic() < self._discard_deadline:
+            return
+        self._pending_discards = 0
+        self._discard_deadline = None
+        self._condition.notify_all()
 
     def _source_frame_seq(self) -> int | None:
         """Return the source's newest frame sequence when it exposes one."""
@@ -306,6 +333,7 @@ class Mx3StreamBinding:
                         self.deactivate()
                         continue
                     activation = self._activation
+                    self._expire_pending_discards()
                     while (
                         len(self._inflight) + self._pending_discards
                         >= self.profile.max_inflight
@@ -314,6 +342,7 @@ class Mx3StreamBinding:
                         and self._error is None
                     ):
                         self._condition.wait(timeout=0.05)
+                        self._expire_pending_discards()
                     if self._closed or self._error is not None:
                         return None
                     if not self._active:
@@ -356,6 +385,8 @@ class Mx3StreamBinding:
                 if self._pending_discards > 0:
                     # Output belongs to a packet submitted before the last pause.
                     self._pending_discards -= 1
+                    if self._pending_discards == 0:
+                        self._discard_deadline = None
                     self._condition.notify_all()
                     return
                 if not self._inflight:

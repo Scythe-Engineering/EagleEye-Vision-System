@@ -133,7 +133,11 @@ class DeviceInput(OperationInstance):
         camera_name = self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id)
         if camera_name is None:
             raise RuntimeError(f"Unknown camera bus ID {self.camera_bus_id!r}")
-        worker = self.camera_manager.cameras.get(camera_name)
+        workers = getattr(self.camera_manager, "cameras", None)
+        if workers is None:
+            # A manager without a worker registry cannot report liveness.
+            return
+        worker = workers.get(camera_name)
         if worker is None:
             raise RuntimeError(f"Unknown camera worker {camera_name!r}")
         # A stopped worker never publishes another frame, so waiting forever
