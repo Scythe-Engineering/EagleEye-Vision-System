@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from src.utils.mx3_compiler import (
     Mx3CompilerBusyError,
     Mx3CompilerService,
     build_mx_nc_command,
+    detect_onnx_input_size,
     parse_compiler_progress,
     yolo26_profile_for_input,
 )
@@ -228,3 +230,41 @@ def test_bundle_commit_is_atomic_on_input_failure(tmp_path: Path) -> None:
             expected_bundle=expected_bundle,
         )
     assert library.get_model(model_id).artifacts == second.artifacts
+
+
+def test_ambiguous_onnx_layout_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shape whose first and last axes are both channel-sized is not guessed."""
+    source = tmp_path / "model.onnx"
+    source.write_bytes(b"onnx")
+
+    def fake_dimensions(shape: list[int]) -> Any:
+        class _Shape:
+            def __init__(self) -> None:
+                self.dim = [type("D", (), {"dim_value": value})() for value in shape]
+
+        class _Type:
+            def __init__(self) -> None:
+                self.tensor_type = type("T", (), {"shape": _Shape()})()
+
+        class _Model:
+            def __init__(self) -> None:
+                self.graph = type(
+                    "G", (), {"input": [type("I", (), {"type": _Type()})()]}
+                )()
+
+        return _Model()
+
+    onnx_stub = type(
+        "OnnxStub",
+        (),
+        {
+            "load": staticmethod(
+                lambda *_args, **_kwargs: fake_dimensions([1, 4, 640, 3])
+            )
+        },
+    )
+    monkeypatch.setitem(sys.modules, "onnx", onnx_stub)
+    with pytest.raises(Mx3CompilerError, match="Ambiguous ONNX input layout"):
+        detect_onnx_input_size(source)

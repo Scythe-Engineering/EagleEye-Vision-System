@@ -11,6 +11,7 @@ import pytest
 from tests.utils.config_defaults import resolve_operation_defaults
 from tests.utils.dummy_dependencies import build_dummy_dependencies
 from tests.utils.operation_discovery import (
+    OperationSpec,
     build_exclusion_list,
     discover_operations,
     filter_init_params,
@@ -26,11 +27,11 @@ from tests.utils.operation_inputs import (
 @pytest.mark.parametrize(
     "spec", discover_operations(Path(__file__).resolve().parents[1])
 )
-def test_operation_run(spec) -> None:
+def test_operation_run(spec: OperationSpec) -> None:
     """Run every discoverable operation with its representative input."""
     exclusion_list = build_exclusion_list()
     if spec.action_name in exclusion_list:
-        pytest.skip("yolo_excluded")
+        pytest.skip(exclusion_list[spec.action_name])
 
     operation_class, import_error = import_operation_class(spec)
     if operation_class is None:

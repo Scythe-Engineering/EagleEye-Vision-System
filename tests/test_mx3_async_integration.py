@@ -301,3 +301,100 @@ def test_docking_validation_requires_direct_exclusive_device_input() -> None:
     camera["connections"].append(_dock("camera", "mx3-2"))
     with pytest.raises(ValueError, match="already has a docked"):
         validate_pipeline_connections([camera, detector, second])
+
+
+def test_connection_validation_requires_data_type() -> None:
+    camera = _device_input()
+    detector = _mx3()
+    connection = _dock("camera", "mx3")
+    del connection["data_type"]
+    camera["connections"] = [connection]
+    with pytest.raises(ValueError, match="Malformed connection"):
+        validate_pipeline_connections([camera, detector])
+
+
+def test_connection_validation_rejects_path_qualified_action_names() -> None:
+    camera = _device_input()
+    camera["action_name"] = "definitions/device_input"
+    with pytest.raises(ValueError, match="must not contain a path"):
+        validate_pipeline_connections([camera])
+
+
+def test_resumed_stream_discards_output_submitted_before_the_pause(
+    tmp_path: Path,
+) -> None:
+    """A pre-pause output must never be paired with a post-resume frame."""
+    accelerators: list[FakeMxAccl] = []
+
+    def factory(path: str, **kwargs: object) -> FakeMxAccl:
+        accelerator = FakeMxAccl(path, **kwargs)
+        accelerators.append(accelerator)
+        return accelerator
+
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=factory)
+    binding = coordinator.register_stream(
+        0,
+        _artifact(tmp_path),
+        FakeSource([1, 2, 3]),
+        ("note",),
+        0.25,
+        10,
+        lambda: True,
+    )
+    coordinator.start()
+    stream_input, stream_output, _ = accelerators[0].callbacks[0]
+
+    binding.activate()
+    stream_input(0)
+    binding.deactivate()
+    binding.activate()
+    stream_input(0)
+
+    # The accelerator finally emits the output for the pre-pause submission,
+    # which must be discarded rather than paired with the post-resume frame.
+    stream_output([np.array([[[0, 0, 32, 32, 0.9, 0]]])], 0)
+    stream_output([np.array([[[0, 0, 64, 64, 0.8, 0]]])], 0)
+    assert binding.terminal_error is None
+    result = binding.wait_for_next()
+    assert result is not None
+    assert result.frame.timing.frame_seq == 2
+    assert result.detections.value[0]["confidence"] == pytest.approx(0.8)
+    coordinator.stop()
+
+
+def test_unregistered_stream_frees_its_physical_mx3_reservation(
+    tmp_path: Path,
+) -> None:
+    """A pipeline that fails to initialize must not reserve a conflicting DFP."""
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
+    binding = coordinator.register_stream(
+        0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
+    )
+    coordinator.unregister_stream(binding)
+    coordinator.register_stream(
+        0,
+        _artifact(tmp_path, "other.dfp"),
+        FakeSource([]),
+        None,
+        0.25,
+        10,
+        lambda: True,
+    )
+
+
+def test_failed_coordinator_startup_is_reported_to_every_caller(
+    tmp_path: Path,
+) -> None:
+    """A partial startup must not leave the coordinator silently inert."""
+
+    def factory(path: str, **kwargs: object) -> FakeMxAccl:
+        raise RuntimeError("accelerator unavailable")
+
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=factory)
+    coordinator.register_stream(
+        0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
+    )
+    with pytest.raises(Mx3RuntimeError, match="accelerator unavailable"):
+        coordinator.start()
+    with pytest.raises(Mx3RuntimeError, match="accelerator unavailable"):
+        coordinator.start()

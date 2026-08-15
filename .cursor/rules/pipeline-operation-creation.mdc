@@ -40,7 +40,7 @@ alwaysApply: false
 
 ### Automatic Injection
 
-- Request only services the operation uses (`web_interface`, `device_registry`, `model_library`, `network_table`, `mx3_coordinator`, camera services, or `logger`)
+- Request only services the operation uses (`web_interface`, `device_registry`, `model_library`, `network_table`, `mx3_coordinator`, `camera_manager`, `camera_config_registry`, `camera_configs`, or `logger`)
 - Injection inspects exact constructor parameters, not local variables
 
 ### Parameter Sources
