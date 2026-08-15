@@ -165,6 +165,9 @@ export function registerModelLibraryModal() {
         );
         if (!response.ok) throw new Error(await responseError(response));
         const data = await response.json();
+        // refresh() re-renders the editor from backend data, discarding unsaved
+        // display-name, class-list, and MX3-profile edits unless captured first.
+        captureDraft();
         await refresh();
         setMessage(
             data.restart_required
@@ -400,6 +403,7 @@ export function registerModelLibraryModal() {
                     if (model) {
                         uploadButton.disabled = true;
                         uploadButton.textContent = "Uploading…";
+                        preserveDraft();
                         const data = await uploadArtifact(model.id, slot, file);
                         await refresh();
                         setMessage(

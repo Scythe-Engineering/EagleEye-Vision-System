@@ -1021,16 +1021,21 @@ export function registerSettingsPopup() {
                     ),
                 );
                 const selectedId = String(selectedModelId || "");
-                if (
+                const isUnavailable =
                     selectedId &&
-                    !models.some((model) => String(model.id) === selectedId)
-                ) {
+                    !models.some((model) => String(model.id) === selectedId);
+                if (isUnavailable) {
                     input.appendChild(
                         createElement("option", {
                             value: selectedId,
                             text: `${selectedId} (configured model unavailable)`,
                         }),
                     );
+                }
+                // Assign before resolving: refreshResolution() reads input.value
+                // and would otherwise report no model on the initial render.
+                input.value = selectedId;
+                if (isUnavailable) {
                     input.setCustomValidity(
                         `Configured model '${selectedId}' is unavailable.`,
                     );
@@ -1044,7 +1049,6 @@ export function registerSettingsPopup() {
                         void refreshResolution();
                     }
                 }
-                input.value = selectedId;
                 input.dispatchEvent(new Event("registry-value-loaded"));
             } catch (error) {
                 input.innerHTML = "";

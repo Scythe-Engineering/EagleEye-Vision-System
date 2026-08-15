@@ -198,14 +198,24 @@ class PipelineConfigMixin:
         if pipeline_name not in current_config:
             current_config[pipeline_name] = []
 
-        existing_ops = {op["uuid"]: op for op in current_config[pipeline_name]}
+        existing_ops = {
+            op["uuid"]: op
+            for op in current_config[pipeline_name]
+            if isinstance(op, dict) and op.get("uuid")
+        }
         updated_operations = []
         invalid_operations = []
         for operation in new_data:
             if not isinstance(operation, dict):
                 return {"message": "Pipeline operation must be an object"}, 400
-            operation_uuid = operation["uuid"]
-            operation_name = operation["action_name"]
+            operation_uuid = operation.get("uuid")
+            operation_name = operation.get("action_name")
+            if not isinstance(operation_uuid, str) or not operation_uuid:
+                return {"message": "Pipeline operation requires a non-empty uuid"}, 400
+            if not isinstance(operation_name, str) or not operation_name:
+                return {
+                    "message": "Pipeline operation requires a non-empty action_name"
+                }, 400
             operation_params_payload = operation.get("action_params", {})
             if not isinstance(operation_params_payload, dict):
                 return {"message": "Operation action_params must be an object"}, 400

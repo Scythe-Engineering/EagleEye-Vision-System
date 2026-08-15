@@ -126,7 +126,13 @@ export class FlowchartConnections {
             const existing = this.connections.get(connectionId);
             if (existing) {
                 existing.isDefault = Boolean(isDefault);
+                const wasDocked = existing.isDocked;
                 existing.isDocked = Boolean(isDocked);
+                if (wasDocked !== existing.isDocked) {
+                    // lastPosKey only tracks endpoints, so the cached path would
+                    // survive a docking change and keep the old geometry.
+                    existing.lastPosKey = null;
+                }
                 existing.dockDots.style.display = existing.isDocked
                     ? "block"
                     : "none";
@@ -157,7 +163,9 @@ export class FlowchartConnections {
                 toNode,
                 toPortName,
             );
-            if (existing?.customWaypoints) {
+            if (existing?.customWaypoints && !existing.isDocked) {
+                // Docked connections render a dock marker that waypoint routing
+                // would immediately overwrite.
                 this.updateConnectionWithWaypoints(connectionId);
             }
             return;
@@ -273,7 +281,7 @@ export class FlowchartConnections {
             dockDots,
         });
 
-        if (customWaypoints && customWaypoints.length >= 2) {
+        if (!isDocked && customWaypoints && customWaypoints.length >= 2) {
             this.updateConnectionWithWaypoints(connectionId);
         } else {
             this.updateConnection(

@@ -229,8 +229,14 @@ class PipelineHistory {
         try {
             await this._applySnapshot(previousSnapshot);
         } catch (error) {
-            this.redoStack.pop();
-            this.undoStack.push(previousSnapshot);
+            // _applySnapshot mutates the store before rendering and saving, so
+            // the stacks alone cannot describe the state the canvas is left in.
+            try {
+                await this._applySnapshot(this.currentSnapshot);
+            } finally {
+                this.redoStack.pop();
+                this.undoStack.push(previousSnapshot);
+            }
             throw error;
         } finally {
             this._updateButtons();
@@ -250,8 +256,13 @@ class PipelineHistory {
         try {
             await this._applySnapshot(nextSnapshot);
         } catch (error) {
-            this.undoStack.pop();
-            this.redoStack.push(nextSnapshot);
+            // Restore the pipeline itself before repairing the stacks; see undo().
+            try {
+                await this._applySnapshot(this.currentSnapshot);
+            } finally {
+                this.undoStack.pop();
+                this.redoStack.push(nextSnapshot);
+            }
             throw error;
         } finally {
             this._updateButtons();
