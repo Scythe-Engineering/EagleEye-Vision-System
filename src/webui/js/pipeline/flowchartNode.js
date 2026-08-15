@@ -816,7 +816,7 @@ export class FlowchartNode {
                         flex-shrink: 0;
                     ">i</div>
                 </div>
-                <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                <div style="display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0;">
                     <button class="node-settings-btn" title="Settings" style="
                         padding: 4px;
                         background: transparent;
