@@ -17,6 +17,9 @@ from src.utils.camera_utils.camera_coordinate_transforms import (
 )
 
 
+MINIMUM_DOWNWARD_ANGLE_RADIANS = np.deg2rad(3.0)
+
+
 class GroundPlaneIntersection(OperationInstance):
     """Ground plane intersection for 3D position estimation.
 
@@ -40,7 +43,7 @@ class GroundPlaneIntersection(OperationInstance):
         Args:
             camera_bus_id: Camera bus ID used to resolve intrinsics and extrinsics.
             camera_height: Legacy fallback height used when extrinsics are unavailable.
-            camera_pitch: Legacy fallback pitch used when extrinsics are unavailable.
+            camera_pitch: Legacy fallback pitch in radians, used when extrinsics are unavailable.
             ground_level: Ground-plane height in robot coordinates, in meters.
             camera_config_registry: Injected shared camera config registry.
         """
@@ -227,7 +230,10 @@ class GroundPlaneIntersection(OperationInstance):
             horizontal_ray_length = float(np.linalg.norm(robot_ray[:2]))
             downward_angle = np.arctan2(-robot_ray[2], horizontal_ray_length)
 
-            if camera_height_from_ground <= 0.0 or downward_angle <= np.deg2rad(3.0):
+            if (
+                camera_height_from_ground <= 0.0
+                or downward_angle <= MINIMUM_DOWNWARD_ANGLE_RADIANS
+            ):
                 continue
 
             ray_scale = -camera_height_from_ground / robot_ray[2]
@@ -256,5 +262,11 @@ class GroundPlaneIntersection(OperationInstance):
             if next_camera_bus_id != self.camera_bus_id:
                 self.camera_bus_id = next_camera_bus_id
                 self._intrinsics_cache = None
-        if "ground_level" in json_config:
+        if json_config.get("camera_height") is not None:
+            self._fallback_camera_height = float(json_config["camera_height"])
+        if json_config.get("camera_pitch") is not None:
+            # The operation-level fallback contract is radians; camera registry
+            # extrinsics remain degree-based and are converted when constructed.
+            self._fallback_camera_pitch = float(json_config["camera_pitch"])
+        if json_config.get("ground_level") is not None:
             self.ground_level = float(json_config["ground_level"])

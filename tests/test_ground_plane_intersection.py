@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +14,7 @@ from src.secondary_operations.ground_plane_intersection import GroundPlaneInters
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 
 
-def test_ground_plane_outputs_camera_local_intersection(tmp_path) -> None:
+def test_ground_plane_outputs_camera_local_intersection(tmp_path: Path) -> None:
     """Ground projection should return the intersection in camera coordinates."""
     camera_dir = tmp_path / "cam0"
     camera_dir.mkdir()

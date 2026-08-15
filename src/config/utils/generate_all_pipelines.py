@@ -46,11 +46,11 @@ def replace_values(config_data: dict) -> dict:
             config_data[key] = replace_values(value)
         elif isinstance(value, list):
             config_data[key] = [
-                replace_values(item)
-                if isinstance(item, dict)
-                else _replace_string_value(item)
-                if isinstance(item, str)
-                else item
+                (
+                    replace_values(item)
+                    if isinstance(item, dict)
+                    else _replace_string_value(item) if isinstance(item, str) else item
+                )
                 for item in value
             ]
     return config_data
@@ -133,6 +133,7 @@ def generate_all_pipelines(
         device_registry: Immutable startup device inventory.
         model_library: Managed inference model library.
         logger: Logger instance for logging.
+        mx3_coordinator: Optional shared MX3 runtime coordinator injected into operations.
         pipeline_config: The pipeline configuration to use for the pipelines. (Optional, mostly for testing)
 
     Returns:

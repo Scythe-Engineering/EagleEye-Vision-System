@@ -98,6 +98,7 @@ class Pipeline:
         self.thread_active = False
         self.thread = None
         self.thread_state_lock = threading.Lock()
+        self._async_state_lock = threading.RLock()
         self.operation_errors: dict[str, dict[str, Any]] = {}
         self.operation_errors_lock = threading.Lock()
         self.operation_ports = validate_pipeline_connections(self.pipeline_config)
@@ -406,25 +407,26 @@ class Pipeline:
         return self.thread_running and self._is_enabled_from_networktables()
 
     def _set_async_operations_active(self, active: bool) -> None:
-        """Apply one pipeline activation transition to all docked operations."""
-        if active == self._async_operations_active:
-            return
-        if not active:
-            for operation in self.async_docked_operations:
-                cast(AsyncDockedOperation, operation.instance).deactivate()
-            self._async_operations_active = False
-            return
+        """Atomically apply one activation transition to all docked operations."""
+        with self._async_state_lock:
+            if active == self._async_operations_active:
+                return
+            if not active:
+                for operation in self.async_docked_operations:
+                    cast(AsyncDockedOperation, operation.instance).deactivate()
+                self._async_operations_active = False
+                return
 
-        activated: list[Operation] = []
-        try:
-            for operation in self.async_docked_operations:
-                cast(AsyncDockedOperation, operation.instance).activate()
-                activated.append(operation)
-            self._async_operations_active = True
-        except Exception:
-            for operation in activated:
-                cast(AsyncDockedOperation, operation.instance).deactivate()
-            raise
+            activated: list[Operation] = []
+            try:
+                for operation in self.async_docked_operations:
+                    cast(AsyncDockedOperation, operation.instance).activate()
+                    activated.append(operation)
+                self._async_operations_active = True
+            except Exception:
+                for operation in activated:
+                    cast(AsyncDockedOperation, operation.instance).deactivate()
+                raise
 
     def close(self) -> None:
         """Close asynchronous operation bindings after the pipeline thread stops."""

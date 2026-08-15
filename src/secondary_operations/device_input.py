@@ -1,4 +1,3 @@
-import time
 from typing import Any, Callable, TYPE_CHECKING
 
 import cv2
@@ -132,8 +131,16 @@ class DeviceInput(OperationInstance):
     ) -> FramePacket | None:
         """Wait for and return the newest unique transformed camera packet.
 
-        This dedicated callback-facing API never calls the graph-level ``run``
-        method and intentionally drops intermediate captured frames.
+        Args:
+            after_frame_seq: Last consumed frame sequence number.
+            should_continue: Callback that remains true while waiting is allowed.
+
+        Returns:
+            The next transformed packet, or ``None`` when waiting stops or the
+            manager cannot provide timestamped packets.
+
+        Raises:
+            RuntimeError: If the configured camera or its worker is unknown.
         """
         while should_continue():
             frame_available = self.camera_manager.wait_for_new_frame_by_bus_id(
@@ -142,12 +149,22 @@ class DeviceInput(OperationInstance):
                 timeout_s=0.05,
             )
             if not frame_available:
-                time.sleep(0.02)
+                camera_name = self.camera_manager.get_camera_name_by_bus_id(
+                    self.camera_bus_id
+                )
+                if camera_name is None:
+                    raise RuntimeError(f"Unknown camera bus ID {self.camera_bus_id!r}")
+                if camera_name not in self.camera_manager.cameras:
+                    raise RuntimeError(f"Unknown camera worker {camera_name!r}")
+                continue
             if not should_continue():
                 return None
-            packet = self.camera_manager.get_current_packet_by_bus_id(
-                self.camera_bus_id
+            get_packet = getattr(
+                self.camera_manager, "get_current_packet_by_bus_id", None
             )
+            if not callable(get_packet):
+                return None
+            packet = get_packet(self.camera_bus_id)
             if (
                 packet is not None
                 and packet.timing.frame_seq is not None
@@ -167,9 +184,11 @@ class DeviceInput(OperationInstance):
                 - camera_bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """
-        self.camera_bus_id = json_config.get("camera_bus_id", self.camera_bus_id)
+        camera_bus_id = json_config.get("camera_bus_id")
+        if camera_bus_id is not None:
+            self.camera_bus_id = camera_bus_id
 
-        if "frame_rotation" in json_config:
+        if json_config.get("frame_rotation") is not None:
             try:
                 new_rotation = self._normalize_rotation(json_config["frame_rotation"])
                 if new_rotation != self.frame_rotation:

@@ -4,19 +4,12 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
 from tests.utils.config_defaults import resolve_operation_defaults
-from tests.utils.dummy_data import dummy_frame
-from tests.utils.dummy_dependencies import (
-    DummyDeviceRegistry,
-    DummyModelLibrary,
-    FakeCameraThreadManager,
-    FakeEagleEyeInterface,
-    FakeNetworkTable,
-)
+from tests.utils.dummy_dependencies import build_dummy_dependencies
 from tests.utils.operation_discovery import (
     build_exclusion_list,
     discover_operations,
@@ -28,26 +21,13 @@ from tests.utils.operation_inputs import (
     get_fallback_input,
     get_operation_input_builders,
 )
-from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
-from src.utils.logging.logger import Logger
-
-
-def _build_dummy_dependencies() -> dict[str, Any]:
-    return {
-        "web_interface": FakeEagleEyeInterface(),
-        "device_registry": DummyDeviceRegistry(),
-        "model_library": DummyModelLibrary(),
-        "network_table": FakeNetworkTable(),
-        "camera_manager": FakeCameraThreadManager(default_frame=dummy_frame()),
-        "camera_config_registry": CameraConfigRegistry(),
-        "logger": Logger(log_directory="logs/test"),
-    }
 
 
 @pytest.mark.parametrize(
     "spec", discover_operations(Path(__file__).resolve().parents[1])
 )
 def test_operation_run(spec) -> None:
+    """Run every discoverable operation with its representative input."""
     exclusion_list = build_exclusion_list()
     if spec.action_name in exclusion_list:
         pytest.skip("yolo_excluded")
@@ -64,7 +44,7 @@ def test_operation_run(spec) -> None:
 
     defaults = resolve_operation_defaults(spec)
     init_params = defaults.action_params.copy()
-    dependencies = _build_dummy_dependencies()
+    dependencies = build_dummy_dependencies()
 
     init_parameters = inspect.signature(operation_class.__init__).parameters
     for name, value in dependencies.items():
@@ -75,9 +55,7 @@ def test_operation_run(spec) -> None:
         camera_bus_id = init_params.get("camera_bus_id", "test_camera")
         camera_name = f"camera_{camera_bus_id}"
         dependencies["camera_manager"].add_camera(camera_name)
-        dependencies["camera_manager"].register_bus_id(
-            camera_bus_id, camera_name
-        )
+        dependencies["camera_manager"].register_bus_id(camera_bus_id, camera_name)
 
     operation_class_callable = operation_class
     if operation_class_callable is None:

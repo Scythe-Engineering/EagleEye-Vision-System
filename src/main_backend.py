@@ -210,7 +210,10 @@ class MainBackend:
                 self.logger.log(f"MX3 shutdown failed: {error}")
 
         if self.camera_manager is not None:
-            self.camera_manager.stop_all_cameras()
+            try:
+                self.camera_manager.stop_all_cameras()
+            except Exception as error:
+                self.logger.log(f"Camera shutdown failed: {error}")
 
         if restart_service:
             service_name = os.environ.get("SERVICE_NAME", "eagleeye")
