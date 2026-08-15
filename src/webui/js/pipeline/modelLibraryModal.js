@@ -1,5 +1,6 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { registerMx3CompilationModal } from "./mx3CompilationModal.js";
+import { INPUT_CLASS, responseError } from "./modalFormHelpers.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -17,8 +18,6 @@ const ARTIFACT_LABELS = {
     mx3_dfp: "MX3 DFP (.dfp)",
     mx3_postprocessor: "MX3 postprocessor (.onnx)",
 };
-const INPUT_CLASS =
-    "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]";
 
 /**
  * Detects the artifact slot represented by a selected model filename.
@@ -59,25 +58,6 @@ export function registerModelLibraryModal() {
     let draftValues = null;
     let captureDraft = () => {};
     const pendingArtifacts = new Map();
-
-    /**
-     * Returns an error message from an API response without assuming its shape.
-     * @param {Response} response Failed HTTP response.
-     * @returns {Promise<string>} Backend error message.
-     */
-    async function responseError(response) {
-        try {
-            const data = await response.json();
-            return (
-                data.error ||
-                data.detail ||
-                data.message ||
-                JSON.stringify(data)
-            );
-        } catch (_) {
-            return response.statusText || `HTTP ${response.status}`;
-        }
-    }
 
     /**
      * Displays a modal-level success or error message.
@@ -508,6 +488,7 @@ export function registerModelLibraryModal() {
                             mx3CompilationModal.open(
                                 model,
                                 event.currentTarget,
+                                overlay,
                             );
                         },
                     }),

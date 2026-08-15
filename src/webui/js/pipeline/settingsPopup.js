@@ -2541,17 +2541,27 @@ export function registerSettingsPopup() {
         });
 
         async function refreshStatus() {
-            const response = await fetch(
-                `${BACKEND_BASE_URL}/line-profiling/status`,
-            );
-            const data = await response.json();
-            const active = data.active_session;
-            const isThis =
-                active?.pipeline_name === pipelineName &&
-                active?.operation_uuid === operationUuid;
-            statusEl.textContent = `Status: ${isThis ? "running" : active ? "another operation is running" : "idle"}`;
-            startBtn.disabled = !pipelineName || !!active;
-            stopBtn.disabled = !isThis;
+            try {
+                const response = await fetch(
+                    `${BACKEND_BASE_URL}/line-profiling/status`,
+                );
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                const active = data?.active_session;
+                const isThis =
+                    active?.pipeline_name === pipelineName &&
+                    active?.operation_uuid === operationUuid;
+                statusEl.textContent = `Status: ${isThis ? "running" : active ? "another operation is running" : "idle"}`;
+                startBtn.disabled = !pipelineName || !!active;
+                stopBtn.disabled = !isThis;
+            } catch (error) {
+                console.warn("Failed to load line profiling status", error);
+                statusEl.textContent = "Status: unavailable";
+                startBtn.disabled = !pipelineName;
+                stopBtn.disabled = true;
+            }
         }
 
         startBtn.onclick = async () => {
@@ -2608,10 +2618,7 @@ export function registerSettingsPopup() {
             ]),
         );
         body.appendChild(section);
-        refreshStatus().catch((err) => {
-            console.warn("Failed to load line profiling status", err);
-            statusEl.textContent = "Status: unavailable";
-        });
+        void refreshStatus();
     }
 
     /**

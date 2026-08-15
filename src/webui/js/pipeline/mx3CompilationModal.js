@@ -1,4 +1,5 @@
 import { BACKEND_BASE_URL } from "../config.js";
+import { INPUT_CLASS, responseError } from "./modalFormHelpers.js";
 import {
     closeOnBackdropClick,
     createElement,
@@ -6,9 +7,6 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
-
-const INPUT_CLASS =
-    "w-full bg-[#232323] border border-[#414141] text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#f9c845]";
 
 /**
  * Registers the MX3 compilation dialog and its retained job-status controller.
@@ -27,26 +25,8 @@ export function registerMx3CompilationModal({
     let compilationDraft = null;
     let lastCompletedCompilationId = null;
     let parentOverlay = null;
+    let parentOverlayAccessibility = null;
     let returnFocusId = null;
-
-    /**
-     * Returns an error message from an API response without assuming its shape.
-     * @param {Response} response Failed HTTP response.
-     * @returns {Promise<string>} Backend error message.
-     */
-    async function responseError(response) {
-        try {
-            const data = await response.json();
-            return (
-                data.error ||
-                data.detail ||
-                data.message ||
-                JSON.stringify(data)
-            );
-        } catch (_) {
-            return response.statusText || `HTTP ${response.status}`;
-        }
-    }
 
     /**
      * Returns whether the retained compilation status represents a live job.
@@ -142,8 +122,8 @@ export function registerMx3CompilationModal({
         );
         if (startButton) startButton.disabled = active;
         if (cancelButton) {
-            cancelButton.disabled =
-                String(compilation?.state || "").toLowerCase() !== "running";
+            const state = String(compilation?.state || "").toLowerCase();
+            cancelButton.disabled = !active || state === "cancelling";
         }
         compilationStatusEl.innerHTML = "";
         const status = compilation;
@@ -234,10 +214,18 @@ export function registerMx3CompilationModal({
      * Opens the MX3 compilation dialog for an ONNX source model.
      * @param {object} model Model containing the ONNX source artifact.
      * @param {HTMLElement} trigger Button that invoked the dialog.
+     * @param {HTMLElement} [overlay] Parent modal overlay, when one is known.
      */
-    function open(model, trigger) {
+    function open(model, trigger, overlay) {
         compilationModel = model;
-        parentOverlay = trigger?.closest(".fixed.inset-0") || null;
+        parentOverlay =
+            overlay || document.getElementById("modelLibraryOverlay") || null;
+        parentOverlayAccessibility = parentOverlay
+            ? {
+                  hadInert: parentOverlay.hasAttribute("inert"),
+                  ariaHidden: parentOverlay.getAttribute("aria-hidden"),
+              }
+            : null;
         returnFocusId = trigger?.id || null;
         compilationDraft = { advancedEdited: false };
         renderCompilationDialog();
@@ -252,9 +240,21 @@ export function registerMx3CompilationModal({
     function close() {
         const focusId = returnFocusId;
         hideModal(compilationOverlay);
-        parentOverlay?.removeAttribute("inert");
-        parentOverlay?.removeAttribute("aria-hidden");
+        if (parentOverlay && parentOverlayAccessibility) {
+            if (!parentOverlayAccessibility.hadInert) {
+                parentOverlay.removeAttribute("inert");
+            }
+            if (parentOverlayAccessibility.ariaHidden === null) {
+                parentOverlay.removeAttribute("aria-hidden");
+            } else {
+                parentOverlay.setAttribute(
+                    "aria-hidden",
+                    parentOverlayAccessibility.ariaHidden,
+                );
+            }
+        }
         parentOverlay = null;
+        parentOverlayAccessibility = null;
         returnFocusId = null;
         if (focusId) document.getElementById(focusId)?.focus();
     }
@@ -674,7 +674,11 @@ export function registerMx3CompilationModal({
                 "px-3 py-2 bg-red-700 text-white rounded hover:bg-red-600 disabled:opacity-50 text-sm",
             text: "Cancel",
             "data-compilation-cancel": "",
-            disabled: isCompilationActive() ? null : "disabled",
+            disabled:
+                isCompilationActive() &&
+                String(compilation?.state || "").toLowerCase() !== "cancelling"
+                    ? null
+                    : "disabled",
             onClick: cancelCompilation,
         });
         const body = createElement(
