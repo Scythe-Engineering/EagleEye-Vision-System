@@ -124,6 +124,34 @@ class DeviceInput(OperationInstance):
             return self._apply_rotation(frame)
         return None
 
+    def _require_running_worker(self) -> None:
+        """Fail fast when the configured camera's worker is gone or stopped.
+
+        Raises:
+            RuntimeError: If the camera, its worker, or its thread has stopped.
+        """
+        camera_name = self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id)
+        if camera_name is None:
+            raise RuntimeError(f"Unknown camera bus ID {self.camera_bus_id!r}")
+        worker = self.camera_manager.cameras.get(camera_name)
+        if worker is None:
+            raise RuntimeError(f"Unknown camera worker {camera_name!r}")
+        # A stopped worker never publishes another frame, so waiting forever
+        # would silently starve the docked asynchronous consumer.
+        thread = getattr(worker, "thread", None)
+        if not getattr(worker, "running", True) or (
+            thread is not None and not thread.is_alive()
+        ):
+            raise RuntimeError(f"Camera worker {camera_name!r} has stopped")
+
+    def latest_frame_seq(self) -> int | None:
+        """Return the newest captured frame sequence for this camera."""
+        get_timing = getattr(self.camera_manager, "get_current_timing_by_bus_id", None)
+        if not callable(get_timing):
+            return None
+        timing = get_timing(self.camera_bus_id)
+        return timing.frame_seq if timing is not None else None
+
     def wait_for_next_packet(
         self,
         after_frame_seq: int,
@@ -149,13 +177,7 @@ class DeviceInput(OperationInstance):
                 timeout_s=0.05,
             )
             if not frame_available:
-                camera_name = self.camera_manager.get_camera_name_by_bus_id(
-                    self.camera_bus_id
-                )
-                if camera_name is None:
-                    raise RuntimeError(f"Unknown camera bus ID {self.camera_bus_id!r}")
-                if camera_name not in self.camera_manager.cameras:
-                    raise RuntimeError(f"Unknown camera worker {camera_name!r}")
+                self._require_running_worker()
                 continue
             if not should_continue():
                 return None

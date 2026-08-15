@@ -157,20 +157,28 @@ class ObjectDetectionImplementation:
             iou_threshold: New non-maximum-suppression IoU threshold, when supplied.
             max_detections: New per-frame detection cap, when supplied.
 
+        Every supplied value is validated before any is applied, so a rejected
+        update never leaves inference running a partially changed configuration.
+
         Raises:
             ValueError: If a supplied value is outside its documented range.
         """
+        if confidence_threshold is not None and not (
+            0.0 <= float(confidence_threshold) <= 1.0
+        ):
+            raise ValueError("confidence_threshold must be in [0.0, 1.0]")
+        if iou_threshold is not None and not 0.0 <= float(iou_threshold) <= 1.0:
+            raise ValueError("iou_threshold must be in [0.0, 1.0]")
+        if max_detections is not None and (
+            isinstance(max_detections, bool) or int(max_detections) < 1
+        ):
+            raise ValueError("max_detections must be a positive integer")
+
         if confidence_threshold is not None:
-            if not 0.0 <= float(confidence_threshold) <= 1.0:
-                raise ValueError("confidence_threshold must be in [0.0, 1.0]")
             self.confidence_threshold = float(confidence_threshold)
         if iou_threshold is not None:
-            if not 0.0 <= float(iou_threshold) <= 1.0:
-                raise ValueError("iou_threshold must be in [0.0, 1.0]")
             self.iou_threshold = float(iou_threshold)
         if max_detections is not None:
-            if isinstance(max_detections, bool) or int(max_detections) < 1:
-                raise ValueError("max_detections must be a positive integer")
             self.max_detections = int(max_detections)
 
     def run(self, frame: np.ndarray) -> list[Detection]:

@@ -47,6 +47,9 @@ class CameraLocalToRobotTransform(OperationInstance):
 
         Returns:
             Copies of valid detections with camera and robot positions retained.
+
+        Raises:
+            ValueError: If the registry is missing or the calibration is invalid.
         """
         if self.camera_config_registry is None:
             raise ValueError(
@@ -57,6 +60,12 @@ class CameraLocalToRobotTransform(OperationInstance):
             self.camera_bus_id
         ).extrinsics
         transform = build_robot_from_camera_transform(extrinsics)
+        # Non-finite extrinsics would silently turn every finite input position
+        # into NaN or infinite robot coordinates.
+        if not np.all(np.isfinite(transform)):
+            raise ValueError(
+                f"Camera {self.camera_bus_id} has non-finite mounting extrinsics."
+            )
 
         output: list[dict[str, Any]] = []
         for detection in detections:

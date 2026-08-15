@@ -277,8 +277,8 @@ class ModelLibrary:
         model_id: str,
         *,
         display_name: str | _Unset = _UNSET,
-        class_names: list[str] | tuple[str, ...] | None | _Unset = _UNSET,
-        mx3_profile: dict[str, Any] | None | _Unset = _UNSET,
+        class_names: list[str] | tuple[str, ...] | _Unset | None = _UNSET,
+        mx3_profile: dict[str, Any] | _Unset | None = _UNSET,
     ) -> ModelMetadata:
         """Update supplied metadata fields while preserving the stable model ID."""
         with self._lock:
@@ -358,6 +358,9 @@ class ModelLibrary:
             record = data["models"].get(model_id)
             if record is None:
                 raise ModelNotFoundError(f"Unknown model ID: {model_id!r}")
+            # Resolved before committing so an unreadable pipeline configuration
+            # cannot turn a completed import into a reported failure.
+            references = self.references(model_id)
 
             relative_path = f"{model_id}/{slot}{extension}"
             target_path = self.root / relative_path
@@ -367,6 +370,7 @@ class ModelLibrary:
                 prefix=f".{slot}.",
                 suffix=".tmp",
             )
+            replaced_name: str | None = None
             try:
                 with os.fdopen(file_descriptor, "wb") as output_stream:
                     if isinstance(source, (str, os.PathLike)):
@@ -381,17 +385,42 @@ class ModelLibrary:
                         shutil.copyfileobj(source, output_stream)
                     output_stream.flush()
                     os.fsync(output_stream.fileno())
+                # Keep the currently installed file until the manifest commits so
+                # a failed write cannot destroy the artifact it still records.
+                if target_path.exists():
+                    replaced_descriptor, replaced_name = tempfile.mkstemp(
+                        dir=target_path.parent,
+                        prefix=f".{slot}.replaced.",
+                        suffix=".tmp",
+                    )
+                    os.close(replaced_descriptor)
+                    os.replace(target_path, replaced_name)
                 os.replace(temporary_name, target_path)
+            except BaseException:
+                if replaced_name is not None and os.path.exists(replaced_name):
+                    os.replace(replaced_name, target_path)
+                    replaced_name = None
+                raise
             finally:
                 if os.path.exists(temporary_name):
                     os.unlink(temporary_name)
 
             previous_relative_path = record["artifacts"].get(slot)
             record["artifacts"][slot] = relative_path
-            self._write_manifest(data)
+            try:
+                self._write_manifest(data)
+            except BaseException:
+                if replaced_name is not None:
+                    os.replace(replaced_name, target_path)
+                else:
+                    target_path.unlink(missing_ok=True)
+                raise
+            finally:
+                if replaced_name is not None and os.path.exists(replaced_name):
+                    os.unlink(replaced_name)
             if previous_relative_path and previous_relative_path != relative_path:
                 (self.root / previous_relative_path).unlink(missing_ok=True)
-            return self._public_metadata(record), self.references(model_id)
+            return self._public_metadata(record), references
 
     def install_mx3_bundle(
         self,
@@ -447,6 +476,9 @@ class ModelLibrary:
             record = data["models"].get(model_id)
             if record is None:
                 raise ModelNotFoundError(f"Unknown model ID: {model_id!r}")
+            # Resolved before committing so an unreadable pipeline configuration
+            # cannot turn a completed installation into a reported failure.
+            references = self.references(model_id)
             if expected_onnx is not None:
                 current_onnx = record["artifacts"].get("onnx")
                 if current_onnx is None:
@@ -513,10 +545,6 @@ class ModelLibrary:
                     os.replace(temporary_paths[slot], target_path)
                     installed_paths[slot] = target_path
 
-                previous_paths = {
-                    record["artifacts"].get("mx3_dfp"),
-                    record["artifacts"].get("mx3_postprocessor"),
-                }
                 record["artifacts"]["mx3_dfp"] = (
                     new_paths["mx3_dfp"].relative_to(self.root).as_posix()
                 )
@@ -535,16 +563,10 @@ class ModelLibrary:
                         path.unlink(missing_ok=True)
                 raise
 
-            references = self.references(model_id)
-            if not references:
-                for previous_relative_path in previous_paths:
-                    if not previous_relative_path:
-                        continue
-                    previous_path = self.root / previous_relative_path
-                    if previous_path.name.startswith(
-                        ("mx3_dfp-", "mx3_postprocessor-")
-                    ):
-                        previous_path.unlink(missing_ok=True)
+            # Superseded generations are deliberately left on disk: a concurrent
+            # resolve_artifact() may still be opening the path it just read from
+            # the manifest.  _cleanup_stale_generated_artifacts() removes them at
+            # the next library initialization, when no reader can reference them.
             return self._public_metadata(record), references
 
     def remove_artifact(
@@ -558,12 +580,15 @@ class ModelLibrary:
             record = data["models"].get(model_id)
             if record is None:
                 raise ModelNotFoundError(f"Unknown model ID: {model_id!r}")
+            # Resolved before committing so an unreadable pipeline configuration
+            # cannot turn a completed removal into a reported failure.
+            references = self.references(model_id)
             relative_path = record["artifacts"].pop(slot, None)
             if relative_path is None:
                 raise ArtifactError(f"Model has no {slot} artifact")
             self._write_manifest(data)
             (self.root / relative_path).unlink(missing_ok=True)
-            return self._public_metadata(record), self.references(model_id)
+            return self._public_metadata(record), references
 
     def delete_model(self, model_id: str) -> None:
         """Delete an unreferenced model and all of its managed artifacts."""
