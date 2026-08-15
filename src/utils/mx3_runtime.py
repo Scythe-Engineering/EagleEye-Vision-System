@@ -6,7 +6,6 @@ import importlib
 import threading
 from collections import deque
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 import cv2
@@ -206,6 +205,7 @@ class Mx3StreamBinding:
             if self._active:
                 self._active = False
                 self._activation += 1
+            self._inflight.clear()
             self._completed = None
             self._consumed_generation = self._completed_generation
             self._condition.notify_all()
@@ -309,9 +309,12 @@ class Mx3StreamBinding:
                         _InflightPacket(packet, resized_size, padding, activation)
                     )
                 return [input_array]
-        except BaseException as error:
+        except Exception as error:
             self.fail(error)
             return None
+        except BaseException as error:
+            self.fail(error)
+            raise
 
     def output_callback(self, outputs: list[np.ndarray], _stream_id: int) -> None:
         """Match the oldest in-flight packet and publish the newest completion."""
@@ -320,6 +323,8 @@ class Mx3StreamBinding:
                 if self._closed:
                     return
                 if not self._inflight:
+                    if not self._active:
+                        return
                     raise Mx3RuntimeError(
                         "MX3 produced output without a matching source frame"
                     )
@@ -348,8 +353,11 @@ class Mx3StreamBinding:
                     )
                     self._completed_generation += 1
                     self._condition.notify_all()
+        except Exception as error:
+            self.fail(error)
         except BaseException as error:
             self.fail(error)
+            raise
 
     def wait_for_next(self) -> Mx3ResultPacket | None:
         """Wait for a new completion, replacing skipped intermediate results."""
@@ -579,7 +587,11 @@ class _Mx3Runtime:
         if accelerator is not None:
             accelerator.stop()
         if monitor_thread is not None:
-            monitor_thread.join()
+            monitor_thread.join(timeout=5.0)
+            if monitor_thread.is_alive():
+                self._log(
+                    f"mx3:{self.physical_index} monitor did not stop within 5 seconds"
+                )
 
 
 class Mx3RuntimeCoordinator:
@@ -622,7 +634,7 @@ class Mx3RuntimeCoordinator:
                     self.accelerator_factory,
                 )
                 self._runtimes[physical_index] = runtime
-            elif Path(runtime.artifact.path) != Path(artifact.path):
+            elif runtime.artifact.path.resolve() != artifact.path.resolve():
                 raise Mx3RuntimeError(
                     f"mx3:{physical_index} cannot load different DFP models simultaneously"
                 )

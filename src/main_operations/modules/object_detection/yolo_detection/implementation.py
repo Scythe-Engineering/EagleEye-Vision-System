@@ -11,7 +11,7 @@ from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
 from src.utils.model_library import ModelLibrary
 
 Detection = dict[str, Any]
-ModelFactory = Callable[[str], Any]
+ModelFactory = Callable[..., Any]
 
 
 class ObjectDetectionImplementation:
@@ -79,7 +79,7 @@ class ObjectDetectionImplementation:
 
         factory = model_factory or self._load_ultralytics_factory()
         try:
-            self.model = factory(str(self.resolved_artifact.path))
+            self.model = factory(str(self.resolved_artifact.path), task="detect")
         except Exception as error:
             raise RuntimeError(
                 f"Failed to load model {model_id!r} from "

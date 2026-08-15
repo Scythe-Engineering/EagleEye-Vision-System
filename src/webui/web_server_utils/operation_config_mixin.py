@@ -413,15 +413,23 @@ class OperationConfigMixin:
                     f"has kind {device_kind!r}, expected one of {allowed_kinds}"
                 )
 
-        selected_device_id = next(
-            (action_params.get(name) for name in device_parameters),
-            None,
-        )
         for parameter_name in model_parameters:
             model_id = action_params.get(parameter_name)
             if not isinstance(model_id, str) or not model_id:
                 warnings.append(f"{operation_name}.{parameter_name}: no model selected")
                 continue
+            model_definition = parameters[parameter_name]
+            if "device_param" in model_definition:
+                declared_device_param = model_definition.get("device_param")
+                selected_device_id = (
+                    action_params.get(declared_device_param)
+                    if isinstance(declared_device_param, str)
+                    else None
+                )
+            else:
+                selected_device_id = next(
+                    (action_params.get(name) for name in device_parameters), None
+                )
             if not isinstance(selected_device_id, str) or not selected_device_id:
                 continue
             if model_library is None:
@@ -447,6 +455,11 @@ class OperationConfigMixin:
         Raises:
             ValueError: If a parameter violates its declared type or bounds.
         """
+        if not isinstance(action_params, dict):
+            raise ValueError(
+                f"Invalid configuration for {operation_name}: action_params must be an object"
+            )
+
         config_def = self.get_operation_config_data(operation_name, True)
         if not config_def or "parameters" not in config_def:
             config_def = self.get_operation_config_data(operation_name, False)

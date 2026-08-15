@@ -24,7 +24,7 @@ from src.utils.mx3_runtime import (
 )
 
 
-class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation):
+class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
     """Expose matched frame and detection outputs from one asynchronous MX3 stream."""
 
     dock_source_action = "device_input"
@@ -38,11 +38,28 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation):
         device_id: str,
         device_registry: DeviceRegistry,
         model_library: ModelLibrary,
-        mx3_coordinator: Mx3RuntimeCoordinator,
+        mx3_coordinator: Mx3RuntimeCoordinator | None,
         confidence_threshold: float = 0.25,
         max_detections: int = 100,
     ) -> None:
-        """Resolve the managed DFP and retain stream settings until binding."""
+        """Resolve the managed DFP and retain stream settings until binding.
+
+        Args:
+            model_id: Managed model identifier.
+            device_id: Canonical MX3 device identifier.
+            device_registry: Injected startup device inventory.
+            model_library: Injected managed model library.
+            mx3_coordinator: Shared MX3 runtime coordinator.
+            confidence_threshold: Minimum detection confidence.
+            max_detections: Maximum detections returned per frame.
+
+        Raises:
+            RuntimeError: If the shared MX3 runtime coordinator is unavailable.
+            ValueError: If the device or decoder settings are invalid.
+        """
+        if mx3_coordinator is None:
+            raise RuntimeError("MX3 runtime coordinator is unavailable")
+
         descriptor = device_registry.get(device_id)
         if descriptor.device_type != "mx3" or descriptor.physical_index is None:
             raise ValueError("MX3 Async Object Detection requires an mx3:N device ID")
@@ -57,8 +74,6 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation):
         self.artifact = model_library.resolve_artifact(model_id, device_id)
         self.profile = Mx3Profile.from_metadata(self.artifact.mx3_profile)
         self.class_names = model_library.get_model(model_id).class_names
-        if mx3_coordinator is None:
-            raise RuntimeError("MX3 runtime coordinator is unavailable")
         self.coordinator = mx3_coordinator
         self.confidence_threshold = float(confidence_threshold)
         self.max_detections = int(max_detections)
@@ -116,21 +131,38 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation):
             self.binding.close()
 
     def update_config(self, json_config: dict[str, Any]) -> None:
-        """Apply only decoder controls enabled by the selected MX3 profile."""
-        confidence = json_config.get("confidence_threshold")
-        maximum = json_config.get("max_detections")
-        if confidence is not None and float(confidence) == self.confidence_threshold:
+        """Apply changed decoder controls to an initialized stream binding.
+
+        Empty, unchanged, and pre-docking updates are no-ops.
+        """
+        raw_confidence = json_config.get("confidence_threshold")
+        raw_maximum = json_config.get("max_detections")
+        confidence = float(raw_confidence) if raw_confidence is not None else None
+        maximum = int(raw_maximum) if raw_maximum is not None else None
+        if confidence == self.confidence_threshold:
             confidence = None
-        if maximum is not None and int(maximum) == self.max_detections:
+        if maximum == self.max_detections:
             maximum = None
-        self._required_binding().update_live_settings(confidence, maximum)
+        if (confidence is None and maximum is None) or self.binding is None:
+            return
+        self.binding.update_live_settings(confidence, maximum)
         if confidence is not None:
-            self.confidence_threshold = float(confidence)
+            self.confidence_threshold = confidence
         if maximum is not None:
-            self.max_detections = int(maximum)
+            self.max_detections = maximum
 
     def run(self, _input_data: Any) -> Any:
-        """Wait for an async result and expose its two timing-matched outputs."""
+        """Wait for an async result and expose its timing-matched outputs.
+
+        Args:
+            _input_data: Unused graph input; frames arrive through the docked source.
+
+        Returns:
+            Matched frame and detections, or ``SKIP_PIPELINE_CYCLE`` when stopped.
+
+        Raises:
+            RuntimeError: If the operation has not been docked.
+        """
         result = self.wait_for_next()
         if result is None:
             return SKIP_PIPELINE_CYCLE
@@ -139,7 +171,14 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation):
         return {"frame": result.frame, "detections": result.detections}
 
     def visualize(self, frame: np.ndarray) -> np.ndarray | None:
-        """Draw detections on the exact transformed frame used for inference."""
+        """Draw detections on the exact transformed frame used for inference.
+
+        Args:
+            frame: Pipeline visualization frame; the matched inference frame is used.
+
+        Returns:
+            Annotated inference frame, or ``None`` before the first result.
+        """
         with self._result_lock:
             result = self._last_result
         if result is None:

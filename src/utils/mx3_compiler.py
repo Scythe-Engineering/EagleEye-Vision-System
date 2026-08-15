@@ -58,9 +58,7 @@ class Mx3CompileStatus:
         logs = (
             self.logs
             if log_limit is None
-            else self.logs[-log_limit:]
-            if log_limit > 0
-            else ()
+            else self.logs[-log_limit:] if log_limit > 0 else ()
         )
         return {
             "state": self.state,
@@ -152,7 +150,7 @@ def build_mx_nc_command(
     if normalized.autocrop:
         command.append("--autocrop")
     if normalized.target_fps is not None:
-        command.extend(("--target-fps", f"{normalized.target_fps:g}"))
+        command.extend(("--target_fps", f"{normalized.target_fps:g}"))
     return command
 
 
@@ -343,9 +341,11 @@ class Mx3CompilerService:
             snapshot = self._status
         return snapshot
 
-    def cancel(self) -> Mx3CompileStatus:
-        """Request cancellation and asynchronously stop the compiler process group."""
+    def cancel(self, job_id: str | None = None) -> Mx3CompileStatus:
+        """Request cancellation for ``job_id`` and stop its compiler process group."""
         with self._lock:
+            if job_id is not None and job_id != self._status.job_id:
+                return self._status
             if self._status.state not in {"running", "cancelling"}:
                 return self._status
             self._cancel_requested = True
@@ -364,7 +364,8 @@ class Mx3CompilerService:
         """Cancel an active job and wait for its worker to reap the compiler."""
         with self._lock:
             self._shutting_down = True
-            self.cancel()
+        self.cancel()
+        with self._lock:
             thread = self._thread
         if thread is None or thread is threading.current_thread():
             return
@@ -552,9 +553,7 @@ class Mx3CompilerService:
             path for path in output_directory.rglob("*.dfp") if path.is_file()
         )
         posts = sorted(
-            path
-            for path in output_directory.rglob("*_post.onnx")
-            if path.is_file() and not path.name.lower().endswith("_pre.onnx")
+            path for path in output_directory.rglob("*_post.onnx") if path.is_file()
         )
         if len(dfps) != 1:
             raise Mx3CompilerError(

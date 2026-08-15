@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 
 from src.main_operations.definitions.base.base_class import OperationInstance
 
 
-class AsyncDockedOperation(OperationInstance, ABC):
+AsyncResult = TypeVar("AsyncResult")
+
+
+class AsyncDockedOperation(OperationInstance, ABC, Generic[AsyncResult]):
     """Operation whose backend work is fed independently from graph execution."""
 
     dock_source_action: str
@@ -28,7 +31,7 @@ class AsyncDockedOperation(OperationInstance, ABC):
         """Resume asynchronous input feeding."""
 
     @abstractmethod
-    def wait_for_next(self):
+    def wait_for_next(self) -> AsyncResult | None:
         """Wait for and return the newest completed result."""
 
     @abstractmethod

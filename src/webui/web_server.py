@@ -19,12 +19,15 @@ from werkzeug.serving import make_server
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.device_registry import DeviceRegistry
+from src.utils.model_library import ModelLibrary
 from src.utils.mx3_compiler import Mx3CompilerService
 from src.utils.camera_utils.camera_config_manager import (
     CameraConfigRegistry,
 )
 
 if TYPE_CHECKING:
+    from ntcore import NetworkTableInstance
     from src.config.utils.pipeline import Pipeline
 from src.webui.web_server_utils.serve_static_files import (
     STATIC_DIR,
@@ -101,10 +104,10 @@ class EagleEyeInterface(
         pipeline_objects_callback: Callable[[], dict[str, Pipeline]],
         dev_mode: bool = False,
         logger: Logger | None = None,
-        network_table_instance: Any | None = None,
-        device_registry: Any | None = None,
-        model_library: Any | None = None,
-    ):
+        network_table_instance: NetworkTableInstance | None = None,
+        device_registry: DeviceRegistry | None = None,
+        model_library: ModelLibrary | None = None,
+    ) -> None:
         """
         Initialize the EagleEyeInterface.
 

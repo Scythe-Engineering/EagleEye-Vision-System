@@ -11,6 +11,7 @@ import pytest
 from src.utils.model_library import ArtifactError, ModelLibrary
 from src.utils.mx3_compiler import (
     Mx3CompileStatus,
+    Mx3CompilerError,
     Mx3CompilerBusyError,
     Mx3CompilerService,
     build_mx_nc_command,
@@ -49,8 +50,8 @@ def test_progress_and_fixed_command_validation(tmp_path: Path) -> None:
     )
     assert command[1:3] == ["-m", str(tmp_path / "model.onnx")]
     assert "--autocrop" not in command
-    assert command[-2:] == ["--target-fps", "30"]
-    with pytest.raises(Exception, match="Unsupported compiler"):
+    assert command[-2:] == ["--target_fps", "30"]
+    with pytest.raises(Mx3CompilerError, match="Unsupported compiler"):
         build_mx_nc_command("mx_nc", "a.onnx", "out", {"raw_args": "--bad"})
 
 
@@ -82,6 +83,7 @@ def test_service_allows_one_live_job(tmp_path: Path) -> None:
     release.set()
     assert service._thread is not None
     service._thread.join(2)
+    assert not service._thread.is_alive()
 
 
 def test_cancel_terminates_fake_process(tmp_path: Path) -> None:
@@ -122,6 +124,7 @@ def test_cancel_terminates_fake_process(tmp_path: Path) -> None:
     assert service.cancel().state == "cancelling"
     assert service._thread is not None
     service._thread.join(2)
+    assert not service._thread.is_alive()
     assert service.status().state == "cancelled"
 
 
@@ -157,6 +160,7 @@ def test_successful_job_installs_compiler_outputs(tmp_path: Path) -> None:
     assert status.state == "running"
     assert service._thread is not None
     service._thread.join(2)
+    assert not service._thread.is_alive()
 
     final = service.status()
     assert final.state == "succeeded"

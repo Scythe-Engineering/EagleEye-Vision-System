@@ -38,6 +38,14 @@ class DeviceRegistry:
     """A fixed device inventory; discovery is performed exactly once."""
 
     def __init__(self, devices: Iterable[DeviceDescriptor]) -> None:
+        """Initialize the immutable inventory.
+
+        Args:
+            devices: Device descriptors to index by canonical ID.
+
+        Raises:
+            DeviceRegistryError: If canonical device IDs are duplicated.
+        """
         entries = tuple(devices)
         by_id = {entry.device_id: entry for entry in entries}
         if len(by_id) != len(entries):
@@ -89,13 +97,12 @@ class DeviceRegistry:
             for index, name in enumerate(cuda_names)
         )
 
-        paths = (
-            list(mx3_paths)
-            if mx3_paths is not None
-            else glob.glob("/dev/memx[0-9]*")
-            if os.name == "posix"
-            else []
-        )
+        if mx3_paths is not None:
+            paths = list(mx3_paths)
+        elif os.name == "posix":
+            paths = glob.glob("/dev/memx[0-9]*")
+        else:
+            paths = []
 
         indexed_paths: list[tuple[int, str]] = []
         for path in paths:

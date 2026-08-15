@@ -24,7 +24,13 @@ ARTIFACT_EXTENSIONS: Mapping[str, frozenset[str]] = MappingProxyType(
         "mx3_postprocessor": frozenset({".onnx"}),
     }
 )
-_UNSET = object()
+
+
+class _Unset:
+    """Sentinel type for omitted optional metadata updates."""
+
+
+_UNSET = _Unset()
 
 
 class ModelLibraryError(RuntimeError):
@@ -270,9 +276,9 @@ class ModelLibrary:
         self,
         model_id: str,
         *,
-        display_name: str | object = _UNSET,
-        class_names: list[str] | tuple[str, ...] | None | object = _UNSET,
-        mx3_profile: dict[str, Any] | None | object = _UNSET,
+        display_name: str | _Unset = _UNSET,
+        class_names: list[str] | tuple[str, ...] | None | _Unset = _UNSET,
+        mx3_profile: dict[str, Any] | None | _Unset = _UNSET,
     ) -> ModelMetadata:
         """Update supplied metadata fields while preserving the stable model ID."""
         with self._lock:
@@ -395,8 +401,9 @@ class ModelLibrary:
         profile: Mapping[str, Any],
         *,
         overwrite: bool = False,
-        expected_bundle: tuple[str | None, str | None, Mapping[str, Any] | None]
-        | None = None,
+        expected_bundle: (
+            tuple[str | None, str | None, Mapping[str, Any] | None] | None
+        ) = None,
         expected_onnx: tuple[str, int, int] | None = None,
     ) -> tuple[ModelMetadata, tuple[str, ...]]:
         """Atomically make a compiled DFP, optional post model, and profile current.
@@ -482,31 +489,29 @@ class ModelLibrary:
                 new_paths["mx3_postprocessor"] = (
                     model_directory / f"mx3_postprocessor-{generation}.onnx"
                 )
-            temporary_paths: list[Path] = []
-            installed_paths: list[Path] = []
+            installation_sources = {"mx3_dfp": dfp_path}
+            if post_path is not None:
+                installation_sources["mx3_postprocessor"] = post_path
+            temporary_paths: dict[str, Path] = {}
+            installed_paths: dict[str, Path] = {}
             manifest_committed = False
             try:
-                for slot, source_path in (
-                    ("mx3_dfp", dfp_path),
-                    ("mx3_postprocessor", post_path),
-                ):
-                    if source_path is None:
-                        continue
+                for slot, source_path in installation_sources.items():
                     descriptor, temporary_name = tempfile.mkstemp(
                         dir=model_directory,
                         prefix=f".{slot}-{generation}-",
                         suffix=".tmp",
                     )
                     temporary_path = Path(temporary_name)
-                    temporary_paths.append(temporary_path)
+                    temporary_paths[slot] = temporary_path
                     with os.fdopen(descriptor, "wb") as output_stream:
                         with source_path.open("rb") as input_stream:
                             shutil.copyfileobj(input_stream, output_stream)
                         output_stream.flush()
                         os.fsync(output_stream.fileno())
-                for slot, temporary_path in zip(new_paths, temporary_paths):
-                    os.replace(temporary_path, new_paths[slot])
-                    installed_paths.append(new_paths[slot])
+                for slot, target_path in new_paths.items():
+                    os.replace(temporary_paths[slot], target_path)
+                    installed_paths[slot] = target_path
 
                 previous_paths = {
                     record["artifacts"].get("mx3_dfp"),
@@ -526,7 +531,7 @@ class ModelLibrary:
                 manifest_committed = True
             except BaseException:
                 if not manifest_committed:
-                    for path in temporary_paths + installed_paths:
+                    for path in (*temporary_paths.values(), *installed_paths.values()):
                         path.unlink(missing_ok=True)
                 raise
 

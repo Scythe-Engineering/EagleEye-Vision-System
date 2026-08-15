@@ -31,7 +31,18 @@ def _import_artifact(
     slot: str,
     suffix: str,
 ) -> Path:
-    """Create and import a small placeholder artifact for a focused test."""
+    """Create and import a small placeholder artifact for a focused test.
+
+    Args:
+        library: Model library receiving the artifact.
+        model_id: ID of the model to update.
+        temporary_directory: Directory containing the source artifact.
+        slot: Artifact slot to populate.
+        suffix: Filename extension for the source artifact.
+
+    Returns:
+        Path: Source artifact path.
+    """
     artifact_path = temporary_directory / f"source{suffix}"
     artifact_path.write_bytes(b"model")
     library.import_artifact(model_id, slot, artifact_path)
@@ -39,6 +50,7 @@ def _import_artifact(
 
 
 def test_registry_uses_only_canonical_ids() -> None:
+    """Discover devices under their canonical IDs only."""
     registry = DeviceRegistry.discover(
         cuda_devices=["GPU A", "GPU B"],
         mx3_paths=["/dev/memx2", "/dev/memx0", "/dev/memx0_feature"],
@@ -59,6 +71,7 @@ def test_registry_uses_only_canonical_ids() -> None:
 def test_model_library_resolves_priority_and_protects_references(
     tmp_path: Path,
 ) -> None:
+    """Resolve device-specific artifacts and retain referenced models."""
     pipeline_path = tmp_path / "pipeline_config.json"
     library = ModelLibrary(tmp_path / "models", pipeline_config_path=pipeline_path)
     model = library.create_model("Detector", ["note"])
@@ -79,6 +92,7 @@ def test_model_library_resolves_priority_and_protects_references(
 
 
 def test_mx3_resolution_requires_dfp_and_profile(tmp_path: Path) -> None:
+    """Require both an MX3 artifact and profile before resolution."""
     library = ModelLibrary(tmp_path / "models")
     model = library.create_model("MX3 Detector")
     _import_artifact(library, model.model_id, tmp_path, "mx3_dfp", ".dfp")
@@ -122,6 +136,7 @@ class _FakeModel:
 def test_detector_uses_exact_device_and_normalizes_python_output(
     tmp_path: Path,
 ) -> None:
+    """Pass the exact CUDA ID and normalize detector outputs."""
     library = ModelLibrary(tmp_path / "models")
     model = library.create_model("Detector", ["note"])
     _import_artifact(library, model.model_id, tmp_path, "pt", ".pt")
@@ -140,7 +155,7 @@ def test_detector_uses_exact_device_and_normalizes_python_output(
         confidence_threshold=0.3,
         iou_threshold=0.5,
         max_detections=5,
-        model_factory=lambda _path: fake_model,
+        model_factory=lambda _path, **_kwargs: fake_model,
     )
 
     detections = detector.run(np.zeros((100, 200, 3), dtype=np.uint8))
@@ -178,6 +193,7 @@ class _FakeOnnxSession:
 def test_cuda_onnx_provider_is_verified_after_first_inference(
     tmp_path: Path,
 ) -> None:
+    """Verify the active ONNX CUDA provider after inference."""
     library = ModelLibrary(tmp_path / "models")
     model = library.create_model("ONNX Detector")
     _import_artifact(library, model.model_id, tmp_path, "onnx", ".onnx")
@@ -191,7 +207,7 @@ def test_cuda_onnx_provider_is_verified_after_first_inference(
         device_id="cuda:2",
         device_registry=registry,
         model_library=library,
-        model_factory=lambda _path: fake_model,
+        model_factory=lambda _path, **_kwargs: fake_model,
     )
 
     detections = detector.run(np.zeros((100, 200, 3), dtype=np.uint8))
@@ -202,6 +218,7 @@ def test_cuda_onnx_provider_is_verified_after_first_inference(
 
 
 def test_synchronous_detector_rejects_legacy_mx3(tmp_path: Path) -> None:
+    """Reject legacy MX3 artifacts in the synchronous detector."""
     library = ModelLibrary(tmp_path / "models")
     model = library.create_model("MX3", mx3_profile={"profile": "pending"})
     _import_artifact(library, model.model_id, tmp_path, "mx3_dfp", ".dfp")
@@ -213,5 +230,5 @@ def test_synchronous_detector_rejects_legacy_mx3(tmp_path: Path) -> None:
             device_id="mx3:0",
             device_registry=registry,
             model_library=library,
-            model_factory=lambda _path: _FakeModel(),
+            model_factory=lambda _path, **_kwargs: _FakeModel(),
         )

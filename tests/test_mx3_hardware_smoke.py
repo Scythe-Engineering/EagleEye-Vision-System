@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Callable
 
@@ -10,11 +10,13 @@ import numpy as np
 import pytest
 
 from src.utils.model_library import ResolvedArtifact
-from src.utils.mx3_runtime import Mx3RuntimeCoordinator
+from src.utils.mx3_runtime import Mx3ResultPacket, Mx3RuntimeCoordinator
 from src.utils.timing import TimedValue, TimingMetadata
 
 
 class _OneFrameSource:
+    """Emit one typed test frame, then poll until the stream is stopped."""
+
     def __init__(self) -> None:
         self.sent = False
 
@@ -22,7 +24,8 @@ class _OneFrameSource:
         self,
         after_frame_seq: int,
         should_continue: Callable[[], bool],
-    ):
+    ) -> TimedValue[np.ndarray] | None:
+        """Return the one frame or wait cooperatively for stream shutdown."""
         if not self.sent:
             self.sent = True
             return TimedValue(
@@ -77,10 +80,13 @@ def test_real_mx3_single_stream_smoke() -> None:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(binding.wait_for_next)
             try:
-                result = future.result(timeout=30)
-            except TimeoutError:
-                coordinator.stop()
-                raise AssertionError("MX3 did not complete one frame within 30 seconds")
+                result: Mx3ResultPacket | None = future.result(timeout=30)
+            except FutureTimeoutError as exc:
+                # Wake the worker before its executor context waits for completion.
+                binding.deactivate()
+                raise AssertionError(
+                    "MX3 did not complete one frame within 30 seconds"
+                ) from exc
         assert result is not None
         assert result.frame.timing.frame_seq == 1
         assert isinstance(result.detections.value, list)

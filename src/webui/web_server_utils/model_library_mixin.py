@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Callable
 
 from flask import request
 
+from src.utils.device_registry import DeviceNotFoundError
 from src.utils.mx3_compiler import (
     Mx3CompileStatus,
     Mx3CompilerBusyError,
@@ -105,8 +107,41 @@ class ModelLibraryMixin:
         try:
             library = self._require_model_library()
             models = library.list_models()
+            references_by_model: dict[str, set[str]] = {
+                model.model_id: set() for model in models
+            }
+            if library.pipeline_config_path.exists():
+                try:
+                    pipeline_config = json.loads(
+                        library.pipeline_config_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError) as error:
+                    raise ModelLibraryError(
+                        f"Cannot read pipeline configuration: {error}"
+                    ) from error
+                if isinstance(pipeline_config, dict):
+                    for pipeline_name, operations in pipeline_config.items():
+                        if not isinstance(operations, list):
+                            continue
+                        referenced_ids = {
+                            model_id
+                            for operation in operations
+                            if isinstance(operation, dict)
+                            and isinstance(operation.get("action_params"), dict)
+                            and isinstance(
+                                (
+                                    model_id := operation["action_params"].get(
+                                        "model_id"
+                                    )
+                                ),
+                                str,
+                            )
+                        }
+                        for model_id in referenced_ids & references_by_model.keys():
+                            references_by_model[model_id].add(str(pipeline_name))
             references_by_model = {
-                model.model_id: library.references(model.model_id) for model in models
+                model_id: tuple(sorted(pipelines))
+                for model_id, pipelines in references_by_model.items()
             }
             serialized_models = [
                 self._serialize_model(
@@ -123,6 +158,10 @@ class ModelLibraryMixin:
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return {"error": "Request body must be an object"}, 400
+        allowed_fields = {"display_name", "class_names", "mx3_profile"}
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            return {"error": f"Unknown model fields: {sorted(unknown_fields)}"}, 400
         try:
             library = self._require_model_library()
             model = library.create_model(
@@ -278,10 +317,9 @@ class ModelLibraryMixin:
         """Cancel the matching active compilation without affecting newer work."""
         try:
             compiler = self._require_mx3_compiler()
-            current = compiler.status()
-            if current.job_id != job_id:
+            status = compiler.cancel(job_id)
+            if status.job_id != job_id:
                 return {"error": "Unknown MX3 compilation job"}, 404
-            status = compiler.cancel()
             return {"compilation": status.to_dict()}, 202
         except Mx3CompilerError as error:
             return {"error": str(error)}, 503
@@ -304,7 +342,7 @@ class ModelLibraryMixin:
                     "filename": artifact.path.name,
                 }
             }, 200
-        except ModelNotFoundError as error:
+        except (ModelNotFoundError, DeviceNotFoundError) as error:
             return {"error": str(error)}, 404
         except (ArtifactError, ModelLibraryError, KeyError, RuntimeError) as error:
             return {"error": str(error)}, 400

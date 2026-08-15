@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Callable
@@ -36,6 +37,8 @@ PROFILE = {
 
 
 class FakeSource:
+    """Supply deterministic timestamped frames to a fake MX3 callback."""
+
     def __init__(self, frame_sequences: list[int]) -> None:
         self.packets = deque(
             TimedValue(
@@ -55,17 +58,22 @@ class FakeSource:
         self,
         after_frame_seq: int,
         should_continue: Callable[[], bool],
-    ):
+    ) -> TimedValue[np.ndarray] | None:
+        """Return the next frame, yielding briefly while the stream remains open."""
         while should_continue():
             if self.packets:
                 packet = self.packets.popleft()
+                assert packet.timing.frame_seq is not None
                 assert packet.timing.frame_seq > after_frame_seq
                 return packet
+            time.sleep(0.001)
         return None
 
 
 class FakeMxAccl:
-    def __init__(self, dfp_path: str, **kwargs) -> None:
+    """Minimal blocking MemryX accelerator fake used by coordinator tests."""
+
+    def __init__(self, dfp_path: str, **kwargs: object) -> None:
         self.dfp_path = dfp_path
         self.kwargs = kwargs
         self.callbacks = {}
@@ -77,7 +85,11 @@ class FakeMxAccl:
         self.post_model = (path, model_id)
 
     def connect_stream(
-        self, input_callback, output_callback, stream_id: int, model_id: int = 0
+        self,
+        input_callback: Callable[..., object],
+        output_callback: Callable[..., object],
+        stream_id: int,
+        model_id: int = 0,
     ) -> None:
         self.callbacks[stream_id] = (input_callback, output_callback, model_id)
 
@@ -103,10 +115,12 @@ def _artifact(tmp_path: Path, name: str = "model.dfp") -> ResolvedArtifact:
     )
 
 
-def test_fake_mx3_streams_preserve_frame_correlation_and_shutdown(tmp_path) -> None:
+def test_fake_mx3_streams_preserve_frame_correlation_and_shutdown(
+    tmp_path: Path,
+) -> None:
     accelerators: list[FakeMxAccl] = []
 
-    def factory(path: str, **kwargs) -> FakeMxAccl:
+    def factory(path: str, **kwargs: object) -> FakeMxAccl:
         accelerator = FakeMxAccl(path, **kwargs)
         accelerators.append(accelerator)
         return accelerator
@@ -227,7 +241,9 @@ def test_mx3_operation_visualizes_detections_on_the_inference_frame() -> None:
     assert np.all(visualization[99, 99] == 0)
 
 
-def test_coordinator_rejects_different_dfps_on_one_physical_mx3(tmp_path) -> None:
+def test_coordinator_rejects_different_dfps_on_one_physical_mx3(
+    tmp_path: Path,
+) -> None:
     coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
     coordinator.register_stream(
         0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
@@ -244,7 +260,7 @@ def test_coordinator_rejects_different_dfps_on_one_physical_mx3(tmp_path) -> Non
         )
 
 
-def _device_input(uuid: str = "camera") -> dict:
+def _device_input(uuid: str = "camera") -> dict[str, object]:
     return {
         "uuid": uuid,
         "action_name": "device_input",
@@ -253,7 +269,7 @@ def _device_input(uuid: str = "camera") -> dict:
     }
 
 
-def _mx3(uuid: str = "mx3") -> dict:
+def _mx3(uuid: str = "mx3") -> dict[str, object]:
     return {
         "uuid": uuid,
         "action_name": "mx3_async_object_detection",
@@ -262,7 +278,7 @@ def _mx3(uuid: str = "mx3") -> dict:
     }
 
 
-def _dock(from_uuid: str, to_uuid: str) -> dict:
+def _dock(from_uuid: str, to_uuid: str) -> dict[str, str]:
     return {
         "from_uuid": from_uuid,
         "from_port": "frame",
