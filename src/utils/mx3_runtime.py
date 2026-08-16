@@ -23,6 +23,16 @@ Detection = dict[str, Any]
 DISCARD_TIMEOUT_SECONDS = 2.0
 
 
+def _is_integral(value: Any) -> bool:
+    """Return whether a numeric setting can be stored as an exact integer."""
+    if isinstance(value, bool):
+        return False
+    try:
+        return int(value) == value
+    except (TypeError, ValueError):
+        return False
+
+
 class Mx3RuntimeError(RuntimeError):
     """Actionable MX3 configuration or runtime failure."""
 
@@ -301,8 +311,10 @@ class Mx3StreamBinding:
                 raise Mx3RuntimeError(
                     "This MX3 profile does not support max_detections updates"
                 )
-            if max_detections < 1:
-                raise ValueError("max_detections must be positive")
+            # A fractional limit would be truncated below, silently enforcing a
+            # different cap than the caller asked for.
+            if not _is_integral(max_detections) or max_detections < 1:
+                raise ValueError("max_detections must be a positive integer")
         with self._condition:
             if confidence_threshold is not None:
                 self.confidence_threshold = float(confidence_threshold)
@@ -759,8 +771,10 @@ class Mx3RuntimeCoordinator:
         started: list[_Mx3Runtime] = []
         try:
             for runtime in runtimes:
-                runtime.start()
+                # Recorded before starting: a failure can leave a constructed
+                # accelerator holding the device, and only stop() releases it.
                 started.append(runtime)
+                runtime.start()
         except BaseException as error:
             # Startup is all-or-nothing: leave no runtime processing frames and
             # make every later start() report the original failure instead of

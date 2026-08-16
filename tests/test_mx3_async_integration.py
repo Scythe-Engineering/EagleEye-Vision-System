@@ -428,3 +428,46 @@ def test_undelivered_pause_outputs_expire_instead_of_stalling(
     assert binding.input_callback(0) is not None
     assert binding._pending_discards == 0
     coordinator.stop()
+
+
+def test_live_settings_reject_fractional_max_detections(tmp_path: Path) -> None:
+    """A fractional limit must be rejected, not truncated to a smaller cap."""
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
+    binding = coordinator.register_stream(
+        0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
+    )
+
+    with pytest.raises(ValueError, match="max_detections must be a positive integer"):
+        binding.update_live_settings(max_detections=2.5)
+    assert binding.max_detections == 10
+
+    binding.update_live_settings(max_detections=4)
+    assert binding.max_detections == 4
+
+
+def test_failed_runtime_startup_stops_its_partial_accelerator(
+    tmp_path: Path,
+) -> None:
+    """A runtime that fails mid-start must still release its accelerator."""
+    accelerators: list[FakeMxAccl] = []
+
+    class FailingMxAccl(FakeMxAccl):
+        """Accelerator that constructs successfully but refuses to start."""
+
+        def start(self) -> None:
+            raise RuntimeError("accelerator refused to start")
+
+    def factory(path: str, **kwargs: object) -> FakeMxAccl:
+        accelerator = FailingMxAccl(path, **kwargs)
+        accelerators.append(accelerator)
+        return accelerator
+
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=factory)
+    coordinator.register_stream(
+        0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
+    )
+
+    with pytest.raises(Mx3RuntimeError, match="accelerator refused to start"):
+        coordinator.start()
+
+    assert accelerators[0].stopped.is_set()

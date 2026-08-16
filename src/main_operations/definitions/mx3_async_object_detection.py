@@ -146,11 +146,16 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
         """Apply changed decoder controls to an initialized stream binding.
 
         Empty, unchanged, and pre-docking updates are no-ops.
+
+        Raises:
+            ValueError: If a supplied setting is outside its documented range.
         """
         raw_confidence = json_config.get("confidence_threshold")
         raw_maximum = json_config.get("max_detections")
         confidence = float(raw_confidence) if raw_confidence is not None else None
-        maximum = int(raw_maximum) if raw_maximum is not None else None
+        # Forwarded unconverted so the binding rejects a fractional limit
+        # instead of this method truncating it to a different cap.
+        maximum = raw_maximum
         if confidence == self.confidence_threshold:
             confidence = None
         if maximum == self.max_detections:
@@ -161,7 +166,7 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
         if confidence is not None:
             self.confidence_threshold = confidence
         if maximum is not None:
-            self.max_detections = maximum
+            self.max_detections = int(maximum)
 
     def run(self, _input_data: Any) -> Any:
         """Wait for an async result and expose its timing-matched outputs.
