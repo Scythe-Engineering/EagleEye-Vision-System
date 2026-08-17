@@ -15,6 +15,7 @@ from src.main_operations.modules.object_detection.utils.detection_visualization 
 )
 from src.utils.device_registry import DeviceRegistry
 from src.utils.model_library import ModelLibrary
+from src.utils.numeric_validation import is_integral
 from src.utils.mx3_runtime import (
     Mx3Profile,
     Mx3ResultPacket,
@@ -66,8 +67,11 @@ class Mx3AsyncObjectDetectionDefinition(AsyncDockedOperation[Mx3ResultPacket]):
             raise ValueError("MX3 Async Object Detection requires an mx3:N device ID")
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError("confidence_threshold must be between 0 and 1")
-        if max_detections < 1:
-            raise ValueError("max_detections must be positive")
+        # Integral values only: this constructor stores int(value), so a
+        # fractional limit would silently enforce a different cap than the
+        # configuration asked for. update_config defers to the same rule.
+        if not is_integral(max_detections) or int(max_detections) < 1:
+            raise ValueError("max_detections must be a positive integer")
 
         self.model_id = model_id
         self.device_id = device_id

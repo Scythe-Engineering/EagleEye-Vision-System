@@ -14,6 +14,7 @@ import numpy as np
 
 from src.main_operations.modules.object_detection.utils.letterbox import letterbox_image
 from src.utils.model_library import ResolvedArtifact
+from src.utils.numeric_validation import is_integral
 from src.utils.timing import FramePacket, TimedValue
 
 Detection = dict[str, Any]
@@ -21,16 +22,6 @@ Detection = dict[str, Any]
 # Upper bound on how long a paused stream waits for outputs the accelerator
 # accepted but may never deliver.
 DISCARD_TIMEOUT_SECONDS = 2.0
-
-
-def _is_integral(value: Any) -> bool:
-    """Return whether a numeric setting can be stored as an exact integer."""
-    if isinstance(value, bool):
-        return False
-    try:
-        return int(value) == value
-    except (TypeError, ValueError):
-        return False
 
 
 class Mx3RuntimeError(RuntimeError):
@@ -313,7 +304,7 @@ class Mx3StreamBinding:
                 )
             # A fractional limit would be truncated below, silently enforcing a
             # different cap than the caller asked for.
-            if not _is_integral(max_detections) or max_detections < 1:
+            if not is_integral(max_detections) or max_detections < 1:
                 raise ValueError("max_detections must be a positive integer")
         with self._condition:
             if confidence_threshold is not None:

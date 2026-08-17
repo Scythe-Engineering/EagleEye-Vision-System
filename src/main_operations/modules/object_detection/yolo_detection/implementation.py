@@ -9,19 +9,10 @@ import numpy as np
 
 from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
 from src.utils.model_library import ModelLibrary
+from src.utils.numeric_validation import is_integral
 
 Detection = dict[str, Any]
 ModelFactory = Callable[..., Any]
-
-
-def _is_integral(value: Any) -> bool:
-    """Return whether a numeric setting can be stored as an exact integer."""
-    if isinstance(value, bool):
-        return False
-    try:
-        return int(value) == value
-    except (TypeError, ValueError):
-        return False
 
 
 class ObjectDetectionImplementation:
@@ -124,9 +115,9 @@ class ObjectDetectionImplementation:
             raise ValueError("iou_threshold must be in [0.0, 1.0]")
         # Integral values only: __init__ stores int(value), so a fractional
         # limit would silently run inference with a different setting.
-        if not _is_integral(max_detections) or int(max_detections) < 1:
+        if not is_integral(max_detections) or int(max_detections) < 1:
             raise ValueError("max_detections must be a positive integer")
-        if not _is_integral(image_size) or int(image_size) < 0:
+        if not is_integral(image_size) or int(image_size) < 0:
             raise ValueError("image_size must be zero or a positive integer")
 
     @staticmethod
@@ -182,7 +173,7 @@ class ObjectDetectionImplementation:
         if iou_threshold is not None and not 0.0 <= float(iou_threshold) <= 1.0:
             raise ValueError("iou_threshold must be in [0.0, 1.0]")
         if max_detections is not None and (
-            not _is_integral(max_detections) or int(max_detections) < 1
+            not is_integral(max_detections) or int(max_detections) < 1
         ):
             raise ValueError("max_detections must be a positive integer")
 

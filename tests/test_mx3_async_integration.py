@@ -13,6 +13,7 @@ from src.config.utils.port_validation import validate_pipeline_connections
 from src.main_operations.definitions.mx3_async_object_detection import (
     Mx3AsyncObjectDetectionDefinition,
 )
+from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
 from src.utils.model_library import ResolvedArtifact
 from src.utils import mx3_runtime
 from src.utils.mx3_runtime import (
@@ -443,6 +444,22 @@ def test_live_settings_reject_fractional_max_detections(tmp_path: Path) -> None:
 
     binding.update_live_settings(max_detections=4)
     assert binding.max_detections == 4
+
+
+def test_operation_constructor_rejects_fractional_max_detections() -> None:
+    """A config-supplied fractional limit must be rejected, not truncated."""
+    registry = DeviceRegistry([DeviceDescriptor("mx3:0", "MX3 0", "mx3", 0)])
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
+
+    with pytest.raises(ValueError, match="max_detections must be a positive integer"):
+        Mx3AsyncObjectDetectionDefinition(
+            model_id="model",
+            device_id="mx3:0",
+            device_registry=registry,
+            model_library=None,  # type: ignore[arg-type]
+            mx3_coordinator=coordinator,
+            max_detections=2.5,  # type: ignore[arg-type]
+        )
 
 
 def test_failed_runtime_startup_stops_its_partial_accelerator(
