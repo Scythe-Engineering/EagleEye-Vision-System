@@ -119,6 +119,16 @@ class DetectApriltagsDefinition(OperationInstance):
         """
         visualization_frame = frame.copy()
 
+        search_regions = self.detector.get_last_search_regions()
+        for region in search_regions:
+            cv2.polylines(
+                visualization_frame,
+                [np.rint(region).astype(np.int32)],
+                True,
+                (0, 0, 255),
+                2,
+            )
+
         with self.last_detections_lock:
             detections = self.last_detections
 

@@ -72,6 +72,7 @@ class AprilTagDetector:
 
         self.ready = False
         self._detect_lock: Lock = Lock()
+        self._last_search_regions: list[np.ndarray] = []
 
         # The camera pipeline is continuous, so frame shape/dtype/channel layout is
         # expected to stay stable. Cache the chosen preprocessing path and reusable
@@ -286,6 +287,31 @@ class AprilTagDetector:
             f"Expected a 2D offset or 3x3 perspective transform, got {mapping.shape}"
         )
 
+    @staticmethod
+    def _segment_search_region(
+        image: np.ndarray, full_frame_mapping: np.ndarray
+    ) -> np.ndarray:
+        """Return an image segment's oriented boundary in full-frame coordinates.
+
+        Args:
+            image: Image segment sent to the detector.
+            full_frame_mapping: Segment offset or perspective transform.
+
+        Returns:
+            Four perimeter-ordered full-frame corners.
+        """
+        height, width = image.shape[:2]
+        corners = np.array(
+            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+            dtype=np.float32,
+        )
+        return AprilTagDetector._map_segment_corners(corners, full_frame_mapping)
+
+    def get_last_search_regions(self) -> list[np.ndarray]:
+        """Return copies of the full-frame regions searched by the last detection."""
+        with self._detect_lock:
+            return [region.copy() for region in self._last_search_regions]
+
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
     ) -> Optional[list[Detection] | list[CustomDetection]]:
@@ -354,10 +380,35 @@ class AprilTagDetector:
         Returns:
             List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
         """
+        temporal_segments = not isinstance(images, np.ndarray)
+        search_regions = (
+            [
+                self._segment_search_region(image, mapping)
+                for image, mapping in images
+            ]
+            if temporal_segments
+            else []
+        )
+
         detections = self.run_detection(images)
         if detections is None or (len(detections) == 0 and full_frame is not None):
             if full_frame is not None:
                 full_frame_detections = self.run_detection(full_frame)
+                if temporal_segments:
+                    search_regions.append(
+                        np.array(
+                            [
+                                [0, 0],
+                                [full_frame.shape[1] - 1, 0],
+                                [full_frame.shape[1] - 1, full_frame.shape[0] - 1],
+                                [0, full_frame.shape[0] - 1],
+                            ],
+                            dtype=np.float32,
+                        )
+                    )
                 if full_frame_detections is not None and len(full_frame_detections) > 0:
-                    return full_frame_detections
+                    detections = full_frame_detections
+
+        with self._detect_lock:
+            self._last_search_regions = search_regions
         return detections
