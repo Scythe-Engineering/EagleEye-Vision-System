@@ -322,6 +322,31 @@ class Mx3StreamBinding:
                 and self.should_remain_active()
             )
 
+    def _wait_for_submission_slot(self) -> bool | None:
+        """Wait until this stream may submit another frame.
+
+        The caller must hold ``self._condition``. Pending discards are expired
+        while waiting so slots held by frames the accelerator will never
+        return are reclaimed.
+
+        Returns:
+            True when a slot is free and submission may proceed, False when
+            the stream was deactivated and the caller should retry, and None
+            when the stream closed or failed and the callback must stop.
+        """
+        self._expire_pending_discards()
+        while (
+            len(self._inflight) + self._pending_discards >= self.profile.max_inflight
+            and self._active
+            and not self._closed
+            and self._error is None
+        ):
+            self._condition.wait(timeout=0.05)
+            self._expire_pending_discards()
+        if self._closed or self._error is not None:
+            return None
+        return self._active
+
     def input_callback(self, _stream_id: int) -> list[np.ndarray] | None:
         """Wait for a unique transformed camera frame and preprocess it."""
         try:
@@ -336,19 +361,10 @@ class Mx3StreamBinding:
                         self.deactivate()
                         continue
                     activation = self._activation
-                    self._expire_pending_discards()
-                    while (
-                        len(self._inflight) + self._pending_discards
-                        >= self.profile.max_inflight
-                        and self._active
-                        and not self._closed
-                        and self._error is None
-                    ):
-                        self._condition.wait(timeout=0.05)
-                        self._expire_pending_discards()
-                    if self._closed or self._error is not None:
+                    may_submit = self._wait_for_submission_slot()
+                    if may_submit is None:
                         return None
-                    if not self._active:
+                    if not may_submit:
                         continue
                     after_frame_seq = self._last_frame_seq
 
@@ -535,6 +551,16 @@ class _Mx3Runtime:
         logger: Any,
         accelerator_factory: Callable[..., Any] | None,
     ) -> None:
+        """Prepare one physical MX3 to accept stream reservations.
+
+        Args:
+            physical_index: Zero-based index of the physical MX3 device.
+            artifact: Resolved DFP and optional postprocessor to load.
+            profile: Decoder and preprocessing profile shared by every stream.
+            logger: Optional logger; None disables runtime lifecycle logging.
+            accelerator_factory: Optional MxAccl-compatible factory. None
+                imports the vendor SDK lazily at start.
+        """
         self.physical_index = physical_index
         self.artifact = artifact
         self.profile = profile
@@ -759,12 +785,8 @@ class Mx3RuntimeCoordinator:
                 return
             self._started = True
             runtimes = tuple(self._runtimes.values())
-        started: list[_Mx3Runtime] = []
         try:
             for runtime in runtimes:
-                # Recorded before starting: a failure can leave a constructed
-                # accelerator holding the device, and only stop() releases it.
-                started.append(runtime)
                 runtime.start()
         except BaseException as error:
             # Startup is all-or-nothing: leave no runtime processing frames and
@@ -776,7 +798,11 @@ class Mx3RuntimeCoordinator:
                     if isinstance(error, Mx3RuntimeError)
                     else Mx3RuntimeError(f"Failed to start MX3 runtimes: {error}")
                 )
-            for runtime in started:
+            # Every registered runtime is stopped, not only the ones start()
+            # reached: a partially started runtime holds its device until
+            # stop() releases it, and a runtime never reached still owns
+            # bindings whose pipelines would otherwise wait forever.
+            for runtime in runtimes:
                 runtime.stop()
             raise
 

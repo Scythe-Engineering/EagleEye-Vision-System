@@ -42,6 +42,12 @@ class FakeSource:
     """Supply deterministic timestamped frames to a fake MX3 callback."""
 
     def __init__(self, frame_sequences: list[int]) -> None:
+        """Queue one frame per requested sequence number.
+
+        Args:
+            frame_sequences: Frame sequence numbers to emit, in order. Each
+                becomes one packet whose pixels are filled with its number.
+        """
         self.packets = deque(
             TimedValue(
                 np.full((320, 320, 3), frame_seq, dtype=np.uint8),
@@ -76,6 +82,12 @@ class FakeMxAccl:
     """Minimal blocking MemryX accelerator fake used by coordinator tests."""
 
     def __init__(self, dfp_path: str, **kwargs: object) -> None:
+        """Record the DFP and construction options without touching hardware.
+
+        Args:
+            dfp_path: Path to the DFP the runtime asked this fake to load.
+            **kwargs: Remaining MxAccl options, retained for assertions.
+        """
         self.dfp_path = dfp_path
         self.kwargs = kwargs
         self.callbacks = {}
@@ -84,6 +96,12 @@ class FakeMxAccl:
         self.stopped = threading.Event()
 
     def connect_post_model(self, path: str, model_id: int = 0) -> None:
+        """Record the postprocessor the runtime attached.
+
+        Args:
+            path: Path to the postprocessor artifact.
+            model_id: Model the postprocessor belongs to.
+        """
         self.post_model = (path, model_id)
 
     def connect_stream(
@@ -93,19 +111,39 @@ class FakeMxAccl:
         stream_id: int,
         model_id: int = 0,
     ) -> None:
+        """Record one stream's callbacks so tests can drive them directly.
+
+        Args:
+            input_callback: Callback the SDK would call to fetch a frame.
+            output_callback: Callback the SDK would call with inference output.
+            stream_id: Explicit stream index owning these callbacks.
+            model_id: Model the stream is connected to.
+        """
         self.callbacks[stream_id] = (input_callback, output_callback, model_id)
 
     def start(self) -> None:
+        """Mark the accelerator as running."""
         self.started = True
 
     def wait(self) -> None:
+        """Block until stop() is called, as the real SDK's wait() does."""
         self.stopped.wait()
 
     def stop(self) -> None:
+        """Release any waiter and mark the accelerator as stopped."""
         self.stopped.set()
 
 
 def _artifact(tmp_path: Path, name: str = "model.dfp") -> ResolvedArtifact:
+    """Write a placeholder DFP and resolve it against the shared profile.
+
+    Args:
+        tmp_path: Temporary directory owning the artifact file.
+        name: File name to write inside ``tmp_path``.
+
+    Returns:
+        A resolved artifact pointing at the written file.
+    """
     path = tmp_path / name
     path.write_bytes(b"dfp")
     return ResolvedArtifact(
@@ -120,6 +158,7 @@ def _artifact(tmp_path: Path, name: str = "model.dfp") -> ResolvedArtifact:
 def test_fake_mx3_streams_preserve_frame_correlation_and_shutdown(
     tmp_path: Path,
 ) -> None:
+    """Two streams on one MX3 keep their own frames and shut down cleanly."""
     accelerators: list[FakeMxAccl] = []
 
     def factory(path: str, **kwargs: object) -> FakeMxAccl:
@@ -204,6 +243,7 @@ def test_fake_mx3_streams_preserve_frame_correlation_and_shutdown(
 
 
 def test_mx3_operation_is_advertised_as_visualizable() -> None:
+    """The MX3 operation must be offered as a visualizable output source."""
     mixin = OperationConfigMixin()
 
     assert mixin._operation_has_visualization(
@@ -212,6 +252,7 @@ def test_mx3_operation_is_advertised_as_visualizable() -> None:
 
 
 def test_mx3_operation_visualizes_detections_on_the_inference_frame() -> None:
+    """Detections must be drawn on the frame they were inferred from."""
     timing = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=2)
     inference_frame = np.zeros((100, 100, 3), dtype=np.uint8)
     result = Mx3ResultPacket(
@@ -246,6 +287,7 @@ def test_mx3_operation_visualizes_detections_on_the_inference_frame() -> None:
 def test_coordinator_rejects_different_dfps_on_one_physical_mx3(
     tmp_path: Path,
 ) -> None:
+    """One physical MX3 cannot host streams from two different DFPs."""
     coordinator = Mx3RuntimeCoordinator(accelerator_factory=FakeMxAccl)
     coordinator.register_stream(
         0, _artifact(tmp_path), FakeSource([]), None, 0.25, 10, lambda: True
@@ -263,6 +305,14 @@ def test_coordinator_rejects_different_dfps_on_one_physical_mx3(
 
 
 def _device_input(uuid: str = "camera") -> dict[str, object]:
+    """Build an unconnected Device Input node for connection validation.
+
+    Args:
+        uuid: Node identifier other nodes dock to.
+
+    Returns:
+        A pipeline node dictionary with no connections.
+    """
     return {
         "uuid": uuid,
         "action_name": "device_input",
@@ -272,6 +322,14 @@ def _device_input(uuid: str = "camera") -> dict[str, object]:
 
 
 def _mx3(uuid: str = "mx3") -> dict[str, object]:
+    """Build an unconnected MX3 async detection node.
+
+    Args:
+        uuid: Node identifier used in dock definitions.
+
+    Returns:
+        A pipeline node dictionary with no connections.
+    """
     return {
         "uuid": uuid,
         "action_name": "mx3_async_object_detection",
@@ -281,6 +339,15 @@ def _mx3(uuid: str = "mx3") -> dict[str, object]:
 
 
 def _dock(from_uuid: str, to_uuid: str) -> dict[str, str]:
+    """Build a frame-to-frame dock connection between two nodes.
+
+    Args:
+        from_uuid: Node supplying the frame.
+        to_uuid: Node consuming the frame.
+
+    Returns:
+        A connection dictionary on the ``frame`` port of both nodes.
+    """
     return {
         "from_uuid": from_uuid,
         "from_port": "frame",
@@ -291,6 +358,7 @@ def _dock(from_uuid: str, to_uuid: str) -> dict[str, str]:
 
 
 def test_docking_validation_requires_direct_exclusive_device_input() -> None:
+    """An MX3 operation needs exactly one directly docked Device Input."""
     camera = _device_input()
     detector = _mx3()
     with pytest.raises(ValueError, match="must bind directly"):
@@ -306,6 +374,7 @@ def test_docking_validation_requires_direct_exclusive_device_input() -> None:
 
 
 def test_connection_validation_requires_data_type() -> None:
+    """A connection without a declared data type must be rejected."""
     camera = _device_input()
     detector = _mx3()
     connection = _dock("camera", "mx3")
@@ -316,6 +385,7 @@ def test_connection_validation_requires_data_type() -> None:
 
 
 def test_connection_validation_rejects_path_qualified_action_names() -> None:
+    """Action names must be bare identifiers, not definition paths."""
     camera = _device_input()
     camera["action_name"] = "definitions/device_input"
     with pytest.raises(ValueError, match="must not contain a path"):
@@ -488,3 +558,35 @@ def test_failed_runtime_startup_stops_its_partial_accelerator(
         coordinator.start()
 
     assert accelerators[0].stopped.is_set()
+
+
+def test_failed_startup_closes_streams_on_runtimes_it_never_reached(
+    tmp_path: Path,
+) -> None:
+    """An unstarted runtime's streams must be closed, not left waiting."""
+
+    def factory(path: str, **kwargs: object) -> FakeMxAccl:
+        if kwargs["device_ids_to_use"] == [0]:
+            raise RuntimeError("accelerator unavailable")
+        return FakeMxAccl(path, **kwargs)
+
+    coordinator = Mx3RuntimeCoordinator(accelerator_factory=factory)
+    artifact = _artifact(tmp_path)
+    coordinator.register_stream(
+        0, artifact, FakeSource([]), None, 0.25, 10, lambda: True
+    )
+    # Registered second, so startup fails before this runtime is ever reached.
+    never_started = coordinator.register_stream(
+        1, artifact, FakeSource([]), None, 0.25, 10, lambda: True
+    )
+
+    with pytest.raises(Mx3RuntimeError, match="accelerator unavailable"):
+        coordinator.start()
+
+    # Asserted first because it fails fast: an unclosed stream would accept
+    # activation and then block the assertions below forever.
+    with pytest.raises(Mx3RuntimeError, match="stream is closed"):
+        never_started.activate()
+    # A closed stream reports exhaustion instead of stalling its pipeline.
+    assert never_started.wait_for_next() is None
+    assert never_started.input_callback(0) is None

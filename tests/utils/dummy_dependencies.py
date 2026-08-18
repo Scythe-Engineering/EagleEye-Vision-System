@@ -9,6 +9,7 @@ import numpy as np
 
 from tests.utils.dummy_data import dummy_frame
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
+from src.utils.device_registry import DeviceNotFoundError
 from src.utils.logging.logger import Logger
 from src.utils.timing import FramePacket, TimedValue, TimingMetadata
 
@@ -31,9 +32,10 @@ class DummyDeviceRegistry:
             device_id: Identifier of the requested device.
 
         Raises:
-            KeyError: Always, because no devices are registered.
+            DeviceNotFoundError: Always, because no devices are registered.
+                Matches the real registry, which raises this KeyError subclass.
         """
-        raise KeyError(device_id)
+        raise DeviceNotFoundError(device_id)
 
 
 class DummyModelLibrary:
@@ -283,15 +285,20 @@ class FakeCameraWorker:
     timestamp: float = 0.0
     running: bool = True
     thread: Optional[object] = None
+    frame_seq: int = 0
 
     def get_current_packet(self) -> FramePacket | None:
         """Return the latest frame with deterministic timing metadata.
+
+        Each call advances ``frame_seq`` so consumers that poll for a frame
+        newer than the one they last consumed observe a new packet.
 
         Returns:
             FramePacket | None: Current packet, or ``None`` without a frame.
         """
         if self.frame is None:
             return None
+        self.frame_seq += 1
         return TimedValue(
             self.frame,
             TimingMetadata(
@@ -299,6 +306,7 @@ class FakeCameraWorker:
                 capture_monotonic_ns=1,
                 camera_name="fake_camera",
                 source="test",
+                frame_seq=self.frame_seq,
             ),
         )
 
