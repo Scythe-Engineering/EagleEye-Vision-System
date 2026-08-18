@@ -396,7 +396,7 @@ class AprilTagDetector:
         if full_frame is not None and (detections is None or len(detections) == 0):
             full_frame_detections = self.run_detection(full_frame)
             if temporal_segments:
-                search_regions.append(
+                search_regions = [
                     np.array(
                         [
                             [0, 0],
@@ -406,7 +406,7 @@ class AprilTagDetector:
                         ],
                         dtype=np.float32,
                     )
-                )
+                ]
             if full_frame_detections:
                 detections = full_frame_detections
 
