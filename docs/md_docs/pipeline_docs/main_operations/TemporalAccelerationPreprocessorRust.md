@@ -15,32 +15,32 @@ The `TemporalAccelerationPreprocessorRustDefinition` is a main pipeline operatio
 ## Input/Output
 
 - **Input**: `np.ndarray` (BGR image frame)
-- **Output**: `Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]` - Cropped regions with offsets and original frame
+- **Output**: `Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]` - Rectified crops with full-frame transforms and the original frame
 
 ### Output Format
 
 Returns a tuple containing:
-- `List[Tuple[np.ndarray, np.ndarray]]`: List of (cropped_image, (offset_x, offset_y)) tuples
+- `List[Tuple[np.ndarray, np.ndarray]]`: List of `(cropped_image, mapping)` tuples
 - `np.ndarray`: Original input frame (unchanged)
 
-Each cropped region represents a predicted location where AprilTags are likely to appear based on camera motion extrapolation.
+Rectified crops use a 3x3 transform that maps detector coordinates back into the original frame. An unrectified fallback crop uses a 2-element `[left, top]` offset instead.
 
 ## Processing Pipeline
 
 1. **Pose Back-propagation**: Receives camera pose estimates from previous pipeline iterations
 2. **Motion Extrapolation**: Predicts camera movement and projects known AprilTag positions
-3. **ROI Prediction**: Calculates bounding boxes for expected AprilTag locations in current frame
-4. **Region Cropping**: Extracts predicted regions with configurable padding
+3. **ROI Prediction**: Calculates projected quadrilaterals for expected AprilTag locations
+4. **Region Cropping**: Perspective-aligns predicted regions with configurable padding
 5. **Size Filtering**: Applies minimum region size constraints
 6. **Region Limiting**: Caps maximum number of returned regions
 
 ## Parameters
 
-### `camera_parameters_path` (str)
+### `camera_bus_id` (str)
 
 - **Default**: None (required)
 - **Restart Required**: Yes
-- **Description**: Path to camera calibration parameters file containing intrinsic matrix and distortion coefficients.
+- **Description**: Camera bus ID used to resolve the camera's intrinsic calibration through the shared camera configuration registry.
 
 ### `apriltag_map_path` (str)
 
@@ -77,8 +77,8 @@ Each cropped region represents a predicted location where AprilTags are likely t
 {
     "action_name": "temporal_acceleration_preprocessor_rust",
     "action_params": {
-        "camera_parameters_path": "config/camera_parameters.json",
-        "apriltag_map_path": "config/apriltag_map.fmap",
+        "camera_bus_id": "basic_test",
+        "apriltag_map_path": "files/apriltag_map_path/frc2025r2.json",
         "padding_factor": 0.65,
         "max_regions": 10,
         "min_region_size_px": 16
@@ -94,24 +94,23 @@ import cv2
 import numpy as np
 
 preprocessor = TemporalAccelerationPreprocessorRustDefinition(
-    camera_parameters_path="config/camera_parameters.json",
-    apriltag_map_path="config/apriltag_map.fmap",
+    camera_bus_id="basic_test",
+    apriltag_map_path="files/apriltag_map_path/frc2025r2.json",
     padding_factor=0.35,
     max_regions=20
 )
 
-# Back-propagate camera pose from localization
 camera_pose = np.eye(4)  # 4x4 identity matrix as example
-preprocessor.back_propagate_input(camera_pose)
-
 frame = cv2.imread("input.jpg")
 
-# Generate predicted ROIs
-regions, original_frame = preprocessor.run(frame)
+# Generate predicted ROIs using the latest pose from localization
+regions, original_frame = preprocessor.run(
+    {"frame": frame, "camera_pose": camera_pose}
+)
 
 print(f"Generated {len(regions)} predicted regions")
-for cropped_image, (offset_x, offset_y) in regions:
-    print(f"Region at ({offset_x}, {offset_y}) with shape {cropped_image.shape}")
+for cropped_image, mapping in regions:
+    print(f"Region shape: {cropped_image.shape}, mapping shape: {mapping.shape}")
 ```
 
 ## Performance Considerations
@@ -162,7 +161,7 @@ Temporal prediction for real-time navigation systems:
 
 ```json
 {
-    "camera_parameters_path": "config/nav_camera.json",
+    "camera_bus_id": "nav_camera",
     "apriltag_map_path": "config/navigation_tags.fmap",
     "padding_factor": 0.4,
     "max_regions": 15,
@@ -176,7 +175,7 @@ Predictive preprocessing for self-driving applications:
 
 ```json
 {
-    "camera_parameters_path": "config/vehicle_camera.json",
+    "camera_bus_id": "vehicle_camera",
     "apriltag_map_path": "config/road_tags.fmap",
     "padding_factor": 0.5,
     "max_regions": 25,
@@ -190,7 +189,7 @@ Smooth tracking with motion prediction:
 
 ```json
 {
-    "camera_parameters_path": "config/ar_camera.json",
+    "camera_bus_id": "ar_camera",
     "apriltag_map_path": "config/tracking_space.fmap",
     "padding_factor": 0.3,
     "max_regions": 30,

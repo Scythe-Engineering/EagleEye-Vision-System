@@ -72,6 +72,7 @@ class AprilTagDetector:
 
         self.ready = False
         self._detect_lock: Lock = Lock()
+        self._last_search_regions: list[np.ndarray] = []
 
         # The camera pipeline is continuous, so frame shape/dtype/channel layout is
         # expected to stay stable. Cache the chosen preprocessing path and reusable
@@ -144,6 +145,16 @@ class AprilTagDetector:
             self._segment_gray_buffers[shape] = buffer
         return buffer
 
+    def _is_valid_image(self, image: np.ndarray) -> bool:
+        """Return whether an image is large enough for AprilTag processing."""
+        return (
+            image is not None
+            and image.size != 0
+            and image.ndim >= 2
+            and image.shape[0] >= self._min_input_dimension
+            and image.shape[1] >= self._min_input_dimension
+        )
+
     def _preprocess_image(
         self, image: np.ndarray, *, segment: bool = False
     ) -> Optional[np.ndarray]:
@@ -153,12 +164,10 @@ class AprilTagDetector:
         frames match that signature, the hot path skips repeated shape/dtype/color
         checks and reuses conversion buffers.
         """
-        if image is None or image.size == 0:
+        if not self._is_valid_image(image):
             return None
 
         shape = image.shape
-        if len(shape) < 2 or shape[0] < self._min_input_dimension or shape[1] < self._min_input_dimension:
-            return None
 
         c_contiguous = image.flags.c_contiguous
         signature = (shape, image.dtype, c_contiguous)
@@ -262,10 +271,59 @@ class AprilTagDetector:
             self._segment_gray_buffers.clear()
             self._disable_native_destructor(old_detector)
 
+    @staticmethod
+    def _map_segment_corners(
+        corners: np.ndarray, full_frame_mapping: np.ndarray
+    ) -> np.ndarray:
+        """Map detected segment corners into full-frame image coordinates.
+
+        Args:
+            corners: Detected corner coordinates within an image segment.
+            full_frame_mapping: Shape-(2,) XY offset or shape-(3, 3) perspective
+                transform from segment coordinates to full-frame coordinates.
+
+        Returns:
+            Detected corners in full-frame image coordinates.
+        """
+        mapping = np.asarray(full_frame_mapping)
+        if mapping.shape == (2,):
+            return corners + mapping
+        if mapping.shape == (3, 3):
+            points = corners.astype(np.float32, copy=False).reshape(-1, 1, 2)
+            return cv2.perspectiveTransform(points, mapping).reshape(-1, 2)
+        raise ValueError(
+            f"Expected a 2D offset or 3x3 perspective transform, got {mapping.shape}"
+        )
+
+    @staticmethod
+    def _segment_search_region(
+        image: np.ndarray, full_frame_mapping: np.ndarray
+    ) -> np.ndarray:
+        """Return an image segment's oriented boundary in full-frame coordinates.
+
+        Args:
+            image: Image segment sent to the detector.
+            full_frame_mapping: Segment offset or perspective transform.
+
+        Returns:
+            Four perimeter-ordered full-frame corners.
+        """
+        height, width = image.shape[:2]
+        corners = np.array(
+            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+            dtype=np.float32,
+        )
+        return AprilTagDetector._map_segment_corners(corners, full_frame_mapping)
+
+    def get_last_search_regions(self) -> list[np.ndarray]:
+        """Return copies of the full-frame regions searched by the last detection."""
+        with self._detect_lock:
+            return [region.copy() for region in self._last_search_regions]
+
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
     ) -> Optional[list[Detection] | list[CustomDetection]]:
-        """Run detection on a single image."""
+        """Run detection on a single image or a list of mapped image segments."""
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:
             return None
@@ -284,7 +342,7 @@ class AprilTagDetector:
         else:
             detections = []
             with self._detect_lock:
-                for image, offset in images:
+                for image, full_frame_mapping in images:
                     gray_image = self._preprocess_image(image, segment=True)
                     if gray_image is None:
                         continue
@@ -297,7 +355,9 @@ class AprilTagDetector:
                         detections.append(
                             CustomDetection(
                                 tag_id=detected_tags.tag_id,
-                                corners=(detected_tags.corners + offset),
+                                corners=self._map_segment_corners(
+                                    detected_tags.corners, full_frame_mapping
+                                ),
                             )
                         )
                     elif isinstance(detected_tags, list):
@@ -305,7 +365,9 @@ class AprilTagDetector:
                             detections.append(
                                 CustomDetection(
                                     tag_id=detection.tag_id,
-                                    corners=(detection.corners + offset),
+                                    corners=self._map_segment_corners(
+                                        detection.corners, full_frame_mapping
+                                    ),
                                 )
                             )
             return detections
@@ -320,15 +382,47 @@ class AprilTagDetector:
         - Input image is always converted to grayscale.
 
         Args:
-            images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
-            full_frame: Optional full frame image for if no tags are detected.
+            images: Input image or image segments paired with either an XY offset
+                or a 3x3 transform from segment coordinates to the full frame.
+            full_frame: Optional fallback used when the first search finds no tags.
+
         Returns:
-            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
+            Detected tags from the supplied image or regions. If no tag is found,
+            the full frame is searched once before returning no detections.
         """
+        temporal_segments = not isinstance(images, np.ndarray)
+        search_regions = (
+            [
+                self._segment_search_region(image, mapping)
+                for image, mapping in images
+                if self._is_valid_image(image)
+            ]
+            if temporal_segments
+            else []
+        )
+
         detections = self.run_detection(images)
-        if detections is None or (len(detections) == 0 and full_frame is not None):
-            if full_frame is not None:
-                full_frame_detections = self.run_detection(full_frame)
-                if full_frame_detections is not None and len(full_frame_detections) > 0:
-                    return full_frame_detections
+        if (
+            full_frame is not None
+            and self._is_valid_image(full_frame)
+            and (detections is None or len(detections) == 0)
+        ):
+            full_frame_detections = self.run_detection(full_frame)
+            if temporal_segments:
+                search_regions = [
+                    np.array(
+                        [
+                            [0, 0],
+                            [full_frame.shape[1] - 1, 0],
+                            [full_frame.shape[1] - 1, full_frame.shape[0] - 1],
+                            [0, full_frame.shape[0] - 1],
+                        ],
+                        dtype=np.float32,
+                    )
+                ]
+            if full_frame_detections:
+                detections = full_frame_detections
+
+        with self._detect_lock:
+            self._last_search_regions = search_regions
         return detections

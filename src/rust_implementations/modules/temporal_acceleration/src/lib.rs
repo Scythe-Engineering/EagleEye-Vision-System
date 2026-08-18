@@ -115,14 +115,18 @@ impl TemporalAcceleration {
         Ok(())
     }
 
+    /// Return paired padded quadrilaterals and axis-aligned regions, nearest first.
+    ///
+    /// An empty quadrilateral list with one full-frame region requests an unwarped
+    /// fallback crop when no camera pose or projected tag region is available.
     fn process_frame(
         &self,
         width: usize,
         height: usize,
     ) -> PyResult<(Vec<Vec<f32>>, Vec<Vec<i32>>)> {
-        let mut region_distances: Vec<(f32, [i32; 4])> = Vec::new();
+        let mut region_distances: Vec<(f32, [i32; 4], [[f32; 2]; 4])> = Vec::new();
 
-        // If no pose, return full frame region
+        // Without a pose, leave the full-frame crop unwarped.
         let Some(world_from_camera) = self.last_pose_world_from_camera else {
             let regions = vec![[0, 0, width as i32, height as i32]];
             return Ok((vec![], regions.iter().map(|r| r.to_vec()).collect()));
@@ -204,34 +208,41 @@ impl TemporalAcceleration {
                 continue;
             }
 
-            // Compute padded square bbox
-            if let Some(bbox) = bbox_from_points(
+            // Preserve the projected orientation for perspective-aligned crops.
+            if let Some((padded_quad, bbox)) = padded_quad_and_bbox(
                 &img_pts,
                 width as i32,
                 height as i32,
                 self.padding_factor,
                 self.min_region_size_px,
             ) {
-                region_distances.push((distance_3d, bbox));
+                region_distances.push((distance_3d, bbox, padded_quad));
             }
         }
 
         // Sort by distance (closest first) and limit to max_regions
         region_distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        let mut regions: Vec<[i32; 4]> = region_distances
+        let selected_regions: Vec<([i32; 4], [[f32; 2]; 4])> = region_distances
             .into_iter()
             .take(self.max_regions)
-            .map(|(_, bbox)| bbox)
+            .map(|(_, bbox, quad)| (bbox, quad))
             .collect();
 
-        if regions.is_empty() {
-            regions.push([0, 0, width as i32, height as i32]);
+        if selected_regions.is_empty() {
+            let regions = vec![vec![0, 0, width as i32, height as i32]];
+            return Ok((vec![], regions));
         }
 
-        let crop_regions: Vec<Vec<i32>> = regions.iter().map(|r| r.to_vec()).collect();
+        let crop_quads = selected_regions
+            .iter()
+            .map(|(_, quad)| quad.iter().flatten().copied().collect())
+            .collect();
+        let crop_regions = selected_regions
+            .iter()
+            .map(|(bbox, _)| bbox.to_vec())
+            .collect();
 
-        // We return empty crops data; Python reconstructs crops from regions
-        Ok((vec![], crop_regions))
+        Ok((crop_quads, crop_regions))
     }
 
     fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
@@ -356,41 +367,44 @@ fn frustum_cull(
     any_in
 }
 
-fn bbox_from_points(
+/// Expand a projected tag around its center and return its visible axis-aligned bounds.
+fn padded_quad_and_bbox(
     points: &[[f32; 2]; 4],
     width: i32,
     height: i32,
     padding_factor: f32,
     min_region_size_px: i32,
-) -> Option<[i32; 4]> {
-    let mut min_x = f32::INFINITY;
-    let mut min_y = f32::INFINITY;
-    let mut max_x = f32::NEG_INFINITY;
-    let mut max_y = f32::NEG_INFINITY;
-    for p in points.iter() {
-        if p[0] < min_x { min_x = p[0]; }
-        if p[1] < min_y { min_y = p[1]; }
-        if p[0] > max_x { max_x = p[0]; }
-        if p[1] > max_y { max_y = p[1]; }
-    }
-    let cx = (min_x + max_x) * 0.5;
-    let cy = (min_y + max_y) * 0.5;
-    let mut size = (max_x - min_x).abs().max((max_y - min_y).abs());
-    size *= 1.0 + padding_factor;
-    if size < min_region_size_px as f32 {
+) -> Option<([[f32; 2]; 4], [i32; 4])> {
+    let center = points.iter().fold([0.0f32; 2], |sum, point| {
+        [sum[0] + point[0] * 0.25, sum[1] + point[1] * 0.25]
+    });
+    let scale = 1.0 + padding_factor;
+    let padded = points.map(|point| {
+        [
+            center[0] + (point[0] - center[0]) * scale,
+            center[1] + (point[1] - center[1]) * scale,
+        ]
+    });
+
+    let min_x = padded.iter().map(|point| point[0]).fold(f32::INFINITY, f32::min);
+    let min_y = padded.iter().map(|point| point[1]).fold(f32::INFINITY, f32::min);
+    let max_x = padded.iter().map(|point| point[0]).fold(f32::NEG_INFINITY, f32::max);
+    let max_y = padded.iter().map(|point| point[1]).fold(f32::NEG_INFINITY, f32::max);
+    let projected_span = (max_x - min_x).max(max_y - min_y);
+    if projected_span < min_region_size_px as f32 {
         return None;
     }
-    let half = size * 0.5;
-    let mut left = (cx - half).floor() as i32;
-    let mut top = (cy - half).floor() as i32;
-    let mut right = (cx + half).ceil() as i32;
-    let mut bottom = (cy + half).ceil() as i32;
+    let bbox = [
+        (min_x.floor() as i32).clamp(0, width),
+        (min_y.floor() as i32).clamp(0, height),
+        (max_x.ceil() as i32).clamp(0, width),
+        (max_y.ceil() as i32).clamp(0, height),
+    ];
+    if bbox[2] <= bbox[0] || bbox[3] <= bbox[1] {
+        return None;
+    }
 
-    if left < 0 { left = 0; }
-    if top < 0 { top = 0; }
-    if right > width { right = width; }
-    if bottom > height { bottom = height; }
-    Some([left, top, right, bottom])
+    Some((padded, bbox))
 }
 
 fn extract_brown_conrady_coefficients(coefficients: &Vec<f32>) -> (f32, f32, f32, f32, f32) {
@@ -438,4 +452,28 @@ mod tests {
 		assert!((xd - x * radial).abs() < 1e-6);
 		assert!((yd - y * radial).abs() < 1e-6);
 	}
+
+    #[test]
+    fn padded_quad_preserves_orientation_and_expands_bounds() {
+        let points = [[10.0, 10.0], [30.0, 10.0], [30.0, 30.0], [10.0, 30.0]];
+        let (quad, bbox) = padded_quad_and_bbox(&points, 100, 100, 0.5, 16).unwrap();
+
+        assert_eq!(quad, [[5.0, 5.0], [35.0, 5.0], [35.0, 35.0], [5.0, 35.0]]);
+        assert_eq!(bbox, [5, 5, 35, 35]);
+    }
+
+    #[test]
+    fn rotated_quad_keeps_original_minimum_region_semantics() {
+        let diagonal = 5.0 * 2.0f32.sqrt();
+        let points = [
+            [20.0, 20.0 - diagonal],
+            [20.0 + diagonal, 20.0],
+            [20.0, 20.0 + diagonal],
+            [20.0 - diagonal, 20.0],
+        ];
+
+        let (_, bbox) = padded_quad_and_bbox(&points, 100, 100, 0.35, 16).unwrap();
+
+        assert_eq!(bbox, [10, 10, 30, 30]);
+    }
 }
