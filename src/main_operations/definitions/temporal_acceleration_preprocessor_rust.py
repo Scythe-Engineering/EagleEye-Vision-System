@@ -115,8 +115,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             max_detection_distance_m=max_detection_distance_m,
         )
 
-        self._last_regions: List[Tuple[int, int, int, int]] = []
-        self._last_regions_lock: Lock = Lock()
+        self._last_visualization_quads: List[np.ndarray] = []
+        self._last_visualization_quads_lock: Lock = Lock()
 
     def run(
         self, input_data: Any
@@ -157,7 +157,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         crop_quads, crop_regions = self._rust_impl.process_frame(width, height)
 
         cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
-        regions: List[Tuple[int, int, int, int]] = []
+        visualization_quads: List[np.ndarray] = []
         use_perspective_crops = len(crop_quads) == len(crop_regions)
         for index, region in enumerate(crop_regions):
             left, top, right, bottom = region
@@ -169,17 +169,22 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 continue
 
             if use_perspective_crops:
-                crop, full_frame_from_crop = self._perspective_crop(
-                    frame, np.asarray(crop_quads[index], dtype=np.float32)
-                )
+                quad = np.asarray(crop_quads[index], dtype=np.float32).reshape(4, 2)
+                crop, full_frame_from_crop = self._perspective_crop(frame, quad)
                 cropped_images.append((crop, full_frame_from_crop))
+                visualization_quads.append(quad)
             else:
                 crop = frame[top:bottom, left:right]
                 cropped_images.append((crop, np.array([left, top])))
-            regions.append((left, top, right, bottom))
+                visualization_quads.append(
+                    np.array(
+                        [[left, top], [right, top], [right, bottom], [left, bottom]],
+                        dtype=np.float32,
+                    )
+                )
 
-        with self._last_regions_lock:
-            self._last_regions = regions
+        with self._last_visualization_quads_lock:
+            self._last_visualization_quads = visualization_quads
 
         return (cropped_images, frame)
 
@@ -192,7 +197,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         Args:
             frame: Source camera frame.
             flattened_quad: Four perimeter-ordered `(x, y)` coordinates in the
-                full frame, flattened to shape `(8,)`.
+                full frame with shape `(8,)` or `(4, 2)`.
 
         Returns:
             Square rectified crop and a shape-(3, 3) transform from crop
@@ -232,19 +237,14 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         Returns:
             Frame with non-predicted areas darkened.
         """
-        with self._last_regions_lock:
-            crop_regions = self._last_regions
+        with self._last_visualization_quads_lock:
+            quads = self._last_visualization_quads
 
         visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
-        for region in crop_regions:
-            left, top, right, bottom = region
-            left = max(0, left)
-            top = max(0, top)
-            right = min(frame.shape[1], right)
-            bottom = min(frame.shape[0], bottom)
-            if right > left and bottom > top:
-                visualization_frame[top:bottom, left:right] = frame[
-                    top:bottom, left:right
-                ]
+        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        polygons = [np.rint(quad).astype(np.int32) for quad in quads]
+        if polygons:
+            cv2.fillPoly(mask, polygons, 255)
+            visualization_frame[mask != 0] = frame[mask != 0]
 
         return visualization_frame
