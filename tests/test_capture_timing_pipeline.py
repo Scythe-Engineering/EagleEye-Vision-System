@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -105,3 +106,69 @@ def test_visualization_device_frame_is_unwrapped() -> None:
 
     assert result is frame
     assert result.copy().shape == (2, 3)
+
+
+def _latency_pipeline(*packets: TimedValue) -> Pipeline:
+    """Build a bare pipeline whose device inputs already produced packets."""
+    operations = {
+        f"camera_{index}": Operation(
+            ShapeOperation(),
+            uuid=f"camera_{index}",
+            name="device_input",
+            is_data_source=True,
+        )
+        for index in range(len(packets))
+    }
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.operations = operations
+    pipeline.device_input_uuids = tuple(operations)
+    pipeline.flow_manager = cast(
+        Any,
+        SimpleNamespace(
+            operation_outputs={
+                uuid: packet for uuid, packet in zip(operations, packets)
+            }
+        ),
+    )
+    return pipeline
+
+
+def test_capture_latency_measures_frame_age_on_the_monotonic_clock() -> None:
+    captured_ns = time.monotonic_ns() - 40_000_000
+    pipeline = _latency_pipeline(
+        TimedValue(
+            np.zeros((2, 2), dtype=np.uint8),
+            TimingMetadata(capture_nt_us=1, capture_monotonic_ns=captured_ns),
+        )
+    )
+
+    latency_ms = pipeline._capture_latency_ms()
+
+    assert latency_ms is not None
+    assert 40.0 <= latency_ms < 60.0
+
+
+def test_capture_latency_reports_the_stalest_camera() -> None:
+    """A cycle is only as fresh as the oldest frame it consumed."""
+    now_ns = time.monotonic_ns()
+    pipeline = _latency_pipeline(
+        TimedValue(
+            np.zeros((2, 2), dtype=np.uint8),
+            TimingMetadata(capture_nt_us=1, capture_monotonic_ns=now_ns - 10_000_000),
+        ),
+        TimedValue(
+            np.zeros((2, 2), dtype=np.uint8),
+            TimingMetadata(capture_nt_us=2, capture_monotonic_ns=now_ns - 90_000_000),
+        ),
+    )
+
+    latency_ms = pipeline._capture_latency_ms()
+
+    assert latency_ms is not None
+    assert latency_ms >= 90.0
+
+
+def test_capture_latency_is_absent_without_timed_device_inputs() -> None:
+    pipeline = _latency_pipeline()
+
+    assert pipeline._capture_latency_ms() is None

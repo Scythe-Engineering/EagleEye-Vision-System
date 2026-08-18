@@ -28,7 +28,7 @@ from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
 from src.utils.model_library import ModelLibrary
 from src.utils.mx3_runtime import Mx3RuntimeCoordinator
-from src.utils.timing import TimedValue, unwrap_timed
+from src.utils.timing import TimedValue, get_timing, unwrap_timed
 
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
@@ -510,6 +510,26 @@ class Pipeline:
                 return False
         return True
 
+    def _capture_latency_ms(self) -> float | None:
+        """Age of the frame this cycle consumed, from capture to right now.
+
+        Uses the oldest Device Input packet, since a cycle is only as fresh as
+        its stalest camera. Measured on the monotonic clock so it is unaffected
+        by NetworkTables clock synchronisation.
+
+        Returns:
+            Latency in milliseconds, or None when no timed frame was consumed.
+        """
+        capture_times_ns = [
+            timing.capture_monotonic_ns
+            for operation_uuid in self.device_input_uuids
+            if (timing := get_timing(self._stored_frame_output(operation_uuid)))
+            is not None
+        ]
+        if not capture_times_ns:
+            return None
+        return (time.monotonic_ns() - min(capture_times_ns)) / 1_000_000.0
+
     def _record_device_input_tokens(self) -> None:
         """Record the exact Device Input packets consumed by the completed run."""
         for operation_uuid in self.device_input_uuids:
@@ -685,6 +705,11 @@ class Pipeline:
         elapsed = time.time() - start_time
         if should_run:
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
+            capture_latency_ms = self._capture_latency_ms()
+            if capture_latency_ms is not None:
+                self.flow_manager.set_latest_profile_capture_latency(
+                    capture_latency_ms
+                )
         with self.total_time_history_lock:
             self.total_time_history.append(elapsed)
 

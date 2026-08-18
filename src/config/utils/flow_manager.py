@@ -760,6 +760,23 @@ class FlowManager:
                     max(cycle_time_ms, 0.0)
                 )
 
+    def set_latest_profile_capture_latency(self, latency_ms: float) -> None:
+        """Attach capture-to-completion latency to the latest profile snapshot.
+
+        This is the age of the camera frame the completed cycle was computed
+        from, measured on the monotonic clock. Unlike cycle time it includes
+        exposure, transfer, and decode, so it is the number that matters for
+        pose estimation.
+
+        Args:
+            latency_ms: Milliseconds between frame capture and cycle completion.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is not None:
+                self._last_frame_profile["capture_latency_ms"] = float(
+                    max(latency_ms, 0.0)
+                )
+
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
         """Get a copy of the latest profiling snapshot.
 
