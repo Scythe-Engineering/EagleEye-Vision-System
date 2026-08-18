@@ -2,7 +2,9 @@
 
 from threading import Lock
 
+import cv2
 import numpy as np
+from pupil_apriltags import Detector
 
 from src.main_operations.definitions.detect_apriltags import (
     DetectApriltagsDefinition,
@@ -36,6 +38,36 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     np.testing.assert_allclose(search_region, source_quad, atol=1e-4)
 
 
+def test_perspective_crop_preserves_decodable_tag_winding() -> None:
+    """Rectification does not mirror projected AprilTag pixels."""
+    tag = cv2.imread(
+        "src/webui/assets/apriltags/tag36_11_00001.webp", cv2.IMREAD_GRAYSCALE
+    )
+    assert tag is not None
+    tag = cv2.resize(tag, (160, 160), interpolation=cv2.INTER_NEAREST)
+    canonical = np.full((300, 300), 255, dtype=np.uint8)
+    canonical[70:230, 70:230] = tag
+    canonical_corners = np.array(
+        [[0, 0], [299, 0], [299, 299], [0, 299]], dtype=np.float32
+    )
+    projected_quad = np.array(
+        [[100, 300], [300, 300], [300, 100], [100, 100]], dtype=np.float32
+    )
+    frame_from_canonical = cv2.getPerspectiveTransform(
+        canonical_corners, projected_quad[[3, 2, 1, 0]]
+    )
+    frame = cv2.warpPerspective(
+        canonical, frame_from_canonical, (400, 400), borderValue=255
+    )
+
+    crop, _ = TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+        frame, projected_quad
+    )
+    detections = Detector(families="tag36h11", quad_decimate=1).detect(crop)
+
+    assert [detection.tag_id for detection in detections] == [1]
+
+
 def test_visualization_uses_projected_quad_instead_of_axis_aligned_bounds() -> None:
     """Only the rotated predicted region remains at full brightness."""
     operation = TemporalAccelerationPreprocessorRustDefinition.__new__(
@@ -53,8 +85,8 @@ def test_visualization_uses_projected_quad_instead_of_axis_aligned_bounds() -> N
     np.testing.assert_array_equal(visualization[25, 25], [30, 30, 30])
 
 
-def test_detector_records_full_frame_when_temporal_search_falls_back() -> None:
-    """Detector search regions expose a full-frame fallback."""
+def test_detector_does_not_fall_back_when_temporal_regions_exist() -> None:
+    """A missed temporal crop does not trigger a full-frame search."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []
@@ -65,8 +97,23 @@ def test_detector_records_full_frame_when_temporal_search_falls_back() -> None:
     detector.detect([(crop, np.array([2, 3]))], full_frame)
     regions = detector.get_last_search_regions()
 
+    assert len(regions) == 1
     np.testing.assert_array_equal(regions[0], [[2, 3], [11, 3], [11, 12], [2, 12]])
-    np.testing.assert_array_equal(regions[1], [[0, 0], [29, 0], [29, 19], [0, 19]])
+
+
+def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
+    """An empty temporal search falls back to the supplied full frame."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    detector.run_detection = lambda _images: []
+    full_frame = np.zeros((20, 30), dtype=np.uint8)
+
+    detector.detect([], full_frame)
+    regions = detector.get_last_search_regions()
+
+    assert len(regions) == 1
+    np.testing.assert_array_equal(regions[0], [[0, 0], [29, 0], [29, 19], [0, 19]])
 
 
 def test_apriltag_visualization_draws_oriented_search_regions_in_red() -> None:

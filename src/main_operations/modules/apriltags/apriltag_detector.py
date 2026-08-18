@@ -376,9 +376,13 @@ class AprilTagDetector:
         Args:
             images: Input image or image segments paired with either an XY offset
                 or a 3x3 transform from segment coordinates to the full frame.
-            full_frame: Optional full frame image for if no tags are detected.
+            full_frame: Optional fallback used only when no temporal segments are
+                available or when a direct image search fails.
+
         Returns:
-            List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.
+            Detected tags, or no detections when the supplied temporal regions do
+            not contain a tag. Non-empty temporal regions never trigger a second
+            full-frame search.
         """
         temporal_segments = not isinstance(images, np.ndarray)
         search_regions = (
@@ -390,23 +394,28 @@ class AprilTagDetector:
             else []
         )
 
-        detections = self.run_detection(images)
-        if detections is None or (len(detections) == 0 and full_frame is not None):
-            if full_frame is not None:
+        if temporal_segments and len(images) == 0 and full_frame is not None:
+            detections = self.run_detection(full_frame)
+            search_regions.append(
+                np.array(
+                    [
+                        [0, 0],
+                        [full_frame.shape[1] - 1, 0],
+                        [full_frame.shape[1] - 1, full_frame.shape[0] - 1],
+                        [0, full_frame.shape[0] - 1],
+                    ],
+                    dtype=np.float32,
+                )
+            )
+        else:
+            detections = self.run_detection(images)
+            if (
+                not temporal_segments
+                and full_frame is not None
+                and (detections is None or len(detections) == 0)
+            ):
                 full_frame_detections = self.run_detection(full_frame)
-                if temporal_segments:
-                    search_regions.append(
-                        np.array(
-                            [
-                                [0, 0],
-                                [full_frame.shape[1] - 1, 0],
-                                [full_frame.shape[1] - 1, full_frame.shape[0] - 1],
-                                [0, full_frame.shape[0] - 1],
-                            ],
-                            dtype=np.float32,
-                        )
-                    )
-                if full_frame_detections is not None and len(full_frame_detections) > 0:
+                if full_frame_detections:
                     detections = full_frame_detections
 
         with self._detect_lock:

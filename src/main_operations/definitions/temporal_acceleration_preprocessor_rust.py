@@ -211,6 +211,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
             dtype=np.float32,
         )
+        # Preserve winding because mirrored AprilTags cannot be decoded.
+        if cv2.contourArea(source, oriented=True) < 0:
+            destination = destination[::-1].copy()
         crop_from_full_frame = cv2.getPerspectiveTransform(source, destination)
         full_frame_from_crop = cv2.getPerspectiveTransform(destination, source)
         crop = cv2.warpPerspective(frame, crop_from_full_frame, (side, side))
