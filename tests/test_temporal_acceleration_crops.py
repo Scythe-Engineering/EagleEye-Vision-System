@@ -85,8 +85,8 @@ def test_visualization_uses_projected_quad_instead_of_axis_aligned_bounds() -> N
     np.testing.assert_array_equal(visualization[25, 25], [30, 30, 30])
 
 
-def test_detector_does_not_fall_back_when_temporal_regions_exist() -> None:
-    """A missed temporal crop does not trigger a full-frame search."""
+def test_detector_falls_back_when_temporal_regions_have_no_detections() -> None:
+    """An empty temporal ROI search triggers a full-frame search."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []
@@ -97,8 +97,25 @@ def test_detector_does_not_fall_back_when_temporal_regions_exist() -> None:
     detector.detect([(crop, np.array([2, 3]))], full_frame)
     regions = detector.get_last_search_regions()
 
-    assert len(regions) == 1
+    assert len(regions) == 2
     np.testing.assert_array_equal(regions[0], [[2, 3], [11, 3], [11, 12], [2, 12]])
+    np.testing.assert_array_equal(regions[1], [[0, 0], [29, 0], [29, 19], [0, 19]])
+
+
+def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
+    """One temporal detection is enough to skip the full-frame fallback."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    calls: list[object] = []
+    detector.run_detection = lambda images: calls.append(images) or [object()]
+    crop = np.zeros((10, 10), dtype=np.uint8)
+    full_frame = np.zeros((20, 30), dtype=np.uint8)
+
+    detector.detect([(crop, np.array([2, 3]))], full_frame)
+
+    assert len(calls) == 1
+    assert len(detector.get_last_search_regions()) == 1
 
 
 def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
