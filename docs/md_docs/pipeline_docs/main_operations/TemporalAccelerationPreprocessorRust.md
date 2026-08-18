@@ -36,11 +36,11 @@ Rectified crops use a 3x3 transform that maps detector coordinates back into the
 
 ## Parameters
 
-### `camera_parameters_path` (str)
+### `camera_bus_id` (str)
 
 - **Default**: None (required)
 - **Restart Required**: Yes
-- **Description**: Path to camera calibration parameters file containing intrinsic matrix and distortion coefficients.
+- **Description**: Camera bus ID used to resolve the camera's intrinsic calibration through the shared camera configuration registry.
 
 ### `apriltag_map_path` (str)
 
@@ -77,8 +77,8 @@ Rectified crops use a 3x3 transform that maps detector coordinates back into the
 {
     "action_name": "temporal_acceleration_preprocessor_rust",
     "action_params": {
-        "camera_parameters_path": "config/camera_parameters.json",
-        "apriltag_map_path": "config/apriltag_map.fmap",
+        "camera_bus_id": "basic_test",
+        "apriltag_map_path": "files/apriltag_map_path/frc2025r2.json",
         "padding_factor": 0.65,
         "max_regions": 10,
         "min_region_size_px": 16
@@ -161,7 +161,7 @@ Temporal prediction for real-time navigation systems:
 
 ```json
 {
-    "camera_parameters_path": "config/nav_camera.json",
+    "camera_bus_id": "nav_camera",
     "apriltag_map_path": "config/navigation_tags.fmap",
     "padding_factor": 0.4,
     "max_regions": 15,
@@ -175,7 +175,7 @@ Predictive preprocessing for self-driving applications:
 
 ```json
 {
-    "camera_parameters_path": "config/vehicle_camera.json",
+    "camera_bus_id": "vehicle_camera",
     "apriltag_map_path": "config/road_tags.fmap",
     "padding_factor": 0.5,
     "max_regions": 25,
@@ -189,7 +189,7 @@ Smooth tracking with motion prediction:
 
 ```json
 {
-    "camera_parameters_path": "config/ar_camera.json",
+    "camera_bus_id": "ar_camera",
     "apriltag_map_path": "config/tracking_space.fmap",
     "padding_factor": 0.3,
     "max_regions": 30,

@@ -47,6 +47,7 @@ class DetectApriltagsDefinition(OperationInstance):
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
+        self.last_search_regions: list[np.ndarray] = []
         self.last_detections_lock: Lock = Lock()
 
     def run(
@@ -64,15 +65,15 @@ class DetectApriltagsDefinition(OperationInstance):
             List of Detection objects containing detected AprilTag information.
             None if no detections are found.
         """
-        # Handle input from temporal acceleration preprocessor (tuple) or direct image input
-        if isinstance(input_data, tuple) and len(input_data) == 2:
-            segments, full_frame = input_data
-            detections = self.detector.detect(segments, full_frame)
-        else:
-            detections = self.detector.detect(input_data)
-
+        # Serialize detection so its visualization data always comes from one run.
         with self.last_detections_lock:
+            if isinstance(input_data, tuple) and len(input_data) == 2:
+                segments, full_frame = input_data
+                detections = self.detector.detect(segments, full_frame)
+            else:
+                detections = self.detector.detect(input_data)
             self.last_detections = detections
+            self.last_search_regions = self.detector.get_last_search_regions()
 
         if detections is None or (
             isinstance(detections, list) and len(detections) == 0
@@ -119,7 +120,10 @@ class DetectApriltagsDefinition(OperationInstance):
         """
         visualization_frame = frame.copy()
 
-        search_regions = self.detector.get_last_search_regions()
+        with self.last_detections_lock:
+            search_regions = [region.copy() for region in self.last_search_regions]
+            detections = self.last_detections
+
         for region in search_regions:
             cv2.polylines(
                 visualization_frame,
@@ -128,9 +132,6 @@ class DetectApriltagsDefinition(OperationInstance):
                 (0, 0, 255),
                 2,
             )
-
-        with self.last_detections_lock:
-            detections = self.last_detections
 
         if detections is not None:
             for detection in detections:

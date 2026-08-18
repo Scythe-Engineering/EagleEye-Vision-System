@@ -15,6 +15,18 @@ from src.main_operations.definitions.temporal_acceleration_preprocessor_rust imp
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
 
 
+def _no_detections(input_images: object) -> list[object]:
+    """Return no detections for detector fallback tests.
+
+    Args:
+        input_images: Images supplied to the detector test double.
+
+    Returns:
+        An empty detection list.
+    """
+    return []
+
+
 def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     """Rectified crop coordinates recover their projected full-frame positions."""
     frame = np.zeros((100, 120, 3), dtype=np.uint8)
@@ -90,7 +102,8 @@ def test_detector_fallback_visualizes_only_the_full_frame() -> None:
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []
-    detector.run_detection = lambda _images: []
+    detector._min_input_dimension = 4
+    detector.run_detection = _no_detections
     crop = np.zeros((10, 10), dtype=np.uint8)
     full_frame = np.zeros((20, 30), dtype=np.uint8)
 
@@ -106,8 +119,22 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []
+    detector._min_input_dimension = 4
     calls: list[object] = []
-    detector.run_detection = lambda images: calls.append(images) or [object()]
+
+    def find_one_tag(input_images: object) -> list[object]:
+        """Record one detector call and return one synthetic detection.
+
+        Args:
+            input_images: Images supplied to the detector test double.
+
+        Returns:
+            One synthetic detection.
+        """
+        calls.append(input_images)
+        return [object()]
+
+    detector.run_detection = find_one_tag
     crop = np.zeros((10, 10), dtype=np.uint8)
     full_frame = np.zeros((20, 30), dtype=np.uint8)
 
@@ -122,7 +149,8 @@ def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []
-    detector.run_detection = lambda _images: []
+    detector._min_input_dimension = 4
+    detector.run_detection = _no_detections
     full_frame = np.zeros((20, 30), dtype=np.uint8)
 
     detector.detect([], full_frame)
@@ -132,17 +160,46 @@ def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
     np.testing.assert_array_equal(regions[0], [[0, 0], [29, 0], [29, 19], [0, 19]])
 
 
+def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
+    """Malformed temporal regions do not prevent a full-frame fallback."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    detector._min_input_dimension = 4
+    detector.run_detection = _no_detections
+    malformed_crop = np.zeros(10, dtype=np.uint8)
+    full_frame = np.zeros((20, 30), dtype=np.uint8)
+
+    detector.detect([(malformed_crop, np.array([2, 3]))], full_frame)
+    regions = detector.get_last_search_regions()
+
+    assert len(regions) == 1
+    np.testing.assert_array_equal(regions[0], [[0, 0], [29, 0], [29, 19], [0, 19]])
+
+
+def test_detector_ignores_malformed_full_frame_fallback() -> None:
+    """A malformed full frame is not recorded as a searched region."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    detector._min_input_dimension = 4
+    detector.run_detection = _no_detections
+    crop = np.zeros((10, 10), dtype=np.uint8)
+
+    detector.detect([(crop, np.array([2, 3]))], np.zeros(10, dtype=np.uint8))
+    regions = detector.get_last_search_regions()
+
+    assert len(regions) == 1
+    np.testing.assert_array_equal(regions[0], [[2, 3], [11, 3], [11, 12], [2, 12]])
+
+
 def test_apriltag_visualization_draws_oriented_search_regions_in_red() -> None:
     """AprilTag visualization outlines temporal search regions in red."""
     search_region = np.array([[50, 20], [80, 50], [50, 80], [20, 50]], dtype=np.float32)
 
-    class DetectorStub:
-        def get_last_search_regions(self) -> list[np.ndarray]:
-            return [search_region]
-
     operation = DetectApriltagsDefinition.__new__(DetectApriltagsDefinition)
-    operation.detector = DetectorStub()
     operation.last_detections = None
+    operation.last_search_regions = [search_region]
     operation.last_detections_lock = Lock()
 
     visualization = operation.visualize(np.zeros((100, 100, 3), dtype=np.uint8))

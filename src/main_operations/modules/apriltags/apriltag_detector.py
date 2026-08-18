@@ -145,6 +145,16 @@ class AprilTagDetector:
             self._segment_gray_buffers[shape] = buffer
         return buffer
 
+    def _is_valid_image(self, image: np.ndarray) -> bool:
+        """Return whether an image is large enough for AprilTag processing."""
+        return (
+            image is not None
+            and image.size != 0
+            and image.ndim >= 2
+            and image.shape[0] >= self._min_input_dimension
+            and image.shape[1] >= self._min_input_dimension
+        )
+
     def _preprocess_image(
         self, image: np.ndarray, *, segment: bool = False
     ) -> Optional[np.ndarray]:
@@ -154,12 +164,10 @@ class AprilTagDetector:
         frames match that signature, the hot path skips repeated shape/dtype/color
         checks and reuses conversion buffers.
         """
-        if image is None or image.size == 0:
+        if not self._is_valid_image(image):
             return None
 
         shape = image.shape
-        if len(shape) < 2 or shape[0] < self._min_input_dimension or shape[1] < self._min_input_dimension:
-            return None
 
         c_contiguous = image.flags.c_contiguous
         signature = (shape, image.dtype, c_contiguous)
@@ -387,13 +395,18 @@ class AprilTagDetector:
             [
                 self._segment_search_region(image, mapping)
                 for image, mapping in images
+                if self._is_valid_image(image)
             ]
             if temporal_segments
             else []
         )
 
         detections = self.run_detection(images)
-        if full_frame is not None and (detections is None or len(detections) == 0):
+        if (
+            full_frame is not None
+            and self._is_valid_image(full_frame)
+            and (detections is None or len(detections) == 0)
+        ):
             full_frame_detections = self.run_detection(full_frame)
             if temporal_segments:
                 search_regions = [
