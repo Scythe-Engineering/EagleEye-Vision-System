@@ -266,7 +266,16 @@ class AprilTagDetector:
     def _map_segment_corners(
         corners: np.ndarray, full_frame_mapping: np.ndarray
     ) -> np.ndarray:
-        """Map detected segment corners into full-frame image coordinates."""
+        """Map detected segment corners into full-frame image coordinates.
+
+        Args:
+            corners: Detected corner coordinates within an image segment.
+            full_frame_mapping: Shape-(2,) XY offset or shape-(3, 3) perspective
+                transform from segment coordinates to full-frame coordinates.
+
+        Returns:
+            Detected corners in full-frame image coordinates.
+        """
         mapping = np.asarray(full_frame_mapping)
         if mapping.shape == (2,):
             return corners + mapping

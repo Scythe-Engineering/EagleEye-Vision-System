@@ -115,6 +115,10 @@ impl TemporalAcceleration {
         Ok(())
     }
 
+    /// Return paired padded quadrilaterals and axis-aligned regions, nearest first.
+    ///
+    /// An empty quadrilateral list with one full-frame region requests an unwarped
+    /// fallback crop when no camera pose or projected tag region is available.
     fn process_frame(
         &self,
         width: usize,

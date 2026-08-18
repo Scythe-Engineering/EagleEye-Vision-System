@@ -20,10 +20,10 @@ The `TemporalAccelerationPreprocessorRustDefinition` is a main pipeline operatio
 ### Output Format
 
 Returns a tuple containing:
-- `List[Tuple[np.ndarray, np.ndarray]]`: List of `(cropped_image, full_frame_from_crop)` tuples
+- `List[Tuple[np.ndarray, np.ndarray]]`: List of `(cropped_image, mapping)` tuples
 - `np.ndarray`: Original input frame (unchanged)
 
-Each crop is perspective-aligned to its predicted AprilTag. The 3x3 transform maps detector coordinates back into the original frame.
+Rectified crops use a 3x3 transform that maps detector coordinates back into the original frame. An unrectified fallback crop uses a 2-element `[left, top]` offset instead.
 
 ## Processing Pipeline
 
@@ -94,24 +94,23 @@ import cv2
 import numpy as np
 
 preprocessor = TemporalAccelerationPreprocessorRustDefinition(
-    camera_parameters_path="config/camera_parameters.json",
-    apriltag_map_path="config/apriltag_map.fmap",
+    camera_bus_id="basic_test",
+    apriltag_map_path="files/apriltag_map_path/frc2025r2.json",
     padding_factor=0.35,
     max_regions=20
 )
 
-# Back-propagate camera pose from localization
 camera_pose = np.eye(4)  # 4x4 identity matrix as example
-preprocessor.back_propagate_input(camera_pose)
-
 frame = cv2.imread("input.jpg")
 
-# Generate predicted ROIs
-regions, original_frame = preprocessor.run(frame)
+# Generate predicted ROIs using the latest pose from localization
+regions, original_frame = preprocessor.run(
+    {"frame": frame, "camera_pose": camera_pose}
+)
 
 print(f"Generated {len(regions)} predicted regions")
-for cropped_image, full_frame_from_crop in regions:
-    print(f"Rectified region shape: {cropped_image.shape}")
+for cropped_image, mapping in regions:
+    print(f"Region shape: {cropped_image.shape}, mapping shape: {mapping.shape}")
 ```
 
 ## Performance Considerations

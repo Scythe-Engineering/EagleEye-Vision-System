@@ -127,7 +127,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             input_data: Input data - dict with 'frame' and optionally 'camera_pose' keys.
 
         Returns:
-            Tuple of (list of (cropped_image, (offset_x, offset_y)) tuples, original frame).
+            Tuple containing the cropped images and original frame. Each crop is
+            paired with either a shape-(2,) XY offset for an unwarped crop or a
+            shape-(3, 3) transform from crop coordinates to full-frame coordinates.
         """
         if isinstance(input_data, dict):
             frame = input_data.get("frame")
@@ -185,7 +187,17 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
     def _perspective_crop(
         frame: np.ndarray, flattened_quad: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Rectify a projected tag region and return its full-frame mapping."""
+        """Rectify a projected tag region and return its full-frame mapping.
+
+        Args:
+            frame: Source camera frame.
+            flattened_quad: Four perimeter-ordered `(x, y)` coordinates in the
+                full frame, flattened to shape `(8,)`.
+
+        Returns:
+            Square rectified crop and a shape-(3, 3) transform from crop
+            coordinates to full-frame coordinates.
+        """
         source = flattened_quad.reshape(4, 2)
         edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
         side = min(int(np.ceil(float(edge_lengths.max()))), max(frame.shape[:2]))
