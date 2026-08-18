@@ -152,25 +152,52 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 )
 
         height, width = frame.shape[:2]
-        _crops_data, crop_regions = self._rust_impl.process_frame(width, height)
+        crop_quads, crop_regions = self._rust_impl.process_frame(width, height)
 
         cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
         regions: List[Tuple[int, int, int, int]] = []
-        for region in crop_regions:
+        use_perspective_crops = len(crop_quads) == len(crop_regions)
+        for index, region in enumerate(crop_regions):
             left, top, right, bottom = region
             left = max(0, int(left))
             top = max(0, int(top))
             right = min(int(width), int(right))
             bottom = min(int(height), int(bottom))
-            if right > left and bottom > top:
-                cropped = frame[top:bottom, left:right]
-                cropped_images.append((cropped, np.array([left, top])))
-                regions.append((left, top, right, bottom))
+            if right <= left or bottom <= top:
+                continue
+
+            if use_perspective_crops:
+                crop, full_frame_from_crop = self._perspective_crop(
+                    frame, np.asarray(crop_quads[index], dtype=np.float32)
+                )
+                cropped_images.append((crop, full_frame_from_crop))
+            else:
+                crop = frame[top:bottom, left:right]
+                cropped_images.append((crop, np.array([left, top])))
+            regions.append((left, top, right, bottom))
 
         with self._last_regions_lock:
             self._last_regions = regions
 
         return (cropped_images, frame)
+
+    @staticmethod
+    def _perspective_crop(
+        frame: np.ndarray, flattened_quad: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Rectify a projected tag region and return its full-frame mapping."""
+        source = flattened_quad.reshape(4, 2)
+        edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
+        side = min(int(np.ceil(float(edge_lengths.max()))), max(frame.shape[:2]))
+        side = max(side, 2)
+        destination = np.array(
+            [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
+            dtype=np.float32,
+        )
+        crop_from_full_frame = cv2.getPerspectiveTransform(source, destination)
+        full_frame_from_crop = cv2.getPerspectiveTransform(destination, source)
+        crop = cv2.warpPerspective(frame, crop_from_full_frame, (side, side))
+        return crop, full_frame_from_crop
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update live configuration for the temporal acceleration.

@@ -15,22 +15,22 @@ The `TemporalAccelerationPreprocessorRustDefinition` is a main pipeline operatio
 ## Input/Output
 
 - **Input**: `np.ndarray` (BGR image frame)
-- **Output**: `Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]` - Cropped regions with offsets and original frame
+- **Output**: `Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]` - Rectified crops with full-frame transforms and the original frame
 
 ### Output Format
 
 Returns a tuple containing:
-- `List[Tuple[np.ndarray, np.ndarray]]`: List of (cropped_image, (offset_x, offset_y)) tuples
+- `List[Tuple[np.ndarray, np.ndarray]]`: List of `(cropped_image, full_frame_from_crop)` tuples
 - `np.ndarray`: Original input frame (unchanged)
 
-Each cropped region represents a predicted location where AprilTags are likely to appear based on camera motion extrapolation.
+Each crop is perspective-aligned to its predicted AprilTag. The 3x3 transform maps detector coordinates back into the original frame.
 
 ## Processing Pipeline
 
 1. **Pose Back-propagation**: Receives camera pose estimates from previous pipeline iterations
 2. **Motion Extrapolation**: Predicts camera movement and projects known AprilTag positions
-3. **ROI Prediction**: Calculates bounding boxes for expected AprilTag locations in current frame
-4. **Region Cropping**: Extracts predicted regions with configurable padding
+3. **ROI Prediction**: Calculates projected quadrilaterals for expected AprilTag locations
+4. **Region Cropping**: Perspective-aligns predicted regions with configurable padding
 5. **Size Filtering**: Applies minimum region size constraints
 6. **Region Limiting**: Caps maximum number of returned regions
 
@@ -110,8 +110,8 @@ frame = cv2.imread("input.jpg")
 regions, original_frame = preprocessor.run(frame)
 
 print(f"Generated {len(regions)} predicted regions")
-for cropped_image, (offset_x, offset_y) in regions:
-    print(f"Region at ({offset_x}, {offset_y}) with shape {cropped_image.shape}")
+for cropped_image, full_frame_from_crop in regions:
+    print(f"Rectified region shape: {cropped_image.shape}")
 ```
 
 ## Performance Considerations

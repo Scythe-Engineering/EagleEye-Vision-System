@@ -262,10 +262,25 @@ class AprilTagDetector:
             self._segment_gray_buffers.clear()
             self._disable_native_destructor(old_detector)
 
+    @staticmethod
+    def _map_segment_corners(
+        corners: np.ndarray, full_frame_mapping: np.ndarray
+    ) -> np.ndarray:
+        """Map detected segment corners into full-frame image coordinates."""
+        mapping = np.asarray(full_frame_mapping)
+        if mapping.shape == (2,):
+            return corners + mapping
+        if mapping.shape == (3, 3):
+            points = corners.astype(np.float32, copy=False).reshape(-1, 1, 2)
+            return cv2.perspectiveTransform(points, mapping).reshape(-1, 2)
+        raise ValueError(
+            f"Expected a 2D offset or 3x3 perspective transform, got {mapping.shape}"
+        )
+
     def run_detection(
         self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
     ) -> Optional[list[Detection] | list[CustomDetection]]:
-        """Run detection on a single image."""
+        """Run detection on a single image or a list of mapped image segments."""
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:
             return None
@@ -284,7 +299,7 @@ class AprilTagDetector:
         else:
             detections = []
             with self._detect_lock:
-                for image, offset in images:
+                for image, full_frame_mapping in images:
                     gray_image = self._preprocess_image(image, segment=True)
                     if gray_image is None:
                         continue
@@ -297,7 +312,9 @@ class AprilTagDetector:
                         detections.append(
                             CustomDetection(
                                 tag_id=detected_tags.tag_id,
-                                corners=(detected_tags.corners + offset),
+                                corners=self._map_segment_corners(
+                                    detected_tags.corners, full_frame_mapping
+                                ),
                             )
                         )
                     elif isinstance(detected_tags, list):
@@ -305,7 +322,9 @@ class AprilTagDetector:
                             detections.append(
                                 CustomDetection(
                                     tag_id=detection.tag_id,
-                                    corners=(detection.corners + offset),
+                                    corners=self._map_segment_corners(
+                                        detection.corners, full_frame_mapping
+                                    ),
                                 )
                             )
             return detections
@@ -320,7 +339,8 @@ class AprilTagDetector:
         - Input image is always converted to grayscale.
 
         Args:
-            images: Input image / list of images (grayscale or BGR). If list of images, each image is a list of two items (image segment and image segment offset from origonal center) (np.ndarray, np.ndarray).
+            images: Input image or image segments paired with either an XY offset
+                or a 3x3 transform from segment coordinates to the full frame.
             full_frame: Optional full frame image for if no tags are detected.
         Returns:
             List of Detection objects containing tag information. If list of images, returns list of CustomDetection objects. Returns None if no detections found and no fallback available.

@@ -51,14 +51,14 @@ class DetectApriltagsDefinition(OperationInstance):
 
     def run(
         self,
-        input_data: np.ndarray
-        | tuple[list[tuple[np.ndarray, tuple[int, int]]], np.ndarray],
+        input_data: np.ndarray | tuple[list[tuple[np.ndarray, np.ndarray]], np.ndarray],
     ) -> List[Detection] | List[CustomDetection] | None:
         """Detect AprilTags in the given image or image segments.
 
         Args:
             input_data: Either a single image array (np.ndarray) or a tuple of
-                       (segments, full_frame) where segments is a list of (image, offset) tuples.
+                       (segments, full_frame), with each segment paired with its
+                       mapping into full-frame coordinates.
 
         Returns:
             List of Detection objects containing detected AprilTag information.
