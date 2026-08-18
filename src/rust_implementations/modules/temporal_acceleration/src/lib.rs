@@ -386,22 +386,14 @@ fn padded_quad_and_bbox(
         ]
     });
 
-    let max_edge = (0..4)
-        .map(|index| {
-            let next = (index + 1) % 4;
-            let dx = padded[next][0] - padded[index][0];
-            let dy = padded[next][1] - padded[index][1];
-            (dx * dx + dy * dy).sqrt()
-        })
-        .fold(0.0f32, f32::max);
-    if max_edge < min_region_size_px as f32 {
-        return None;
-    }
-
     let min_x = padded.iter().map(|point| point[0]).fold(f32::INFINITY, f32::min);
     let min_y = padded.iter().map(|point| point[1]).fold(f32::INFINITY, f32::min);
     let max_x = padded.iter().map(|point| point[0]).fold(f32::NEG_INFINITY, f32::max);
     let max_y = padded.iter().map(|point| point[1]).fold(f32::NEG_INFINITY, f32::max);
+    let projected_span = (max_x - min_x).max(max_y - min_y);
+    if projected_span < min_region_size_px as f32 {
+        return None;
+    }
     let bbox = [
         (min_x.floor() as i32).clamp(0, width),
         (min_y.floor() as i32).clamp(0, height),
@@ -468,5 +460,20 @@ mod tests {
 
         assert_eq!(quad, [[5.0, 5.0], [35.0, 5.0], [35.0, 35.0], [5.0, 35.0]]);
         assert_eq!(bbox, [5, 5, 35, 35]);
+    }
+
+    #[test]
+    fn rotated_quad_keeps_original_minimum_region_semantics() {
+        let diagonal = 5.0 * 2.0f32.sqrt();
+        let points = [
+            [20.0, 20.0 - diagonal],
+            [20.0 + diagonal, 20.0],
+            [20.0, 20.0 + diagonal],
+            [20.0 - diagonal, 20.0],
+        ];
+
+        let (_, bbox) = padded_quad_and_bbox(&points, 100, 100, 0.35, 16).unwrap();
+
+        assert_eq!(bbox, [10, 10, 30, 30]);
     }
 }
