@@ -87,12 +87,20 @@ class _PacketManager:
 
 def _two_camera_pipeline() -> tuple[Pipeline, _PacketManager]:
     source_a = Operation(
-        _DeviceSource("a"), "source-a", "device_input", is_data_source=True
+        _DeviceSource("a"),
+        "source-a",
+        "device_input",
+        is_data_source=True,
+        output_ports=("frame",),
     )
     source_b = Operation(
-        _DeviceSource("b"), "source-b", "device_input", is_data_source=True
+        _DeviceSource("b"),
+        "source-b",
+        "device_input",
+        is_data_source=True,
+        output_ports=("frame",),
     )
-    join = Operation(_Join(), "join", "join")
+    join = Operation(_Join(), "join", "join", input_ports=("a", "b"))
     Connection(source_a, "frame", join, "a", "frame")
     Connection(source_b, "frame", join, "b", "frame")
 

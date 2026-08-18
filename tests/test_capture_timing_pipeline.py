@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
+import pytest
 
 from src.config.utils.operation import Operation
 from src.config.utils.pipeline import Pipeline
@@ -12,7 +13,6 @@ from src.secondary_operations.device_input import DeviceInput
 from src.utils.timing import TimedValue, TimingMetadata
 from tests.utils.dummy_data import dummy_frame
 from tests.utils.dummy_dependencies import (
-    DummyComputePool,
     FakeCameraThreadManager,
     FakeEagleEyeInterface,
 )
@@ -37,7 +37,6 @@ def test_device_input_returns_frame_packet_with_capture_timing() -> None:
 
     packet = DeviceInput(
         web_interface=FakeEagleEyeInterface(),
-        compute_pool=DummyComputePool(),
         camera_manager=manager,
         camera_bus_id="1",
     ).run(None)
@@ -45,6 +44,22 @@ def test_device_input_returns_frame_packet_with_capture_timing() -> None:
     assert isinstance(packet, TimedValue)
     assert isinstance(packet.value, np.ndarray)
     assert packet.timing.capture_nt_us > 0
+
+
+def test_wait_for_next_packet_stops_when_the_camera_worker_stops() -> None:
+    """A stopped worker must fail the wait instead of blocking the feeder."""
+    manager = FakeCameraThreadManager(default_frame=dummy_frame())
+    manager.add_camera("camera_1")
+    manager.register_bus_id("1", "camera_1")
+    device_input = DeviceInput(
+        web_interface=FakeEagleEyeInterface(),
+        camera_manager=manager,
+        camera_bus_id="1",
+    )
+    manager.cameras["camera_1"].running = False
+
+    with pytest.raises(RuntimeError, match="has stopped"):
+        device_input.wait_for_next_packet(1_000_000, lambda: True)
 
 
 def test_operation_unwraps_inputs_and_reattaches_timing() -> None:

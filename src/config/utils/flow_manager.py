@@ -456,27 +456,37 @@ class FlowManager:
             if conn.is_default:
                 from_uuid = conn.from_operation.uuid
                 if from_uuid in self.previous_operation_outputs:
-                    return unwrap_timed_deep(self.previous_operation_outputs[from_uuid])
+                    selected = conn.from_operation.resolve_output_port(
+                        self.previous_operation_outputs[from_uuid],
+                        conn.from_port,
+                    )
+                    return unwrap_timed_deep(selected)
                 else:
                     return None
             else:
-                return self.operation_outputs[conn.from_operation.uuid]
+                return conn.from_operation.resolve_output_port(
+                    self.operation_outputs[conn.from_operation.uuid],
+                    conn.from_port,
+                )
         else:
             inputs: dict[str, Any] = {}
 
             for conn in input_connections:
                 if not conn.is_default:
-                    inputs[conn.to_port] = self.operation_outputs[
-                        conn.from_operation.uuid
-                    ]
+                    inputs[conn.to_port] = conn.from_operation.resolve_output_port(
+                        self.operation_outputs[conn.from_operation.uuid],
+                        conn.from_port,
+                    )
 
             for conn in input_connections:
                 if conn.is_default:
                     from_uuid = conn.from_operation.uuid
                     if from_uuid in self.previous_operation_outputs:
-                        inputs[conn.to_port] = unwrap_timed_deep(
-                            self.previous_operation_outputs[from_uuid]
+                        selected = conn.from_operation.resolve_output_port(
+                            self.previous_operation_outputs[from_uuid],
+                            conn.from_port,
                         )
+                        inputs[conn.to_port] = unwrap_timed_deep(selected)
 
             return inputs
 

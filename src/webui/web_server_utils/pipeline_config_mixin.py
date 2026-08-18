@@ -10,6 +10,7 @@ from typing import Any
 
 from flask import request
 
+from src.config.utils.port_validation import validate_pipeline_connections
 from src.webui.web_server_utils.constants import (
     PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS,
     PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL,
@@ -73,9 +74,7 @@ class PipelineConfigMixin:
         content = payload.get("content") if isinstance(payload, dict) else None
         revision = payload.get("revision") if isinstance(payload, dict) else None
         if not isinstance(content, str) or not isinstance(revision, str):
-            return {
-                "error": "Expected string fields 'content' and 'revision'"
-            }, 400
+            return {"error": "Expected string fields 'content' and 'revision'"}, 400
 
         with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
             current_content = config_file.read()
@@ -96,6 +95,43 @@ class PipelineConfigMixin:
 
         if not isinstance(parsed_config, dict):
             return {"error": "Pipeline configuration must be a JSON object"}, 400
+        try:
+            current_config = json.loads(current_content)
+        except json.JSONDecodeError:
+            current_config = {}
+        for pipeline_name, pipeline_operations in parsed_config.items():
+            # Existing, byte-for-byte equivalent serialized pipelines were already
+            # accepted by an earlier save and need not block an unrelated edit.
+            if (
+                isinstance(current_config, dict)
+                and pipeline_name in current_config
+                and json.dumps(current_config[pipeline_name], sort_keys=True)
+                == json.dumps(pipeline_operations, sort_keys=True)
+            ):
+                continue
+            try:
+                validate_pipeline_connections(pipeline_operations)
+            except ValueError as error:
+                return {
+                    "error": "Pipeline ports or connections are invalid",
+                    "detail": f"{pipeline_name}: {error}",
+                }, 400
+
+            try:
+                for operation in pipeline_operations:
+                    if not isinstance(operation, dict):
+                        raise ValueError("operation must be an object")
+                    action_params = operation.get("action_params", {})
+                    if not isinstance(action_params, dict):
+                        raise ValueError("action_params must be an object")
+                    self.validate_operation_params(
+                        operation.get("action_name", ""), action_params
+                    )
+            except ValueError as error:
+                return {
+                    "error": "Pipeline operation parameters are invalid",
+                    "detail": f"{pipeline_name}: {error}",
+                }, 400
 
         normalized_content = content.rstrip() + "\n"
         self._write_pipeline_config_text(normalized_content)
@@ -156,19 +192,36 @@ class PipelineConfigMixin:
         """
         current_config = self._load_pipeline_config_file()
         new_data = request.get_json()
+        if not isinstance(new_data, list):
+            return {"message": "Pipeline config must be an array"}, 400
 
         if pipeline_name not in current_config:
             current_config[pipeline_name] = []
 
-        existing_ops = {op["uuid"]: op for op in current_config[pipeline_name]}
+        existing_ops = {
+            op["uuid"]: op
+            for op in current_config[pipeline_name]
+            if isinstance(op, dict) and op.get("uuid")
+        }
         updated_operations = []
         invalid_operations = []
         for operation in new_data:
-            operation_uuid = operation["uuid"]
-            operation_name = operation["action_name"]
+            if not isinstance(operation, dict):
+                return {"message": "Pipeline operation must be an object"}, 400
+            operation_uuid = operation.get("uuid")
+            operation_name = operation.get("action_name")
+            if not isinstance(operation_uuid, str) or not operation_uuid:
+                return {"message": "Pipeline operation requires a non-empty uuid"}, 400
+            if not isinstance(operation_name, str) or not operation_name:
+                return {
+                    "message": "Pipeline operation requires a non-empty action_name"
+                }, 400
+            operation_params_payload = operation.get("action_params", {})
+            if not isinstance(operation_params_payload, dict):
+                return {"message": "Operation action_params must be an object"}, 400
             try:
                 operation_params = self._reorder_operation_params(
-                    operation_name, operation["action_params"]
+                    operation_name, operation_params_payload
                 )
             except ValueError as exc:
                 invalid_operations.append(
@@ -197,6 +250,14 @@ class PipelineConfigMixin:
             return {
                 "message": "Pipeline config contains invalid operation configuration",
                 "invalid_operations": invalid_operations,
+            }, 400
+
+        try:
+            validate_pipeline_connections(updated_operations)
+        except ValueError as error:
+            return {
+                "message": "Pipeline ports or connections are invalid",
+                "detail": str(error),
             }, 400
 
         current_config[pipeline_name] = updated_operations

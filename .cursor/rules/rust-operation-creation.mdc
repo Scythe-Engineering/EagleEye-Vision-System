@@ -12,7 +12,7 @@ alwaysApply: false
 - [ ] **Implement Rust Logic** - Add high-performance Rust implementation in `src/rust_implementations/modules/{module_name}/src/lib.rs`
 - [ ] **Update Cargo.toml** - Add necessary Rust dependencies to `Cargo.toml`
 - [ ] **Create Python Wrapper** - Create Python wrapper in appropriate location (`src/main_operations/definitions/` or `src/secondary_operations/`)
-- [ ] **Implement Constructor** - Include automatic injection parameters (`web_interface`, `compute_pool`) and operation-specific params
+- [ ] **Implement Constructor** - Request only required injectable services and operation-specific params
 - [ ] **Implement Run Method** - Create `run(self, input)` method that delegates to Rust implementation
 - [ ] **Create Config Definition** - Add `{operation_name}_config_def.json` file with parameters, validation, and metadata
 - [ ] **Update Pipeline Config** - Add operation entry to `src/config/pipeline_config.json` with `action_name` and `action_params`
@@ -202,8 +202,6 @@ class OperationNameDefinition:
 
     def __init__(
         self,
-        web_interface: Any,
-        compute_pool: Any,
         param1: float = 0.1,
         param2: int = 10,
         # ... other parameters
@@ -211,8 +209,6 @@ class OperationNameDefinition:
         """Initialize the Rust-based operation.
 
         Args:
-            web_interface: Injected EagleEyeInterface instance.
-            compute_pool: Injected ComputePool instance.
             param1: Description of parameter.
             param2: Description of parameter.
         """

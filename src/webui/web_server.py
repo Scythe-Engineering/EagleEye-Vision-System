@@ -19,11 +19,15 @@ from werkzeug.serving import make_server
 
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
+from src.utils.device_registry import DeviceRegistry
+from src.utils.model_library import ModelLibrary
+from src.utils.mx3_compiler import Mx3CompilerService
 from src.utils.camera_utils.camera_config_manager import (
     CameraConfigRegistry,
 )
 
 if TYPE_CHECKING:
+    from ntcore import NetworkTableInstance
     from src.config.utils.pipeline import Pipeline
 from src.webui.web_server_utils.serve_static_files import (
     STATIC_DIR,
@@ -67,6 +71,7 @@ from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
 from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
+from src.webui.web_server_utils.model_library_mixin import ModelLibraryMixin
 from src.webui.web_server_utils.operation_config_mixin import OperationConfigMixin
 from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
 from src.webui.web_server_utils.pipeline_settings_mixin import PipelineSettingsMixin
@@ -85,6 +90,7 @@ class EagleEyeInterface(
     CameraStreamMixin,
     LineProfilingMixin,
     NetworkManagerMixin,
+    ModelLibraryMixin,
     OperationConfigMixin,
     PipelineConfigMixin,
     PipelineSettingsMixin,
@@ -98,8 +104,10 @@ class EagleEyeInterface(
         pipeline_objects_callback: Callable[[], dict[str, Pipeline]],
         dev_mode: bool = False,
         logger: Logger | None = None,
-        network_table_instance: Any | None = None,
-    ):
+        network_table_instance: NetworkTableInstance | None = None,
+        device_registry: DeviceRegistry | None = None,
+        model_library: ModelLibrary | None = None,
+    ) -> None:
         """
         Initialize the EagleEyeInterface.
 
@@ -111,6 +119,8 @@ class EagleEyeInterface(
             dev_mode (bool): Whether to run in development mode.
             logger: Logger instance for logging.
             network_table_instance: Optional ntcore NetworkTableInstance for status reporting.
+            device_registry: Immutable startup inference-device inventory.
+            model_library: Managed model library service.
         """
         self.logger = logger
         self.log = self.logger.log if self.logger is not None else print
@@ -155,6 +165,11 @@ class EagleEyeInterface(
         self.runtime_id = f"{os.getpid()}-{time.time_ns()}"
         self.last_log_message_count = 0
         self.network_table_instance = network_table_instance
+        self.device_registry = device_registry
+        self.model_library = model_library
+        self.mx3_compiler = (
+            Mx3CompilerService(model_library) if model_library is not None else None
+        )
         self.view_stream_downscale = DEFAULT_VIEW_STREAM_DOWNSCALE
         self._general_conf_lock = threading.Lock()
         self._pipeline_settings_lock = threading.RLock()
@@ -163,6 +178,7 @@ class EagleEyeInterface(
         self._system_update_id = None
         self._latest_system_update_progress = None
         self._system_update_target_branch = None
+        self._last_mx3_compilation_publish = 0.0
         self._system_status_interval = 1.5
         self._system_status_error_logged = False
         self._refresh_view_stream_settings()
@@ -326,7 +342,9 @@ class EagleEyeInterface(
         self.app.add_url_rule(
             "/background.webp",
             "background",
-            lambda: send_from_directory(str(Path(__file__).resolve().parent / "assets"), "background.webp"),
+            lambda: send_from_directory(
+                str(Path(__file__).resolve().parent / "assets"), "background.webp"
+            ),
         )
         self.app.add_url_rule(
             "/assets/<path:filename>",
@@ -567,6 +585,72 @@ class EagleEyeInterface(
             "get_operation_config_data_batch",
             self.get_operation_config_data_batch,
             methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/device-registry",
+            "get_device_registry",
+            self.get_device_registry,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library",
+            "get_model_library",
+            self.get_model_library,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library",
+            "create_model_library_entry",
+            self.create_model_library_entry,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>",
+            "update_model_library_entry",
+            self.update_model_library_entry,
+            methods=["PATCH"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>",
+            "delete_model_library_entry",
+            self.delete_model_library_entry,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/artifacts/<string:slot>",
+            "upload_model_artifact",
+            self.upload_model_artifact,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/artifacts/<string:slot>",
+            "delete_model_artifact",
+            self.delete_model_artifact,
+            methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/resolve",
+            "resolve_model_artifact",
+            self.resolve_model_artifact,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library/mx3-compilation",
+            "get_mx3_compilation",
+            self.get_mx3_compilation,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/model-library/<string:model_id>/mx3-compilation",
+            "start_mx3_compilation",
+            self.start_mx3_compilation,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/model-library/mx3-compilation/<string:job_id>",
+            "cancel_mx3_compilation",
+            self.cancel_mx3_compilation,
+            methods=["DELETE"],
         )
         self.app.add_url_rule(
             "/get-operation-files/<path:operation_name>/<path:parameter_name>",

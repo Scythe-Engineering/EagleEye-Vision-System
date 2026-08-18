@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import importlib
 import inspect
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Iterable, Mapping
 
 
 MAIN_DEFINITION_SUFFIX = "Definition"
@@ -28,16 +28,16 @@ def _snake_to_camel(snake_str: str) -> str:
 
 
 def _iter_operation_files(base_dir: Path) -> Iterable[str]:
+    """Yield importable top-level operation modules, excluding package markers."""
     for path in base_dir.glob("*.py"):
-        if path.name in {"__init__.py"}:
-            continue
-        yield path.stem
+        if path.name != "__init__.py":
+            yield path.stem
 
 
-def discover_operations(project_root: Path) -> List[OperationSpec]:
+def discover_operations(project_root: Path) -> list[OperationSpec]:
     """Discover main and secondary operations from the source tree."""
 
-    operations: List[OperationSpec] = []
+    operations: list[OperationSpec] = []
     main_dir = project_root / "src" / "main_operations" / "definitions"
     secondary_dir = project_root / "src" / "secondary_operations"
 
@@ -74,7 +74,7 @@ def discover_operations(project_root: Path) -> List[OperationSpec]:
     return sorted(operations, key=lambda spec: spec.action_name)
 
 
-def import_operation_class(spec: OperationSpec) -> Tuple[Optional[type], Optional[str]]:
+def import_operation_class(spec: OperationSpec) -> tuple[type | None, str | None]:
     """Import the operation class for the given spec."""
 
     try:
@@ -85,7 +85,9 @@ def import_operation_class(spec: OperationSpec) -> Tuple[Optional[type], Optiona
         return None, f"{type(exc).__name__}: {exc}"
 
 
-def filter_init_params(operation_class: type, init_params: Dict[str, Any]) -> Dict[str, Any]:
+def filter_init_params(
+    operation_class: type, init_params: Mapping[str, Any]
+) -> dict[str, Any]:
     """Filter init params to match constructor signature."""
 
     try:
@@ -95,22 +97,32 @@ def filter_init_params(operation_class: type, init_params: Dict[str, Any]) -> Di
 
     allowed = set(signature.parameters.keys())
     allowed.discard("self")
-    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+    if any(
+        param.kind == inspect.Parameter.VAR_KEYWORD
+        for param in signature.parameters.values()
+    ):
         return init_params
     return {key: value for key, value in init_params.items() if key in allowed}
 
 
-def build_exclusion_list() -> set[str]:
-    """Return operation names that should be excluded from tests."""
+def build_exclusion_list() -> dict[str, str]:
+    """Map smoke-test exclusions to their specific, user-visible reasons.
 
+    Existing consumers use membership checks, so the mapping remains compatible
+    while allowing future callers to report the reason instead of labelling every
+    exclusion as YOLO-related.  Only discovered operations are included.
+    """
     return {
-        "object_detection",
-        "yolo_detection",
-        "yolo_object_detection",
+        "object_detection": "yolo_excluded: requires YOLO model runtime",
+        "mx3_async_object_detection": (
+            "hardware_skip: requires an MX3 device and compiled DFP artifact"
+        ),
     }
 
 
 def is_rust_operation(action_name: str) -> bool:
     """Return True when an operation depends on Rust extensions."""
 
-    return "temporal_acceleration" in action_name or "pose_outlier_filter" in action_name
+    return (
+        "temporal_acceleration" in action_name or "pose_outlier_filter" in action_name
+    )

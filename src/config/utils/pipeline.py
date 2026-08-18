@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import importlib
-import json
-import os
+import inspect
 import threading
 import time
 import traceback
@@ -13,14 +12,22 @@ import numpy as np
 from line_profiler import profile
 import ntcore
 
+from src.config.utils.async_docking import AsyncDockedOperation
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
 from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
+from src.config.utils.port_validation import (
+    load_operation_config_definition,
+    normalize_action_name,
+    validate_pipeline_connections,
+)
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.colors import Colors
-from src.utils.device_management_utils.compute_pool import ComputePool
+from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
+from src.utils.model_library import ModelLibrary
+from src.utils.mx3_runtime import Mx3RuntimeCoordinator
 from src.utils.timing import TimedValue, unwrap_timed
 
 if TYPE_CHECKING:
@@ -46,10 +53,12 @@ class Pipeline:
         self,
         pipeline_config: list[dict[str, Any]],
         web_interface: EagleEyeInterface,
-        compute_pool: ComputePool,
         network_table: ntcore.NetworkTable,
         logger: Logger,
+        device_registry: DeviceRegistry,
+        model_library: ModelLibrary,
         camera_manager: CameraThreadManager | None = None,
+        mx3_coordinator: Mx3RuntimeCoordinator | None = None,
         camera_config_registry: CameraConfigRegistry | None = None,
         camera_bus_ids: list[str] | None = None,
         pipeline_name: str | None = None,
@@ -60,9 +69,10 @@ class Pipeline:
         Args:
             pipeline_config: List containing pipeline configuration.
             web_interface: The web interface to use for the pipelines.
-            compute_pool: The compute pool to use for the pipelines.
             network_table: The network table to use for the pipelines.
             logger: Logger instance for logging.
+            device_registry: Immutable startup inference-device inventory.
+            model_library: Managed inference model library.
             camera_manager: The camera manager to use for the pipelines.
             camera_config_registry: Shared camera config registry for
                 camera intrinsics/extrinsics access.
@@ -72,8 +82,10 @@ class Pipeline:
         """
         self.pipeline_config = pipeline_config
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self.network_table = network_table
+        self.device_registry = device_registry
+        self.model_library = model_library
+        self.mx3_coordinator = mx3_coordinator
         self.camera_manager = camera_manager
         self.camera_config_registry = camera_config_registry
         self.logger = logger
@@ -87,8 +99,10 @@ class Pipeline:
         self.thread_active = False
         self.thread = None
         self.thread_state_lock = threading.Lock()
+        self._async_state_lock = threading.RLock()
         self.operation_errors: dict[str, dict[str, Any]] = {}
         self.operation_errors_lock = threading.Lock()
+        self.operation_ports = validate_pipeline_connections(self.pipeline_config)
         self.operations: dict[str, Operation] = self._initialize_operations()
 
         if not self.operations:
@@ -102,14 +116,27 @@ class Pipeline:
             )
         )
         self._last_device_input_tokens: dict[str, FrameToken] = {}
-
-        self.flow_manager = FlowManager(
-            self.operations,
-            self.logger,
-            on_operation_error=self.record_operation_error,
-            on_operation_success=self.clear_operation_error,
-            pipeline_name=self.pipeline_name,
+        self.async_docked_operations = tuple(
+            operation
+            for operation in self.operations.values()
+            if isinstance(operation.instance, AsyncDockedOperation)
         )
+        self._async_operations_active = False
+        # Binding reserves shared MX3 streams, so a later construction failure
+        # must release them instead of leaving orphan streams registered.
+        try:
+            self._bind_async_docked_operations()
+
+            self.flow_manager = FlowManager(
+                self.operations,
+                self.logger,
+                on_operation_error=self.record_operation_error,
+                on_operation_success=self.clear_operation_error,
+                pipeline_name=self.pipeline_name,
+            )
+        except BaseException:
+            self._close_async_docked_operations()
+            raise
 
         self.total_time_history: deque[float] = deque(maxlen=50)
         self.total_time_history_lock = threading.Lock()
@@ -132,7 +159,8 @@ class Pipeline:
         components = snake_str.split("_")
         return "".join(word.capitalize() for word in components)
 
-    def _load_config_def(self, action_name: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _load_config_def(action_name: str) -> dict[str, Any] | None:
         """Load the config_def.json file for an operation.
 
         Args:
@@ -141,30 +169,10 @@ class Pipeline:
         Returns:
             Config definition dictionary, or None if not found.
         """
-        # Try secondary operations first
-        config_path = os.path.join(
-            "src",
-            "secondary_operations",
-            "config_data",
-            f"{action_name}_config_def.json",
-        )
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                return json.load(f)
-
-        # Try main operations
-        config_path = os.path.join(
-            "src",
-            "main_operations",
-            "definitions",
-            "config_data",
-            f"{action_name}_config_def.json",
-        )
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                return json.load(f)
-
-        return None
+        try:
+            return load_operation_config_definition(action_name)
+        except ValueError:
+            return None
 
     def _initialize_operations(self) -> dict[str, Operation]:
         """Initialize operation instances based on configuration.
@@ -177,7 +185,7 @@ class Pipeline:
 
         # Gather all connections and operations from config
         for operation_config in self.pipeline_config:
-            action_name = operation_config["action_name"].removesuffix(".py")
+            action_name = normalize_action_name(operation_config["action_name"])
             action_params = operation_config.get("action_params", {})
             action_uuid = operation_config.get("uuid", None)
 
@@ -209,11 +217,14 @@ class Pipeline:
                 config_def.get("is_data_source", False) if config_def else False
             )
 
+            declared_ports = self.operation_ports[action_uuid]
             operations[action_uuid]: Operation = Operation(
                 instance=operation_instance,
                 uuid=action_uuid,
                 name=action_name,
                 is_data_source=is_data_source,
+                input_ports=declared_ports.inputs,
+                output_ports=declared_ports.outputs,
             )
 
         # link all connections once all operations are created
@@ -377,6 +388,75 @@ class Pipeline:
 
         return groups
 
+    def _bind_async_docked_operations(self) -> None:
+        """Bind asynchronous operations to their validated direct sources."""
+        for operation in self.async_docked_operations:
+            instance = cast(AsyncDockedOperation, operation.instance)
+            source_connections = [
+                connection
+                for connection in operation.input_connections
+                if connection.to_port == instance.dock_target_port
+            ]
+            if len(source_connections) != 1:
+                raise ValueError(
+                    f"Docked operation {operation.uuid} has no unique source binding"
+                )
+            source = source_connections[0].from_operation
+            if source.name != instance.dock_source_action:
+                raise ValueError(
+                    f"Docked operation {operation.uuid} requires "
+                    f"{instance.dock_source_action}"
+                )
+            instance.bind(source.instance, self._async_should_remain_active)
+
+    def _close_async_docked_operations(self) -> None:
+        """Close every async binding reserved before a construction failure."""
+        for operation in getattr(self, "async_docked_operations", ()):
+            try:
+                cast(AsyncDockedOperation, operation.instance).unbind()
+            except Exception:  # noqa: BLE001 - rollback must not mask the cause
+                continue
+
+    def _async_should_remain_active(self) -> bool:
+        """Return whether callback and graph waiters should remain active."""
+        return self.thread_running and self._is_enabled_from_networktables()
+
+    def _set_async_operations_active(self, active: bool) -> None:
+        """Atomically apply one activation transition to all docked operations."""
+        with self._async_state_lock:
+            if active == self._async_operations_active:
+                return
+            if not active:
+                for operation in self.async_docked_operations:
+                    cast(AsyncDockedOperation, operation.instance).deactivate()
+                self._async_operations_active = False
+                return
+
+            activated: list[Operation] = []
+            try:
+                for operation in self.async_docked_operations:
+                    cast(AsyncDockedOperation, operation.instance).activate()
+                    activated.append(operation)
+                self._async_operations_active = True
+            except Exception:
+                for operation in activated:
+                    cast(AsyncDockedOperation, operation.instance).deactivate()
+                raise
+
+    def close(self) -> None:
+        """Close asynchronous operation bindings after the pipeline thread stops."""
+        self._set_async_operations_active(False)
+        for operation in self.async_docked_operations:
+            cast(AsyncDockedOperation, operation.instance).close()
+
+    def _terminal_async_failure(self) -> BaseException | None:
+        """Return the first terminal asynchronous backend failure."""
+        for operation in self.async_docked_operations:
+            error = cast(AsyncDockedOperation, operation.instance).terminal_error
+            if error is not None:
+                return error
+        return None
+
     def _current_device_input_token(self, operation_uuid: str) -> FrameToken | None:
         """Return the latest packet identity for a Device Input operation."""
         operation = self.operations[operation_uuid]
@@ -391,9 +471,26 @@ class Pipeline:
 
     def _device_input_output_token(self, operation_uuid: str) -> FrameToken | None:
         """Return the exact camera packet identity emitted in the last run."""
-        return self._frame_token(
-            self.flow_manager.operation_outputs.get(operation_uuid)
+        return self._frame_token(self._stored_frame_output(operation_uuid))
+
+    def _stored_frame_output(self, operation_uuid: str) -> Any:
+        """Read a stored operation output, routing multi-output frame producers.
+
+        Args:
+            operation_uuid: Operation whose stored output should be read.
+
+        Returns:
+            The frame-carrying output value, or ``None`` when nothing is stored.
+        """
+        output = self.flow_manager.operation_outputs.get(operation_uuid)
+        operation = self.operations.get(operation_uuid)
+        if output is None or operation is None or not operation.routes_output_ports:
+            return output
+        assert operation.output_ports is not None
+        frame_port = (
+            "frame" if "frame" in operation.output_ports else operation.output_ports[0]
         )
+        return operation.resolve_output_port(output, frame_port)
 
     @staticmethod
     def _frame_token(value: Any) -> FrameToken | None:
@@ -497,7 +594,7 @@ class Pipeline:
             ValueError: If action_name is not recognized or module cannot be imported.
         """
         try:
-            action_name = action_name.removesuffix(".py")
+            action_name = normalize_action_name(action_name)
             class_name = self._snake_to_camel(action_name)
 
             # Try to import from main_operations/definitions first
@@ -519,55 +616,30 @@ class Pipeline:
                         f"Could not find class for action: {class_name} at {action_name} with path {module_path}"
                     )
 
-            # Create a shallow copy to avoid mutating the original action_params
+            # Inspect actual constructor parameters. co_varnames also contains local
+            # variables and previously caused accidental dependency injection.
             init_params = action_params.copy()
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "web_interface" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["web_interface"] = self.web_interface
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "compute_pool" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["compute_pool"] = self.compute_pool
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "network_table" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["network_table"] = self.network_table
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "camera_manager" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["camera_manager"] = self.camera_manager
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "camera_config_registry"
-                in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["camera_config_registry"] = self.camera_config_registry
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "camera_configs" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["camera_configs"] = (
+            constructor_parameters = inspect.signature(
+                operation_class.__init__
+            ).parameters
+            injectable_dependencies: dict[str, Any] = {
+                "web_interface": self.web_interface,
+                "network_table": self.network_table,
+                "camera_manager": self.camera_manager,
+                "camera_config_registry": self.camera_config_registry,
+                "camera_configs": (
                     self.camera_config_registry.get_all_configs()
                     if self.camera_config_registry is not None
                     else {}
-                )
-
-            if (
-                hasattr(operation_class.__init__, "__code__")
-                and "logger" in operation_class.__init__.__code__.co_varnames
-            ):
-                init_params["logger"] = self.logger
+                ),
+                "device_registry": self.device_registry,
+                "model_library": self.model_library,
+                "mx3_coordinator": self.mx3_coordinator,
+                "logger": self.logger,
+            }
+            for parameter_name, dependency in injectable_dependencies.items():
+                if parameter_name in constructor_parameters:
+                    init_params[parameter_name] = dependency
 
             # check if operation class is a subclass of OperationInstance
             if not issubclass(operation_class, OperationInstance):
@@ -672,15 +744,25 @@ class Pipeline:
         Returns:
             The frame from device_input, or None if not found or no frame available.
         """
+        target_operation = self.operations.get(target_operation_uuid or "")
+        if (
+            target_operation is not None
+            and target_operation.routes_output_ports
+            and "frame" in target_operation.output_ports
+        ):
+            matched_frame = unwrap_timed(
+                self._stored_frame_output(target_operation.uuid)
+            )
+            if matched_frame is not None:
+                return matched_frame
+
         target_device_input = self._find_upstream_device_input(target_operation_uuid)
         if target_device_input is not None:
-            output = self.flow_manager.operation_outputs.get(target_device_input.uuid)
-            return unwrap_timed(output)
+            return unwrap_timed(self._stored_frame_output(target_device_input.uuid))
 
         for operation in self.operations.values():
             if operation.name == "device_input":
-                output = self.flow_manager.operation_outputs.get(operation.uuid)
-                return unwrap_timed(output)
+                return unwrap_timed(self._stored_frame_output(operation.uuid))
         return None
 
     def get_operation_by_uuid(self, operation_uuid: str) -> Operation | None:
@@ -781,11 +863,13 @@ class Pipeline:
         while self.thread_running:
             try:
                 if not self._is_enabled_from_networktables():
+                    self._set_async_operations_active(False)
                     with self.thread_state_lock:
                         self.thread_active = False
                     time.sleep(0.05)
                     continue
 
+                self._set_async_operations_active(True)
                 with self.thread_state_lock:
                     self.thread_active = True
 
@@ -810,9 +894,12 @@ class Pipeline:
                             }
                 else:
                     self.run()
-            except Exception as _:
+            except Exception:
+                terminal_error = self._terminal_async_failure()
                 with self.thread_state_lock:
                     self.thread_active = False
+                    if terminal_error is not None:
+                        self.thread_running = False
                 if self.logger:
                     self.logger.log(
                         f"{Colors.RED}Error in pipeline itself: {traceback.format_exc()}{Colors.RESET}"
@@ -820,6 +907,7 @@ class Pipeline:
 
             time.sleep(0.001)
 
+        self._set_async_operations_active(False)
         with self.thread_state_lock:
             self.thread_active = False
 
@@ -881,11 +969,12 @@ class Pipeline:
             self.set_visualize = False
 
     def stop(self) -> None:
-        """Stop the pipeline thread."""
+        """Stop the pipeline thread and pause asynchronous bindings."""
         with self.thread_state_lock:
             self.thread_running = False
             self.thread_active = False
             thread = self.thread
+        self._set_async_operations_active(False)
         if thread is not None:
             thread.join()
             with self.thread_state_lock:

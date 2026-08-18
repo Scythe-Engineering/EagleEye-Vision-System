@@ -16,14 +16,9 @@ Complete documentation for the web-based user interface and API:
 - **[Assets Overview](./webui/ASSETS_OVERVIEW.md)** - 3D models, images, and static resources
 - **[Pipeline Error Handling](./webui/PIPELINE_ERROR_HANDLING.md)** - Error management for camera pipelines
 
-### [Device Management Utils](./device_management_utils/)
+### Inference devices and models
 
-Hardware abstraction and compute device management:
-
-- **[Overview](./device_management_utils/DEVICE_MANAGEMENT_UTILS_OVERVIEW.md)** - System architecture and design
-- **[Device Implementations](./device_management_utils/DEVICE_IMPLEMENTATIONS.md)** - CPU, GPU, and specialized hardware support
-- **[Pool Management](./device_management_utils/POOL_MANAGEMENT.md)** - Device pooling and resource management
-- **[API Documentation](./device_management_utils/API_DOCUMENTATION.md)** - Device management API reference
+The old mutable compute-pool abstraction has been removed. See the [Object Detection operation](../md_docs/pipeline_docs/main_operations/ObjectDetection.md) for canonical device IDs, managed model artifacts, and deterministic CPU/CUDA resolution.
 
 ### [Pipeline Operations](../md_docs/pipeline_docs/)
 
@@ -47,12 +42,11 @@ High-performance Rust modules for critical vision processing operations:
 1. **Pipeline Operations**: Start with [Pipeline Overview](../md_docs/pipeline_docs/PipelineOverview.md) for understanding the pipeline architecture
 2. **WebUI**: Refer to [WebUI Overview](./webui/WEBUI_OVERVIEW.md) for understanding the interface
 3. **API Integration**: Check [API Documentation](./webui/API_DOCUMENTATION.md) for programmatic access
-4. **Hardware Setup**: Refer to [Device Management Utils Overview](./device_management_utils/DEVICE_MANAGEMENT_UTILS_OVERVIEW.md) for compute device configuration
+4. **Inference Setup**: Refer to [Object Detection](../md_docs/pipeline_docs/main_operations/ObjectDetection.md) for device and model configuration
 
 ## Last Updated
 
 - WebUI Documentation: January 2025
-- Device Management Documentation: January 2025
 - Pipeline Documentation: January 2025
 - Rust Implementations: January 2025
 - Overview Organization: January 2025

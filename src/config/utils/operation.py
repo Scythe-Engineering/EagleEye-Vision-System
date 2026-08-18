@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from src.config.utils.line_profiling import line_profiling_manager
@@ -18,7 +19,15 @@ SKIP_PIPELINE_CYCLE = _SkipPipelineCycle()
 
 
 class Operation:
-    def __init__(self, instance: OperationInstance, uuid: str, name: str, is_data_source: bool = False) -> None:
+    def __init__(
+        self,
+        instance: OperationInstance,
+        uuid: str,
+        name: str,
+        is_data_source: bool = False,
+        input_ports: Sequence[str] = (),
+        output_ports: Sequence[str] = (),
+    ) -> None:
         """Initializes the Operation class.
 
         Args:
@@ -26,11 +35,19 @@ class Operation:
             uuid (str): The UUID of the operation.
             name (str): The name of the operation.
             is_data_source (bool): Whether this operation generates its own data.
+            input_ports: Declared input port names.
+            output_ports: Declared output port names.
         """
         self.instance: OperationInstance = instance
         self.uuid: str = uuid
         self.name: str = name
         self.is_data_source: bool = is_data_source
+        self.input_ports: tuple[str, ...] = self._normalise_ports(input_ports, "input")
+        self.output_ports: tuple[str, ...] = self._normalise_ports(
+            output_ports, "output"
+        )
+        self.routes_output_ports: bool = len(self.output_ports) > 1
+        self._declared_output_ports: frozenset[str] = frozenset(self.output_ports)
 
         self.input_connections: list[Connection] = []
         self.output_connections: list[Connection] = []
@@ -41,6 +58,16 @@ class Operation:
 
         self.execution_timestep: int | None = None
         self.finish_timestep: int | None = None
+
+    @staticmethod
+    def _normalise_ports(ports: Sequence[str], kind: str) -> tuple[str, ...]:
+        """Validate and freeze declared port names."""
+        result = tuple(ports)
+        if any(not isinstance(port, str) or not port for port in result):
+            raise ValueError(f"Declared {kind} ports must be non-empty strings")
+        if len(set(result)) != len(result):
+            raise ValueError(f"Declared {kind} ports must be unique: {result!r}")
+        return result
 
     def run(self, input_data: Any) -> Any:
         """Run the operation and propagate capture timing metadata.
@@ -64,7 +91,54 @@ class Operation:
             output = self.instance.run(call_input)
         if output is SKIP_PIPELINE_CYCLE:
             return output
-        return attach_output_timing(output, input_data)
+
+        # Single-output operations are deliberately opaque: in particular, a dict
+        # is a value rather than an output-port envelope.
+        if not self.routes_output_ports:
+            return attach_output_timing(output, input_data)
+
+        if not isinstance(output, Mapping):
+            raise ValueError(
+                f"Operation {self.name} declares multiple outputs {self.output_ports!r} "
+                f"but returned non-mapping {type(output).__name__}"
+            )
+        actual = frozenset(output.keys())
+        missing = self._declared_output_ports - actual
+        undeclared = actual - self._declared_output_ports
+        if missing or undeclared:
+            raise ValueError(
+                f"Operation {self.name} output keys do not match declared ports; "
+                f"missing={sorted(missing)!r}, undeclared={sorted(undeclared, key=str)!r}"
+            )
+        # Time each branch, not the envelope. attach_output_timing intentionally
+        # leaves an explicitly TimedValue branch untouched.
+        return {
+            port: attach_output_timing(output[port], input_data)
+            for port in self.output_ports
+        }
+
+    def resolve_output_port(self, output: Any, port: str) -> Any:
+        """Resolve *port* from a runtime output while preserving single-output opacity.
+
+        Args:
+            output: Value stored for this operation by the flow manager.
+            port: Declared output port selected by one connection.
+
+        Returns:
+            The routed branch, or the whole value for single-output operations.
+
+        Raises:
+            ValueError: If a multi-output value does not contain the port.
+        """
+        if not self.routes_output_ports:
+            return output
+        # ``run`` enforces this invariant; retain a useful error for externally
+        # populated output stores and tests.
+        if not isinstance(output, Mapping) or port not in output:
+            raise ValueError(
+                f"Output for operation {self.name} has no routed port {port!r}"
+            )
+        return output[port]
 
     def is_only_input_connection(self, uuid: str) -> bool:
         """
@@ -180,6 +254,17 @@ class Connection:
             data_type (str): The type of data transmitted through this connection.
             is_default (bool, optional): Whether this connection is a default connection from the from_operation. Defaults to False.
         """
+        if from_port not in from_operation.output_ports:
+            raise ValueError(
+                f"Unknown output port {from_port!r} on operation "
+                f"{from_operation.name}; declared ports: {from_operation.output_ports!r}"
+            )
+        if to_port not in to_operation.input_ports:
+            raise ValueError(
+                f"Unknown input port {to_port!r} on operation "
+                f"{to_operation.name}; declared ports: {to_operation.input_ports!r}"
+            )
+
         self.from_operation: Operation = from_operation
         self.from_port: str = from_port
         self.to_operation: Operation = to_operation

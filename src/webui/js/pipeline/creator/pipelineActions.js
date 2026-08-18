@@ -136,7 +136,7 @@ async function loadPipelineIntoBuilder(
             }
         });
 
-        pipelineStore.loadPipelineData(pipelineConfig, allConnections);
+        await pipelineStore.loadPipelineData(pipelineConfig, allConnections);
         await renderCurrentPipeline?.({ centerView });
         updateRunButton();
         updatePipelineCameraNote();
@@ -193,11 +193,15 @@ async function checkAndTriggerAutoFill({ loadPipelineIntoBuilder }) {
 }
 
 /**
- * Update the run button enabled state based on whether nodes exist.
+ * Update the run button enabled state based on graph and docking validity.
  */
 function updateRunButton() {
     const runButton = creatorContext.elements.runButton;
-    if (runButton) runButton.disabled = pipelineStore.getNodes().length === 0;
+    if (runButton) {
+        runButton.disabled =
+            pipelineStore.getNodes().length === 0 ||
+            !pipelineStore.validateDocking().valid;
+    }
 }
 
 /**
@@ -497,6 +501,12 @@ async function refreshPipelineCreator({
  * Trigger the pipeline run action for the current configuration.
  */
 function runPipeline() {
+    const dockingValidation = pipelineStore.validateDocking();
+    if (!dockingValidation.valid) {
+        showDanger(`Cannot start: ${dockingValidation.errors[0].message}`);
+        updateRunButton();
+        return;
+    }
     console.log("Running pipeline:", getPipeline());
     alert("Pipeline run! Check console for details.");
 }

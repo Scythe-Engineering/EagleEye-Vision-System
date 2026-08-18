@@ -11,7 +11,8 @@ import pytest
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.logging.logger import Logger
 from tests.utils.dummy_dependencies import (
-    DummyComputePool,
+    DummyDeviceRegistry,
+    DummyModelLibrary,
     FakeCameraThreadManager,
     FakeEagleEyeInterface,
     FakeNetworkTable,
@@ -30,7 +31,8 @@ def test_pipeline_initialization_only(tmp_path: Path) -> None:
 
     web_interface = FakeEagleEyeInterface()
     network_table = FakeNetworkTable()
-    compute_pool = DummyComputePool()
+    device_registry = DummyDeviceRegistry()
+    model_library = DummyModelLibrary()
     logger = Logger(log_directory="logs/test")
     camera_manager = FakeCameraThreadManager(default_frame=dummy_frame())
     camera_config_registry = CameraConfigRegistry()
@@ -45,10 +47,11 @@ def test_pipeline_initialization_only(tmp_path: Path) -> None:
 
     pipelines = generate_all_pipelines(
         cast(Any, web_interface),
-        cast(Any, compute_pool),
         cast(Any, network_table),
         cast(Any, camera_manager),
         camera_config_registry=camera_config_registry,
+        device_registry=cast(Any, device_registry),
+        model_library=cast(Any, model_library),
         logger=logger,
         pipeline_config=str(temp_config_path),
     )

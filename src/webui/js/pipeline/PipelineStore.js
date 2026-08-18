@@ -1,5 +1,66 @@
 // Central store for pipeline state, nodes, connections, and related UI events.
+import { getCachedConfig, prefetchConfigs } from "./operationConfigCache.js";
+import { resolveDockingContract } from "./dockingContract.js";
 import { uid } from "./utils.js";
+
+/** Return a declared port name from a string or object declaration. */
+function declaredPortName(node) {
+    return typeof node === "object" && node?.name
+        ? String(node.name)
+        : String(node);
+}
+
+/** Validate a static or indexed dynamic port against cached operation metadata. */
+function isDeclaredPort(config, direction, portName) {
+    if (!config || typeof config !== "object") return false;
+    const nodes = Array.isArray(config[`${direction}_nodes`])
+        ? config[`${direction}_nodes`]
+        : [];
+    const dynamicGroup =
+        config.dynamic_group && typeof config.dynamic_group === "object"
+            ? config.dynamic_group
+            : null;
+    let dynamicBase = null;
+    let dynamicEnabled = false;
+    let dynamicMaximum = null;
+    if (dynamicGroup) {
+        if (direction === "input") {
+            dynamicEnabled = dynamicGroup.input_dynamic_group !== false;
+            dynamicBase =
+                dynamicGroup.input_base_name ||
+                dynamicGroup.input_node ||
+                dynamicGroup.input_prefix ||
+                null;
+            dynamicMaximum = dynamicGroup.max_inputs;
+        } else {
+            dynamicEnabled = Boolean(
+                dynamicGroup.output_dynamic_group ||
+                    dynamicGroup.mirrored_output_group,
+            );
+            dynamicBase =
+                dynamicGroup.output_base_name ||
+                dynamicGroup.output_node ||
+                dynamicGroup.output_prefix ||
+                null;
+            dynamicMaximum = dynamicGroup.max_outputs;
+        }
+        if (!dynamicBase && nodes.length) {
+            dynamicBase = declaredPortName(nodes.at(-1));
+        }
+    }
+
+    const staticNames = nodes
+        .map(declaredPortName)
+        .filter((name) => !dynamicEnabled || name !== dynamicBase);
+    if (staticNames.includes(portName)) return true;
+    if (!dynamicEnabled || !dynamicBase) return false;
+    if (portName === dynamicBase) return true;
+    const escapedBase = dynamicBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = portName.match(new RegExp(`^${escapedBase}_(\\d+)$`));
+    if (!match || Number(match[1]) < 1) return false;
+    const maximum = Number.parseInt(dynamicMaximum, 10);
+    return !Number.isFinite(maximum) || Number(match[1]) <= maximum;
+}
 
 class PipelineNode {
     /**
@@ -342,6 +403,95 @@ class PipelineStore {
     }
 
     /**
+     * Returns a node's declared docking contract, if it has one. The fallback
+     * keeps older operation lists usable while the definition cache is loading.
+     *
+     * @param {PipelineNode|object|null} node Pipeline node.
+     * @returns {{source_action:string,source_port:string,target_port:string}|null}
+     */
+    getDockingMetadata(node) {
+        if (!node) return null;
+        const config = getCachedConfig(
+            node.operationId,
+            Boolean(node.isSecondary),
+        );
+        return resolveDockingContract(
+            node.operationId,
+            config?.docking,
+            this.normalizeOperationId.bind(this),
+        );
+    }
+
+    /**
+     * Checks whether a connection fulfills a target node's docking contract.
+     *
+     * @param {object} connection Serialized in-memory connection.
+     * @returns {boolean} True when the connection docks its target.
+     */
+    isDockingConnection(connection) {
+        const source = this.state.currentPipeline.nodes.get(
+            connection?.fromUuid,
+        );
+        const target = this.state.currentPipeline.nodes.get(connection?.toUuid);
+        const docking = this.getDockingMetadata(target);
+        return Boolean(
+            source &&
+                docking &&
+                this.normalizeOperationId(source.operationId) ===
+                    this.normalizeOperationId(docking.source_action) &&
+                connection.fromPort === docking.source_port &&
+                connection.toPort === docking.target_port,
+        );
+    }
+
+    /**
+     * Returns docking errors for targets that require a direct dock connection.
+     * This public hook is consumed by save/start controls.
+     *
+     * @returns {Array<{uuid:string,message:string}>} Validation errors.
+     */
+    getDockingValidationErrors() {
+        const errors = [];
+        const sourceOwners = new Map();
+        for (const node of this.state.currentPipeline.nodes.values()) {
+            if (!this.getDockingMetadata(node)) continue;
+            const dockingConnection = Array.from(
+                this.state.currentPipeline.connections.values(),
+            ).find(
+                (connection) =>
+                    connection.toUuid === node.uuid &&
+                    this.isDockingConnection(connection),
+            );
+            if (!dockingConnection || dockingConnection.isDefault) {
+                errors.push({
+                    uuid: node.uuid,
+                    message: `${node.name || node.operationId} must be connected directly to a Device Input frame.`,
+                });
+                continue;
+            }
+            if (sourceOwners.has(dockingConnection.fromUuid)) {
+                errors.push({
+                    uuid: node.uuid,
+                    message: "A Device Input can dock only one MX3 detector.",
+                });
+            } else {
+                sourceOwners.set(dockingConnection.fromUuid, node.uuid);
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * Validates all required docking relationships.
+     *
+     * @returns {{valid:boolean,errors:Array<{uuid:string,message:string}>}}
+     */
+    validateDocking() {
+        const errors = this.getDockingValidationErrors();
+        return { valid: errors.length === 0, errors };
+    }
+
+    /**
      * Infer a camera bus ID for a node from exactly one upstream device_input.
      *
      * @param {string} identifier Node UUID or instance ID.
@@ -371,12 +521,17 @@ class PipelineStore {
             if (!currentUuid || visited.has(currentUuid)) continue;
             visited.add(currentUuid);
 
-            const upstreamNode = this.state.currentPipeline.nodes.get(currentUuid);
+            const upstreamNode =
+                this.state.currentPipeline.nodes.get(currentUuid);
             if (!upstreamNode) continue;
 
             if (this.isDeviceInputNode(upstreamNode)) {
                 const busId = upstreamNode.config?.camera_bus_id;
-                if (busId !== undefined && busId !== null && String(busId) !== "") {
+                if (
+                    busId !== undefined &&
+                    busId !== null &&
+                    String(busId) !== ""
+                ) {
                     deviceInputBusIds.add(String(busId));
                 }
                 continue;
@@ -406,7 +561,10 @@ class PipelineStore {
             const originalConfig = node.originalConfig || {};
             const exposesCameraBusId =
                 Object.prototype.hasOwnProperty.call(config, "camera_bus_id") ||
-                Object.prototype.hasOwnProperty.call(originalConfig, "camera_bus_id");
+                Object.prototype.hasOwnProperty.call(
+                    originalConfig,
+                    "camera_bus_id",
+                );
             const currentValue = config.camera_bus_id;
 
             if (
@@ -468,11 +626,64 @@ class PipelineStore {
             return null;
         }
 
+        const sourceNode = this.state.currentPipeline.nodes.get(fromUuid);
+        const destinationNode = this.state.currentPipeline.nodes.get(toUuid);
+        const sourceConfig = getCachedConfig(
+            sourceNode?.operationId,
+            Boolean(sourceNode?.isSecondary),
+        );
+        const destinationConfig = getCachedConfig(
+            destinationNode?.operationId,
+            Boolean(destinationNode?.isSecondary),
+        );
+        if (sourceConfig == null) {
+            console.warn(
+                `Connection output port could not be validated: config unavailable for ${sourceNode?.operationId ?? fromId}`,
+            );
+        } else if (!isDeclaredPort(sourceConfig, "output", fromPort)) {
+            console.error(
+                `Connection rejected: ${fromPort} is not a declared output port`,
+            );
+            return null;
+        }
+        if (destinationConfig == null) {
+            console.warn(
+                `Connection input port could not be validated: config unavailable for ${destinationNode?.operationId ?? toId}`,
+            );
+        } else if (!isDeclaredPort(destinationConfig, "input", toPort)) {
+            console.error(
+                `Connection rejected: ${toPort} is not a declared input port`,
+            );
+            return null;
+        }
+
         const connectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
 
         if (this.state.currentPipeline.connections.has(connectionKey)) {
             console.warn("Connection already exists:", connectionKey);
             return connectionKey;
+        }
+
+        const prospectiveConnection = {
+            fromUuid,
+            fromPort,
+            toUuid,
+            toPort,
+        };
+        if (this.isDockingConnection(prospectiveConnection)) {
+            const alreadyDocked = Array.from(
+                this.state.currentPipeline.connections.values(),
+            ).some(
+                (connection) =>
+                    connection.fromUuid === fromUuid &&
+                    this.isDockingConnection(connection),
+            );
+            if (alreadyDocked) {
+                console.error(
+                    "Connection rejected: a Device Input can dock only one MX3 detector",
+                );
+                return null;
+            }
         }
 
         const existingToConnection = Array.from(
@@ -481,7 +692,7 @@ class PipelineStore {
 
         if (existingToConnection) {
             const existingKey = `${existingToConnection.fromUuid}-${existingToConnection.fromPort}-${existingToConnection.toUuid}-${existingToConnection.toPort}`;
-            this.removeConnection(existingKey);
+            this.removeConnection(existingKey, { notify: false });
         }
 
         const connection = {
@@ -542,25 +753,28 @@ class PipelineStore {
      * Remove a connection.
      *
      * @param {string} connectionKey Connection key.
+     * @param {{notify?: boolean}} [options={}] Event notification options.
      * @returns {boolean} True when removed.
      */
-    removeConnection(connectionKey) {
+    removeConnection(connectionKey, options = {}) {
         if (!this.state.currentPipeline.connections.has(connectionKey)) {
             return false;
         }
 
         this.state.currentPipeline.connections.delete(connectionKey);
 
-        this.emit("connection:removed", { key: connectionKey });
-        this.emit("connections:changed", {
-            type: "removed",
-            key: connectionKey,
-        });
-        this.emit("pipeline:changed", {
-            type: "connection:removed",
-            key: connectionKey,
-        });
-        this.autoSelectCameraBusIds();
+        if (options.notify !== false) {
+            this.emit("connection:removed", { key: connectionKey });
+            this.emit("connections:changed", {
+                type: "removed",
+                key: connectionKey,
+            });
+            this.emit("pipeline:changed", {
+                type: "connection:removed",
+                key: connectionKey,
+            });
+            this.autoSelectCameraBusIds();
+        }
 
         return true;
     }
@@ -901,8 +1115,9 @@ class PipelineStore {
      *
      * @param {Array<Object>} configItems Serialized node config items.
      * @param {Array<Object>} [connectionsData=[]] Serialized connection items.
+     * @returns {Promise<void>} Resolves once persisted connections are restored.
      */
-    loadPipelineData(configItems, connectionsData = []) {
+    async loadPipelineData(configItems, connectionsData = []) {
         this.clearPipeline();
 
         const uuidToNode = new Map();
@@ -924,6 +1139,19 @@ class PipelineStore {
                 }
             }
         });
+
+        const operationsToPrefetch = [
+            ...new Map(
+                Array.from(uuidToNode.values()).map((node) => [
+                    `${node.operationId}:${node.isSecondary ? 1 : 0}`,
+                    {
+                        name: node.operationId,
+                        isSecondary: Boolean(node.isSecondary),
+                    },
+                ]),
+            ).values(),
+        ];
+        await prefetchConfigs(operationsToPrefetch);
 
         this.suppressCameraAutoSelect = true;
         try {

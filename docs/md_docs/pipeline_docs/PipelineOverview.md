@@ -12,7 +12,7 @@ The divide between secondary and primary operations is complexity, secondary ope
     - **Secondary operations**: implemented under `src/secondary_operations`. Each operation is a standalone class (e.g., `FlattenPose`, `RobotPoseOutput`).
     - **Data source operations**: operations that generate their own data independently (no input connections). These are marked with `is_data_source: true` in their config_def.json file and execute one timestep before their data is needed to get the most up-to-date value possible. Examples include `GetNetworktablesValue` which reads from NetworkTables.
 - **Configuration-driven wiring**: Pipelines are created by reading `src/config/pipeline_config.json` via `generate_all_pipelines.py`.
-- **Compute resources**: The system relies on a `ComputePool` (from `src.utils.device_management_utils.compute_pool`) to allocate devices (CPU, MX3, CUDA, etc.). A `web_interface` (from `src.webui.web_server`) provides integration with the UI.
+- **Inference resources**: `DeviceRegistry` provides an immutable startup inventory using canonical IDs, while `ModelLibrary` owns managed model metadata and artifacts. Neither service allocates, balances, migrates, or falls back between devices.
 
 ## File layout and roles
 
@@ -21,7 +21,7 @@ The divide between secondary and primary operations is complexity, secondary ope
     - instantiating operation objects via dynamic importing,
     - running a chain of operations on each input frame,
     - optionally emitting timing statistics.
-- `src/config/utils/generate_all_pipelines.py` — Builds pipelines for all configured cameras by reading `pipeline_config.json` and creating `Pipeline` instances, then wiring compute devices.
+- `src/config/utils/generate_all_pipelines.py` — Builds pipelines for all configured cameras by reading `pipeline_config.json` and creating `Pipeline` instances.
 - `src/main_operations/definitions/` — Definition classes for main operations. Examples include:
     - `color_threshold_detection.py` (definition class `ColorThresholdDetectionDefinition`)
     - `detect_apriltags.py` (definition class `DetectApriltagsDefinition`)
@@ -129,27 +129,9 @@ The `position` field stores the x,y coordinates of each operation node in the vi
 
 Notes:
 
-- The framework will inject `web_interface` and `compute_pool` into operation constructors that define a parameter by that name. These constructor arguments are optional—operations only receive the shared dependency when they explicitly declare it, so operations that do not need a `web_interface` or `compute_pool` do not have to include those parameters.
+- The framework inspects actual constructor parameters and injects only requested backend services such as `web_interface`, `device_registry`, `model_library`, `network_table`, `mx3_coordinator`, camera services, and `logger`.
 - The modules are loaded in this order: first try `src.main_operations.definitions.{action_name}`; if not found, fall back to `src.secondary_operations.{action_name}`.
-
-## End-to-end example
-
-Below is a minimal fully-working example of wiring and running pipelines for all configured cameras. This assumes you have properly initialized `EagleEyeInterface` and `ComputePool` in your environment.
-
-```python
-from src.config.utils.generate_all_pipelines import generate_all_pipelines
-from src.webui.web_server import EagleEyeInterface
-from src.utils.device_management_utils.compute_pool import ComputePool
-
-# Instantiate the shared components
-web_interface = EagleEyeInterface()
-compute_pool = ComputePool()
-
-# Generate pipelines for all configured cameras
-pipelines = generate_all_pipelines(web_interface, compute_pool)
-
-# Now `pipelines` holds Pipeline objects ready to be started by your camera threads/manager.
-```
+- Operation input/output declarations are validated when pipelines are saved and constructed. Connections from multi-output operations route only the selected `from_port`; a dictionary returned by a single-output operation remains one payload.
 
 ## Typical execution flow
 

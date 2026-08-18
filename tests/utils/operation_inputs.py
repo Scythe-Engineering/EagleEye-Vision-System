@@ -20,6 +20,7 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "temporal_acceleration_preprocessor_rust": dummy_data.dummy_temporal_acceleration_input,
         "color_threshold_detection": dummy_data.dummy_frame,
         "ground_plane_intersection": dummy_data.dummy_detections,
+        "camera_local_to_robot_transform": dummy_data.dummy_detections_with_positions,
         "robot_local_to_field_transform": dummy_data.dummy_robot_local_to_field_input,
         "publish_to_networktables": dummy_data.dummy_networktables_payload,
         "robot_pose_output": dummy_data.dummy_pose_matrix,

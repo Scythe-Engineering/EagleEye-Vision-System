@@ -70,7 +70,7 @@ def test_raw_pipeline_json_saves_valid_object_atomically(
 ) -> None:
     config_path = tmp_path / "pipeline_config.json"
     config_path.write_text("{}\n", encoding="utf-8")
-    new_config = {"test": [{"uuid": "operation"}]}
+    new_config = {"test": []}
     content = json.dumps(new_config, indent=2)
     monkeypatch.setattr(
         pipeline_config_module,
