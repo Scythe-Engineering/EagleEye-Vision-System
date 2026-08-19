@@ -116,7 +116,7 @@ class _FormatUnion(ctypes.Union):
     _fields_ = [
         ("pix", _PixFormat),
         ("raw_data", ctypes.c_uint8 * 200),
-        ("_alignment", ctypes.c_uint64),
+        ("_alignment", ctypes.c_ulong),
     ]
 
 

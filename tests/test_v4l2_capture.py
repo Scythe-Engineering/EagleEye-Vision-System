@@ -72,6 +72,13 @@ def test_ioctl_request_numbers_match_the_kernel_abi() -> None:
     assert _unsigned(v4l2_capture._iow("V", 18, 4)) == 0x40045612  # STREAMON
 
 
+def test_format_size_tracks_the_linux_word_size() -> None:
+    """Keep pointer-bearing format alignment valid on 32- and 64-bit Linux."""
+    expected_size = 208 if ctypes.sizeof(ctypes.c_ulong) == 8 else 204
+
+    assert ctypes.sizeof(v4l2_capture._Format) == expected_size
+
+
 @pytest.mark.skipif(not IS_64_BIT_LINUX, reason="ABI sizes are 64-bit Linux specific")
 def test_structure_sizes_match_the_kernel_abi() -> None:
     """ctypes layout must reproduce the kernel's struct sizes."""
@@ -271,8 +278,10 @@ def test_worker_does_not_close_camera_while_its_thread_is_alive() -> None:
     worker.thread = LiveThread()  # type: ignore[assignment]
 
     worker.stop(timeout=0.0)
-
     assert not camera.closed
+
+    worker._run(lambda _worker: None)
+    assert camera.closed
 
 
 def test_read_decodes_grayscale_once_the_probe_has_latched(monkeypatch) -> None:

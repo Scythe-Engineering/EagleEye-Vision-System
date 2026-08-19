@@ -129,23 +129,29 @@ class CameraWorker:
                 self._last_cached_packet.timing,
             )
 
+    def _run(self, worker_fn) -> None:
+        """Run the capture loop and release its camera on every exit path."""
+        try:
+            worker_fn(self)
+        finally:
+            self.camera.close()
+
     def start(self, worker_fn) -> None:
         """Start the camera worker thread."""
         self.thread = threading.Thread(
-            target=worker_fn,
-            args=(self,),
+            target=self._run,
+            args=(worker_fn,),
             daemon=True,
             name=f"CameraThread-{self.camera_name}",
         )
         self.thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
-        """Stop the worker and close its camera once no read can be active."""
+        """Stop the worker; its termination path owns camera cleanup."""
         self.running = False
         if self.thread:
             self.thread.join(timeout=timeout)
-            if self.thread.is_alive():
-                return
+            return
         self.camera.close()
 
 
