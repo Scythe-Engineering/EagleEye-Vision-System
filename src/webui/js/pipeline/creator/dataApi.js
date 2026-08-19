@@ -66,7 +66,9 @@ export async function fetchAvailableOperations(pipelineStore) {
  */
 export async function fetchAvailableCameras(pipelineStore) {
     try {
-        const response = await fetch(`${BACKEND_BASE_URL}/get-available-cameras`);
+        const response = await fetch(
+            `${BACKEND_BASE_URL}/get-available-cameras`,
+        );
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -114,7 +116,9 @@ export async function fetchPipelines(pipelineStore) {
 
         const pipelines = pipelineNames.map((name) => ({
             name,
-            displayName: name.replaceAll("_", " ").replaceAll(/\b\w/g, (l) => l.toUpperCase()),
+            displayName: name
+                .replaceAll("_", " ")
+                .replaceAll(/\b\w/g, (l) => l.toUpperCase()),
         }));
 
         pipelineStore.setPipelines(pipelines);
@@ -153,6 +157,62 @@ export async function fetchPipelineConfig(pipelineName) {
 }
 
 /**
+ * Fetch the complete pipeline configuration as raw text.
+ *
+ * @returns {Promise<{content: string, revision: string}>} Raw content and revision.
+ */
+export async function fetchPipelineConfigJson() {
+    const response = await fetch(`${BACKEND_BASE_URL}/pipeline-config/json`);
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (
+        !response.ok ||
+        typeof payload.content !== "string" ||
+        typeof payload.revision !== "string"
+    ) {
+        throw new Error(
+            payload.error || `HTTP error! status: ${response.status}`,
+        );
+    }
+    return payload;
+}
+
+/**
+ * Validate and save the complete raw pipeline configuration.
+ *
+ * @param {string} content - Complete pipeline_config.json text.
+ * @param {string} revision - Revision returned when the editor loaded the file.
+ * @returns {Promise<object>} Backend response payload.
+ */
+export async function savePipelineConfigJson(content, revision) {
+    const response = await fetch(`${BACKEND_BASE_URL}/pipeline-config/json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, revision }),
+    });
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch {
+        payload = {};
+    }
+    if (!response.ok) {
+        const location =
+            payload.line && payload.column
+                ? ` at line ${payload.line}, column ${payload.column}`
+                : "";
+        throw new Error(
+            `${payload.error || `HTTP error! status: ${response.status}`}${location}${payload.detail ? `: ${payload.detail}` : ""}`,
+        );
+    }
+    return payload;
+}
+
+/**
  * Save a pipeline configuration to the backend.
  *
  * @param {string} pipelineName - Pipeline name to save.
@@ -186,6 +246,44 @@ export async function deletePipelineConfig(pipelineName) {
         {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
+        },
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Fetch settings for a single pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name whose settings to load.
+ * @returns {Promise<object>} Pipeline settings payload.
+ */
+export async function fetchPipelineSettings(pipelineName) {
+    const response = await fetch(
+        `${BACKEND_BASE_URL}/pipeline-settings/${encodeURIComponent(pipelineName)}`,
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Save settings for a single pipeline.
+ *
+ * @param {string} pipelineName - Pipeline name whose settings to save.
+ * @param {{limit_frames_to_camera_capture_speed: boolean}} settings - Settings payload.
+ * @returns {Promise<object>} Backend response payload.
+ */
+export async function savePipelineSettings(pipelineName, settings) {
+    const response = await fetch(
+        `${BACKEND_BASE_URL}/pipeline-settings/${encodeURIComponent(pipelineName)}`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settings),
         },
     );
     if (!response.ok) {

@@ -209,9 +209,18 @@ function renderExecutionSummary(snapshot) {
         executionSummaryContent.innerHTML = '<div class="text-[#888]">No profiling data</div>';
         return;
     }
-    const estimatedFps = 1000 / frameTimeMs;
+    const cycleTimeMs = Number(snapshot?.cycle_time_ms);
+    const fpsIntervalMs = Number.isFinite(cycleTimeMs) && cycleTimeMs > 0
+        ? cycleTimeMs
+        : frameTimeMs;
+    const estimatedFps = 1000 / fpsIntervalMs;
+    const captureLatencyMs = Number(snapshot?.capture_latency_ms);
+    const latencyHtml = Number.isFinite(captureLatencyMs) && captureLatencyMs >= 0
+        ? `<div class="text-[#8ab4f8]" title="Age of the camera frame when the cycle finished: exposure, transfer, decode, and pipeline work">Latency: ${captureLatencyMs.toFixed(1)}ms</div>`
+        : "";
     executionSummaryContent.innerHTML = `<div class="text-[#f1f1f1]">Flow: ${frameTimeMs.toFixed(2)}ms</div>
-        <div class="text-[#9ad1a8]">FPS: ${estimatedFps.toFixed(1)}</div>`;
+        <div class="text-[#9ad1a8]" title="Includes time waiting for fresh device input">FPS: ${estimatedFps.toFixed(1)}</div>
+        ${latencyHtml}`;
 }
 
 /**
@@ -248,6 +257,8 @@ function ensureProfilingAverageAccumulator(pipelineName) {
             pipelineName,
             snapshotCount: 0,
             frameWall: { sum: 0, n: 0 },
+            cycleWall: { sum: 0, n: 0 },
+            captureLatency: { sum: 0, n: 0 },
             operations: new Map(),
             timesteps: new Map(),
         };
@@ -268,6 +279,16 @@ function mergeProfilingSnapshotIntoAverage(snapshot, pipelineName) {
     if (Number.isFinite(ft) && ft > 0) {
         a.frameWall.sum += ft;
         a.frameWall.n += 1;
+    }
+    const ct = Number(snapshot.cycle_time_ms);
+    if (Number.isFinite(ct) && ct > 0) {
+        a.cycleWall.sum += ct;
+        a.cycleWall.n += 1;
+    }
+    const cl = Number(snapshot.capture_latency_ms);
+    if (Number.isFinite(cl) && cl >= 0) {
+        a.captureLatency.sum += cl;
+        a.captureLatency.n += 1;
     }
     for (const [uuid, row] of Object.entries(snapshot.operations || {})) {
         const ms = Number(row.execution_time_ms);
@@ -346,9 +367,15 @@ function buildProfilingAverageDisplaySnapshot(latest) {
             };
         });
     const frameMs = a.frameWall.n > 0 ? a.frameWall.sum / a.frameWall.n : Number(latest.frame_time_ms);
+    const cycleMs = a.cycleWall.n > 0 ? a.cycleWall.sum / a.cycleWall.n : Number(latest.cycle_time_ms);
+    const latencyMs = a.captureLatency.n > 0
+        ? a.captureLatency.sum / a.captureLatency.n
+        : Number(latest.capture_latency_ms);
     return {
         ...latest,
         frame_time_ms: Number.isFinite(frameMs) ? frameMs : latest.frame_time_ms,
+        cycle_time_ms: Number.isFinite(cycleMs) ? cycleMs : latest.cycle_time_ms,
+        capture_latency_ms: Number.isFinite(latencyMs) ? latencyMs : latest.capture_latency_ms,
         operations,
         timesteps,
     };
@@ -369,7 +396,13 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
     const ops = snapshot.operations || {};
     const timestepRows = [...(snapshot.timesteps || [])].sort((a, b) => (a?.timestep ?? 0) - (b?.timestep ?? 0));
     const frameMs = Number(snapshot.frame_time_ms);
-    const fps = Number.isFinite(frameMs) && frameMs > 0 ? (1000 / frameMs).toFixed(1) : "—";
+    const cycleMs = Number(snapshot.cycle_time_ms);
+    const captureLatencyMs = Number(snapshot.capture_latency_ms);
+    const fpsIntervalMs = Number.isFinite(cycleMs) && cycleMs > 0 ? cycleMs : frameMs;
+    const fps = Number.isFinite(fpsIntervalMs) && fpsIntervalMs > 0 ? (1000 / fpsIntervalMs).toFixed(1) : "—";
+    const frameMsLabel = Number.isFinite(frameMs) && frameMs > 0 ? frameMs.toFixed(2) + " ms" : "—";
+    const cycleMsLabel = Number.isFinite(cycleMs) && cycleMs > 0 ? cycleMs.toFixed(2) + " ms" : "—";
+    const captureLatencyMsLabel = Number.isFinite(captureLatencyMs) && captureLatencyMs >= 0 ? captureLatencyMs.toFixed(2) + " ms" : "—";
     const seq = snapshot.frame_seq != null ? String(snapshot.frame_seq) : "—";
     const tsMs = Number(snapshot.timestamp_ms);
     const tsLabel = Number.isFinite(tsMs) ? new Date(tsMs).toLocaleString() : "—";
@@ -384,7 +417,9 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
     parts.push(
         `<div class="grid gap-2 text-sm">`,
         `<div><span class="text-[#888]">Pipeline</span> · <span class="text-[#f1f1f1] font-medium">${escapeHtml(pipelineName)}</span></div>`,
-        `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${Number.isFinite(frameMs) && frameMs > 0 ? `${frameMs.toFixed(2)} ms` : "—"}</span>` + (fps !== "—" ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>` : "") + `</div>`,
+        `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${frameMsLabel}</span></div>`,
+        `<div><span class="text-[#888]">Pipeline cycle</span> · <span class="text-[#f1f1f1]">${cycleMsLabel}</span>` + (fps !== "—" ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>` : "") + ` <span class="text-[#777] text-xs">includes fresh-input wait</span></div>`,
+        `<div><span class="text-[#888]">Capture latency</span> · <span class="text-[#f1f1f1]">${captureLatencyMsLabel}</span> <span class="text-[#777] text-xs">frame age at cycle end; the delay vision measurements carry</span></div>`,
         `<div><span class="text-[#888]">Frame sequence</span> · <span class="text-[#f1f1f1]">${escapeHtml(seq)}</span></div>`,
         `<div><span class="text-[#888]">Recorded at</span> · <span class="text-[#f1f1f1]">${escapeHtml(tsLabel)}</span></div>`,
         `</div></div>`,

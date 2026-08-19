@@ -11,7 +11,8 @@ import {
     showModal,
 } from "../ui/modal.js";
 import { confirmDialog } from "../ui/confirmationDialog.js";
-import { showDanger, showSuccess } from "../ui/notificationSystem.js";
+import { showDanger, showSuccess, showUploadToast } from "../ui/notificationSystem.js";
+import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 
 /**
  * Manages the asset file modal for uploading, listing, deleting, and scaling 3D assets.
@@ -286,12 +287,17 @@ async function uploadAsset(file, overwrite = false) {
         formData.append("overwrite", "true");
     }
 
+    const uploadToast = showUploadToast({
+        label: `Uploading ${file.name}...`,
+    });
+
     try {
-        const payload = await fetchJson(ASSET_TYPES[activeType].endpoint, {
-            method: "POST",
-            body: formData,
+        const payload = await uploadWithProgress({
+            url: ASSET_TYPES[activeType].endpoint,
+            formData,
+            onProgress: uploadToast.setProgress,
         });
-        showSuccess(
+        uploadToast.complete(
             `${activeType === "robot" ? "Robot" : "Field"} file uploaded.`,
         );
         selectedFieldApriltagMapFile = null;
@@ -299,6 +305,7 @@ async function uploadAsset(file, overwrite = false) {
         await refresh3DAssetDropdowns(payload.file?.filename || file.name);
     } catch (error) {
         if (error.status === 409 && error.payload?.requires_overwrite) {
+            uploadToast.dismiss();
             const shouldOverwrite = await confirmDialog({
                 title: "Replace 3D Asset?",
                 message: `"${error.payload.filename}" already exists. Replace it?`,
@@ -312,7 +319,7 @@ async function uploadAsset(file, overwrite = false) {
         }
 
         console.error("Failed to upload 3D asset:", error);
-        showDanger(error.payload?.error || "Failed to upload 3D asset file");
+        uploadToast.fail(error.payload?.error || "Failed to upload 3D asset file");
     }
 }
 

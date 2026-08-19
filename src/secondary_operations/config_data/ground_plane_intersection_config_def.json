@@ -7,6 +7,10 @@
         {
             "name": "detections",
             "has_default": false
+        },
+        {
+            "name": "camera_pose",
+            "has_default": false
         }
     ],
     "output_nodes": [
@@ -15,8 +19,15 @@
     "parameters": {
         "camera_bus_id": {
             "type": "str",
-            "description": "Camera USB bus ID used to resolve intrinsics plus pitch and height from camera extrinsics.",
+            "description": "Camera USB bus ID used to resolve intrinsics.",
             "required": true,
+            "restart_for_change": false
+        },
+        "ground_level": {
+            "type": "float",
+            "description": "Ground-plane height in field coordinates, in meters.",
+            "default": 0.0,
+            "required": false,
             "restart_for_change": false
         }
     }

@@ -1,9 +1,23 @@
 # UpdateAttributeWithNetworktables
 
-## Status: not implemented
+`UpdateAttributeWithNetworktables` is not implemented and is unavailable as a pipeline operation.
 
-There is no `update_attribute_with_networktables.py` operation in `src/secondary_operations/`, no registered operation definition, and no supported pipeline configuration for this feature.
+## Inputs
 
-The project currently provides `GetNetworktablesValue` for reading a scalar double and `PublishToNetworktables` for publishing pipeline output. Neither operation dynamically modifies attributes on another pipeline operation.
+None.
 
-Do not add `update_attribute_with_networktables` to a pipeline configuration. Any older descriptions of reflection-based live attribute updates, naming conversion, or configuration examples describe a proposal rather than executable code.
+## Outputs
+
+None.
+
+## When to use
+
+Do not use this operation. Use `GetNetworktablesValue` to read a scalar double, or `PublishToNetworktables` to publish pipeline output.
+
+## Configuration
+
+None.
+
+## Limitation
+
+No current operation dynamically updates another operation's attributes from NetworkTables.

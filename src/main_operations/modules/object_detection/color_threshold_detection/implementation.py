@@ -196,6 +196,23 @@ class ColorThresholdDetectionImplementation:
         )
         return undistorted.reshape(2)
 
+    @staticmethod
+    def _validate_color_frame(frame: np.ndarray) -> None:
+        """Require the three-channel BGR input expected by HSV conversion.
+
+        Args:
+            frame: Candidate image.
+
+        Raises:
+            ValueError: If the frame is not a three-channel BGR image.
+        """
+        if frame.ndim != 3 or frame.shape[2] != 3:
+            raise ValueError(
+                "Color threshold detection requires a three-channel BGR frame, "
+                f"but received shape {frame.shape}. Monochrome cameras cannot "
+                "drive colour thresholding; use a colour camera for this operation."
+            )
+
     def run(self, frame: np.ndarray) -> Tuple[List[Dict[str, Any]], np.ndarray]:
         """Process frame and detect colored objects.
 
@@ -210,7 +227,12 @@ class ColorThresholdDetectionImplementation:
                     - color_name: String name of detected color
                     - area: Contour area in letterboxed coordinates
                 - Combined thresholded mask as BGR image (for visualization)
+
+        Raises:
+            ValueError: If the frame is not a three-channel BGR image.
         """
+        self._validate_color_frame(frame)
+
         letterboxed_frame, (resized_width, resized_height), (pad_x, pad_y) = (
             self.letterbox_image(frame, self.target_size)
         )

@@ -13,7 +13,6 @@ except ImportError:
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.webui.web_server import EagleEyeInterface
 
@@ -37,7 +36,6 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         max_detection_distance_m: float = 0.0,
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
-        compute_pool: ComputePool | None = None,
     ) -> None:
         """Initialize the temporal acceleration definition with Rust backend.
 
@@ -59,7 +57,6 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             )
 
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
 
         intrinsics_path: str
         if camera_config_registry is not None:
@@ -118,8 +115,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             max_detection_distance_m=max_detection_distance_m,
         )
 
-        self._last_regions: List[Tuple[int, int, int, int]] = []
-        self._last_regions_lock: Lock = Lock()
+        self._last_visualization_quads: List[np.ndarray] = []
+        self._last_visualization_quads_lock: Lock = Lock()
 
     def run(
         self, input_data: Any
@@ -130,7 +127,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             input_data: Input data - dict with 'frame' and optionally 'camera_pose' keys.
 
         Returns:
-            Tuple of (list of (cropped_image, (offset_x, offset_y)) tuples, original frame).
+            Tuple containing the cropped images and original frame. Each crop is
+            paired with either a shape-(2,) XY offset for an unwarped crop or a
+            shape-(3, 3) transform from crop coordinates to full-frame coordinates.
         """
         if isinstance(input_data, dict):
             frame = input_data.get("frame")
@@ -155,25 +154,70 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 )
 
         height, width = frame.shape[:2]
-        _crops_data, crop_regions = self._rust_impl.process_frame(width, height)
+        crop_quads, crop_regions = self._rust_impl.process_frame(width, height)
 
         cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
-        regions: List[Tuple[int, int, int, int]] = []
-        for region in crop_regions:
+        visualization_quads: List[np.ndarray] = []
+        use_perspective_crops = len(crop_quads) == len(crop_regions)
+        for index, region in enumerate(crop_regions):
             left, top, right, bottom = region
             left = max(0, int(left))
             top = max(0, int(top))
             right = min(int(width), int(right))
             bottom = min(int(height), int(bottom))
-            if right > left and bottom > top:
-                cropped = frame[top:bottom, left:right]
-                cropped_images.append((cropped, np.array([left, top])))
-                regions.append((left, top, right, bottom))
+            if right <= left or bottom <= top:
+                continue
 
-        with self._last_regions_lock:
-            self._last_regions = regions
+            if use_perspective_crops:
+                quad = np.asarray(crop_quads[index], dtype=np.float32).reshape(4, 2)
+                crop, full_frame_from_crop = self._perspective_crop(frame, quad)
+                cropped_images.append((crop, full_frame_from_crop))
+                visualization_quads.append(quad)
+            else:
+                crop = frame[top:bottom, left:right]
+                cropped_images.append((crop, np.array([left, top])))
+                visualization_quads.append(
+                    np.array(
+                        [[left, top], [right, top], [right, bottom], [left, bottom]],
+                        dtype=np.float32,
+                    )
+                )
+
+        with self._last_visualization_quads_lock:
+            self._last_visualization_quads = visualization_quads
 
         return (cropped_images, frame)
+
+    @staticmethod
+    def _perspective_crop(
+        frame: np.ndarray, flattened_quad: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Rectify a projected tag region and return its full-frame mapping.
+
+        Args:
+            frame: Source camera frame.
+            flattened_quad: Four perimeter-ordered `(x, y)` coordinates in the
+                full frame with shape `(8,)` or `(4, 2)`.
+
+        Returns:
+            Square rectified crop and a shape-(3, 3) transform from crop
+            coordinates to full-frame coordinates.
+        """
+        source = flattened_quad.reshape(4, 2)
+        edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
+        side = min(int(np.ceil(float(edge_lengths.max()))), max(frame.shape[:2]))
+        side = max(side, 2)
+        destination = np.array(
+            [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
+            dtype=np.float32,
+        )
+        # Preserve winding because mirrored AprilTags cannot be decoded.
+        if cv2.contourArea(source, oriented=True) < 0:
+            destination = destination[::-1].copy()
+        crop_from_full_frame = cv2.getPerspectiveTransform(source, destination)
+        full_frame_from_crop = cv2.getPerspectiveTransform(destination, source)
+        crop = cv2.warpPerspective(frame, crop_from_full_frame, (side, side))
+        return crop, full_frame_from_crop
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update live configuration for the temporal acceleration.
@@ -196,19 +240,14 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         Returns:
             Frame with non-predicted areas darkened.
         """
-        with self._last_regions_lock:
-            crop_regions = self._last_regions
+        with self._last_visualization_quads_lock:
+            quads = self._last_visualization_quads
 
         visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
-        for region in crop_regions:
-            left, top, right, bottom = region
-            left = max(0, left)
-            top = max(0, top)
-            right = min(frame.shape[1], right)
-            bottom = min(frame.shape[0], bottom)
-            if right > left and bottom > top:
-                visualization_frame[top:bottom, left:right] = frame[
-                    top:bottom, left:right
-                ]
+        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        polygons = [np.rint(quad).astype(np.int32) for quad in quads]
+        if polygons:
+            cv2.fillPoly(mask, polygons, 255)
+            visualization_frame[mask != 0] = frame[mask != 0]
 
         return visualization_frame

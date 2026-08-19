@@ -10,8 +10,10 @@ import ntcore
 from src.config.utils.pipeline import Pipeline
 from src.webui.web_server import EagleEyeInterface
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
-from src.utils.device_management_utils.compute_pool import ComputePool
+from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
+from src.utils.model_library import ModelLibrary
+from src.utils.mx3_runtime import Mx3RuntimeCoordinator
 from src.utils.colors import Colors
 
 # Find project root by walking up from this file's directory until we find 'src'
@@ -44,14 +46,25 @@ def replace_values(config_data: dict) -> dict:
             config_data[key] = replace_values(value)
         elif isinstance(value, list):
             config_data[key] = [
-                replace_values(item)
-                if isinstance(item, dict)
-                else _replace_string_value(item)
-                if isinstance(item, str)
-                else item
+                (
+                    replace_values(item)
+                    if isinstance(item, dict)
+                    else _replace_string_value(item) if isinstance(item, str) else item
+                )
                 for item in value
             ]
     return config_data
+
+
+def _load_pipeline_settings() -> dict[str, dict[str, Any]]:
+    """Load pipeline settings, defaulting to an empty mapping if unavailable."""
+    settings_path = os.path.join(str(current_path.parent), "pipeline_settings.json")
+    try:
+        with open(settings_path, "r", encoding="utf-8") as settings_file:
+            settings = json.load(settings_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
 
 
 def _get_device_input_camera_bus_ids(
@@ -101,22 +114,26 @@ def _get_device_input_camera_bus_ids(
 
 def generate_all_pipelines(
     web_interface: EagleEyeInterface,
-    compute_pool: ComputePool,
     network_table: ntcore.NetworkTable,
     camera_manager,
     camera_config_registry: CameraConfigRegistry,
+    device_registry: DeviceRegistry,
+    model_library: ModelLibrary,
     logger: Logger,
+    mx3_coordinator: Mx3RuntimeCoordinator | None = None,
     pipeline_config: str | None = None,
 ) -> Dict[str, Pipeline]:
     """Generate all pipelines from the pipeline_config.json file.
 
     Args:
         web_interface: The web interface to use for the pipelines.
-        compute_pool: The compute pool to use for the pipelines.
         network_table: The network table to use for the pipelines.
         camera_manager: The camera manager to use for the pipelines.
         camera_config_registry: Shared camera config registry.
+        device_registry: Immutable startup device inventory.
+        model_library: Managed inference model library.
         logger: Logger instance for logging.
+        mx3_coordinator: Optional shared MX3 runtime coordinator injected into operations.
         pipeline_config: The pipeline configuration to use for the pipelines. (Optional, mostly for testing)
 
     Returns:
@@ -157,25 +174,33 @@ def generate_all_pipelines(
 
     # Replace placeholders in the configuration data
     config_data = replace_values(config_data)
+    pipeline_settings = _load_pipeline_settings()
 
     pipelines: Dict[str, Pipeline] = {}
-    pipeline_count = 0
 
     for pipeline_name, config in config_data.items():
         try:
             camera_bus_ids = _get_device_input_camera_bus_ids(
                 pipeline_name, config, logger
             )
+            settings = pipeline_settings.get(pipeline_name)
+            limit_frames = (
+                isinstance(settings, dict)
+                and settings.get("limit_frames_to_camera_capture_speed") is True
+            )
             pipeline = Pipeline(
                 config,
                 web_interface,
-                compute_pool,
                 network_table,
                 logger,
+                device_registry,
+                model_library,
                 camera_manager,
+                mx3_coordinator=mx3_coordinator,
                 camera_config_registry=camera_config_registry,
                 camera_bus_ids=camera_bus_ids,
                 pipeline_name=pipeline_name,
+                limit_frames_to_camera_capture_speed=limit_frames,
             )
         except Exception:
             logger.log(
@@ -209,9 +234,5 @@ def generate_all_pipelines(
                     pass
             continue
         pipelines[pipeline_name] = pipeline
-        pipeline_count += 1
-
-    for device in compute_pool.get_compute_devices_by_type("MX3"):
-        device.connect_streams(pipeline_count)
 
     return pipelines

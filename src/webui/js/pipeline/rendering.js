@@ -6,6 +6,7 @@ import { FlowchartConnections } from "./flowchartConnections.js";
 import { FlowchartMinimap } from "./flowchartMinimap.js";
 import { findCycles, findUnreachableIslands } from "./graphUtils.js";
 import { pipelineStore } from "./PipelineStore.js";
+import { resolveDockingContract } from "./dockingContract.js";
 import { prefetchConfigs } from "./operationConfigCache.js";
 import { hideTooltip, showTooltip } from "../ui/tooltip.js";
 
@@ -696,6 +697,7 @@ export class FlowchartRenderer {
         }
 
         this.syncAllDynamicNodes();
+        this.updateDockingLayout();
 
         this.refreshLayoutChrome();
         this.updateIslandBlocks();
@@ -772,6 +774,7 @@ export class FlowchartRenderer {
 
         this.restoreConnections(pipelineStore.getConnectionsForRenderer());
         this.syncAllDynamicNodes();
+        this.updateDockingLayout();
         this.updateCycleHighlights();
         this.refreshLayoutChrome();
         this.updateIslandBlocks();
@@ -923,6 +926,100 @@ export class FlowchartRenderer {
     }
 
     /**
+     * Returns a target's docking metadata, including the MX3 contract while
+     * config metadata is still loading.
+     *
+     * @param {FlowchartNode|null} node Target node.
+     * @returns {object|null} Docking metadata.
+     */
+    getDockingMetadata(node) {
+        return resolveDockingContract(
+            node?.operationData?.id,
+            node?.docking,
+            pipelineStore.normalizeOperationId.bind(pipelineStore),
+        );
+    }
+
+    /**
+     * Returns whether a rendered connection matches the destination's docking
+     * metadata. Docking remains an ordinary serialized connection.
+     *
+     * @param {object} connection Renderer connection data.
+     * @returns {boolean} Whether this is a docking connection.
+     */
+    isDockingConnection(connection) {
+        const source = this.nodes.get(connection?.fromNodeId);
+        const target = this.nodes.get(connection?.toNodeId);
+        const docking = this.getDockingMetadata(target);
+        return Boolean(
+            source &&
+                docking &&
+                pipelineStore.normalizeOperationId(source.operationData.id) ===
+                    pipelineStore.normalizeOperationId(docking.source_action) &&
+                connection.fromPortName === docking.source_port &&
+                connection.toPortName === docking.target_port,
+        );
+    }
+
+    /**
+     * Snaps docked detectors beside their Device Input and updates dock chrome.
+     *
+     * @returns {Set<string>} Instance IDs whose position changed.
+     */
+    updateDockingLayout() {
+        const dockedSources = new Map();
+        this.connections.getConnectionData().forEach((connection) => {
+            if (this.isDockingConnection(connection)) {
+                dockedSources.set(connection.toNodeId, connection.fromNodeId);
+            }
+        });
+
+        const changedNodeIds = new Set();
+        this.nodes.forEach((node, instanceId) => {
+            const sourceId = dockedSources.get(instanceId);
+            node.setDockState({
+                docked: Boolean(sourceId),
+                invalid: Boolean(this.getDockingMetadata(node)) && !sourceId,
+            });
+            if (!sourceId) return;
+
+            const source = this.nodes.get(sourceId);
+            if (!source) return;
+            const sourcePosition = source.getPosition();
+            const sourceWidth =
+                source.element?.offsetWidth || source.cachedElementWidth || 200;
+            const position = this.canvas.snapPositionToGrid(
+                sourcePosition.x + sourceWidth + this.gridSpacing * 2,
+                sourcePosition.y,
+            );
+            const currentPosition = node.getPosition();
+            if (
+                currentPosition.x === position.x &&
+                currentPosition.y === position.y
+            ) {
+                return;
+            }
+
+            node.setPosition(position.x, position.y);
+            const item = this.pipeline.find(
+                (candidate) => candidate.instanceId === instanceId,
+            );
+            if (item) item.position = position;
+            pipelineStore.updateNodePosition(instanceId, position);
+            changedNodeIds.add(instanceId);
+        });
+
+        if (changedNodeIds.size > 0) {
+            this.connections.updateAllConnections(
+                this.nodes,
+                changedNodeIds,
+                false,
+            );
+        }
+        return changedNodeIds;
+    }
+
+    /**
      * Handles the start of a node drag.
      *
      * @param {FlowchartNode} node Dragged node.
@@ -996,7 +1093,8 @@ export class FlowchartRenderer {
             this.pendingDragNodeIds.clear();
         }
 
-        const changedNodeIds = new Set(movedNodeIds);
+        const dockedNodeIds = this.updateDockingLayout();
+        const changedNodeIds = new Set([...movedNodeIds, ...dockedNodeIds]);
         this.connections.connections.forEach((connection) => {
             if (
                 changedNodeIds.has(connection.fromNodeId) ||
@@ -1040,7 +1138,11 @@ export class FlowchartRenderer {
      * @param {{x:number,y:number}} position Current position.
      */
     handleNodePositionChange(node, position) {
+        const dockedNodeIds = this.updateDockingLayout();
         this.pendingDragNodeIds.add(node.instanceId);
+        dockedNodeIds.forEach((instanceId) =>
+            this.pendingDragNodeIds.add(instanceId),
+        );
 
         if (
             this.multiDragOrigins &&
@@ -1456,30 +1558,8 @@ export class FlowchartRenderer {
             return;
         }
 
-        // Remove any existing connections to this input port (enforce single connection per input)
-        const existingConnections = this.connections.getConnectionsForPort(
-            toNode.instanceId,
-            toPort,
-            "input",
-        );
-
-        existingConnections.forEach((id) => {
-            this.connections.removeConnection(id);
-        });
-
         const connectionId = `${fromNode.instanceId}-${fromPort}-${toNode.instanceId}-${toPort}`;
-
-        this.connections.createConnection(
-            connectionId,
-            fromNode,
-            fromPort,
-            toNode,
-            toPort,
-            fromPort, // Use output port name as data type for now
-            false, // isDefault - new connections are not default by default
-        );
-
-        pipelineStore.addConnection(
+        const storeConnectionKey = pipelineStore.addConnection(
             fromNode.instanceId,
             fromPort,
             toNode.instanceId,
@@ -1487,8 +1567,40 @@ export class FlowchartRenderer {
             fromPort,
             false,
         );
+        if (!storeConnectionKey) {
+            this.cancelConnecting();
+            return;
+        }
+
+        // Only replace the visual input wire after the store accepts the new
+        // connection (important for the one-MX3-per-Device-Input limit).
+        const existingConnections = this.connections.getConnectionsForPort(
+            toNode.instanceId,
+            toPort,
+            "input",
+        );
+        existingConnections.forEach((id) =>
+            this.connections.removeConnection(id),
+        );
+
+        this.connections.createConnection({
+            connectionId,
+            fromNode,
+            fromPortName: fromPort,
+            toNode,
+            toPortName: toPort,
+            dataType: fromPort,
+            isDefault: false,
+            isDocked: this.isDockingConnection({
+                fromNodeId: fromNode.instanceId,
+                fromPortName: fromPort,
+                toNodeId: toNode.instanceId,
+                toPortName: toPort,
+            }),
+        });
 
         this.syncAllDynamicNodes();
+        this.updateDockingLayout();
 
         if (this.minimap) {
             this.minimap.updateConnections(
@@ -1497,6 +1609,7 @@ export class FlowchartRenderer {
         }
 
         this.cancelConnecting();
+        this.callbacks.updateRunButton();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
         this.updateIslandBlocks();
@@ -1560,20 +1673,17 @@ export class FlowchartRenderer {
      *
      * @param {string} connectionId Connection id.
      */
-    handleConnectionRemoved(connectionId) {
-        const parts = connectionId.split("-");
-        if (parts.length >= 4) {
-            const fromId = parts[0];
-            const fromPort = parts[1];
-            const toId = parts[2];
-            const toPort = parts[3];
-
-            const fromUuid = pipelineStore.instanceIdToUuid.get(fromId);
-            const toUuid = pipelineStore.instanceIdToUuid.get(toId);
-
+    handleConnectionRemoved(connectionId, connection = null) {
+        // Instance IDs contain hyphens, so use stored connection metadata rather
+        // than parsing the visual ID. This makes removing a dock an explicit,
+        // reliable detach of its ordinary serialized connection.
+        if (connection) {
+            const fromUuid = pipelineStore.resolveToUuid(connection.fromNodeId);
+            const toUuid = pipelineStore.resolveToUuid(connection.toNodeId);
             if (fromUuid && toUuid) {
-                const storeConnectionKey = `${fromUuid}-${fromPort}-${toUuid}-${toPort}`;
-                pipelineStore.removeConnection(storeConnectionKey);
+                pipelineStore.removeConnection(
+                    `${fromUuid}-${connection.fromPortName}-${toUuid}-${connection.toPortName}`,
+                );
             }
         }
 
@@ -1583,6 +1693,8 @@ export class FlowchartRenderer {
             );
         }
         this.syncAllDynamicNodes();
+        this.updateDockingLayout();
+        this.callbacks.updateRunButton();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
         this.updateIslandBlocks();
@@ -1781,22 +1893,17 @@ export class FlowchartRenderer {
                 );
 
                 const connectionId = `${conn.fromNodeId}-${conn.fromPortName}-${conn.toNodeId}-${conn.toPortName}`;
-                const fromUuid = pipelineStore.instanceIdToUuid.get(
-                    conn.fromNodeId,
-                );
-                const toUuid = pipelineStore.instanceIdToUuid.get(
-                    conn.toNodeId,
-                );
-                this.connections.createConnection(
+                this.connections.createConnection({
                     connectionId,
                     fromNode,
-                    conn.fromPortName,
+                    fromPortName: conn.fromPortName,
                     toNode,
-                    conn.toPortName,
-                    conn.dataType || conn.fromPortName,
-                    conn.isDefault || false,
-                    conn.customWaypoints || null,
-                );
+                    toPortName: conn.toPortName,
+                    dataType: conn.dataType || conn.fromPortName,
+                    isDefault: conn.isDefault || false,
+                    customWaypoints: conn.customWaypoints || null,
+                    isDocked: this.isDockingConnection(conn),
+                });
             }
         });
 

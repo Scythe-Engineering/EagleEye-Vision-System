@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import pytest
+
 from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
 from src.main_operations.definitions.base.base_class import OperationInstance
@@ -38,19 +40,53 @@ class _NoneAbortOperation(OperationInstance):
 
 
 def _build_direct_flow_manager() -> FlowManager:
-    source = Operation(_SourceOperation(3), "op-source", "source", is_data_source=True)
-    transform = Operation(_PassOperation(), "op-transform", "transform")
+    source = Operation(
+        _SourceOperation(3),
+        "op-source",
+        "source",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    transform = Operation(
+        _PassOperation(), "op-transform", "transform", input_ports=("data",)
+    )
     Connection(source, "data", transform, "data", "any")
     operations = {source.uuid: source, transform.uuid: transform}
     return FlowManager(operations, Logger(log_directory="logs/test"), pipeline_name="Direct")
 
 
 def _build_threaded_flow_manager() -> FlowManager:
-    src_a = Operation(_SourceOperation(2), "op-a-src", "src_a", is_data_source=True)
-    src_b = Operation(_SourceOperation(5), "op-b-src", "src_b", is_data_source=True)
-    pass_a = Operation(_PassOperation(), "op-a-pass", "pass_a")
-    pass_b = Operation(_PassOperation(), "op-b-pass", "pass_b")
-    merge = Operation(_MergeOperation(), "op-merge", "merge")
+    src_a = Operation(
+        _SourceOperation(2),
+        "op-a-src",
+        "src_a",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    src_b = Operation(
+        _SourceOperation(5),
+        "op-b-src",
+        "src_b",
+        is_data_source=True,
+        output_ports=("data",),
+    )
+    pass_a = Operation(
+        _PassOperation(),
+        "op-a-pass",
+        "pass_a",
+        input_ports=("data",),
+        output_ports=("data",),
+    )
+    pass_b = Operation(
+        _PassOperation(),
+        "op-b-pass",
+        "pass_b",
+        input_ports=("data",),
+        output_ports=("data",),
+    )
+    merge = Operation(
+        _MergeOperation(), "op-merge", "merge", input_ports=("left", "right")
+    )
 
     Connection(src_a, "data", pass_a, "data", "any")
     Connection(src_b, "data", pass_b, "data", "any")
@@ -120,18 +156,30 @@ def _assert_profile_contract(snapshot: dict[str, Any]) -> None:
 
 def test_direct_flow_records_profile_snapshot() -> None:
     flow_manager = _build_direct_flow_manager()
-    flow_manager.run_flow()
+    assert flow_manager.run_flow()
 
     snapshot = flow_manager.get_latest_profile_snapshot()
     assert snapshot is not None
     _assert_profile_contract(snapshot)
 
 
+def test_profile_cycle_time_can_include_pipeline_input_wait() -> None:
+    flow_manager = _build_direct_flow_manager()
+    flow_manager.run_flow()
+
+    flow_manager.set_latest_profile_cycle_time(42.5)
+
+    snapshot = flow_manager.get_latest_profile_snapshot()
+    assert snapshot is not None
+    assert snapshot["cycle_time_ms"] == pytest.approx(42.5)
+    assert snapshot["cycle_time_ms"] >= snapshot["frame_time_ms"]
+
+
 def test_threaded_flow_records_profile_snapshot() -> None:
     flow_manager = _build_threaded_flow_manager()
     assert flow_manager.num_threads > 1
 
-    flow_manager.run_flow()
+    assert flow_manager.run_flow()
     snapshot = flow_manager.get_latest_profile_snapshot()
     assert snapshot is not None
     _assert_profile_contract(snapshot)
@@ -143,8 +191,9 @@ def test_none_abort_does_not_publish_profile_snapshot() -> None:
         "op-abort",
         "abort",
         is_data_source=True,
+        output_ports=("data",),
     )
-    passthrough = Operation(_PassOperation(), "op-pass", "pass")
+    passthrough = Operation(_PassOperation(), "op-pass", "pass", input_ports=("data",))
     Connection(source, "data", passthrough, "data", "any")
     flow_manager = FlowManager(
         {source.uuid: source, passthrough.uuid: passthrough},
@@ -152,7 +201,7 @@ def test_none_abort_does_not_publish_profile_snapshot() -> None:
         pipeline_name="Abort",
     )
 
-    flow_manager.run_flow()
+    assert not flow_manager.run_flow()
     assert flow_manager.get_latest_profile_snapshot() is None
 
 

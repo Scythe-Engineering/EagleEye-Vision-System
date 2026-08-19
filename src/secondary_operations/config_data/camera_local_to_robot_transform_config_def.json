@@ -1,0 +1,23 @@
+{
+    "class_name": "CameraLocalToRobotTransform",
+    "description": "Convert camera-local detection coordinates to robot-local coordinates using camera extrinsics.",
+    "category": "proc",
+    "folder": "Localization",
+    "input_nodes": [
+        {
+            "name": "detections",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "robot_detections"
+    ],
+    "parameters": {
+        "camera_bus_id": {
+            "type": "str",
+            "description": "Camera bus ID used to read mounting extrinsics",
+            "required": true,
+            "restart_for_change": false
+        }
+    }
+}

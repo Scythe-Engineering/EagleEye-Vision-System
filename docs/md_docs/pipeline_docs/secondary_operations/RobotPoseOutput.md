@@ -1,37 +1,25 @@
-# RobotPoseOutput Operation
+# RobotPoseOutput
 
-## Overview
+`RobotPoseOutput` sends a robot pose matrix to the WebUI and passes changed poses downstream. It does not publish to NetworkTables.
 
-`RobotPoseOutput` forwards a robot 4×4 pose matrix to `EagleEyeInterface.update_robot_position()` for WebUI output. It is not a NetworkTables publisher; add `PublishToNetworktables` after it when the robot must consume the pose.
+## Inputs
 
-When the upstream source is `pnp_camera_localization`, insert `camera_to_robot_pose` first so this operation receives the robot pose rather than the camera pose.
+`pose` is a NumPy pose matrix.
 
-## Behavior
+## Outputs
 
-The operation stores the last pose sent. If `np.array_equal()` says the incoming pose is identical, it returns `None` and does not call the WebUI. Otherwise it:
+The same `pose` when it differs exactly from the last sent matrix. An exact duplicate produces `None`.
 
-1. calls `web_interface.update_robot_position(pose)`;
-2. stores `pose.copy()` as the last pose;
-3. returns the pose unchanged.
+## When to use
 
-It expects a NumPy pose matrix and does not validate matrix size, finiteness, coordinate frame, or uncertainty.
-
-## Timing
-
-The pipeline runner reattaches upstream capture metadata to raw outputs. Thus, when this operation is reached by a timed camera pipeline, the returned changed pose still carries the originating frame's capture timestamp for a downstream `PublishToNetworktables` operation. A duplicate pose returns `None`, so it does not produce a downstream measurement.
+Use this when the WebUI should display the robot pose. Add `PublishToNetworktables` downstream if the robot also needs it.
 
 ## Configuration
 
-`web_interface` is injected by the runtime; this operation has no action parameters.
+This operation has no user parameters.
 
-```json
-{
-  "action_name": "robot_pose_output.py",
-  "action_params": {}
-}
-```
+## Timestamp behavior
 
-## Files
+The pipeline runner restores upstream timing around the raw matrix returned here. A changed pose from a timed camera pipeline retains the frame's capture timestamp for downstream publishing. A duplicate returns `None` and creates no measurement.
 
-- Implementation: `src/secondary_operations/robot_pose_output.py`
-- Example pipeline: `src/config/pipeline_config.json`
+The operation does not validate matrix shape or finite values.

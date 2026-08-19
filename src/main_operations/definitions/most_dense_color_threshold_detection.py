@@ -6,7 +6,6 @@ from typing import ClassVar, List, Dict, Any, Optional
 from src.main_operations.modules.object_detection.color_threshold_detection.implementation import (
     ColorThresholdDetectionImplementation,
 )
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
 from src.main_operations.definitions.base.base_class import OperationInstance
@@ -56,7 +55,6 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         selection_mode: str = "most_dense",
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
-        compute_pool: ComputePool | None = None,
     ) -> None:
         """Initialize most dense color threshold detection operation.
 
@@ -78,7 +76,6 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
             selection_mode: Either "most_dense" (largest area) or "least_dense" (smallest area).
             camera_config_registry: Injected shared camera config registry.
             web_interface: Injected web interface reference.
-            compute_pool: Injected compute pool reference.
         """
         if selection_mode not in ("most_dense", "least_dense"):
             raise ValueError(
@@ -97,7 +94,6 @@ class MostDenseColorThresholdDetectionDefinition(OperationInstance):
         self.camera_bus_id = camera_bus_id
         self.camera_config_registry = camera_config_registry
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self.selection_mode = selection_mode
 
         self.camera_matrix: Optional[np.ndarray] = None

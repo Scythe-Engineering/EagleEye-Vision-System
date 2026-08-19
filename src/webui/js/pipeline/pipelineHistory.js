@@ -33,7 +33,10 @@ class PipelineHistory {
      *   postRefreshCallback: () => Promise<void>,
      * }} callbacks
      */
-    init(pipelineStore, { renderCallback, autoSaveCallback, postRefreshCallback }) {
+    init(
+        pipelineStore,
+        { renderCallback, autoSaveCallback, postRefreshCallback },
+    ) {
         this.pipelineStore = pipelineStore;
         this.renderCallback = renderCallback;
         this.autoSaveCallback = autoSaveCallback;
@@ -117,7 +120,10 @@ class PipelineHistory {
         if (this.isApplyingHistory) return;
 
         clearTimeout(this.commitTimer);
-        this.commitTimer = setTimeout(() => this._commitCurrentChange(), HISTORY_DEBOUNCE_MS);
+        this.commitTimer = setTimeout(
+            () => this._commitCurrentChange(),
+            HISTORY_DEBOUNCE_MS,
+        );
     }
 
     /**
@@ -176,7 +182,10 @@ class PipelineHistory {
         this._cancelPendingCommit();
         this.isApplyingHistory = true;
         try {
-            this.pipelineStore.loadPipelineData(snapshot.nodes, snapshot.connections);
+            await this.pipelineStore.loadPipelineData(
+                snapshot.nodes,
+                snapshot.connections,
+            );
             if (this.renderCallback) await this.renderCallback();
             if (this.autoSaveCallback) this.autoSaveCallback();
             if (this.postRefreshCallback) await this.postRefreshCallback();
@@ -217,8 +226,21 @@ class PipelineHistory {
         const previousSnapshot = this.undoStack.pop();
         this.redoStack.push(this.currentSnapshot);
 
-        await this._applySnapshot(previousSnapshot);
-        this._updateButtons();
+        try {
+            await this._applySnapshot(previousSnapshot);
+        } catch (error) {
+            // _applySnapshot mutates the store before rendering and saving, so
+            // the stacks alone cannot describe the state the canvas is left in.
+            try {
+                await this._applySnapshot(this.currentSnapshot);
+            } finally {
+                this.redoStack.pop();
+                this.undoStack.push(previousSnapshot);
+            }
+            throw error;
+        } finally {
+            this._updateButtons();
+        }
     }
 
     /**
@@ -231,8 +253,20 @@ class PipelineHistory {
         const nextSnapshot = this.redoStack.pop();
         this.undoStack.push(this.currentSnapshot);
 
-        await this._applySnapshot(nextSnapshot);
-        this._updateButtons();
+        try {
+            await this._applySnapshot(nextSnapshot);
+        } catch (error) {
+            // Restore the pipeline itself before repairing the stacks; see undo().
+            try {
+                await this._applySnapshot(this.currentSnapshot);
+            } finally {
+                this.undoStack.pop();
+                this.redoStack.push(nextSnapshot);
+            }
+            throw error;
+        } finally {
+            this._updateButtons();
+        }
     }
 
     /**

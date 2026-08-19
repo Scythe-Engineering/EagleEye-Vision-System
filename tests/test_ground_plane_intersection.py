@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import numpy as np
 import pytest
-
 from src.secondary_operations.ground_plane_intersection import GroundPlaneIntersection
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 
 
-def test_ground_plane_uses_selected_camera_extrinsics(tmp_path) -> None:
-    """Ground plane projection should read height/pitch from camera extrinsics."""
+def test_ground_plane_outputs_field_relative_intersection(tmp_path: Path) -> None:
+    """Ground projection should use the supplied field-from-camera pose."""
     camera_dir = tmp_path / "cam0"
     camera_dir.mkdir()
     intrinsics_path = camera_dir / "intrinsics.json"
@@ -47,12 +48,23 @@ def test_ground_plane_uses_selected_camera_extrinsics(tmp_path) -> None:
 
     operation = GroundPlaneIntersection(
         camera_bus_id="cam0",
-        camera_height=999.0,
-        camera_pitch=0.0,
         camera_config_registry=registry,
     )
+    field_from_camera = np.array(
+        [
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 0.0, -1.0, 2.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
 
-    detections = operation.run([{"bbox": [0.45, 0.45, 0.55, 0.5]}])
+    detections = operation.run(
+        {
+            "detections": [{"bbox": [0.45, 0.45, 0.55, 0.5]}],
+            "camera_pose": field_from_camera,
+        }
+    )
 
     assert len(detections) == 1
-    assert detections[0]["position_3d"] == pytest.approx([0.0, 0.0, 2.0])
+    assert detections[0]["position_3d"] == pytest.approx([1.0, 2.0, 0.0])

@@ -242,16 +242,18 @@ class FlowManager:
         self._profile_seq = 0
 
     @profile
-    def run_flow(self) -> None:
-        """Run the flow of operations using timestep-based execution.
+    def run_flow(self) -> bool:
+        """Run the flow and report whether it recorded a profile snapshot.
 
-        Automatically uses direct execution for single-threaded pipelines,
-        or threaded execution for multi-threaded pipelines.
+        Returns:
+            ``True`` when the cycle completed, otherwise ``False``.
         """
+        profile_seq_before = self._profile_seq
         if self.num_threads == 1:
             self._run_flow_direct()
         else:
             self._run_flow_threaded()
+        return self._profile_seq > profile_seq_before
 
     @profile
     def _run_flow_direct(self) -> None:
@@ -456,27 +458,37 @@ class FlowManager:
             if conn.is_default:
                 from_uuid = conn.from_operation.uuid
                 if from_uuid in self.previous_operation_outputs:
-                    return unwrap_timed_deep(self.previous_operation_outputs[from_uuid])
+                    selected = conn.from_operation.resolve_output_port(
+                        self.previous_operation_outputs[from_uuid],
+                        conn.from_port,
+                    )
+                    return unwrap_timed_deep(selected)
                 else:
                     return None
             else:
-                return self.operation_outputs[conn.from_operation.uuid]
+                return conn.from_operation.resolve_output_port(
+                    self.operation_outputs[conn.from_operation.uuid],
+                    conn.from_port,
+                )
         else:
             inputs: dict[str, Any] = {}
 
             for conn in input_connections:
                 if not conn.is_default:
-                    inputs[conn.to_port] = self.operation_outputs[
-                        conn.from_operation.uuid
-                    ]
+                    inputs[conn.to_port] = conn.from_operation.resolve_output_port(
+                        self.operation_outputs[conn.from_operation.uuid],
+                        conn.from_port,
+                    )
 
             for conn in input_connections:
                 if conn.is_default:
                     from_uuid = conn.from_operation.uuid
                     if from_uuid in self.previous_operation_outputs:
-                        inputs[conn.to_port] = unwrap_timed_deep(
-                            self.previous_operation_outputs[from_uuid]
+                        selected = conn.from_operation.resolve_output_port(
+                            self.previous_operation_outputs[from_uuid],
+                            conn.from_port,
                         )
+                        inputs[conn.to_port] = unwrap_timed_deep(selected)
 
             return inputs
 
@@ -732,6 +744,40 @@ class FlowManager:
                 f"{Colors.YELLOW}Profiling snapshot failed for pipeline "
                 f"{self.pipeline_name}: {error}{Colors.RESET}"
             )
+
+    def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
+        """Attach the full pipeline cycle time to the latest profile snapshot.
+
+        The flow runtime is measured inside this manager, while camera-input gating
+        happens in ``Pipeline`` before the flow starts. Keeping both measurements
+        lets the UI show operation runtime and an FPS that includes input wait time.
+
+        Args:
+            cycle_time_ms: Elapsed time from the start of input gating through the
+                completed flow execution.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is not None:
+                self._last_frame_profile["cycle_time_ms"] = float(
+                    max(cycle_time_ms, 0.0)
+                )
+
+    def set_latest_profile_capture_latency(self, latency_ms: float) -> None:
+        """Attach capture-to-completion latency to the latest profile snapshot.
+
+        This is the age of the camera frame the completed cycle was computed
+        from, measured on the monotonic clock. Unlike cycle time it includes
+        exposure, transfer, and decode, so it is the number that matters for
+        pose estimation.
+
+        Args:
+            latency_ms: Milliseconds between frame capture and cycle completion.
+        """
+        with self._profile_lock:
+            if self._last_frame_profile is not None:
+                self._last_frame_profile["capture_latency_ms"] = float(
+                    max(latency_ms, 0.0)
+                )
 
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
         """Get a copy of the latest profiling snapshot.

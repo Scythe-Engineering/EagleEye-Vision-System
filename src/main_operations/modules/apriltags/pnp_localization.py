@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional
+
 import cv2
 import numpy as np
 from pupil_apriltags import Detection
@@ -19,46 +20,30 @@ class PnpLocalization:
         camera_matrix: np.ndarray,
         distortion_coefficients: np.ndarray,
         apriltag_map: Dict[int, Apriltag],
-        jump_threshold: float = 2.0,
     ) -> None:
         """Initialize the AprilTag pose estimator.
 
         Args:
-            camera_matrix (np.ndarray): Camera intrinsic matrix.
-            distortion_coefficients (np.ndarray): Camera distortion coefficients.
-            apriltag_map (Dict[int, Apriltag]): Mapping of tag IDs to AprilTag objects.
-            jump_threshold (float): Maximum distance threshold in meters for pose jumps.
-                                   Poses beyond this threshold trigger cache clearing.
+            camera_matrix: Camera intrinsic matrix.
+            distortion_coefficients: Camera distortion coefficients.
+            apriltag_map: Mapping of tag IDs to AprilTag objects.
         """
         self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
         dist = distortion_coefficients.astype(np.float32, copy=False)
         if dist.ndim == 1 or (dist.ndim == 2 and dist.shape[0] == 1):
             dist = dist.reshape((-1, 1))
         self.distortion_coefficients = dist
-
         self.apriltag_map = apriltag_map
-        self.jump_threshold = jump_threshold
-        self.last_pose = None
-        self._last_camera_space_pose = None
-        self._last_rvec = None
-        self.non_finite_count = 0
-
-    def clear_position_cache(self) -> None:
-        """Clear the position cache and reset non-finite counter."""
-        self.last_pose = None
-        self._last_camera_space_pose = None
-        self._last_rvec = None
-        self.non_finite_count = 0
 
     @staticmethod
     def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
         """Fast analytical inverse for SE(3) transformation matrix.
 
         Args:
-            t (np.ndarray): 4x4 SE(3) transformation matrix.
+            t: 4x4 SE(3) transformation matrix.
 
         Returns:
-            np.ndarray: 4x4 inverse transformation matrix.
+            4x4 inverse transformation matrix.
         """
         R = t[:3, :3]
         translation = t[:3, 3]
@@ -75,13 +60,13 @@ class PnpLocalization:
         return t_inv_matrix
 
     def _fast_rodrigues(self, rvec: np.ndarray) -> np.ndarray:
-        """Compute rotation matrix from rotation vector using Rodrigues formula in NumPy.
+        """Compute rotation matrix from rotation vector using Rodrigues formula.
 
         Args:
-            rvec (np.ndarray): Rotation vector (3, ) or (3, 1).
+            rvec: Rotation vector (3,) or (3, 1).
 
         Returns:
-            np.ndarray: Rotation matrix (3, 3) as float32.
+            Rotation matrix (3, 3) as float32.
         """
         v = rvec.reshape(3).astype(np.float32, copy=False)
         theta = float(np.linalg.norm(v))
@@ -104,11 +89,11 @@ class PnpLocalization:
         """Estimate camera pose from AprilTag detections.
 
         Args:
-            detections (List[Detection]): List of AprilTag detections.
+            detections: List of AprilTag detections.
 
         Returns:
-            Optional[np.ndarray]: 4x4 transformation matrix representing camera pose,
-                                or None if pose estimation failed.
+            4x4 transformation matrix representing camera pose in field
+            coordinates, or None if pose estimation failed.
         """
         image_points_list = []
         object_points_list = []
@@ -143,136 +128,38 @@ class PnpLocalization:
         ):
             return None
 
-        success = False
-        rotation_vector = None
-        translation_vector = None
-
-        # First attempt with extrinsic guess if available
-        use_guess = (
-            self._last_camera_space_pose is not None
-            and self._last_rvec is not None
-            and np.all(np.isfinite(self._last_camera_space_pose))
-            and np.all(np.isfinite(self._last_rvec))
+        success, rotation_vector, translation_vector = cv2.solvePnP(
+            object_points,
+            image_points,
+            self.camera_matrix,
+            self.distortion_coefficients,
+            flags=cv2.SOLVEPNP_ITERATIVE,
         )
 
-        if use_guess:
-            last_t = (
-                self._last_camera_space_pose[:3, 3]
-                if self._last_camera_space_pose is not None
-                else None
-            )
-            if last_t is None:
-                success, rotation_vector, translation_vector = cv2.solvePnP(
-                    object_points,
-                    image_points,
-                    self.camera_matrix,
-                    self.distortion_coefficients,
-                    flags=cv2.SOLVEPNP_ITERATIVE,
-                )
-            success, rotation_vector, translation_vector = cv2.solvePnP(
-                object_points,
-                image_points,
-                self.camera_matrix,
-                self.distortion_coefficients,
-                rvec=self._last_rvec,
-                tvec=last_t.reshape(3, 1).astype(np.float32, copy=False),
-                useExtrinsicGuess=True,
-                flags=cv2.SOLVEPNP_ITERATIVE,
-            )
-        else:
-            success, rotation_vector, translation_vector = cv2.solvePnP(
-                object_points,
-                image_points,
-                self.camera_matrix,
-                self.distortion_coefficients,
-                flags=cv2.SOLVEPNP_ITERATIVE,
-            )
-
-        camera_space_transform = None
-        if success and rotation_vector is not None and translation_vector is not None:
-            if not (
-                np.all(np.isfinite(rotation_vector))
-                and np.all(np.isfinite(translation_vector))
-            ):
-                return None
-            rotation_matrix = self._fast_rodrigues(rotation_vector)
-            camera_space_transform = np.eye(4, dtype=np.float32)
-            camera_space_transform[:3, :3] = rotation_matrix
-            camera_space_transform[:3, 3] = translation_vector.flatten().astype(
-                np.float32, copy=False
-            )
-            if np.all(np.isfinite(rotation_vector)):
-                self._last_rvec = rotation_vector.astype(np.float32, copy=False)
-
-        if camera_space_transform is None:
+        if (
+            not success
+            or rotation_vector is None
+            or translation_vector is None
+            or not np.all(np.isfinite(rotation_vector))
+            or not np.all(np.isfinite(translation_vector))
+        ):
             return None
+
+        rotation_matrix = self._fast_rodrigues(rotation_vector)
+        camera_space_transform = np.eye(4, dtype=np.float32)
+        camera_space_transform[:3, :3] = rotation_matrix
+        camera_space_transform[:3, 3] = translation_vector.flatten().astype(
+            np.float32, copy=False
+        )
 
         global_camera_transform = PnpLocalization.fast_se3_inverse(
             camera_space_transform
         )
 
-        # Check if pose is far from previous pose (> 2m)
-        if (
-            self.last_pose is not None
-            and np.all(np.isfinite(global_camera_transform))
-            and np.all(np.isfinite(self.last_pose))
-            and use_guess
-        ):
-            distance = np.linalg.norm(
-                global_camera_transform[:3, 3] - self.last_pose[:3, 3]
-            )
-            if distance > self.jump_threshold:
-                # Clear cache and recompute without extrinsic guess
-                self.clear_position_cache()
-
-                success, rotation_vector, translation_vector = cv2.solvePnP(
-                    object_points,
-                    image_points,
-                    self.camera_matrix,
-                    self.distortion_coefficients,
-                    flags=cv2.SOLVEPNP_ITERATIVE,
-                )
-
-                if (
-                    success
-                    and rotation_vector is not None
-                    and translation_vector is not None
-                ):
-                    if not (
-                        np.all(np.isfinite(rotation_vector))
-                        and np.all(np.isfinite(translation_vector))
-                    ):
-                        return None
-                    rotation_matrix = self._fast_rodrigues(rotation_vector)
-                    camera_space_transform = np.eye(4, dtype=np.float32)
-                    camera_space_transform[:3, :3] = rotation_matrix
-                    camera_space_transform[:3, 3] = translation_vector.flatten().astype(
-                        np.float32, copy=False
-                    )
-                    if np.all(np.isfinite(rotation_vector)):
-                        self._last_rvec = rotation_vector.astype(np.float32, copy=False)
-
-                    global_camera_transform = PnpLocalization.fast_se3_inverse(
-                        camera_space_transform
-                    )
-
-        if np.all(np.isfinite(camera_space_transform)):
-            self._last_camera_space_pose = camera_space_transform
-
         if not np.all(np.isfinite(global_camera_transform)):
             print(
                 f"{Colors.YELLOW}Operation - Skipping publish of robot transform due to non-finite values{Colors.RESET}"
             )
-            self.non_finite_count += 1
-            if self.non_finite_count >= 3:
-                self.clear_position_cache()
-                print(
-                    f"{Colors.CYAN}Position cache cleared due to 3 consecutive non-finite values{Colors.RESET}"
-                )
             return None
 
-        self.last_pose = global_camera_transform
-
-        # Reset counter on successful finite result
-        self.non_finite_count = 0
         return global_camera_transform

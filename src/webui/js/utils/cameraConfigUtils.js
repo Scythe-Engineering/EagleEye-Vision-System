@@ -3,8 +3,10 @@ import { BACKEND_BASE_URL } from "../config.js";
 import {
     showDanger,
     showSuccess,
+    showUploadToast,
     showWarning,
 } from "../ui/notificationSystem.js";
+import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
@@ -32,6 +34,7 @@ let currentCalibrationStreamName = "";
 let poseVizState = null;
 let poseVizRenderFrame = null;
 let calibrationModalOpen = false;
+let distortionModalOpen = false;
 let selectedCalibrationFrameIndex = null;
 let calibrationHistoryFrames = [];
 
@@ -429,7 +432,9 @@ async function loadCameraList() {
         cameras.forEach((camera) => {
             const option = document.createElement("option");
             option.value = String(camera.bus_id);
-            option.dataset.streamName = String(camera.stream_name || camera.name || "");
+            option.dataset.streamName = String(
+                camera.stream_name || camera.name || "",
+            );
             option.textContent = `${camera.name} (${camera.bus_id})`;
             select.appendChild(option);
         });
@@ -447,7 +452,9 @@ async function loadCameraList() {
         const selected = cameras.find(
             (camera) => String(camera.bus_id) === currentCameraBusId,
         );
-        currentCalibrationStreamName = String(selected?.stream_name || selected?.name || "");
+        currentCalibrationStreamName = String(
+            selected?.stream_name || selected?.name || "",
+        );
         setCameraMeta(selected || null);
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -526,20 +533,22 @@ async function uploadIntrinsicsFile(file) {
         return;
     }
 
+    const formData = new FormData();
+    formData.append("file", file);
+    const uploadToast = showUploadToast({
+        label: `Uploading ${file.name}...`,
+    });
+
     try {
-        const formData = new FormData();
-        formData.append("file", file);
-        await fetchJson(
-            `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
-            {
-                method: "POST",
-                body: formData,
-            },
-        );
-        showSuccess("Intrinsics file uploaded");
+        await uploadWithProgress({
+            url: `/camera-config/${encodeURIComponent(currentCameraBusId)}/intrinsics`,
+            formData,
+            onProgress: uploadToast.setProgress,
+        });
+        uploadToast.complete("Intrinsics file uploaded");
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
-        showDanger(`Failed to upload intrinsics: ${error.message}`);
+        uploadToast.fail(`Failed to upload intrinsics: ${error.message}`);
     }
 }
 
@@ -549,10 +558,20 @@ async function uploadIntrinsicsFile(file) {
  */
 function calibrationPayload() {
     return {
-        squares_x: Number.parseInt(getElement("utilsCalibrationSquaresX")?.value || "11", 10),
-        squares_y: Number.parseInt(getElement("utilsCalibrationSquaresY")?.value || "8", 10),
-        square_size: Number.parseFloat(getElement("utilsCalibrationSquareSize")?.value || "0.015"),
-        marker_size: Number.parseFloat(getElement("utilsCalibrationMarkerSize")?.value || "0.011"),
+        squares_x: Number.parseInt(
+            getElement("utilsCalibrationSquaresX")?.value || "11",
+            10,
+        ),
+        squares_y: Number.parseInt(
+            getElement("utilsCalibrationSquaresY")?.value || "8",
+            10,
+        ),
+        square_size: Number.parseFloat(
+            getElement("utilsCalibrationSquareSize")?.value || "0.015",
+        ),
+        marker_size: Number.parseFloat(
+            getElement("utilsCalibrationMarkerSize")?.value || "0.011",
+        ),
     };
 }
 
@@ -562,7 +581,11 @@ function calibrationPayload() {
  */
 function setCalibrationBusy(isBusy) {
     getElement("utilsCalibrationProgress")?.classList.toggle("hidden", !isBusy);
-    ["utilsCalibrationCaptureBtn", "utilsCalibrationResetBtn", "utilsCalibrationRunBtn"].forEach((id) => {
+    [
+        "utilsCalibrationCaptureBtn",
+        "utilsCalibrationResetBtn",
+        "utilsCalibrationRunBtn",
+    ].forEach((id) => {
         const button = getElement(id);
         if (button) button.disabled = isBusy;
     });
@@ -573,11 +596,14 @@ function setCalibrationBusy(isBusy) {
  * @returns {Object}
  */
 function calibrationLiveResolutionParams() {
-    const value = getElement("utilsCalibrationLiveResolution")?.value || "1280x720";
+    const value =
+        getElement("utilsCalibrationLiveResolution")?.value || "1280x720";
     if (value === "full") {
         return {};
     }
-    const [width, height] = value.split("x").map((part) => Number.parseInt(part, 10));
+    const [width, height] = value
+        .split("x")
+        .map((part) => Number.parseInt(part, 10));
     if (!Number.isFinite(width) || !Number.isFinite(height)) {
         return {};
     }
@@ -590,7 +616,8 @@ function calibrationLiveResolutionParams() {
 function updateCalibrationFeed() {
     const img = getElement("utilsCalibrationFeed");
     if (!img || !currentCameraBusId || !calibrationModalOpen) return;
-    const calibrationCameraId = currentCalibrationStreamName || currentCameraBusId;
+    const calibrationCameraId =
+        currentCalibrationStreamName || currentCameraBusId;
     const payload = calibrationPayload();
     const params = new URLSearchParams({
         squares_x: String(payload.squares_x),
@@ -623,7 +650,9 @@ function drawCalibrationHistoryCanvas() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
 
-    const frames = calibrationHistoryFrames.filter((frame) => frame?.image_size && Array.isArray(frame.corners));
+    const frames = calibrationHistoryFrames.filter(
+        (frame) => frame?.image_size && Array.isArray(frame.corners),
+    );
     const hasCorners = frames.some((frame) => frame.corners.length > 0);
     if (empty) empty.classList.toggle("hidden", hasCorners);
     if (!hasCorners) return;
@@ -634,12 +663,21 @@ function drawCalibrationHistoryCanvas() {
         const scale = Math.min(width / sourceWidth, height / sourceHeight);
         const offsetX = (width - sourceWidth * scale) / 2;
         const offsetY = (height - sourceHeight * scale) / 2;
-        ctx.fillStyle = frame.index === selectedCalibrationFrameIndex ? "#f9c845" : "rgba(0, 255, 160, 0.75)";
+        ctx.fillStyle =
+            frame.index === selectedCalibrationFrameIndex
+                ? "#f9c845"
+                : "rgba(0, 255, 160, 0.75)";
         for (const corner of frame.corners) {
             const x = offsetX + Number(corner[0]) * scale;
             const y = offsetY + Number(corner[1]) * scale;
             ctx.beginPath();
-            ctx.arc(x, y, frame.index === selectedCalibrationFrameIndex ? 3.5 : 2.5, 0, Math.PI * 2);
+            ctx.arc(
+                x,
+                y,
+                frame.index === selectedCalibrationFrameIndex ? 3.5 : 2.5,
+                0,
+                Math.PI * 2,
+            );
             ctx.fill();
         }
     }
@@ -658,15 +696,25 @@ function showCalibrationFrame(index) {
  * Refreshes the captured calibration frames list and canvas.
  * @param {number | null} [preferredIndex=selectedCalibrationFrameIndex] - Preferred frame index.
  */
-async function refreshCalibrationFrames(preferredIndex = selectedCalibrationFrameIndex) {
+async function refreshCalibrationFrames(
+    preferredIndex = selectedCalibrationFrameIndex,
+) {
     if (!currentCameraBusId) return;
-    const payload = await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames`);
+    const payload = await fetchJson(
+        `/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames`,
+    );
     const frames = payload?.frames || [];
     calibrationHistoryFrames = frames;
     const count = payload?.frame_count || 0;
-    if (preferredIndex !== null && preferredIndex !== undefined && preferredIndex >= count) preferredIndex = count - 1;
+    if (
+        preferredIndex !== null &&
+        preferredIndex !== undefined &&
+        preferredIndex >= count
+    )
+        preferredIndex = count - 1;
     const status = getElement("utilsCalibrationStatus");
-    if (status) status.textContent = `${count} frames captured. 10 recommended.`;
+    if (status)
+        status.textContent = `${count} frames captured. 10 recommended.`;
     const list = getElement("utilsCalibrationFrames");
     if (list) {
         list.innerHTML = "";
@@ -677,15 +725,25 @@ async function refreshCalibrationFrames(preferredIndex = selectedCalibrationFram
             thumb.type = "button";
             thumb.className = "block w-full";
             thumb.innerHTML = `<img class="w-full h-16 object-cover bg-black" alt="Calibration frame #${frame.index + 1}" src="${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames/${frame.index}?t=${Date.now()}" /><span class="block py-1">#${frame.index + 1}</span>`;
-            thumb.addEventListener("click", () => showCalibrationFrame(frame.index));
+            thumb.addEventListener("click", () =>
+                showCalibrationFrame(frame.index),
+            );
             const del = document.createElement("button");
             del.type = "button";
-            del.className = "absolute right-1 top-1 px-1 rounded bg-black/70 text-white";
+            del.className =
+                "absolute right-1 top-1 px-1 rounded bg-black/70 text-white";
             del.textContent = "×";
             del.addEventListener("click", async (event) => {
                 event.stopPropagation();
-                await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames/${frame.index}`, { method: "DELETE" });
-                await refreshCalibrationFrames(frame.index === selectedCalibrationFrameIndex ? null : preferredIndex);
+                await fetchJson(
+                    `/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/frames/${frame.index}`,
+                    { method: "DELETE" },
+                );
+                await refreshCalibrationFrames(
+                    frame.index === selectedCalibrationFrameIndex
+                        ? null
+                        : preferredIndex,
+                );
                 updateCalibrationFeed();
             });
             tile.append(thumb, del);
@@ -697,6 +755,41 @@ async function refreshCalibrationFrames(preferredIndex = selectedCalibrationFram
 }
 
 /**
+ * Opens live corrected and distortion-grid views for the selected camera.
+ */
+function openDistortionModal() {
+    const selectedBusId = getElement("utilsCameraSelect")?.value;
+    if (!selectedBusId) {
+        showWarning("Select a camera first");
+        return;
+    }
+
+    currentCameraBusId = selectedBusId;
+    distortionModalOpen = true;
+    getElement("utilsDistortionModal")?.classList.remove("hidden");
+    const timestamp = Date.now();
+    const basePath = `${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(currentCameraBusId)}/distortion/feed`;
+    const undistortedFeed = getElement("utilsUndistortedFeed");
+    const distortedFeed = getElement("utilsDistortedFeed");
+    if (undistortedFeed)
+        undistortedFeed.src = `${basePath}?view=undistorted&t=${timestamp}`;
+    if (distortedFeed)
+        distortedFeed.src = `${basePath}?view=distorted&t=${timestamp}`;
+}
+
+/**
+ * Closes the distortion modal and stops both live streams.
+ */
+function closeDistortionModal() {
+    distortionModalOpen = false;
+    getElement("utilsDistortionModal")?.classList.add("hidden");
+    ["utilsUndistortedFeed", "utilsDistortedFeed"].forEach((id) => {
+        const image = getElement(id);
+        if (image) image.src = "";
+    });
+}
+
+/**
  * Opens the calibration modal for the selected camera.
  */
 async function openCalibrationModal() {
@@ -705,10 +798,11 @@ async function openCalibrationModal() {
         showWarning("Select a camera first");
         return;
     }
-    
+
     // Ensure we are operating on the currently selected camera in the utils tab.
     currentCameraBusId = selectedBusId;
-    const selectedOption = getElement("utilsCameraSelect")?.selectedOptions?.[0];
+    const selectedOption =
+        getElement("utilsCameraSelect")?.selectedOptions?.[0];
     currentCalibrationStreamName = selectedOption?.dataset?.streamName || "";
 
     calibrationModalOpen = true;
@@ -737,14 +831,21 @@ function closeCalibrationModal() {
 async function captureCalibrationFrame() {
     if (!currentCameraBusId || !calibrationModalOpen) return;
     try {
-        const result = await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/capture`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(calibrationPayload()),
-        });
+        const result = await fetchJson(
+            `/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/capture`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(calibrationPayload()),
+            },
+        );
         if (result?.squares_x && result?.squares_y) {
-            getElement("utilsCalibrationSquaresX").value = String(result.squares_x);
-            getElement("utilsCalibrationSquaresY").value = String(result.squares_y);
+            getElement("utilsCalibrationSquaresX").value = String(
+                result.squares_x,
+            );
+            getElement("utilsCalibrationSquaresY").value = String(
+                result.squares_y,
+            );
         }
         showSuccess("Calibration frame captured");
         await refreshCalibrationFrames(result?.frame_index ?? null);
@@ -759,7 +860,10 @@ async function captureCalibrationFrame() {
  */
 async function resetCalibrationFrames() {
     if (!currentCameraBusId) return;
-    await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/reset`, { method: "POST" });
+    await fetchJson(
+        `/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/reset`,
+        { method: "POST" },
+    );
     selectedCalibrationFrameIndex = null;
     await refreshCalibrationFrames(null);
     updateCalibrationFeed();
@@ -772,12 +876,17 @@ async function runCalibration() {
     if (!currentCameraBusId) return;
     setCalibrationBusy(true);
     try {
-        const result = await fetchJson(`/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(calibrationPayload()),
-        });
-        showSuccess(`Calibration saved. Reprojection error: ${result.reprojection_error?.toFixed?.(4) ?? result.reprojection_error}`);
+        const result = await fetchJson(
+            `/camera-config/${encodeURIComponent(currentCameraBusId)}/calibration/run`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(calibrationPayload()),
+            },
+        );
+        showSuccess(
+            `Calibration saved. Reprojection error: ${result.reprojection_error?.toFixed?.(4) ?? result.reprojection_error}`,
+        );
         closeCalibrationModal();
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
@@ -857,6 +966,7 @@ export function initCameraConfigUtils() {
     const refreshButton = getElement("utilsRefreshConfigBtn");
     const uploadButton = getElement("utilsUploadIntrinsicsBtn");
     const calibrateButton = getElement("utilsCalibrateIntrinsicsBtn");
+    const distortionButton = getElement("utilsViewDistortionBtn");
     const deleteButton = getElement("utilsDeleteIntrinsicsBtn");
     const fileInput = getElement("utilsIntrinsicsFileInput");
 
@@ -870,7 +980,8 @@ export function initCameraConfigUtils() {
 
     cameraSelect.addEventListener("change", () => {
         currentCameraBusId = cameraSelect.value;
-        currentCalibrationStreamName = cameraSelect.selectedOptions?.[0]?.dataset?.streamName || "";
+        currentCalibrationStreamName =
+            cameraSelect.selectedOptions?.[0]?.dataset?.streamName || "";
         void loadCameraConfig(currentCameraBusId);
         const selectedText =
             cameraSelect.options[cameraSelect.selectedIndex]?.text || "";
@@ -908,15 +1019,36 @@ export function initCameraConfigUtils() {
         void openCalibrationModal();
     });
 
+    distortionButton?.addEventListener("click", openDistortionModal);
+
     deleteButton?.addEventListener("click", () => {
         void deleteIntrinsics();
     });
 
-    document.addEventListener("backend-disconnected", closeCalibrationModal);
-    getElement("utilsCalibrationCloseBtn")?.addEventListener("click", closeCalibrationModal);
-    getElement("utilsCalibrationCaptureBtn")?.addEventListener("click", () => void captureCalibrationFrame());
-    getElement("utilsCalibrationResetBtn")?.addEventListener("click", () => void resetCalibrationFrames());
-    getElement("utilsCalibrationRunBtn")?.addEventListener("click", () => void runCalibration());
+    document.addEventListener("backend-disconnected", () => {
+        closeCalibrationModal();
+        closeDistortionModal();
+    });
+    getElement("utilsDistortionCloseBtn")?.addEventListener(
+        "click",
+        closeDistortionModal,
+    );
+    getElement("utilsCalibrationCloseBtn")?.addEventListener(
+        "click",
+        closeCalibrationModal,
+    );
+    getElement("utilsCalibrationCaptureBtn")?.addEventListener(
+        "click",
+        () => void captureCalibrationFrame(),
+    );
+    getElement("utilsCalibrationResetBtn")?.addEventListener(
+        "click",
+        () => void resetCalibrationFrames(),
+    );
+    getElement("utilsCalibrationRunBtn")?.addEventListener(
+        "click",
+        () => void runCalibration(),
+    );
     window.addEventListener("resize", drawCalibrationHistoryCanvas);
     [
         "utilsCalibrationSquaresX",
@@ -928,6 +1060,10 @@ export function initCameraConfigUtils() {
         getElement(id)?.addEventListener("change", updateCalibrationFeed);
     });
     document.addEventListener("keydown", (event) => {
+        if (distortionModalOpen && event.key === "Escape") {
+            closeDistortionModal();
+            return;
+        }
         if (!calibrationModalOpen) return;
         if (event.key === "Escape") closeCalibrationModal();
         if (event.key === " " || event.key.toLowerCase() === "c") {
