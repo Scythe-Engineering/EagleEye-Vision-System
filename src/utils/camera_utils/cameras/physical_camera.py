@@ -30,6 +30,11 @@ class OpenCvCapture:
     def __init__(self, camera_index: int, frame_width: int, frame_height: int) -> None:
         """Open the camera and request MJPEG at the given resolution.
 
+        Args:
+            camera_index: OpenCV camera device index.
+            frame_width: Requested frame width in pixels.
+            frame_height: Requested frame height in pixels.
+
         Raises:
             RuntimeError: If the camera cannot be opened.
         """
@@ -45,19 +50,41 @@ class OpenCvCapture:
         self.timestamp_source = "delivery"
 
     def set_frame_rate(self, frames_per_second: int) -> int:
-        """Request a capture rate and return what the backend reports."""
+        """Request a capture rate.
+
+        Args:
+            frames_per_second: Desired capture rate.
+
+        Returns:
+            The rate reported by OpenCV, or zero when unavailable.
+        """
         self.capture.set(cv2.CAP_PROP_FPS, frames_per_second)
         self.frame_rate = int(self.capture.get(cv2.CAP_PROP_FPS))
         return self.frame_rate
 
     def set_control(self, control_id: int, value: int) -> bool:
-        """Apply autofocus; other V4L2 controls have no OpenCV equivalent."""
+        """Apply an equivalent OpenCV camera control when supported.
+
+        Args:
+            control_id: V4L2 control identifier.
+            value: Control value to apply.
+
+        Returns:
+            Whether OpenCV accepted the control.
+        """
         if control_id != CID_FOCUS_AUTO:
             return False
         return bool(self.capture.set(cv2.CAP_PROP_AUTOFOCUS, value))
 
     def read(self, timeout_s: float = 1.0) -> CapturedFrame | None:
-        """Read one frame, stamping it at delivery time."""
+        """Read one frame, stamping it at delivery time.
+
+        Args:
+            timeout_s: Ignored because OpenCV provides no read timeout.
+
+        Returns:
+            The delivered frame, or ``None`` on read failure.
+        """
         del timeout_s  # cv2.VideoCapture.read() has no timeout control.
         success, frame = self.capture.read()
         if not success or frame is None:
@@ -179,7 +206,9 @@ class PhysicalCamera(Camera):
         """Pick the fastest rate the device will accept for this resolution."""
         available_fps = self.get_available_fps_for_resolution()
         if available_fps:
-            return backend.set_frame_rate(available_fps[0]) or available_fps[0]
+            achieved_fps = backend.set_frame_rate(available_fps[0])
+            if achieved_fps > 0:
+                return achieved_fps
 
         for candidate_fps in FALLBACK_FPS_CANDIDATES:
             achieved_fps = backend.set_frame_rate(candidate_fps)

@@ -10,7 +10,8 @@ class CapturedFrame:
     """A raw frame paired with the moment it was captured.
 
     Attributes:
-        image: Frame in BGR order, without rotation applied.
+        image: Frame without rotation applied. Color frames use BGR order;
+            a V4L2 backend latched to monochrome may return one grayscale plane.
         capture_monotonic_ns: Capture time on ``CLOCK_MONOTONIC``. Sources that
             can report a hardware capture time do so; the rest stamp delivery
             time, which is the best they can offer.

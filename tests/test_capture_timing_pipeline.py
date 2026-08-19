@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import time
+from collections import deque
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -109,7 +111,14 @@ def test_visualization_device_frame_is_unwrapped() -> None:
 
 
 def _latency_pipeline(*packets: TimedValue) -> Pipeline:
-    """Build a bare pipeline whose device inputs already produced packets."""
+    """Build a bare pipeline with completed timed outputs.
+
+    Args:
+        packets: Timed values to expose as operation outputs.
+
+    Returns:
+        A pipeline ready for capture-latency measurement.
+    """
     operations = {
         f"camera_{index}": Operation(
             ShapeOperation(),
@@ -126,7 +135,7 @@ def _latency_pipeline(*packets: TimedValue) -> Pipeline:
         Any,
         SimpleNamespace(
             operation_outputs={
-                uuid: packet for uuid, packet in zip(operations, packets)
+                uuid: packet for uuid, packet in zip(operations, packets, strict=True)
             }
         ),
     )
@@ -134,6 +143,7 @@ def _latency_pipeline(*packets: TimedValue) -> Pipeline:
 
 
 def test_capture_latency_measures_frame_age_on_the_monotonic_clock() -> None:
+    """Measure capture age using the monotonic clock."""
     captured_ns = time.monotonic_ns() - 40_000_000
     pipeline = _latency_pipeline(
         TimedValue(
@@ -149,7 +159,7 @@ def test_capture_latency_measures_frame_age_on_the_monotonic_clock() -> None:
 
 
 def test_capture_latency_reports_the_stalest_camera() -> None:
-    """A cycle is only as fresh as the oldest frame it consumed."""
+    """Report the oldest timed output produced by a completed cycle."""
     now_ns = time.monotonic_ns()
     pipeline = _latency_pipeline(
         TimedValue(
@@ -168,7 +178,74 @@ def test_capture_latency_reports_the_stalest_camera() -> None:
     assert latency_ms >= 90.0
 
 
-def test_capture_latency_is_absent_without_timed_device_inputs() -> None:
+def test_capture_latency_uses_the_timing_matched_async_result() -> None:
+    """Include an older async result rather than only the latest camera packet."""
+    now_ns = time.monotonic_ns()
+    pipeline = _latency_pipeline(
+        TimedValue(
+            np.zeros((2, 2), dtype=np.uint8),
+            TimingMetadata(capture_nt_us=1, capture_monotonic_ns=now_ns - 5_000_000),
+        )
+    )
+    pipeline.flow_manager.operation_outputs["async"] = {
+        "frame": TimedValue(
+            np.zeros((2, 2), dtype=np.uint8),
+            TimingMetadata(
+                capture_nt_us=2,
+                capture_monotonic_ns=now_ns - 100_000_000,
+            ),
+        )
+    }
+
+    latency_ms = pipeline._capture_latency_ms()
+
+    assert latency_ms is not None
+    assert latency_ms >= 100.0
+
+
+def test_capture_latency_is_absent_without_timed_outputs() -> None:
+    """Return no latency when a cycle produced no timed values."""
     pipeline = _latency_pipeline()
 
     assert pipeline._capture_latency_ms() is None
+
+
+def test_skipped_cycle_does_not_modify_the_previous_profile() -> None:
+    """Do not attach current timing fields when no new snapshot was recorded."""
+
+    class SkippedFlowManager:
+        """Flow manager stand-in for an aborted pipeline cycle."""
+
+        def __init__(self) -> None:
+            self.operation_outputs: dict[str, Any] = {}
+
+        def run_flow(self) -> bool:
+            """Report that the flow aborted before profiling."""
+            return False
+
+        def set_latest_profile_cycle_time(self, _cycle_time_ms: float) -> None:
+            """Fail if a skipped cycle attempts to mutate the prior snapshot."""
+            raise AssertionError("stale profile was modified")
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.limit_frames_to_camera_capture_speed = False
+    pipeline.flow_manager = SkippedFlowManager()
+    pipeline.total_time_history = deque(maxlen=1)
+    pipeline.total_time_history_lock = threading.Lock()
+
+    pipeline.run()
+
+
+def test_fake_timing_lookup_does_not_advance_the_frame_sequence() -> None:
+    """Keep timing inspection observational like the production manager."""
+    manager = FakeCameraThreadManager(default_frame=dummy_frame)
+    manager.add_camera("camera")
+    manager.register_bus_id("bus", "camera")
+    worker = manager.cameras["camera"]
+    worker.get_current_packet()
+    frame_seq = worker.frame_seq
+
+    manager.get_current_timing_by_bus_id("bus")
+    manager.get_current_timing_by_bus_id("bus")
+
+    assert worker.frame_seq == frame_seq

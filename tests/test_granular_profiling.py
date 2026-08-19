@@ -156,7 +156,7 @@ def _assert_profile_contract(snapshot: dict[str, Any]) -> None:
 
 def test_direct_flow_records_profile_snapshot() -> None:
     flow_manager = _build_direct_flow_manager()
-    flow_manager.run_flow()
+    assert flow_manager.run_flow()
 
     snapshot = flow_manager.get_latest_profile_snapshot()
     assert snapshot is not None
@@ -179,7 +179,7 @@ def test_threaded_flow_records_profile_snapshot() -> None:
     flow_manager = _build_threaded_flow_manager()
     assert flow_manager.num_threads > 1
 
-    flow_manager.run_flow()
+    assert flow_manager.run_flow()
     snapshot = flow_manager.get_latest_profile_snapshot()
     assert snapshot is not None
     _assert_profile_contract(snapshot)
@@ -201,7 +201,7 @@ def test_none_abort_does_not_publish_profile_snapshot() -> None:
         pipeline_name="Abort",
     )
 
-    flow_manager.run_flow()
+    assert not flow_manager.run_flow()
     assert flow_manager.get_latest_profile_snapshot() is None
 
 

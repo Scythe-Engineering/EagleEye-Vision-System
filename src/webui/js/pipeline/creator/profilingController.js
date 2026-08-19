@@ -400,6 +400,9 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
     const captureLatencyMs = Number(snapshot.capture_latency_ms);
     const fpsIntervalMs = Number.isFinite(cycleMs) && cycleMs > 0 ? cycleMs : frameMs;
     const fps = Number.isFinite(fpsIntervalMs) && fpsIntervalMs > 0 ? (1000 / fpsIntervalMs).toFixed(1) : "—";
+    const frameMsLabel = Number.isFinite(frameMs) && frameMs > 0 ? frameMs.toFixed(2) + " ms" : "—";
+    const cycleMsLabel = Number.isFinite(cycleMs) && cycleMs > 0 ? cycleMs.toFixed(2) + " ms" : "—";
+    const captureLatencyMsLabel = Number.isFinite(captureLatencyMs) && captureLatencyMs >= 0 ? captureLatencyMs.toFixed(2) + " ms" : "—";
     const seq = snapshot.frame_seq != null ? String(snapshot.frame_seq) : "—";
     const tsMs = Number(snapshot.timestamp_ms);
     const tsLabel = Number.isFinite(tsMs) ? new Date(tsMs).toLocaleString() : "—";
@@ -414,9 +417,9 @@ function buildProfilingDetailsHtml(snapshot, pipelineName, hint = {}) {
     parts.push(
         `<div class="grid gap-2 text-sm">`,
         `<div><span class="text-[#888]">Pipeline</span> · <span class="text-[#f1f1f1] font-medium">${escapeHtml(pipelineName)}</span></div>`,
-        `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${Number.isFinite(frameMs) && frameMs > 0 ? `${frameMs.toFixed(2)} ms` : "—"}</span></div>`,
-        `<div><span class="text-[#888]">Pipeline cycle</span> · <span class="text-[#f1f1f1]">${Number.isFinite(cycleMs) && cycleMs > 0 ? `${cycleMs.toFixed(2)} ms` : "—"}</span>` + (fps !== "—" ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>` : "") + ` <span class="text-[#777] text-xs">includes fresh-input wait</span></div>`,
-        `<div><span class="text-[#888]">Capture latency</span> · <span class="text-[#f1f1f1]">${Number.isFinite(captureLatencyMs) && captureLatencyMs >= 0 ? `${captureLatencyMs.toFixed(2)} ms` : "—"}</span> <span class="text-[#777] text-xs">frame age at cycle end; the delay vision measurements carry</span></div>`,
+        `<div><span class="text-[#888]">Frame wall time</span> · <span class="text-[#f1f1f1]">${frameMsLabel}</span></div>`,
+        `<div><span class="text-[#888]">Pipeline cycle</span> · <span class="text-[#f1f1f1]">${cycleMsLabel}</span>` + (fps !== "—" ? ` <span class="text-[#9ad1a8]">(~${fps} FPS)</span>` : "") + ` <span class="text-[#777] text-xs">includes fresh-input wait</span></div>`,
+        `<div><span class="text-[#888]">Capture latency</span> · <span class="text-[#f1f1f1]">${captureLatencyMsLabel}</span> <span class="text-[#777] text-xs">frame age at cycle end; the delay vision measurements carry</span></div>`,
         `<div><span class="text-[#888]">Frame sequence</span> · <span class="text-[#f1f1f1]">${escapeHtml(seq)}</span></div>`,
         `<div><span class="text-[#888]">Recorded at</span> · <span class="text-[#f1f1f1]">${escapeHtml(tsLabel)}</span></div>`,
         `</div></div>`,

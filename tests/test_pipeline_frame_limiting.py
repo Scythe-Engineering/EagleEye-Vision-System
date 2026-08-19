@@ -189,7 +189,7 @@ def test_whole_pipeline_runs_only_when_all_camera_inputs_are_fresh() -> None:
             self.previous_operation_outputs: dict[str, Any] = {}
             self.call_count = 0
 
-        def run_flow(self) -> None:
+        def run_flow(self) -> bool:
             self.call_count += 1
             for operation_uuid in pipeline.device_input_uuids:
                 operation = pipeline.operations[operation_uuid]
@@ -198,6 +198,7 @@ def test_whole_pipeline_runs_only_when_all_camera_inputs_are_fresh() -> None:
                         operation.instance.camera_bus_id
                     )
                 )
+            return True
 
         def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
             self.cycle_time_ms = cycle_time_ms

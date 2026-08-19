@@ -39,13 +39,12 @@ exactly.
 
 ### 1.2 Where the stamp is created
 
-The timestamp originates at the driver, not in Python. `Camera.get_frame()`
-returns a `CapturedFrame` — the image plus `capture_monotonic_ns` — and each
-backend supplies the best capture time it can:
+`Camera.get_frame()` returns a `CapturedFrame` — the image plus
+`capture_monotonic_ns` — and each backend supplies the best timestamp it can:
 
 | Backend | Platform | Timestamp |
 | --- | --- | --- |
-| `V4l2Capture` | Linux | Kernel `v4l2_buffer.timestamp`, start-of-exposure where the driver reports it |
+| `V4l2Capture` | Linux | Monotonic kernel `v4l2_buffer.timestamp` when reported; otherwise delivery time |
 | `OpenCvCapture` | non-Linux dev hosts | Delivery time, stamped when `read()` returns |
 | `VideoFileCamera` | replay | Delivery time; replayed frames have no capture instant |
 
@@ -91,11 +90,13 @@ properties matter:
    (~100–200 KB, tens of microseconds), the buffer goes straight back to the
    driver, and `cv2.imdecode` runs outside the window where the queue could
    starve.
+4. **Monochrome decode is inferred from startup frames.** If the first five
+   frames all have neutral chroma, later frames decode as one grayscale plane.
+   This intentionally assumes a color camera shows chroma during startup.
 
-`uvcvideo` derives its timestamp from the UVC payload header clock and the USB
-SOF counter, so it reflects the sensor rather than when this process was
-scheduled. When a driver reports a non-monotonic timestamp the backend logs once
-and falls back to delivery time, which is no worse than the old behaviour.
+When a monotonic timestamp is present, `uvcvideo` derives it from the UVC
+payload header clock and USB SOF counter. Drivers without that flag fall back to
+delivery time; the backend logs the fallback once.
 
 ### 1.3 Entering the pipeline
 
@@ -172,8 +173,8 @@ inference safe: a 3-frame-deep queue does not smear the timestamp.
 
 ### 1.8 End-to-end summary
 
-```
-driver:        v4l2_buffer.timestamp (CLOCK_MONOTONIC, sensor-derived)
+```text
+driver:        monotonic v4l2_buffer.timestamp, or delivery-time fallback
 camera thread: drain to newest -> requeue -> decode -> CapturedFrame
              -> monotonic_ns_to_nt_us() -> TimedValue(frame, timing)
              -> cached + current packet (condition notify on frame_seq change)
@@ -187,11 +188,11 @@ robot        -> sample.timestamp (local/FPGA us) -> addVisionMeasurement
 
 ### 1.9 The latency metric
 
-`Pipeline._capture_latency_ms` runs after every cycle. It takes the oldest
-`capture_monotonic_ns` among the Device Input packets that cycle consumed and
-subtracts it from `time.monotonic_ns()`, giving the age of the frame the
-pipeline just finished computing on. The oldest is used because a cycle is only
-as fresh as its stalest camera.
+`Pipeline._capture_latency_ms` runs after every completed cycle. It takes the
+oldest `capture_monotonic_ns` among that cycle's timed outputs and subtracts it
+from `time.monotonic_ns()`. Including operation outputs ensures async inference
+uses the older frame matched to its completed result, not the camera's latest
+packet.
 
 The value rides the existing profiling snapshot as `capture_latency_ms`, is
 pushed over SSE as part of `profiling_update`, and appears in the pipeline
@@ -206,10 +207,11 @@ FPS tells you throughput, latency tells you how stale the pose is.
 
 ### 2.1 Residual capture latency
 
-The V4L2 backend removes USB transfer, decode, and scheduler jitter from the
-stamp. What remains is whatever the driver's own timestamp does not account for:
-on `uvcvideo` that is small, but a device reporting end-of-frame rather than
-start-of-exposure still lags true mid-exposure by roughly the exposure time.
+A monotonic V4L2 buffer timestamp removes USB transfer, decode, and scheduler
+jitter from the stamp. On `uvcvideo` the residual is small, but a device
+reporting end-of-frame rather than start-of-exposure still lags true
+mid-exposure by roughly the exposure time. A driver without a monotonic buffer
+timestamp falls back to delivery time and retains those delays.
 
 If residual bias shows up (see section 3.6), add a per-camera constant
 subtracted at stamp time. A systematic timestamp bias becomes a pose bias
@@ -278,7 +280,7 @@ the capture time of the frame the value was derived from, expressed in the NT
 clock. On the robot, `TimestampedX.timestamp` from a subscriber is that same
 instant expressed in the robot's local base — the FPGA microsecond clock. So:
 
-```
+```text
 timestampSeconds = sample.timestamp / 1_000_000.0
 ```
 

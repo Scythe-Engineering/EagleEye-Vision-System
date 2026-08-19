@@ -212,16 +212,13 @@ class ColorThresholdDetectionImplementation:
                 - Combined thresholded mask as BGR image (for visualization)
 
         Raises:
-            ValueError: If the frame has no colour channels. A monochrome camera
-                decodes to a single plane, and HSV thresholding on it would
-                silently match nothing rather than fail.
+            ValueError: If the frame is not a three-channel BGR image.
         """
-        if frame.ndim != 3:
+        if frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError(
-                "Color threshold detection needs a colour frame, but received a "
-                f"single-channel frame of shape {frame.shape}. This camera was "
-                "detected as monochrome, so it cannot drive colour thresholding; "
-                "use a colour camera for this operation."
+                "Color threshold detection requires a three-channel BGR frame, "
+                f"but received shape {frame.shape}. Monochrome cameras cannot "
+                "drive colour thresholding; use a colour camera for this operation."
             )
 
         letterboxed_frame, (resized_width, resized_height), (pad_x, pad_y) = (

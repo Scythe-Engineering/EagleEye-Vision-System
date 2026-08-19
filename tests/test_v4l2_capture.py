@@ -6,7 +6,9 @@ import sys
 import numpy as np
 import pytest
 
+from src.utils.camera_utils.camera_thread_manager import CameraWorker
 from src.utils.camera_utils.cameras import v4l2_capture
+from src.utils.camera_utils.cameras.physical_camera import DEFAULT_FPS, PhysicalCamera
 from src.utils.camera_utils.cameras.v4l2_capture import (
     BUF_FLAG_ERROR,
     BUF_FLAG_TIMESTAMP_MONOTONIC,
@@ -217,6 +219,60 @@ def test_probe_needs_every_frame_to_be_neutral() -> None:
         capture._classify_decode_mode(_solid_bgr((0, 0, 255)) if index == 2 else grey)
 
     assert capture.decodes_grayscale is False
+
+
+def test_failed_advertised_fps_negotiation_uses_fallbacks() -> None:
+    """Do not report an advertised rate that the backend rejected."""
+    camera = PhysicalCamera.__new__(PhysicalCamera)
+    camera.get_available_fps_for_resolution = lambda: [120]
+
+    class RejectingBackend:
+        """Capture backend that rejects every requested rate."""
+
+        def __init__(self) -> None:
+            self.requests: list[int] = []
+
+        def set_frame_rate(self, frames_per_second: int) -> int:
+            """Record and reject a requested frame rate."""
+            self.requests.append(frames_per_second)
+            return 0
+
+    backend = RejectingBackend()
+
+    assert camera._negotiate_frame_rate(backend) == DEFAULT_FPS
+    assert len(backend.requests) > 1
+
+
+def test_worker_does_not_close_camera_while_its_thread_is_alive() -> None:
+    """Avoid tearing down capture resources under an active reader."""
+
+    class LiveThread:
+        """Thread stand-in that remains alive after joining."""
+
+        def join(self, timeout: float) -> None:
+            """Accept the worker's bounded join request."""
+
+        def is_alive(self) -> bool:
+            """Report that the simulated reader is still running."""
+            return True
+
+    class CameraStub:
+        """Camera stand-in that records closure."""
+
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            """Record that close was called."""
+            self.closed = True
+
+    camera = CameraStub()
+    worker = CameraWorker("test", camera)  # type: ignore[arg-type]
+    worker.thread = LiveThread()  # type: ignore[assignment]
+
+    worker.stop(timeout=0.0)
+
+    assert not camera.closed
 
 
 def test_read_decodes_grayscale_once_the_probe_has_latched(monkeypatch) -> None:

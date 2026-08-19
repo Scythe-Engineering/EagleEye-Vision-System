@@ -8,9 +8,8 @@ actually captured.
 This module talks to V4L2 directly so that:
 
 * several buffers stay queued, keeping the driver fed at full frame rate;
-* every dequeued buffer carries the kernel's ``CLOCK_MONOTONIC`` capture
-  timestamp, which ``uvcvideo`` derives from the camera's own clock rather than
-  from when this process was scheduled;
+* a driver-provided ``CLOCK_MONOTONIC`` buffer timestamp is preserved, with a
+  delivery-time fallback when the driver does not provide one;
 * the compressed payload is copied out and the buffer is requeued immediately,
   moving JPEG decode out of the window where the driver has nowhere to write.
 
@@ -61,14 +60,17 @@ def _ioc(direction: int, type_char: str, number: int, size: int) -> int:
 
 
 def _iow(type_char: str, number: int, size: int) -> int:
+    """Encode an ioctl request that copies data to the kernel."""
     return _ioc(_IOC_WRITE, type_char, number, size)
 
 
 def _ior(type_char: str, number: int, size: int) -> int:
+    """Encode an ioctl request that copies data from the kernel."""
     return _ioc(_IOC_READ, type_char, number, size)
 
 
 def _iowr(type_char: str, number: int, size: int) -> int:
+    """Encode a bidirectional ioctl request."""
     return _ioc(_IOC_READ | _IOC_WRITE, type_char, number, size)
 
 
@@ -253,6 +255,7 @@ class V4l2Capture:
     The queue is kept deliberately deep. Depth costs nothing here because every
     buffer carries its own capture timestamp and :meth:`read` always drains to
     the newest frame, so a backlog is discarded rather than delivered late.
+    After startup probing, ``decodes_grayscale`` exposes the latched decode mode.
     """
 
     def __init__(
@@ -537,9 +540,9 @@ class V4l2Capture:
         driver fed and avoids paying for a decode that would be thrown away.
 
         The first few frames are decoded in colour to measure whether the camera
-        carries any chroma. A monochrome camera then decodes as single-channel
-        for the rest of the session, which is both faster and free of the JPEG
-        chroma ringing that colour decoding folds into the luma.
+        carries any chroma. A camera whose startup frames all have neutral chroma
+        then decodes as single-channel for the rest of the session. This heuristic
+        intentionally assumes a color camera shows chroma during startup.
 
         Args:
             timeout_s: How long to wait for the device to become readable.

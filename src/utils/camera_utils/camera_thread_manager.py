@@ -140,10 +140,12 @@ class CameraWorker:
         self.thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
-        """Stop the camera worker thread and release the camera."""
+        """Stop the worker and close its camera once no read can be active."""
         self.running = False
         if self.thread:
             self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                return
         self.camera.close()
 
 

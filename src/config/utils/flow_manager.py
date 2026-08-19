@@ -242,16 +242,18 @@ class FlowManager:
         self._profile_seq = 0
 
     @profile
-    def run_flow(self) -> None:
-        """Run the flow of operations using timestep-based execution.
+    def run_flow(self) -> bool:
+        """Run the flow and report whether it recorded a profile snapshot.
 
-        Automatically uses direct execution for single-threaded pipelines,
-        or threaded execution for multi-threaded pipelines.
+        Returns:
+            ``True`` when the cycle completed, otherwise ``False``.
         """
+        profile_seq_before = self._profile_seq
         if self.num_threads == 1:
             self._run_flow_direct()
         else:
             self._run_flow_threaded()
+        return self._profile_seq > profile_seq_before
 
     @profile
     def _run_flow_direct(self) -> None:
