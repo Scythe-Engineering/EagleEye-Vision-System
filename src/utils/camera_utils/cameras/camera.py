@@ -1,8 +1,7 @@
 import abc
 from typing import Callable, Optional
 
-import numpy as np
-
+from src.utils.camera_utils.cameras.captured_frame import CapturedFrame
 from src.utils.colors import Colors
 
 
@@ -27,7 +26,6 @@ class Camera(abc.ABC):
         self.name: str = camera_name
         self.log = log
         self.camera_ready: bool = False
-        self.cap = None
 
         self.log(
             f"{Colors.CYAN}Camera: {self.name} initialized (calibration-agnostic){Colors.RESET}"
@@ -41,11 +39,12 @@ class Camera(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def get_frame(self) -> Optional[np.ndarray]:
-        """Retrieve a raw frame without any rotation or transformation.
+    def get_frame(self) -> Optional[CapturedFrame]:
+        """Retrieve a raw frame and its capture time, without rotation.
 
         Returns:
-            The latest frame, or None on failure/end-of-stream.
+            The latest frame with its capture timestamp, or None on
+            failure/end-of-stream.
         """
         pass
 
@@ -57,6 +56,9 @@ class Camera(abc.ABC):
             Achieved FPS value.
         """
         pass
+
+    def close(self) -> None:
+        """Release backend resources. Safe to call more than once."""
 
     def get_name(self) -> str:
         """Returns the human-readable name of this camera."""

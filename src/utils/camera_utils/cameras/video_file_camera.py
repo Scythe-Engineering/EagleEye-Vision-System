@@ -1,9 +1,13 @@
+import time
+from typing import Callable
+
 import cv2
 import numpy as np
-from typing import Callable
-from src.utils.camera_utils.cameras.camera import Camera
-from src.utils.colors import Colors
 from tqdm import tqdm
+
+from src.utils.camera_utils.cameras.camera import Camera
+from src.utils.camera_utils.cameras.captured_frame import CapturedFrame
+from src.utils.colors import Colors
 
 
 class VideoFileCamera(Camera):
@@ -54,18 +58,25 @@ class VideoFileCamera(Camera):
         if not self.cap.isOpened():
             raise RuntimeError(f"Error opening video file {self.video_path}")
 
-    def get_frame(self) -> np.ndarray | None:
+    def get_frame(self) -> CapturedFrame | None:
         """Read the next raw frame without rotation.
 
+        Replayed frames have no meaningful capture time, so they are stamped
+        when handed out.
+
         Returns:
-            Raw frame as numpy array, or None when video ends (loops back to start).
+            The next frame with its delivery timestamp, or None when the file
+            holds no frames. Playback loops back to the start.
         """
+        if not self.frames:
+            return None
+
         if self.current_frame_index >= len(self.frames):
             self.current_frame_index = 0
 
         frame = self.frames[self.current_frame_index]
         self.current_frame_index += 1
-        return frame
+        return CapturedFrame(image=frame, capture_monotonic_ns=time.monotonic_ns())
 
     def get_frame_index(self) -> int:
         """Return the current frame index."""
@@ -75,7 +86,11 @@ class VideoFileCamera(Camera):
         """Get the FPS that the video file is set to play at."""
         return int(self.cap.get(cv2.CAP_PROP_FPS))
 
+    def close(self) -> None:
+        """Release the video capture object."""
+        if getattr(self, "cap", None) is not None and self.cap.isOpened():
+            self.cap.release()
+
     def __del__(self) -> None:
         """Release the video capture object."""
-        if hasattr(self, "cap") and self.cap.isOpened():
-            self.cap.release()
+        self.close()

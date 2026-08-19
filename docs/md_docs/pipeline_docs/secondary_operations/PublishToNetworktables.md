@@ -53,7 +53,9 @@ if (sample.timestamp != 0) {
 
 No separate latency topic or latency subtraction is required for this path. Values with no timing metadata are published using the normal publish-time timestamp.
 
-The camera timestamp is taken immediately after `camera.get_frame()` returns. It is a software acquisition timestamp, not a hardware exposure timestamp. A reused cached frame retains its original timestamp, so robot code should reject measurements that are too old or duplicate according to its application policy.
+On Linux, a driver-provided monotonic V4L2 buffer timestamp excludes USB transfer, JPEG decode, and scheduler delay. Drivers without that timestamp flag, and other platforms, fall back to stamping when the frame is delivered. A reused cached frame retains its original timestamp, so robot code should reject measurements that are too old or duplicate according to its application policy.
+
+See [Time Synchronization](../../../overviews/TIME_SYNCHRONIZATION.md) for the full capture-to-robot path and the WPILib pose estimator integration.
 
 ## Examples
 

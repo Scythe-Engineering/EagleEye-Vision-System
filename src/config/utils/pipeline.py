@@ -28,7 +28,7 @@ from src.utils.device_registry import DeviceRegistry
 from src.utils.logging.logger import Logger
 from src.utils.model_library import ModelLibrary
 from src.utils.mx3_runtime import Mx3RuntimeCoordinator
-from src.utils.timing import TimedValue, unwrap_timed
+from src.utils.timing import TimedValue, collect_timings, unwrap_timed
 
 if TYPE_CHECKING:
     from src.utils.camera_utils.camera_thread_manager import CameraThreadManager
@@ -510,6 +510,24 @@ class Pipeline:
                 return False
         return True
 
+    def _capture_latency_ms(self) -> float | None:
+        """Return the age of the oldest timed value produced by this cycle.
+
+        Reading every current output includes timing-matched async results,
+        which may describe an older frame than the latest camera packet.
+
+        Returns:
+            Latency in milliseconds, or None when the cycle produced no timing.
+        """
+        capture_times_ns = [
+            timing.capture_monotonic_ns
+            for output in self.flow_manager.operation_outputs.values()
+            for timing in collect_timings(output)
+        ]
+        if not capture_times_ns:
+            return None
+        return (time.monotonic_ns() - min(capture_times_ns)) / 1_000_000.0
+
     def _record_device_input_tokens(self) -> None:
         """Record the exact Device Input packets consumed by the completed run."""
         for operation_uuid in self.device_input_uuids:
@@ -677,14 +695,20 @@ class Pipeline:
             not self.limit_frames_to_camera_capture_speed
             or self._wait_for_fresh_device_inputs()
         )
+        completed = False
         if should_run:
-            self.flow_manager.run_flow()
+            completed = self.flow_manager.run_flow()
             if self.limit_frames_to_camera_capture_speed:
                 self._record_device_input_tokens()
 
         elapsed = time.time() - start_time
-        if should_run:
+        if completed:
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
+            capture_latency_ms = self._capture_latency_ms()
+            if capture_latency_ms is not None:
+                self.flow_manager.set_latest_profile_capture_latency(
+                    capture_latency_ms
+                )
         with self.total_time_history_lock:
             self.total_time_history.append(elapsed)
 

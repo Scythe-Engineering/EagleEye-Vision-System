@@ -20,6 +20,12 @@ Complete documentation for the web-based user interface and API:
 
 The old mutable compute-pool abstraction has been removed. See the [Object Detection operation](../md_docs/pipeline_docs/main_operations/ObjectDetection.md) for canonical device IDs, managed model artifacts, and deterministic CPU/CUDA resolution.
 
+### [Time Synchronization](./TIME_SYNCHRONIZATION.md)
+
+How frame capture timestamps are produced, propagated through the pipeline, and
+published over NetworkTables, plus how robot code should consume them in a
+WPILib pose estimator.
+
 ### [Pipeline Operations](../md_docs/pipeline_docs/)
 
 Complete documentation for all pipeline operations:

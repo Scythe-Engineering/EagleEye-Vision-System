@@ -109,20 +109,10 @@ class DeviceInput(OperationInstance):
         Returns:
             Timestamped frame packet with rotation applied, or None if unavailable.
         """
-        get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
-        if callable(get_packet):
-            packet = get_packet(self.camera_bus_id)
-            if packet is None:
-                return None
-            return TimedValue(self._apply_rotation(packet.value), packet.timing)
-
-        frame_result = self.camera_manager.get_current_frame_by_bus_id(
-            self.camera_bus_id
-        )
-        if frame_result is not None:
-            frame, _ = frame_result
-            return self._apply_rotation(frame)
-        return None
+        packet = self.camera_manager.get_current_packet_by_bus_id(self.camera_bus_id)
+        if packet is None:
+            return None
+        return TimedValue(self._apply_rotation(packet.value), packet.timing)
 
     def _require_running_worker(self) -> None:
         """Fail fast when the configured camera's worker is gone or stopped.
@@ -150,10 +140,7 @@ class DeviceInput(OperationInstance):
 
     def latest_frame_seq(self) -> int | None:
         """Return the newest captured frame sequence for this camera."""
-        get_timing = getattr(self.camera_manager, "get_current_timing_by_bus_id", None)
-        if not callable(get_timing):
-            return None
-        timing = get_timing(self.camera_bus_id)
+        timing = self.camera_manager.get_current_timing_by_bus_id(self.camera_bus_id)
         return timing.frame_seq if timing is not None else None
 
     def wait_for_next_packet(
@@ -168,8 +155,7 @@ class DeviceInput(OperationInstance):
             should_continue: Callback that remains true while waiting is allowed.
 
         Returns:
-            The next transformed packet, or ``None`` when waiting stops or the
-            manager cannot provide timestamped packets.
+            The next transformed packet, or ``None`` when waiting stops.
 
         Raises:
             RuntimeError: If the configured camera or its worker is unknown.
@@ -185,12 +171,9 @@ class DeviceInput(OperationInstance):
                 continue
             if not should_continue():
                 return None
-            get_packet = getattr(
-                self.camera_manager, "get_current_packet_by_bus_id", None
+            packet = self.camera_manager.get_current_packet_by_bus_id(
+                self.camera_bus_id
             )
-            if not callable(get_packet):
-                return None
-            packet = get_packet(self.camera_bus_id)
             if (
                 packet is not None
                 and packet.timing.frame_seq is not None

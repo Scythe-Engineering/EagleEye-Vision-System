@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -287,6 +287,17 @@ class FakeCameraWorker:
     thread: Optional[object] = None
     frame_seq: int = 0
 
+    def _current_timing(self) -> Optional[TimingMetadata]:
+        """Build timing for the fake's current frame without advancing it."""
+        if self.frame is None:
+            return None
+        return TimingMetadata(
+            capture_nt_us=int(self.timestamp * 1000) or 1,
+            capture_monotonic_ns=1,
+            camera_name="fake_camera",
+            frame_seq=self.frame_seq,
+        )
+
     def get_current_packet(self) -> FramePacket | None:
         """Return the latest frame with deterministic timing metadata.
 
@@ -299,26 +310,13 @@ class FakeCameraWorker:
         if self.frame is None:
             return None
         self.frame_seq += 1
-        return TimedValue(
-            self.frame,
-            TimingMetadata(
-                capture_nt_us=int(self.timestamp * 1000) or 1,
-                capture_monotonic_ns=1,
-                camera_name="fake_camera",
-                source="test",
-                frame_seq=self.frame_seq,
-            ),
-        )
+        timing = self._current_timing()
+        assert timing is not None
+        return TimedValue(self.frame, timing)
 
-    def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
-        """Return the latest frame and timestamp.
-
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: Current frame pair, or ``None``.
-        """
-        if self.frame is None:
-            return None
-        return self.frame, self.timestamp
+    def get_current_timing(self) -> Optional[TimingMetadata]:
+        """Return the current packet's timing without advancing its sequence."""
+        return self._current_timing()
 
 
 @dataclass
@@ -398,20 +396,20 @@ class FakeCameraThreadManager:
         """
         return self.bus_id_to_name.get(bus_id)
 
-    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
-        """Get the latest frame tuple for a camera by name.
+    def get_current_timing_by_bus_id(self, bus_id: str) -> Optional[TimingMetadata]:
+        """Get the latest capture timing for a camera bus ID.
 
         Args:
-            camera_name: Camera name to query.
+            bus_id: Camera bus identifier.
 
         Returns:
-            Optional[Tuple[np.ndarray, float]]: ``(frame, timestamp)`` when the
-            camera exists and has a frame, otherwise ``None``.
+            Optional[TimingMetadata]: Current timing, or ``None`` when unavailable.
         """
-        worker = self.camera_objects.get(camera_name)
-        if worker is None:
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
             return None
-        return worker.get_current_frame()
+        worker = self.camera_objects.get(camera_name)
+        return worker.get_current_timing() if worker is not None else None
 
     def get_current_packet_by_bus_id(self, bus_id: str) -> FramePacket | None:
         """Get the latest timestamped frame packet for a camera bus ID.
@@ -429,23 +427,6 @@ class FakeCameraThreadManager:
         if worker is None:
             return None
         return worker.get_current_packet()
-
-    def get_current_frame_by_bus_id(
-        self, bus_id: str
-    ) -> Optional[Tuple[np.ndarray, float]]:
-        """Get the latest frame tuple for a camera by bus ID.
-
-        Args:
-            bus_id: Camera bus identifier.
-
-        Returns:
-            Optional[Tuple[np.ndarray, float]]: ``(frame, timestamp)`` when the
-            bus ID maps to a camera with an available frame, otherwise ``None``.
-        """
-        camera_name = self.get_camera_name_by_bus_id(bus_id)
-        if camera_name is None:
-            return None
-        return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
         """Return all registered camera bus IDs.
