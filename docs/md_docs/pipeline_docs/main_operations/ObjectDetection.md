@@ -1,45 +1,32 @@
-# Object Detection
+# Object detection
 
-`object_detection` runs synchronous Ultralytics-compatible YOLO **detection** on one explicitly selected CPU or NVIDIA CUDA device. It does not support segmentation, pose, classification, arbitrary ONNX detectors, fallback, or load balancing.
+`object_detection` runs synchronous Ultralytics-compatible YOLO detection on a selected CPU or NVIDIA CUDA device.
 
-## Input and output
+## Inputs
 
-- Input: BGR NumPy frame.
-- Output: a list of detections:
+- `frame`: a BGR NumPy image.
 
-```python
-{
-    "bbox": [x1, y1, x2, y2],  # normalized and clipped Python floats
-    "confidence": float,
-    "class_id": int,
-    "class_name": str,         # present when model/library names are available
-}
-```
+## Outputs
+
+- `detections`: a list of dictionaries containing normalized, clipped `bbox` coordinates, `confidence`, `class_id`, and `class_name` when class names are available.
+
+## When to use
+
+Use this operation for synchronous YOLO detection on CPU or CUDA. Use `mx3_async_object_detection` for a MemryX MX3 device.
 
 ## Configuration
 
-| Setting | Behavior | Live update |
+| Setting | Default | Notes |
 | --- | --- | --- |
-| `model_id` | Required stable ID from Model Library | No |
-| `device_id` | Required canonical ID (`cpu`, `cuda:0`, …) | No |
-| `confidence_threshold` | Minimum result confidence | Yes |
-| `iou_threshold` | NMS IoU threshold | Yes |
-| `max_detections` | Maximum results per frame | Yes |
-| `image_size` | Square override; `0` uses model/export metadata | No |
+| `model_id` | required | Stable model ID selected from Model Library. Requires restart. |
+| `device_id` | `cpu` | Canonical `cpu` or `cuda:N` device ID. Requires restart. |
+| `confidence_threshold` | `0.25` | Minimum confidence, 0.0 to 1.0. |
+| `iou_threshold` | `0.45` | Non-maximum-suppression IoU threshold, 0.0 to 1.0. |
+| `max_detections` | `100` | Maximum results per frame, 1 to 1000. |
+| `image_size` | `0` | Square inference-size override. `0` uses model metadata. Requires restart. |
 
-The operation owns its Ultralytics model instance. Only changes to `image_size`, `model_id`, or `device_id` require a backend restart.
+## Important behavior and limitations
 
-## Artifact selection
+The operation supports detection models only. It does not support segmentation, pose, classification, fallback, or device load balancing.
 
-Models are uploaded through **Model Library** and copied below `files/models/<model-id>/`. Pipelines store only the stable model ID.
-
-Selection is deterministic:
-
-- CPU: ONNX, then PT.
-- CUDA: TensorRT engine, then PT, then ONNX.
-
-CUDA ONNX is accepted only when `onnxruntime-gpu` activates `CUDAExecutionProvider` on the exact selected index. It fails rather than silently executing on CPU. TensorRT image-size overrides are rejected; fixed-shape ONNX overrides must match the export shape.
-
-## MX3
-
-Legacy synchronous MX3 inference has been removed. Selecting `mx3:N` for this operation produces an explicit unsupported error. Use the separate `MX3 Async Object Detection` operation.
+Artifact selection is deterministic. CPU prefers ONNX, then PT. CUDA prefers TensorRT, then PT, then ONNX. CUDA ONNX must activate `CUDAExecutionProvider` on the selected device or initialization fails. TensorRT image-size overrides are rejected, and fixed-shape ONNX overrides must match the exported shape. Selecting `mx3:N` fails explicitly.

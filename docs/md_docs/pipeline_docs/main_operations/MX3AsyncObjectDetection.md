@@ -1,51 +1,35 @@
-# MX3 Async Object Detection
+# MX3 async object detection
 
-`mx3_async_object_detection` runs YOLO detection through MemryX SDK 2.2's Python-wrapped `memryx.mxapi.MxAccl` API. It is separate from synchronous CPU/CUDA Object Detection.
+`mx3_async_object_detection` runs asynchronous YOLO detection through a MemryX MX3. It docks directly to a `device_input` operation so each result stays paired with the frame submitted for inference.
 
-## Editor binding
+## Inputs
 
-Connect `Device Input: frame` directly to `MX3 Async Object Detection: frame`. The detector docks to the Device Input and follows it. One Device Input may own one docked MX3 detector. Detaching preserves settings, but the pipeline cannot be saved or started until it is redocked.
-
-The Device Input frame output remains available to other branches.
+- `frame`: supplied through a direct dock to `Device Input: frame`. Frames do not arrive through normal graph execution.
 
 ## Outputs
 
-- `frame`: the exact transformed camera frame submitted for this inference.
-- `detections`: normalized detections from that frame.
+- `frame`: the transformed frame used for inference.
+- `detections`: normalized detections for that frame.
 
-Both outputs carry the source frame's timing metadata. Completed intermediate results may be replaced, but in-flight frame/output correlation remains FIFO and bounded.
+Both outputs retain the source frame's timing metadata.
 
-## Model profile
+## When to use
 
-The managed model requires an `mx3_dfp`, an optional cropped `mx3_postprocessor`, and profile metadata. The initially supported profile is:
+Use this operation for a managed YOLO model compiled for MX3. Use `object_detection` for synchronous CPU or CUDA inference.
 
-```json
-{
-  "input_width": 320,
-  "input_height": 320,
-  "color_order": "rgb",
-  "layout": "hwzc",
-  "normalization": "zero_to_one",
-  "use_model_shape": [false, true],
-  "decoder": "yolo_nms_xyxy",
-  "adjustable_controls": {
-    "confidence": true,
-    "max_detections": true
-  },
-  "max_inflight": 8
-}
-```
+## Configuration
 
-`yolo_nms_xyxy` expects the post-model output to contain rows of `[x1, y1, x2, y2, confidence, class_id]` in model-input pixel coordinates. Unsupported profiles fail explicitly.
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `model_id` | required | Managed model with an MX3 DFP and runtime profile. Requires restart. |
+| `device_id` | required | Canonical `mx3:N` device ID. Requires restart. |
+| `confidence_threshold` | `0.25` | Minimum confidence when the model profile exposes this control. |
+| `max_detections` | `100` | Result limit when the profile exposes this control, 1 to 1000. |
 
-## Compiling an ONNX model
+Select the managed model and physical MX3 in the pipeline editor, then dock the operation to the `device_input` frame port.
 
-Upload the ONNX artifact in **Model Library**, then select **Compile for MX3** beside it. Guided mode uses the detected static input size and the YOLO26 profile above. Advanced mode exposes the supported compiler and runtime-profile settings.
+## Important behavior and limitations
 
-Compilation runs one job at a time through the local `mx_nc` installed in the deployed uv environment. The popup may be closed while it runs; reopening it restores the current stage, progress, and compiler log. A successful job installs the generated DFP and optional `_post.onnx` atomically. Replacing an existing MX3 bundle requires confirmation, and referenced pipelines require a backend restart.
+One `device_input` can own one docked MX3 detector. The pipeline cannot run or save while the detector is detached. Other branches may still consume the source frame.
 
-Other ONNX architectures may compile, but this operation still requires the profile and output contract documented above.
-
-## Runtime behavior
-
-All streams selecting the same `mx3:N` and DFP share one local-mode `MxAccl` runtime with distinct stream IDs. Selecting different DFPs on one physical MX3 fails. Pipeline disable pauses only its stream; re-enable resumes from the newest camera frame. Runtime failures require a pipeline/service restart and never fall back to CPU.
+Streams using the same physical MX3 must use the same DFP. Runtime failures do not fall back to CPU and require a pipeline or service restart. The current decoder profile expects postprocessor rows of `[x1, y1, x2, y2, confidence, class_id]` in model-input pixel coordinates. Unsupported profiles fail during setup.

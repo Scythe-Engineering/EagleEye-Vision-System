@@ -1,49 +1,38 @@
-# PnP Camera Localization Operation
+# PnP camera localization
 
-## Overview
+`pnp_camera_localization` estimates the camera's field-relative pose from AprilTag detections, camera calibration, and a field map.
 
-`PnpCameraLocalizationDefinition` estimates a field-relative camera pose from AprilTag detections, calibrated camera intrinsics, and an FRC field map. It delegates the solve to `PnpLocalization`.
+## Inputs
 
-## Inputs and output
+- `detections`: AprilTag detections containing `tag_id` and four image-space `corners`, normally from `detect_apriltags`.
 
-- Input: `list[pupil_apriltags.Detection]` from `detect_apriltags`.
-- Output: a 4×4 homogeneous `numpy.ndarray` representing `T_field_from_camera`, or `None` when pose estimation fails.
-- Translation is in meters. The rotation is a 3×3 matrix.
+## Outputs
 
-For each mapped detection, the solver uses the tag's four field-space corners and detected image-space corners, then calls OpenCV `solvePnP(..., SOLVEPNP_ITERATIVE)`. It inverts the resulting camera-space transform before returning the field-from-camera transform. Each frame is solved independently from the current detections only.
+- `camera_pose`: a 4 by 4 NumPy transform, `T_field_from_camera`.
+- Returns `None` when no mapped points are available or OpenCV cannot solve the pose.
 
-The fmap parser converts tag sizes from millimeters to meters. The field map and camera calibration must use the expected field coordinate convention; validate the final published pose on the robot.
+Translation is in meters. The upper-left 3 by 3 block is the camera rotation in field coordinates.
+
+## When to use
+
+Use this operation after AprilTag detection when the pipeline needs a field-relative camera pose. Add `camera_to_robot_pose` afterward when consumers need the robot pose instead.
 
 ## Configuration
 
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `camera_bus_id` | `str` | required | Resolves the camera configuration and its intrinsics file. |
-| `apriltag_map_path` | `str` | required | Path to the AprilTag field-map JSON/fmap file. |
-
-`camera_config_registry` is injected by the pipeline runtime. The operation loads `intrinsics_path` from the configuration for `camera_bus_id`; `camera_parameters_path` is not an action parameter.
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `camera_bus_id` | required | Camera whose registered intrinsics file is loaded. Requires restart. |
+| `apriltag_map_path` | `{project_root}/config/apriltag_map.fmap` | AprilTag field-map path. Requires restart. |
 
 ```json
 {
-  "action_name": "pnp_camera_localization.py",
-  "action_params": {
-    "camera_bus_id": "basic_test",
-    "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json"
-  }
+  "camera_bus_id": "0-1",
+  "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json"
 }
 ```
 
-## Timing and robot pose chain
+## Important behavior and limitations
 
-This operation returns a raw matrix, but the pipeline runtime propagates the capture metadata attached by `DeviceInput`. Consequently the camera pose retains the source frame's NetworkTables capture timestamp. Use `camera_to_robot_pose` to convert it to a robot pose, then `publish_to_networktables` to publish a timestamped WPILib pose.
+The solver uses only detections whose IDs exist in the map and solves every frame independently with OpenCV's iterative PnP solver. Map tag dimensions are converted from millimeters to meters.
 
-## Limitations
-
-- No reprojection error, tag IDs/count, ambiguity, covariance, or solve-status value is emitted with the matrix.
-- Timestamp propagation labels the source frame; it does not make the PnP result a hardware-exposure-time measurement.
-
-## Files
-
-- Definition: `src/main_operations/definitions/pnp_camera_localization.py`
-- Solver: `src/main_operations/modules/apriltags/pnp_localization.py`
-- Field-map parser: `src/main_operations/modules/apriltags/utils/fmap_parser.py`
+The output contains no reprojection error, ambiguity, covariance, or contributing-tag count. The pipeline retains capture timing metadata from the source frame, but that does not turn the result into a hardware exposure-time measurement. Camera calibration and the map must use the expected coordinate conventions.
