@@ -258,11 +258,12 @@ export class FlowchartCanvas {
             if (!isPanning) return;
 
             if (
-                Math.abs(e.clientX - panStartClientX) > 3 ||
-                Math.abs(e.clientY - panStartClientY) > 3
+                Math.abs(e.clientX - panStartClientX) <= 3 &&
+                Math.abs(e.clientY - panStartClientY) <= 3
             ) {
-                panDidMove = true;
+                return;
             }
+            panDidMove = true;
 
             this.translateX = e.clientX - startX;
             this.translateY = e.clientY - startY;
