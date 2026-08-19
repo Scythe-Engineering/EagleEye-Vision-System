@@ -218,7 +218,7 @@ export class FlowchartCanvas {
             marqueeElement.style.height = "0";
         };
 
-        this.container.addEventListener("mousedown", (e) => {
+        const handleMouseDown = (e) => {
             if (e.button !== 0) return;
             if (this.placeholderVisible) return;
             this.updateContainerRect();
@@ -247,7 +247,7 @@ export class FlowchartCanvas {
                 startY = e.clientY - this.translateY;
                 e.preventDefault();
             }
-        });
+        };
 
         const handleMouseMove = (e) => {
             if (isMarqueeSelecting) {
@@ -313,55 +313,60 @@ export class FlowchartCanvas {
             globalThis.removeEventListener("mousemove", handleMouseMove);
             globalThis.removeEventListener("mouseup", handleMouseUp);
             globalThis.removeEventListener("blur", cancelGesture);
+            this.container.removeEventListener("mousedown", handleMouseDown);
+            this.container.removeEventListener("wheel", handleWheel);
+            this.container.removeEventListener("dblclick", handleDoubleClick);
             marqueeElement?.remove();
         };
 
-        this.container.addEventListener(
-            "wheel",
-            (e) => {
-                if (this.placeholderVisible) return;
+        const handleWheel = (e) => {
+            if (this.placeholderVisible) return;
 
-                const rect = this.containerRect;
-                if (
-                    e.clientX < rect.left ||
-                    e.clientX > rect.left + rect.width ||
-                    e.clientY < rect.top ||
-                    e.clientY > rect.top + rect.height
-                ) {
-                    return;
-                }
+            const rect = this.containerRect;
+            if (
+                e.clientX < rect.left ||
+                e.clientX > rect.left + rect.width ||
+                e.clientY < rect.top ||
+                e.clientY > rect.top + rect.height
+            ) {
+                return;
+            }
 
-                e.preventDefault();
+            e.preventDefault();
 
-                const delta = -e.deltaY;
-                const zoomFactor = Math.pow(1.1, delta / 100);
+            const delta = -e.deltaY;
+            const zoomFactor = Math.pow(1.1, delta / 100);
 
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-                const worldX = (mouseX - this.translateX) / this.scale;
-                const worldY = (mouseY - this.translateY) / this.scale;
+            const worldX = (mouseX - this.translateX) / this.scale;
+            const worldY = (mouseY - this.translateY) / this.scale;
 
-                const newScale = Math.min(
-                    Math.max(0.1, this.scale * zoomFactor),
-                    3,
-                );
+            const newScale = Math.min(
+                Math.max(0.1, this.scale * zoomFactor),
+                3,
+            );
 
-                this.translateX = mouseX - worldX * newScale;
-                this.translateY = mouseY - worldY * newScale;
-                this.scale = newScale;
+            this.translateX = mouseX - worldX * newScale;
+            this.translateY = mouseY - worldY * newScale;
+            this.scale = newScale;
 
-                this.updateTransform();
-            },
-            { passive: false },
-        );
+            this.updateTransform();
+        };
 
-        this.container.addEventListener("dblclick", (e) => {
+        const handleDoubleClick = (e) => {
             const isNode = e.target.closest(".flowchart-node");
             if (!isNode) {
                 this.resetView();
             }
+        };
+
+        this.container.addEventListener("mousedown", handleMouseDown);
+        this.container.addEventListener("wheel", handleWheel, {
+            passive: false,
         });
+        this.container.addEventListener("dblclick", handleDoubleClick);
     }
 
     /**
@@ -510,6 +515,8 @@ export class FlowchartCanvas {
     destroy() {
         this.panZoomCleanup?.();
         this.panZoomCleanup = null;
+        this.interactiveGrid?.destroy();
+        this.interactiveGrid = null;
     }
 
     /**
