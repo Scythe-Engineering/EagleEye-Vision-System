@@ -4,6 +4,8 @@
 
 The `RobotLocalToFieldTransform` operation is a secondary pipeline operation that converts detection positions from the robot's local coordinate frame to global field coordinates. This operation enables robots to express detected object positions in a consistent world reference frame, essential for multi-robot coordination and field-aware autonomous behaviors in FRC competitions.
 
+`GroundPlaneIntersection` does not need this operation because it now consumes a field-relative camera pose and outputs field-relative positions directly.
+
 ## Architecture
 
 ### Coordinate Frame Transformation System
@@ -122,7 +124,7 @@ field_detections = field_transform.run(local_detections)
     },
     {
       "type": "secondary",
-      "name": "ground_plane_intersection"
+      "name": "camera_local_to_robot_transform"
     },
     {
       "type": "secondary",
