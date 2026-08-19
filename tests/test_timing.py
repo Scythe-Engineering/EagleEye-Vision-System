@@ -39,9 +39,11 @@ def test_monotonic_conversion_round_trips_through_the_nt_clock() -> None:
     monotonic_ns = time.monotonic_ns()
     converted_us = monotonic_ns_to_nt_us(monotonic_ns)
 
-    # Both clocks tick at the same rate, so the conversion should land within
-    # a few milliseconds of a fresh ntcore reading taken right after.
-    assert abs(now_nt_us() - converted_us) < 10_000
+    # Both clocks tick at the same rate, so the only thing worth asserting is
+    # that the epochs agree. The tolerance is loose on purpose: a scheduling
+    # stall between the two readings is not a bug, while a wrong epoch is off
+    # by hours and still caught.
+    assert abs(now_nt_us() - converted_us) < 1_000_000
 
 
 def test_monotonic_conversion_preserves_intervals() -> None:

@@ -228,6 +228,15 @@ CID_FOCUS_AUTO = 0x009A090C
 
 DEFAULT_BUFFER_COUNT = 4
 
+# A monochrome sensor still ships 3-component YCbCr JPEG, but both chroma
+# planes sit on the neutral point (128). Measured on an OV9281 the mean
+# departure from neutral is under 2 counts, all of it JPEG ringing at
+# high-contrast edges; a colour camera on a real scene is an order of magnitude
+# above that.
+NEUTRAL_CHROMA = 128
+MONO_CHROMA_THRESHOLD = 6.0
+MONO_PROBE_FRAMES = 5
+
 
 def v4l2_is_supported() -> bool:
     """Return whether this platform exposes the V4L2 capture interface."""
@@ -272,6 +281,8 @@ class V4l2Capture:
         self.frame_height = frame_height
         self.frame_rate = 0
         self.timestamp_source = "unknown"
+        self.decodes_grayscale: bool | None = None
+        self._chroma_departures: list[float] = []
 
         self._fd = -1
         self._buffers: list[mmap.mmap] = []
@@ -485,12 +496,50 @@ class V4l2Capture:
 
         return buffer.timestamp.tv_sec * 1_000_000_000 + buffer.timestamp.tv_usec * 1000
 
+    def _classify_decode_mode(self, image: np.ndarray) -> None:
+        """Latch grayscale decoding once enough frames show no chroma.
+
+        A monochrome camera is not identifiable from the JPEG header: the
+        firmware wraps the sensor's single plane in a 3-component YCbCr stream,
+        so the header claims colour. Measuring the chroma planes answers the
+        question the header cannot.
+
+        The measure is how far chroma sits from neutral, not how much it varies:
+        a uniformly red scene has almost no chroma variance but is emphatically
+        not monochrome.
+
+        Args:
+            image: A colour-decoded frame captured during the probe.
+        """
+        # An 8x8 subsample characterises the planes well enough and keeps the
+        # probe far cheaper than the decode it rides along with.
+        chroma = cv2.cvtColor(image[::8, ::8], cv2.COLOR_BGR2YCrCb)[:, :, 1:]
+        departure = np.abs(chroma.astype(np.int16) - NEUTRAL_CHROMA).mean()
+        self._chroma_departures.append(float(departure))
+        if len(self._chroma_departures) < MONO_PROBE_FRAMES:
+            return
+
+        # Every probe frame must look neutral; one colourful frame is proof of a
+        # colour camera, while one grey frame proves nothing.
+        worst = max(self._chroma_departures)
+        self.decodes_grayscale = worst < MONO_CHROMA_THRESHOLD
+        self.log(
+            f"{Colors.CYAN}{self.device_path}: chroma departure {worst:.2f}, "
+            f"decoding as {'grayscale' if self.decodes_grayscale else 'colour'}"
+            f"{Colors.RESET}"
+        )
+
     def read(self, timeout_s: float = 1.0) -> CapturedFrame | None:
         """Return the newest available frame, or None if none arrived in time.
 
         Every queued buffer is drained and requeued; only the newest payload is
         decoded. Older frames are discarded undecoded, which both keeps the
         driver fed and avoids paying for a decode that would be thrown away.
+
+        The first few frames are decoded in colour to measure whether the camera
+        carries any chroma. A monochrome camera then decodes as single-channel
+        for the rest of the session, which is both faster and free of the JPEG
+        chroma ringing that colour decoding folds into the luma.
 
         Args:
             timeout_s: How long to wait for the device to become readable.
@@ -525,9 +574,16 @@ class V4l2Capture:
         if payload is None:
             return None
 
-        image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
+        probing = self.decodes_grayscale is None
+        decode_flag = (
+            cv2.IMREAD_COLOR if probing or not self.decodes_grayscale
+            else cv2.IMREAD_GRAYSCALE
+        )
+        image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), decode_flag)
         if image is None:
             return None
+        if probing:
+            self._classify_decode_mode(image)
         return CapturedFrame(image=image, capture_monotonic_ns=capture_monotonic_ns)
 
     # --- teardown ------------------------------------------------------------

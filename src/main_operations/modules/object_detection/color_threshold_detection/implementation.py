@@ -210,7 +210,20 @@ class ColorThresholdDetectionImplementation:
                     - color_name: String name of detected color
                     - area: Contour area in letterboxed coordinates
                 - Combined thresholded mask as BGR image (for visualization)
+
+        Raises:
+            ValueError: If the frame has no colour channels. A monochrome camera
+                decodes to a single plane, and HSV thresholding on it would
+                silently match nothing rather than fail.
         """
+        if frame.ndim != 3:
+            raise ValueError(
+                "Color threshold detection needs a colour frame, but received a "
+                f"single-channel frame of shape {frame.shape}. This camera was "
+                "detected as monochrome, so it cannot drive colour thresholding; "
+                "use a colour camera for this operation."
+            )
+
         letterboxed_frame, (resized_width, resized_height), (pad_x, pad_y) = (
             self.letterbox_image(frame, self.target_size)
         )

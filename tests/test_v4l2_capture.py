@@ -41,7 +41,9 @@ def _make_buffer(
     return buffer
 
 
-def _capture_stub(payloads: list[bytes]) -> V4l2Capture:
+def _capture_stub(
+    payloads: list[bytes], decodes_grayscale: bool | None = False
+) -> V4l2Capture:
     """Build a V4l2Capture with buffers but no real device behind it."""
     capture = V4l2Capture.__new__(V4l2Capture)
     capture.device_path = "/dev/video-test"
@@ -51,6 +53,8 @@ def _capture_stub(payloads: list[bytes]) -> V4l2Capture:
     capture._streaming = True
     capture._warned_about_timestamps = False
     capture.timestamp_source = "unknown"
+    capture.decodes_grayscale = decodes_grayscale
+    capture._chroma_departures = []
     return capture
 
 
@@ -161,3 +165,75 @@ def test_read_on_a_closed_device_raises() -> None:
 def test_construction_is_refused_without_v4l2() -> None:
     with pytest.raises(V4l2CaptureError, match="only available on Linux"):
         V4l2Capture("/dev/video0", 1280, 720)
+
+
+def _solid_bgr(value: tuple[int, int, int]) -> np.ndarray:
+    """Build a frame whose every pixel carries the given BGR colour."""
+    frame = np.zeros((64, 64, 3), dtype=np.uint8)
+    frame[:, :] = value
+    return frame
+
+
+def test_probe_latches_grayscale_for_a_neutral_chroma_camera() -> None:
+    """A mono sensor ships neutral chroma, so it must decode as grayscale."""
+    capture = _capture_stub([b""], decodes_grayscale=None)
+    rng = np.random.default_rng(0)
+
+    for _ in range(v4l2_capture.MONO_PROBE_FRAMES):
+        assert capture.decodes_grayscale is None  # undecided while probing
+        luma = rng.integers(0, 255, size=(64, 64), dtype=np.uint8)
+        capture._classify_decode_mode(np.repeat(luma[:, :, None], 3, axis=2))
+
+    assert capture.decodes_grayscale is True
+
+
+def test_probe_latches_colour_when_chroma_is_present() -> None:
+    capture = _capture_stub([b""], decodes_grayscale=None)
+
+    for index in range(v4l2_capture.MONO_PROBE_FRAMES):
+        capture._classify_decode_mode(
+            _solid_bgr((255, 0, 0) if index % 2 else (0, 0, 255))
+        )
+
+    assert capture.decodes_grayscale is False
+
+
+def test_probe_detects_colour_in_a_uniformly_coloured_scene() -> None:
+    """Chroma variance is near zero on a flat red scene, but it is still colour."""
+    capture = _capture_stub([b""], decodes_grayscale=None)
+
+    for _ in range(v4l2_capture.MONO_PROBE_FRAMES):
+        capture._classify_decode_mode(_solid_bgr((0, 0, 255)))
+
+    assert capture.decodes_grayscale is False
+
+
+def test_probe_needs_every_frame_to_be_neutral() -> None:
+    """One colourful frame is enough to rule out a monochrome camera."""
+    capture = _capture_stub([b""], decodes_grayscale=None)
+    grey = _solid_bgr((128, 128, 128))
+
+    for index in range(v4l2_capture.MONO_PROBE_FRAMES):
+        capture._classify_decode_mode(_solid_bgr((0, 0, 255)) if index == 2 else grey)
+
+    assert capture.decodes_grayscale is False
+
+
+def test_read_decodes_grayscale_once_the_probe_has_latched(monkeypatch) -> None:
+    capture = _capture_stub([b"frame"], decodes_grayscale=True)
+    pending = [_make_buffer(0, bytesused=5)]
+    flags: list[int] = []
+
+    monkeypatch.setattr(v4l2_capture.select, "select", lambda *_args: ([3], [], []))
+    monkeypatch.setattr(
+        V4l2Capture, "_dequeue_buffer", lambda _self: pending.pop(0) if pending else None
+    )
+    monkeypatch.setattr(V4l2Capture, "_queue_buffer", lambda _self, _i: None)
+    monkeypatch.setattr(
+        v4l2_capture.cv2,
+        "imdecode",
+        lambda _data, flag: flags.append(flag) or np.zeros((2, 2), dtype=np.uint8),
+    )
+
+    assert capture.read() is not None
+    assert flags == [v4l2_capture.cv2.IMREAD_GRAYSCALE]
