@@ -22,7 +22,8 @@ export class FlowchartCanvas {
 
         this.onViewportChange = options.onViewportChange || (() => {});
         this.onMarqueeSelect = options.onMarqueeSelect || (() => {});
-        this.onCanvasBackgroundClick = options.onCanvasBackgroundClick || (() => {});
+        this.onCanvasBackgroundClick =
+            options.onCanvasBackgroundClick || (() => {});
         this.interactiveGrid = null;
 
         // Cache container dimensions to avoid getBoundingClientRect during zoom/pan
@@ -220,6 +221,7 @@ export class FlowchartCanvas {
         this.container.addEventListener("mousedown", (e) => {
             if (e.button !== 0) return;
             if (this.placeholderVisible) return;
+            this.updateContainerRect();
 
             const isNode = e.target.closest(".flowchart-node");
             const isButton = e.target.closest("button");
@@ -247,7 +249,7 @@ export class FlowchartCanvas {
             }
         });
 
-        globalThis.addEventListener("mousemove", (e) => {
+        const handleMouseMove = (e) => {
             if (isMarqueeSelecting) {
                 updateMarqueeElement(e.clientX, e.clientY);
                 return;
@@ -265,9 +267,9 @@ export class FlowchartCanvas {
             this.translateX = e.clientX - startX;
             this.translateY = e.clientY - startY;
             this.updateTransform();
-        });
+        };
 
-        globalThis.addEventListener("mouseup", (e) => {
+        const handleMouseUp = (e) => {
             if (isMarqueeSelecting) {
                 isMarqueeSelecting = false;
                 this.container.style.cursor = "grab";
@@ -293,7 +295,25 @@ export class FlowchartCanvas {
                     this.onCanvasBackgroundClick();
                 }
             }
-        });
+        };
+
+        const cancelGesture = () => {
+            isMarqueeSelecting = false;
+            isPanning = false;
+            this.container.style.cursor = "grab";
+            hideMarqueeElement();
+        };
+
+        globalThis.addEventListener("mousemove", handleMouseMove);
+        globalThis.addEventListener("mouseup", handleMouseUp);
+        globalThis.addEventListener("blur", cancelGesture);
+        this.panZoomCleanup = () => {
+            resizeObserver.disconnect();
+            globalThis.removeEventListener("mousemove", handleMouseMove);
+            globalThis.removeEventListener("mouseup", handleMouseUp);
+            globalThis.removeEventListener("blur", cancelGesture);
+            marqueeElement?.remove();
+        };
 
         this.container.addEventListener(
             "wheel",
@@ -481,6 +501,14 @@ export class FlowchartCanvas {
      */
     setPlaceholderVisible(isVisible) {
         this.placeholderVisible = isVisible;
+    }
+
+    /**
+     * Release global interaction handlers and observers.
+     */
+    destroy() {
+        this.panZoomCleanup?.();
+        this.panZoomCleanup = null;
     }
 
     /**

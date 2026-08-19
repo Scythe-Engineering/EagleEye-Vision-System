@@ -90,22 +90,23 @@ class SystemMonitorMixin:
         if sys.platform != "linux":
             return {"error": "System reboot is only supported on Linux."}, 400
 
-        def execute_reboot() -> None:
-            time.sleep(0.5)
-            try:
-                subprocess.Popen(
-                    ["sudo", "reboot"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as error:
-                self.log(f"Failed to initiate system reboot: {error}")
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "reboot"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.log(f"Failed to initiate system reboot: {error}")
+            return {"error": "Failed to initiate system reboot."}, 500
 
-        threading.Thread(
-            target=execute_reboot,
-            name="system-reboot",
-            daemon=True,
-        ).start()
+        if result.returncode != 0:
+            error = result.stderr.strip() or "sudo reboot failed"
+            self.log(f"Failed to initiate system reboot: {error}")
+            return {"error": error}, 500
+
         self.log("System reboot initiated")
         return {"message": "System reboot initiated"}, 200
 
