@@ -9,6 +9,7 @@ let terminalCommandHistory = [];
 let terminalHistoryIndex = -1;
 let terminalDraftCommand = "";
 let terminalCommandInFlight = false;
+let terminalPromptRevision = 0;
 
 /**
  * Wire up terminal and log-related UI event handlers.
@@ -109,9 +110,16 @@ export function initializeTerminalHandlers() {
  * @returns {Promise<void>}
  */
 async function loadTerminalPrompt() {
+    const revision = terminalPromptRevision;
     try {
         const response = await fetch(buildBackendUrl("/terminal/cwd"));
-        applyTerminalPrompt(await response.json());
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || data.message || `HTTP ${response.status}`);
+        }
+        if (revision === terminalPromptRevision) {
+            applyTerminalPrompt(data);
+        }
     } catch (error) {
         appendToTerminal(
             document.getElementById("terminalOutput"),
@@ -261,6 +269,10 @@ async function sendTerminalCommand() {
             body: JSON.stringify({ command }),
         });
         const data = await response.json();
+        if (!response.ok && !data.error) {
+            data.error = data.message || `HTTP ${response.status}`;
+        }
+        terminalPromptRevision += 1;
         applyTerminalPrompt(data);
 
         if (data.output) {

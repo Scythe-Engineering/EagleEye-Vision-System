@@ -3,6 +3,8 @@ from __future__ import annotations
 import getpass
 import os
 import shlex
+import shutil
+import signal
 import socket
 import subprocess
 import tempfile
@@ -17,6 +19,8 @@ TERMINAL_HOME = str(Path.home().resolve())
 TERMINAL_USER = getpass.getuser()
 TERMINAL_HOST = socket.gethostname().split(".")[0] or "eagleeye"
 TERMINAL_TIMEOUT_SECONDS = 60
+TERMINAL_OUTPUT_LIMIT_BYTES = 1_000_000
+BASH_EXECUTABLE = shutil.which("bash") or "/bin/bash"
 
 _TERMINAL_LOCK = threading.Lock()
 
@@ -77,10 +81,11 @@ class TerminalMixin:
         Returns:
             Tuple of response payload and HTTP status code.
         """
-        body = request.get_json(silent=True) or {}
-        command = str(body.get("command", "")).strip()
-        if not command:
+        body = request.get_json(silent=True)
+        command = body.get("command") if isinstance(body, dict) else None
+        if not isinstance(command, str) or not command.strip():
             return self._terminal_payload(error="Command is required", exit_code=1), 400
+        command = command.strip()
 
         # ponytail: one lock for the whole process, the UI drives a single session.
         with _TERMINAL_LOCK:
@@ -95,39 +100,61 @@ class TerminalMixin:
         Returns:
             Tuple of response payload and HTTP status code.
         """
+        if not Path(self._terminal_cwd).is_dir():
+            self._terminal_cwd = TERMINAL_HOME
+
         cwd_file = tempfile.NamedTemporaryFile(
             mode="w", prefix="eagleeye-terminal-", suffix=".cwd", delete=False
         )
         cwd_file.close()
         try:
-            completed_process = subprocess.run(
-                [
-                    "bash",
-                    "-c",
-                    f"{command}\n"
-                    "__ee_status=$?\n"
-                    f"pwd -P > {shlex.quote(cwd_file.name)}\n"
-                    "exit $__ee_status\n",
-                ],
-                cwd=self._terminal_cwd,
-                capture_output=True,
-                text=True,
-                timeout=TERMINAL_TIMEOUT_SECONDS,
-            )
+            with (
+                tempfile.TemporaryFile() as stdout_file,
+                tempfile.TemporaryFile() as stderr_file,
+            ):
+                process = subprocess.Popen(
+                    [
+                        BASH_EXECUTABLE,
+                        "-c",
+                        f"{command}\n"
+                        "__ee_status=$?\n"
+                        f"pwd -P > {shlex.quote(cwd_file.name)}\n"
+                        "exit $__ee_status\n",
+                    ],
+                    cwd=self._terminal_cwd,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    start_new_session=True,
+                )
+                try:
+                    exit_code = process.wait(timeout=TERMINAL_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    return self._terminal_payload(
+                        error=f"Command timed out after {TERMINAL_TIMEOUT_SECONDS} seconds",
+                        exit_code=124,
+                    ), 408
+
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                output = stdout_file.read(TERMINAL_OUTPUT_LIMIT_BYTES + 1)
+                error = stderr_file.read(TERMINAL_OUTPUT_LIMIT_BYTES + 1)
+
+            if len(output) > TERMINAL_OUTPUT_LIMIT_BYTES:
+                output = output[:TERMINAL_OUTPUT_LIMIT_BYTES] + b"\n[output truncated]"
+            if len(error) > TERMINAL_OUTPUT_LIMIT_BYTES:
+                error = error[:TERMINAL_OUTPUT_LIMIT_BYTES] + b"\n[output truncated]"
+
             next_cwd = Path(cwd_file.name).read_text(encoding="utf-8").strip()
             if next_cwd and Path(next_cwd).is_dir():
                 self._terminal_cwd = next_cwd
 
             return self._terminal_payload(
-                output=completed_process.stdout.rstrip("\n"),
-                error=completed_process.stderr.rstrip("\n"),
-                exit_code=completed_process.returncode,
+                output=output.decode(errors="replace").rstrip("\n"),
+                error=error.decode(errors="replace").rstrip("\n"),
+                exit_code=exit_code,
             ), 200
-        except subprocess.TimeoutExpired:
-            return self._terminal_payload(
-                error=f"Command timed out after {TERMINAL_TIMEOUT_SECONDS} seconds",
-                exit_code=124,
-            ), 408
         except OSError as error:
             return self._terminal_payload(
                 error=f"Failed to execute command: {error}", exit_code=1
