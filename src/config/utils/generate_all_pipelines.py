@@ -183,10 +183,11 @@ def generate_all_pipelines(
             camera_bus_ids = _get_device_input_camera_bus_ids(
                 pipeline_name, config, logger
             )
-            settings = pipeline_settings.get(pipeline_name)
+            settings = pipeline_settings.get(pipeline_name, {})
             limit_frames = (
-                isinstance(settings, dict)
-                and settings.get("limit_frames_to_camera_capture_speed") is True
+                settings.get("limit_frames_to_camera_capture_speed", True) is not False
+                if isinstance(settings, dict)
+                else True
             )
             pipeline = Pipeline(
                 config,

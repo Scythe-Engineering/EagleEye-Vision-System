@@ -32,14 +32,14 @@ def _write_pipeline_config(root: Path) -> None:
     )
 
 
-def test_pipeline_settings_default_to_disabled(tmp_path: Path) -> None:
+def test_pipeline_settings_default_to_enabled(tmp_path: Path) -> None:
     _write_pipeline_config(tmp_path)
     harness = _SettingsHarness(tmp_path)
 
     payload, status = harness.get_pipeline_settings("vision")
 
     assert status == 200
-    assert payload == {"limit_frames_to_camera_capture_speed": False}
+    assert payload == {"limit_frames_to_camera_capture_speed": True}
 
 
 def test_pipeline_settings_are_persisted_and_require_restart(

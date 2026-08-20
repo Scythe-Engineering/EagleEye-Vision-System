@@ -11,7 +11,7 @@ from src.webui.web_server_utils.constants import PIPELINE_NOT_FOUND_MESSAGE, SRC
 
 
 LIMIT_FRAMES_TO_CAMERA_CAPTURE_SPEED_KEY = "limit_frames_to_camera_capture_speed"
-DEFAULT_LIMIT_FRAMES_TO_CAMERA_CAPTURE_SPEED = False
+DEFAULT_LIMIT_FRAMES_TO_CAMERA_CAPTURE_SPEED = True
 
 
 class PipelineSettingsMixin:

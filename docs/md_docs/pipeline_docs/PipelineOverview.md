@@ -22,7 +22,7 @@ Timing metadata attached to a camera frame follows derived values through the gr
 
 The scheduler runs operations when their inputs are ready. Returning no usable result can stop that branch for the current cycle. Multi-output operations return values keyed by their declared output names.
 
-The Pipeline Settings option **Limit frames to camera capture speed** starts another complete run only after every connected `device_input` in the pipeline has published a new frame. All `device_input` nodes in that named pipeline must belong to one connected graph. Pipelines without `device_input` continue to run continuously. This setting takes effect after a backend restart.
+The Pipeline Settings option **Limit frames to camera capture speed** starts another complete run only after every connected `device_input` in the pipeline has published a new frame. It is enabled by default. All `device_input` nodes in that named pipeline must belong to one connected graph. Pipelines without `device_input` continue to run continuously. This setting takes effect after a backend restart.
 
 ## Common localization chain
 
