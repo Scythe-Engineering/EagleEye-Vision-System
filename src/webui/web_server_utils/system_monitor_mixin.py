@@ -195,6 +195,7 @@ class SystemMonitorMixin:
         return payload, 200
 
     def _repo_root(self) -> Path:
+        """Return the repository root used by update commands."""
         return Path(__file__).resolve().parents[3]
 
     def _ensure_system_update_state(self) -> None:
@@ -454,10 +455,18 @@ class SystemMonitorMixin:
                             line=line.rstrip("\n"),
                         )
                         continue
-
-                return_code = process.poll()
-                if return_code is None:
-                    continue
+                    try:
+                        return_code = process.wait(timeout=remaining_seconds)
+                    except subprocess.TimeoutExpired as error:
+                        process.kill()
+                        process.wait(timeout=5)
+                        raise RuntimeError(
+                            f"Update command timed out: {display_command}"
+                        ) from error
+                else:
+                    return_code = process.poll()
+                    if return_code is None:
+                        continue
 
                 remaining = process.stdout.read()
                 if remaining:
@@ -482,6 +491,7 @@ class SystemMonitorMixin:
                 return
         finally:
             selector.close()
+            process.stdout.close()
 
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
