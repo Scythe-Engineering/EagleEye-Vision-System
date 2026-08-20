@@ -23,6 +23,22 @@ Both come from one solver output on one frame, so both carry the identical captu
 
 `<source>` is yours to name — `front`, `back`, `left`. Use one per camera.
 
+Nothing about those names is baked into the library. Robot code supplies both keys, relative to
+the `EagleEye` table, and they must match the `target_key` on the matching
+`publish_to_networktables` operation in the WebUI character for character. `EagleEye` itself is
+the one fixed part: the coprocessor hands every publish operation that same root table.
+
+```java
+// Follows the shipped preset: localization/front/pose and localization/front/meta.
+EagleEyeCamera.forSource("localization/front");
+
+// Any other layout: pass both keys.
+new EagleEyeCamera("vision/left_cam/robot_pose", "vision/left_cam/quality");
+```
+
+A key nothing publishes raises a Driver Station warning naming the key and pointing at the WebUI,
+repeated every `warningIntervalSeconds`, rather than failing silently.
+
 ## Wiring the coprocessor
 
 `localization_pipeline_preset.json` is a working single-camera pipeline. Paste its contents into
@@ -51,15 +67,20 @@ source name. Insert `temporal_acceleration_preprocessor_rust` between `device_in
 
 ## Robot code
 
-```java
-private final EagleEyeCamera[] cameras = {
-  new EagleEyeCamera("front"), new EagleEyeCamera("back"),
-};
+Keys live at the call site, in whichever subsystem owns the pose estimator:
 
-@Override
-public void periodic() {
-  poseEstimator.update(gyro.getRotation2d(), modulePositions);
-  EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+```java
+public class Drive extends SubsystemBase {
+  private final EagleEyeCamera[] cameras = {
+    EagleEyeCamera.forSource("localization/front"),
+    EagleEyeCamera.forSource("localization/back"),
+  };
+
+  @Override
+  public void periodic() {
+    poseEstimator.update(gyro.getRotation2d(), modulePositions);
+    EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+  }
 }
 ```
 
@@ -114,6 +135,7 @@ Every knob is a public static field on `EagleEyeCamera`, set once in `RobotConta
 | `maximumReprojectionErrorPixels` | `2.0` | Rejects solutions that do not explain the corners they were solved from |
 | `maximumTagDistanceMeters` | `6.0` | Rejects poses that are mostly noise |
 | `maximumSampleAgeSeconds` | `0.5` | Staleness and unconverged-clock guard |
+| `warningIntervalSeconds` | `5.0` | How often to repeat the warning about a key nothing publishes |
 
 The distance-squared-over-count standard deviation model is a starting point, not a fitted one.
 If the estimator misweights close or distant tags, fit a curve against measured error and replace
@@ -129,10 +151,11 @@ measurement's own timestamp, which is strictly better information.
 
 ## Troubleshooting
 
-**Poses visible in AdvantageScope but `poll()` returns nothing.** Almost always a missing `meta`
-topic. Check that `EagleEye/localization/<source>/meta` exists in OutlineViewer and that the
-source name in your Java matches the `target_key` in the pipeline. A pose without metrics cannot
-be weighted, so it is dropped rather than injected at a guessed confidence.
+**A Driver Station warning naming one of your keys.** Nothing publishes it. Open OutlineViewer,
+find the key under the `EagleEye` table, and compare it to the string you passed to
+`EagleEyeCamera` — a leading slash, a stray plural, or a renamed source are the usual causes. If
+only the `meta` key is missing, the pipeline is short a publisher on the solver's `pose_meta`
+port; every pose is dropped, because a pose without metrics cannot be weighted.
 
 **Measurements arrive but the estimate is jumpy.** Raise `translationStdDevBase`, or tighten
 `maximumReprojectionErrorPixels`. Log the raw `poll()` observations and look at the reprojection

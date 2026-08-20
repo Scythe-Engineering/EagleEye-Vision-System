@@ -13,6 +13,7 @@ import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.StructSubscriber;
 import edu.wpi.first.networktables.TimestampedDoubleArray;
 import edu.wpi.first.networktables.TimestampedObject;
+import edu.wpi.first.wpilibj.DriverStation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -20,20 +21,31 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * One EagleEye localization source, read from its own {@code EagleEye/localization/} subtable.
+ * One EagleEye localization source: a pose topic and the metrics topic that weights it.
+ *
+ * <p>Both keys are supplied by robot code and are relative to the {@code EagleEye} table, so they
+ * must match the {@code target_key} on the matching {@code publish_to_networktables} operation in
+ * the WebUI character for character. A key that nothing publishes produces a Driver Station
+ * warning rather than silence.
  *
  * <p>EagleEye stamps every published pose with the kernel's V4L2 exposure timestamp, and ntcore
  * translates that into roboRIO FPGA time on arrival. The timestamp on a received sample is
  * therefore already in the domain {@code addVisionMeasurement} expects: do not subtract a latency,
  * and do not use {@code Timer.getFPGATimestamp()} as the measurement time.
  *
- * <p>Typical use, once per robot loop:
+ * <p>Typical use, in the subsystem that owns the pose estimator:
  *
  * <pre>
- * private final EagleEyeCamera[] cameras = {new EagleEyeCamera("front"), new EagleEyeCamera("back")};
+ * public class Drive extends SubsystemBase {
+ *   private final EagleEyeCamera[] cameras = {
+ *     EagleEyeCamera.forSource("localization/front"),
+ *     EagleEyeCamera.forSource("localization/back"),
+ *   };
  *
- * public void periodic() {
- *   EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+ *   public void periodic() {
+ *     poseEstimator.update(gyro.getRotation2d(), modulePositions);
+ *     EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+ *   }
  * }
  * </pre>
  */
@@ -80,10 +92,19 @@ public class EagleEyeCamera {
    */
   public static double maximumSampleAgeSeconds = 0.5;
 
+  /** How often to repeat the warning about a key nothing publishes, in seconds. */
+  public static double warningIntervalSeconds = 5.0;
+
+  /** Root table EagleEye publishes into. Fixed on the coprocessor side too. */
+  private static final String TABLE = "EagleEye";
+
   private static final int POLL_STORAGE = 20;
 
+  private final String poseKey;
+  private final String metaKey;
   private final StructSubscriber<Pose3d> poseSubscriber;
   private final DoubleArraySubscriber metaSubscriber;
+  private long lastWarningMicros;
 
   // A pose and its metrics come from two separate NetworkTables publishers, so a network flush can
   // land between them and split one frame across two poll cycles. Carrying the leftovers for a
@@ -92,12 +113,33 @@ public class EagleEyeCamera {
   private final List<TimestampedDoubleArray> carriedMetas = new ArrayList<>();
 
   /**
-   * Subscribe to one EagleEye localization source.
+   * Subscribe to a source that follows the shipped preset's naming.
    *
-   * @param name source name, matching the {@code target_key} prefix set in the EagleEye pipeline.
+   * <p>Equivalent to {@code new EagleEyeCamera(source + "/pose", source + "/meta")}. Use the
+   * two-key constructor when the pipeline publishes somewhere else.
+   *
+   * @param source key prefix shared by both topics, such as {@code "localization/front"}.
+   * @return a camera reading the source's {@code /pose} and {@code /meta} keys.
    */
-  public EagleEyeCamera(String name) {
-    var table = NetworkTableInstance.getDefault().getTable("EagleEye/localization/" + name);
+  public static EagleEyeCamera forSource(String source) {
+    return new EagleEyeCamera(source + "/pose", source + "/meta");
+  }
+
+  /**
+   * Subscribe to one EagleEye localization source by its exact keys.
+   *
+   * <p>Both keys are relative to the {@code EagleEye} table and must match the {@code target_key}
+   * set on the corresponding publish operation in the WebUI.
+   *
+   * @param poseKey key of the {@code Pose3d} struct topic, for example {@code
+   *     "localization/front/pose"}.
+   * @param metaKey key of the {@code double[3]} metrics topic, for example {@code
+   *     "localization/front/meta"}.
+   */
+  public EagleEyeCamera(String poseKey, String metaKey) {
+    this.poseKey = poseKey;
+    this.metaKey = metaKey;
+    var table = NetworkTableInstance.getDefault().getTable(TABLE);
     // sendAll and keepDuplicates stop the server from coalescing frames the estimator wants: at
     // 90 fps against a 50 Hz loop, a plain subscription throws away most of the measurements.
     var options =
@@ -106,16 +148,16 @@ public class EagleEyeCamera {
           PubSubOption.keepDuplicates(true),
           PubSubOption.pollStorage(POLL_STORAGE),
         };
-    poseSubscriber = table.getStructTopic("pose", Pose3d.struct).subscribe(new Pose3d(), options);
-    metaSubscriber = table.getDoubleArrayTopic("meta").subscribe(new double[0], options);
+    poseSubscriber = table.getStructTopic(poseKey, Pose3d.struct).subscribe(new Pose3d(), options);
+    metaSubscriber = table.getDoubleArrayTopic(metaKey).subscribe(new double[0], options);
   }
 
   /**
    * Drain every measurement received since the last call, oldest first.
    *
-   * <p>Samples that are stale, unconverged, or fail the quality gates are dropped. An empty result
-   * while poses are visible in AdvantageScope usually means {@code meta} is not being published;
-   * see the troubleshooting notes in {@code library/README.md}.
+   * <p>Samples that are stale, unconverged, or fail the quality gates are dropped. A key that
+   * nothing publishes raises a Driver Station warning naming the key, repeated every {@link
+   * #warningIntervalSeconds}.
    *
    * @return accepted observations in capture order.
    */
@@ -124,6 +166,7 @@ public class EagleEyeCamera {
     carriedMetas.addAll(Arrays.asList(metaSubscriber.readQueue()));
 
     long nowMicros = NetworkTablesJNI.now();
+    warnIfKeysUnresolved(nowMicros);
     var observations = new ArrayList<Observation>(carriedPoses.size());
     var unmatched = new ArrayList<TimestampedObject<Pose3d>>();
 
@@ -192,6 +235,59 @@ public class EagleEyeCamera {
     return observation.tagCount() >= minimumTagCount
         && observation.meanTagDistanceMeters() <= maximumTagDistanceMeters
         && observation.reprojectionErrorPixels() <= maximumReprojectionErrorPixels;
+  }
+
+  /**
+   * Warn when a configured key has no publisher, since the alternative is silence.
+   *
+   * <p>Rate limited to one report per {@link #warningIntervalSeconds}, and reset once both topics
+   * appear so a coprocessor reboot warns again.
+   */
+  private void warnIfKeysUnresolved(long nowMicros) {
+    boolean poseMissing = !poseSubscriber.getTopic().exists();
+    boolean metaMissing = !metaSubscriber.getTopic().exists();
+    if (!poseMissing && !metaMissing) {
+      lastWarningMicros = 0L;
+      return;
+    }
+    if (lastWarningMicros != 0L
+        && (nowMicros - lastWarningMicros) / 1e6 < warningIntervalSeconds) {
+      return;
+    }
+    lastWarningMicros = nowMicros;
+    DriverStation.reportWarning(unresolvedKeyMessage(poseMissing, metaMissing), false);
+  }
+
+  /** Say which key is missing and what to compare it against. */
+  private String unresolvedKeyMessage(boolean poseMissing, boolean metaMissing) {
+    String posePath = TABLE + "/" + poseKey;
+    String metaPath = TABLE + "/" + metaKey;
+    if (!NetworkTableInstance.getDefault().isConnected()) {
+      return "EagleEye: nothing is connected to NetworkTables, so "
+          + posePath
+          + " cannot arrive. Check the coprocessor is powered and pointed at this roboRIO.";
+    }
+    if (poseMissing && metaMissing) {
+      return "EagleEye: nothing publishes "
+          + posePath
+          + " or "
+          + metaPath
+          + ". The keys passed to EagleEyeCamera must match the publish_to_networktables"
+          + " target_key values in the WebUI exactly.";
+    }
+    if (metaMissing) {
+      return "EagleEye: "
+          + posePath
+          + " is publishing but "
+          + metaPath
+          + " is not, so every pose is dropped. Check that key against the target_key of the"
+          + " publisher on the solver's pose_meta port in the WebUI.";
+    }
+    return "EagleEye: "
+        + metaPath
+        + " is publishing but "
+        + posePath
+        + " is not. Check that key against the target_key of the pose publisher in the WebUI.";
   }
 
   /**

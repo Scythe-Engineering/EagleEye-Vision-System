@@ -29,14 +29,21 @@ Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project
 pose estimator:
 
 ```java
-private final EagleEyeCamera[] cameras = {new EagleEyeCamera("front")};
+public class Drive extends SubsystemBase {
+  private final EagleEyeCamera[] cameras = {EagleEyeCamera.forSource("localization/front")};
 
-@Override
-public void periodic() {
-  poseEstimator.update(gyro.getRotation2d(), modulePositions);
-  EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+  @Override
+  public void periodic() {
+    poseEstimator.update(gyro.getRotation2d(), modulePositions);
+    EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+  }
 }
 ```
+
+Robot code supplies the NetworkTables keys, so any pipeline layout works — pass both keys
+explicitly with `new EagleEyeCamera(poseKey, metaKey)` when they do not follow the preset. Keys
+must match the `target_key` set in the WebUI; one that nothing publishes raises a Driver Station
+warning naming the key instead of failing silently.
 
 Each localization source publishes two NetworkTables topics that share one capture timestamp:
 
