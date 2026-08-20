@@ -62,6 +62,9 @@ class OpenCvCapture:
         self.frame_rate = int(self.capture.get(cv2.CAP_PROP_FPS))
         return self.frame_rate
 
+    def start(self) -> None:
+        """OpenCV starts capture when the device is opened."""
+
     def set_control(self, control_id: int, value: int) -> bool:
         """Apply an equivalent OpenCV camera control when supported.
 
@@ -232,6 +235,7 @@ class PhysicalCamera(Camera):
 
         self.backend = backend
         self.achieved_fps = self._negotiate_frame_rate(backend)
+        backend.start()
         backend.set_control(CID_FOCUS_AUTO, 1)
 
         self.log(

@@ -266,7 +266,7 @@ class V4l2Capture:
         buffer_count: int = DEFAULT_BUFFER_COUNT,
         log: Callable[[str], None] = print,
     ) -> None:
-        """Open and configure the device, then start streaming.
+        """Open and configure the device for a later call to :meth:`start`.
 
         Args:
             device_path: Device node, for example ``/dev/video0``.
@@ -288,6 +288,7 @@ class V4l2Capture:
         self._chroma_departures: list[float] = []
 
         self._fd = -1
+        self._buffer_count = buffer_count
         self._buffers: list[mmap.mmap] = []
         self._streaming = False
         self._warned_about_timestamps = False
@@ -303,8 +304,6 @@ class V4l2Capture:
         try:
             self._verify_capture_device()
             self._set_format()
-            self._map_buffers(buffer_count)
-            self._start_streaming()
         except Exception:
             self.close()
             raise
@@ -436,18 +435,21 @@ class V4l2Capture:
                 )
             )
 
-    def _start_streaming(self) -> None:
-        """Queue every buffer and turn the stream on."""
-        for index in range(len(self._buffers)):
-            self._queue_buffer(index)
-
-        stream_type = ctypes.c_int32(BUF_TYPE_VIDEO_CAPTURE)
+    def start(self) -> None:
+        """Allocate buffers and start streaming after configuration."""
         try:
-            self._ioctl(VIDIOC_STREAMON, stream_type)
+            self._map_buffers(self._buffer_count)
+            for index in range(len(self._buffers)):
+                self._queue_buffer(index)
+            self._ioctl(VIDIOC_STREAMON, ctypes.c_int32(BUF_TYPE_VIDEO_CAPTURE))
         except OSError as error:
+            self.close()
             raise V4l2CaptureError(
                 f"{self.device_path} failed to start streaming: {error}"
             ) from error
+        except Exception:
+            self.close()
+            raise
         self._streaming = True
 
     # --- capture -------------------------------------------------------------

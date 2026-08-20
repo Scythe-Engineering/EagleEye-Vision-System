@@ -250,6 +250,44 @@ def test_failed_advertised_fps_negotiation_uses_fallbacks() -> None:
     assert len(backend.requests) > 1
 
 
+def test_camera_negotiates_frame_rate_before_streaming() -> None:
+    """V4L2 rejects frame-rate changes after streaming starts."""
+    events: list[str] = []
+
+    class Backend:
+        """Record camera setup calls in order."""
+
+        def set_frame_rate(self, frames_per_second: int) -> int:
+            """Accept and record the requested rate."""
+            events.append(f"fps:{frames_per_second}")
+            return frames_per_second
+
+        def start(self) -> None:
+            """Record stream startup."""
+            events.append("start")
+
+        def set_control(self, _control_id: int, _value: int) -> bool:
+            """Record control setup."""
+            events.append("control")
+            return True
+
+    camera = PhysicalCamera.__new__(PhysicalCamera)
+    camera.camera_index = 0
+    camera.frame_width = 1280
+    camera.frame_height = 720
+    camera.name = "test"
+    camera.log = lambda _message: None
+    camera.camera_ready = False
+    camera.backend = None
+    camera.get_available_fps_for_resolution = lambda: [100]
+    camera._open_backend = lambda: Backend()
+
+    camera._start_camera()
+
+    assert events == ["fps:100", "start", "control"]
+    assert camera.achieved_fps == 100
+
+
 def test_worker_does_not_close_camera_while_its_thread_is_alive() -> None:
     """Avoid tearing down capture resources under an active reader."""
 
