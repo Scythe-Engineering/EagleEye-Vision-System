@@ -1,7 +1,6 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List
 
-import numpy as np
 from pupil_apriltags import Detection
 
 from ..modules.apriltags.pnp_localization import PnpLocalization
@@ -60,14 +59,20 @@ class PnpCameraLocalizationDefinition(OperationInstance):
             apriltag_map=apriltag_map,
         )
 
-    def run(self, detections: List[Detection]) -> Optional[np.ndarray]:
+    def run(self, detections: List[Detection]) -> Dict[str, Any]:
         """Estimate camera pose from AprilTag detections.
 
         Args:
             detections: List of AprilTag detection objects.
 
         Returns:
-            4x4 transformation matrix representing camera pose in global coordinates,
-            or None if pose estimation failed.
+            Mapping of ``camera_pose`` to a 4x4 transform in global coordinates and
+            ``pose_meta`` to ``[tag_count, mean_tag_distance_m, reprojection_error_px]``.
+            Both ports carry None when pose estimation failed, so downstream
+            operations keep their existing None handling.
         """
-        return self.pose_estimator.estimate_pose_from_detections(detections)
+        solution = self.pose_estimator.estimate_pose_from_detections(detections)
+        if solution is None:
+            return {"camera_pose": None, "pose_meta": None}
+        camera_pose, pose_meta = solution
+        return {"camera_pose": camera_pose, "pose_meta": pose_meta}

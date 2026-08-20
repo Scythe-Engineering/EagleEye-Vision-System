@@ -9,6 +9,7 @@
 ## Table of Contents
 - [Introduction](#introduction)
 - [Installation](#installation)
+- [Robot library](#robot-library)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -17,6 +18,37 @@ EagleEye Object Detection is designed to help identify and track game pieces in 
 
 ## Installation
 For installation and further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
+
+## Robot library
+
+Robot-side code for consuming EagleEye lives in [`library/`](library/), with full usage notes in
+[`library/README.md`](library/README.md).
+
+Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project, paste
+`library/localization_pipeline_preset.json` into the WebUI's pipeline JSON editor, and feed your
+pose estimator:
+
+```java
+private final EagleEyeCamera[] cameras = {new EagleEyeCamera("front")};
+
+@Override
+public void periodic() {
+  poseEstimator.update(gyro.getRotation2d(), modulePositions);
+  EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+}
+```
+
+Each localization source publishes two NetworkTables topics that share one capture timestamp:
+
+| Topic | Type | Contents |
+| --- | --- | --- |
+| `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
+| `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
+
+Poses are stamped with the camera's kernel-level exposure timestamp and translated into roboRIO
+FPGA time by ntcore, so robot code passes the received timestamp straight to
+`addVisionMeasurement`. There is no latency to subtract. The metrics topic is what the library
+derives its standard deviations from.
 
 ## Contributing
 We welcome contributions to improve EagleEye Object Detection. To contribute:

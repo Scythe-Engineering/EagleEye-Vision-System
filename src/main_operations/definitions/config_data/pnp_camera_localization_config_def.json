@@ -10,7 +10,8 @@
         }
     ],
     "output_nodes": [
-        "camera_pose"
+        "camera_pose",
+        "pose_meta"
     ],
     "parameters": {
         "camera_bus_id": {
