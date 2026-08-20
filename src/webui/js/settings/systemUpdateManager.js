@@ -563,7 +563,7 @@ function renderLiveProgress() {
 
     terminalElement = createElement("pre", {
         className:
-            "mt-4 h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141] font-mono",
+            "eagle-scrollbar mt-4 h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-xs text-gray-300 border border-[#414141] font-mono",
         text: "",
     });
     terminalLineNodes = [];
@@ -604,7 +604,7 @@ function renderError(message) {
             }),
             createElement("pre", {
                 className:
-                    "max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-sm text-red-100 border border-red-700/60 mb-5 font-mono",
+                    "eagle-scrollbar max-h-64 overflow-y-auto whitespace-pre-wrap rounded bg-[#101010] p-3 text-sm text-red-100 border border-red-700/60 mb-5 font-mono",
                 text: message,
             }),
             createElement("div", { className: "flex justify-end" }, [
