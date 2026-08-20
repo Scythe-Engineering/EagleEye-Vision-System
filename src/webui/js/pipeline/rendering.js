@@ -1010,6 +1010,11 @@ export class FlowchartRenderer {
         });
 
         if (changedNodeIds.size > 0) {
+            this.connections.connections.forEach((connection) => {
+                if (changedNodeIds.has(connection.fromNodeId)) {
+                    delete connection.lastPosKey;
+                }
+            });
             this.connections.updateAllConnections(
                 this.nodes,
                 changedNodeIds,
