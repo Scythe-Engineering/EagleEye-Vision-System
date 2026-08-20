@@ -1174,7 +1174,6 @@ export class FlowchartRenderer {
                 this.connections.updateAllConnections(
                     this.nodes,
                     changedNodeIds,
-                    true,
                 );
             });
         }
