@@ -3,9 +3,6 @@
 ## WebUI
 
 - [Architecture and landing page](webui/WEBUI_OVERVIEW.md)
-- [API reference](webui/API_DOCUMENTATION.md)
-- [Frontend workflow](webui/FRONTEND_OVERVIEW.md)
-- [Pipeline flowchart guide](webui/PIPELINE_FLOWCHART_INTERFACE.md)
 - [Assets guide](webui/ASSETS_OVERVIEW.md)
 
 ## Runtime

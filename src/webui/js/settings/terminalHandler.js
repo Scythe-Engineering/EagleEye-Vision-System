@@ -4,23 +4,28 @@ import { buildBackendUrl } from "../config.js";
  * Handles terminal controls and log display interactions in the settings UI.
  */
 let logsLoaded = false;
+let terminalPromptText = "$";
+let terminalCommandHistory = [];
+let terminalHistoryIndex = -1;
+let terminalDraftCommand = "";
+let terminalCommandInFlight = false;
+let terminalPromptRevision = 0;
 
 /**
  * Wire up terminal and log-related UI event handlers.
  */
 export function initializeTerminalHandlers() {
     const terminalPanel = document.getElementById("terminalPanel");
-    const settingsPanel = document.getElementById("settingsPanel");
     const clearLogsBtn = document.getElementById("clearLogsBtn");
     const clearTerminalBtn = document.getElementById("clearTerminalBtn");
     const sendCommandBtn = document.getElementById("sendCommandBtn");
     const terminalInput = document.getElementById("terminalInput");
     const logsOutput = document.getElementById("logsOutput");
-    const terminalOutput = document.getElementById("terminalOutput");
     const downloadLogsBtn = document.getElementById("downloadLogsBtn");
 
     if (terminalPanel) {
         loadLogMessages();
+        loadTerminalPrompt();
     }
 
     if (clearLogsBtn) {
@@ -45,13 +50,10 @@ export function initializeTerminalHandlers() {
         clearTerminalBtn.addEventListener(
             "click",
             /**
-             * Reset the terminal output to its default prompt.
+             * Reset the terminal display while preserving session state.
              */
             function () {
-                if (terminalOutput) {
-                    terminalOutput.innerHTML =
-                        '<div class="text-green-400">pi@eagleeye:~$ </div>';
-                }
+                clearTerminalDisplay();
             },
         );
     }
@@ -74,15 +76,28 @@ export function initializeTerminalHandlers() {
 
     if (terminalInput) {
         terminalInput.addEventListener(
-            "keypress",
+            "keydown",
             /**
-             * Submit the terminal command when Enter is pressed.
+             * Handle Enter submission and arrow-key command history.
              *
-             * @param {KeyboardEvent} event - Keypress event.
+             * @param {KeyboardEvent} event - Keydown event.
              */
             function (event) {
                 if (event.key === "Enter") {
+                    event.preventDefault();
                     sendTerminalCommand();
+                    return;
+                }
+
+                if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    navigateTerminalHistory(-1);
+                    return;
+                }
+
+                if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    navigateTerminalHistory(1);
                 }
             },
         );
@@ -90,74 +105,233 @@ export function initializeTerminalHandlers() {
 }
 
 /**
- * Send the current terminal input to the backend for execution.
+ * Fetch the initial prompt for the backend shell session.
+ *
+ * @returns {Promise<void>}
  */
-function sendTerminalCommand() {
-    const terminalInput = document.getElementById("terminalInput");
-    const terminalOutput = document.getElementById("terminalOutput");
-
-    if (terminalInput && terminalOutput) {
-        const command = terminalInput.value.trim();
-        if (command) {
-            appendToTerminal(terminalOutput, command, "command");
-            terminalInput.value = "";
-
-            fetch(buildBackendUrl("/terminal/execute"), {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ command: command }),
-            })
-                .then((response) => response.json())
-                .then((data) => {
-                    if (data.output) {
-                        appendToTerminal(terminalOutput, data.output, "output");
-                    }
-                    if (data.error) {
-                        appendToTerminal(terminalOutput, data.error, "error");
-                    }
-                })
-                .catch((error) => {
-                    appendToTerminal(
-                        terminalOutput,
-                        `Error: ${error.message}`,
-                        "error",
-                    );
-                });
+async function loadTerminalPrompt() {
+    const revision = terminalPromptRevision;
+    try {
+        const response = await fetch(buildBackendUrl("/terminal/cwd"));
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || data.message || `HTTP ${response.status}`);
         }
+        if (revision === terminalPromptRevision) {
+            applyTerminalPrompt(data);
+        }
+    } catch (error) {
+        appendToTerminal(
+            document.getElementById("terminalOutput"),
+            `Failed to load terminal session: ${error.message}`,
+            "error",
+        );
     }
 }
 
 /**
- * Append one or more lines of terminal output with styling for the given type.
+ * Adopt the prompt returned by the terminal API and show it next to the input.
  *
- * @param {HTMLElement} terminalOutput - Terminal output container element.
- * @param {string} text - Text to append.
+ * @param {{prompt?: string}} data - Terminal session payload.
+ */
+function applyTerminalPrompt(data) {
+    if (data && typeof data.prompt === "string" && data.prompt.trim()) {
+        terminalPromptText = data.prompt.trim();
+    }
+
+    const terminalPrompt = document.getElementById("terminalPrompt");
+    if (terminalPrompt) {
+        terminalPrompt.textContent = terminalPromptText;
+    }
+}
+
+/**
+ * Clear the terminal output pane without touching the backend session.
+ */
+function clearTerminalDisplay() {
+    const terminalOutput = document.getElementById("terminalOutput");
+    if (terminalOutput) {
+        terminalOutput.innerHTML = "";
+    }
+}
+
+/**
+ * Navigate through previously executed terminal commands.
+ *
+ * @param {number} direction - History direction (-1 older, 1 newer).
+ */
+function navigateTerminalHistory(direction) {
+    const terminalInput = document.getElementById("terminalInput");
+    if (!terminalInput || terminalCommandHistory.length === 0) {
+        return;
+    }
+
+    if (terminalHistoryIndex === -1 && direction === -1) {
+        terminalDraftCommand = terminalInput.value;
+        terminalHistoryIndex = terminalCommandHistory.length - 1;
+        terminalInput.value = terminalCommandHistory[terminalHistoryIndex];
+        return;
+    }
+
+    if (terminalHistoryIndex === -1) {
+        return;
+    }
+
+    const nextIndex = terminalHistoryIndex + direction;
+    if (nextIndex < 0) {
+        return;
+    }
+
+    if (nextIndex >= terminalCommandHistory.length) {
+        terminalHistoryIndex = -1;
+        terminalInput.value = terminalDraftCommand;
+        return;
+    }
+
+    terminalHistoryIndex = nextIndex;
+    terminalInput.value = terminalCommandHistory[terminalHistoryIndex];
+}
+
+/**
+ * Record a submitted command in the local history buffer.
+ *
+ * @param {string} command - Command text to store.
+ */
+function pushTerminalHistory(command) {
+    if (
+        terminalCommandHistory.length === 0 ||
+        terminalCommandHistory[terminalCommandHistory.length - 1] !== command
+    ) {
+        terminalCommandHistory.push(command);
+    }
+    terminalHistoryIndex = -1;
+    terminalDraftCommand = "";
+}
+
+/**
+ * Toggle whether the terminal input controls are enabled.
+ *
+ * @param {boolean} isEnabled - Whether input should accept commands.
+ */
+function setTerminalInputEnabled(isEnabled) {
+    const terminalInput = document.getElementById("terminalInput");
+    const sendCommandBtn = document.getElementById("sendCommandBtn");
+
+    if (terminalInput) {
+        terminalInput.disabled = !isEnabled;
+    }
+    if (sendCommandBtn) {
+        sendCommandBtn.disabled = !isEnabled;
+    }
+}
+
+/**
+ * Send the current terminal input to the backend for execution.
+ *
+ * @returns {Promise<void>}
+ */
+async function sendTerminalCommand() {
+    const terminalInput = document.getElementById("terminalInput");
+    const terminalOutput = document.getElementById("terminalOutput");
+
+    if (!terminalInput || !terminalOutput || terminalCommandInFlight) {
+        return;
+    }
+
+    const command = terminalInput.value.trim();
+    if (!command) {
+        return;
+    }
+
+    if (command === "clear" || command === "cls") {
+        pushTerminalHistory(command);
+        terminalInput.value = "";
+        clearTerminalDisplay();
+        return;
+    }
+
+    pushTerminalHistory(command);
+    appendToTerminal(
+        terminalOutput,
+        `${terminalPromptText} ${command}`,
+        "command",
+    );
+    terminalInput.value = "";
+    terminalCommandInFlight = true;
+    setTerminalInputEnabled(false);
+
+    try {
+        const response = await fetch(buildBackendUrl("/terminal/execute"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ command }),
+        });
+        const data = await response.json();
+        if (!response.ok && !data.error) {
+            data.error = data.message || `HTTP ${response.status}`;
+        }
+        terminalPromptRevision += 1;
+        applyTerminalPrompt(data);
+
+        if (data.output) {
+            appendToTerminal(terminalOutput, data.output, "output");
+        }
+        if (data.error) {
+            appendToTerminal(terminalOutput, data.error, "error");
+        }
+        if (
+            typeof data.exit_code === "number" &&
+            data.exit_code !== 0 &&
+            !data.error
+        ) {
+            appendToTerminal(
+                terminalOutput,
+                `Command exited with code ${data.exit_code}`,
+                "error",
+            );
+        }
+    } catch (error) {
+        appendToTerminal(terminalOutput, `Error: ${error.message}`, "error");
+    } finally {
+        terminalCommandInFlight = false;
+        setTerminalInputEnabled(true);
+        terminalInput.focus();
+    }
+}
+
+const TERMINAL_TEXT_CLASSES = {
+    command: "text-green-400",
+    error: "text-red-400",
+    output: "text-gray-300",
+};
+
+/**
+ * Append a block of terminal text with styling for the given type.
+ *
+ * @param {HTMLElement | null} terminalOutput - Terminal output container element.
+ * @param {string} text - Text to append. Newlines render as line breaks.
  * @param {"command"|"error"|"output"} type - Output styling type.
  */
 function appendToTerminal(terminalOutput, text, type) {
-    const lines = text.split("\n");
-    for (const line of lines) {
-        const lineDiv = document.createElement("div");
-        if (type === "command") {
-            lineDiv.className = "text-green-400";
-            lineDiv.textContent = `pi@eagleeye:~$ ${line}`;
-        } else if (type === "error") {
-            lineDiv.className = "text-red-400";
-            lineDiv.textContent = line;
-        } else {
-            lineDiv.className = "text-gray-300";
-            lineDiv.textContent = line;
-        }
-        terminalOutput.appendChild(lineDiv);
+    if (!terminalOutput || text === "") {
+        return;
     }
 
+    const block = document.createElement("div");
+    block.className =
+        TERMINAL_TEXT_CLASSES[type] ?? TERMINAL_TEXT_CLASSES.output;
+    block.style.whiteSpace = "pre-wrap";
+    block.textContent = text;
+    terminalOutput.appendChild(block);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
 /**
  * Load log messages from the backend once per page lifecycle.
+ *
+ * @returns {Promise<void>}
  */
 async function loadLogMessages() {
     if (logsLoaded) return;
@@ -291,19 +465,14 @@ function downloadLogFile() {
             return response.text();
         })
         .then((logContent) => {
-            // Create a blob with the log content
             const blob = new Blob([logContent], { type: "text/plain" });
-
-            // Create a temporary anchor element to trigger download
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "eagleeye_logs.txt";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-
-            // Clean up the object URL
-            URL.revokeObjectURL(a.href);
+            const downloadLink = document.createElement("a");
+            downloadLink.href = URL.createObjectURL(blob);
+            downloadLink.download = "eagleeye_logs.txt";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            downloadLink.remove();
+            URL.revokeObjectURL(downloadLink.href);
         })
         .catch((error) => {
             console.error("Failed to download log file:", error);
