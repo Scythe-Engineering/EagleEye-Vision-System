@@ -337,6 +337,11 @@ export class FlowchartRenderer {
         this.dragOffsetY = 0;
         this.pendingPositionFrame = null;
         this.pendingDragNodeIds = new Set();
+        this.selectedNodeIds = new Set();
+        /** @type {Map<string, {x:number,y:number}> | null} */
+        this.multiDragOrigins = null;
+        /** @type {{x:number,y:number} | null} */
+        this.multiDragPrimaryStart = null;
         this.lastLayoutChromeUpdateMs = 0;
         this.lastHighlightedInputPort = null;
 
@@ -350,6 +355,8 @@ export class FlowchartRenderer {
         this.canvas = new FlowchartCanvas(this.canvasContainer, {
             gridSpacing: this.gridSpacing,
             onViewportChange: this.handleViewportChange.bind(this),
+            onMarqueeSelect: this.handleMarqueeSelect.bind(this),
+            onCanvasBackgroundClick: this.clearSelection.bind(this),
         });
 
         this.minimap = new FlowchartMinimap(this.canvas, {
@@ -563,6 +570,9 @@ export class FlowchartRenderer {
 
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
+        this.selectedNodeIds.clear();
+        this.multiDragOrigins = null;
+        this.multiDragPrimaryStart = null;
         this.clearIslandBlocks();
 
         // Only clear connections if we're not preserving them (default behavior for loading saved connections)
@@ -867,6 +877,55 @@ export class FlowchartRenderer {
     }
 
     /**
+     * Replaces the current node selection and refreshes selection chrome.
+     *
+     * @param {Iterable<string>} nodeIds Selected node instance IDs.
+     */
+    setSelection(nodeIds) {
+        const nextSelectedIds = new Set(nodeIds);
+        for (const [instanceId, node] of this.nodes.entries()) {
+            node.setSelected(nextSelectedIds.has(instanceId));
+        }
+        this.selectedNodeIds = nextSelectedIds;
+    }
+
+    /**
+     * Clears the current node selection.
+     */
+    clearSelection() {
+        this.setSelection([]);
+    }
+
+    /**
+     * Selects nodes intersecting a world-space marquee rectangle.
+     *
+     * @param {{x1:number,y1:number,x2:number,y2:number}} marqueeRect Marquee corners.
+     */
+    handleMarqueeSelect(marqueeRect) {
+        const selectionLeft = Math.min(marqueeRect.x1, marqueeRect.x2);
+        const selectionRight = Math.max(marqueeRect.x1, marqueeRect.x2);
+        const selectionTop = Math.min(marqueeRect.y1, marqueeRect.y2);
+        const selectionBottom = Math.max(marqueeRect.y1, marqueeRect.y2);
+        const selectedIds = [];
+
+        for (const [instanceId, node] of this.nodes.entries()) {
+            const position = node.getPosition();
+            const nodeWidth = node.element?.offsetWidth || 200;
+            const nodeHeight = node.element?.offsetHeight || 80;
+            const intersects =
+                position.x < selectionRight &&
+                position.x + nodeWidth > selectionLeft &&
+                position.y < selectionBottom &&
+                position.y + nodeHeight > selectionTop;
+            if (intersects) {
+                selectedIds.push(instanceId);
+            }
+        }
+
+        this.setSelection(selectedIds);
+    }
+
+    /**
      * Returns a target's docking metadata, including the MX3 contract while
      * config metadata is still loading.
      *
@@ -964,10 +1023,29 @@ export class FlowchartRenderer {
      * Handles the start of a node drag.
      *
      * @param {FlowchartNode} node Dragged node.
-     * @param {DragEvent} event Drag event.
+     * @param {MouseEvent} event Drag event.
      */
     handleNodeDragStart(node, event) {
         node.element.style.zIndex = "100";
+
+        if (!this.selectedNodeIds.has(node.instanceId)) {
+            this.setSelection([node.instanceId]);
+        }
+
+        this.multiDragPrimaryStart = { ...node.getPosition() };
+        this.multiDragOrigins = new Map();
+        for (const selectedId of this.selectedNodeIds) {
+            const selectedNode = this.nodes.get(selectedId);
+            if (!selectedNode) {
+                continue;
+            }
+            this.multiDragOrigins.set(selectedId, {
+                ...selectedNode.getPosition(),
+            });
+            if (selectedId !== node.instanceId && selectedNode.element) {
+                selectedNode.element.style.zIndex = "100";
+            }
+        }
     }
 
     /**
@@ -977,16 +1055,33 @@ export class FlowchartRenderer {
      * @param {{x:number,y:number}} position Final position.
      */
     handleNodeDragEnd(node, position) {
-        node.element.style.zIndex = "10";
-        const dockedNodeIds = this.updateDockingLayout();
+        const movedNodeIds =
+            this.selectedNodeIds.has(node.instanceId) &&
+            this.selectedNodeIds.size > 0
+                ? [...this.selectedNodeIds]
+                : [node.instanceId];
 
-        const item = this.pipeline.find(
-            (p) => p.instanceId === node.instanceId,
-        );
-        if (item) {
-            item.position = position;
+        for (const movedNodeId of movedNodeIds) {
+            const movedNode = this.nodes.get(movedNodeId);
+            if (!movedNode) {
+                continue;
+            }
+            const finalPosition =
+                movedNodeId === node.instanceId
+                    ? position
+                    : movedNode.getPosition();
+            if (movedNode.element) {
+                movedNode.element.style.zIndex = "10";
+            }
+
+            const pipelineItem = this.pipeline.find(
+                (item) => item.instanceId === movedNodeId,
+            );
+            if (pipelineItem) {
+                pipelineItem.position = finalPosition;
+            }
+            pipelineStore.updateNodePosition(movedNodeId, finalPosition);
         }
-        pipelineStore.updateNodePosition(node.instanceId, position);
 
         if (this.positionChangeDebounce) {
             clearTimeout(this.positionChangeDebounce);
@@ -998,16 +1093,17 @@ export class FlowchartRenderer {
             this.pendingDragNodeIds.clear();
         }
 
+        const dockedNodeIds = this.updateDockingLayout();
+        const changedNodeIds = new Set([...movedNodeIds, ...dockedNodeIds]);
         this.connections.connections.forEach((connection) => {
             if (
-                connection.fromNodeId === node.instanceId ||
-                connection.toNodeId === node.instanceId
+                changedNodeIds.has(connection.fromNodeId) ||
+                changedNodeIds.has(connection.toNodeId)
             ) {
                 delete connection.lastPosKey;
             }
         });
 
-        const changedNodeIds = new Set([node.instanceId, ...dockedNodeIds]);
         this.connections.updateAllConnections(
             this.nodes,
             changedNodeIds,
@@ -1030,6 +1126,8 @@ export class FlowchartRenderer {
         this.updateGridOperationPositions();
         this.updateIslandBlocks();
 
+        this.multiDragOrigins = null;
+        this.multiDragPrimaryStart = null;
         this.callbacks.autoSavePipeline();
     }
 
@@ -1046,6 +1144,28 @@ export class FlowchartRenderer {
             this.pendingDragNodeIds.add(instanceId),
         );
 
+        if (
+            this.multiDragOrigins &&
+            this.multiDragPrimaryStart &&
+            this.selectedNodeIds.size > 1 &&
+            this.selectedNodeIds.has(node.instanceId)
+        ) {
+            const deltaX = position.x - this.multiDragPrimaryStart.x;
+            const deltaY = position.y - this.multiDragPrimaryStart.y;
+            for (const selectedId of this.selectedNodeIds) {
+                if (selectedId === node.instanceId) {
+                    continue;
+                }
+                const origin = this.multiDragOrigins.get(selectedId);
+                const selectedNode = this.nodes.get(selectedId);
+                if (!origin || !selectedNode) {
+                    continue;
+                }
+                selectedNode.setPosition(origin.x + deltaX, origin.y + deltaY);
+                this.pendingDragNodeIds.add(selectedId);
+            }
+        }
+
         if (!this.pendingPositionFrame) {
             this.pendingPositionFrame = requestAnimationFrame(() => {
                 const changedNodeIds = new Set(this.pendingDragNodeIds);
@@ -1054,7 +1174,6 @@ export class FlowchartRenderer {
                 this.connections.updateAllConnections(
                     this.nodes,
                     changedNodeIds,
-                    true,
                 );
             });
         }
@@ -1659,6 +1778,7 @@ export class FlowchartRenderer {
             this.connections.removeConnectionsForNode(instanceId);
             node.destroy();
             this.nodes.delete(instanceId);
+            this.selectedNodeIds.delete(instanceId);
 
             // Trigger cycle detection after node removal
             this.updateCycleHighlights();

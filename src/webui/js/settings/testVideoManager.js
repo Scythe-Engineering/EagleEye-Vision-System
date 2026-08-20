@@ -131,6 +131,52 @@ async function restartBackend(button = null) {
 }
 
 /**
+ * Confirms and requests a full host reboot (Linux only).
+ *
+ * @param {HTMLButtonElement | null} [button=null]
+ */
+async function rebootComputer(button = null) {
+    const confirmed = await confirmDialog({
+        title: "Reboot Computer?",
+        message: "This will reboot the entire machine. Are you sure?",
+        detail: "All processes will stop and the host will restart. Linux only.",
+        confirmText: "Reboot",
+        variant: "warning",
+    });
+    if (!confirmed) {
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Rebooting...";
+    }
+
+    try {
+        const response = await fetch(`${BACKEND_BASE_URL}/reboot-system`, {
+            method: "POST",
+        });
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch {
+            payload = {};
+        }
+        if (!response.ok) {
+            throw new Error(payload.error || payload.message || "Reboot failed");
+        }
+        showWarning("System reboot initiated. The page will become unavailable.");
+    } catch (error) {
+        console.error("Failed to reboot computer:", error);
+        showDanger(error.message || "Failed to reboot computer");
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Reboot Computer";
+        }
+    }
+}
+
+/**
  * Loads the current test video list from the backend.
  */
 async function loadVideos() {
@@ -444,10 +490,18 @@ export function initializeTestVideoManager() {
         manageButton.addEventListener("click", open);
     }
 
+    const rebootComputerButton = document.getElementById("rebootComputerBtn");
+    if (rebootComputerButton) {
+        rebootComputerButton.addEventListener("click", () => {
+            void rebootComputer(rebootComputerButton);
+        });
+    }
+
     globalThis.TestVideoManager = {
         open,
         close,
         loadVideos,
     };
     globalThis.restartBackend = () => restartBackend();
+    globalThis.rebootComputer = () => rebootComputer();
 }

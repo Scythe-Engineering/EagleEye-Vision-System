@@ -44,6 +44,7 @@ export class FlowchartNode {
 
         this.isDragging = false;
         this.isHovered = false;
+        this.isSelected = false;
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
         this.gridSpacing = options.gridSpacing || 20;
@@ -613,6 +614,10 @@ export class FlowchartNode {
          * Restores the default node chrome styling.
          */
         const applyDefaultNodeChrome = () => {
+            if (this.isSelected) {
+                this.applySelectedNodeChrome();
+                return;
+            }
             this.element.style.borderColor = "#404040";
             this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
         };
@@ -621,6 +626,10 @@ export class FlowchartNode {
          * Applies the hovered node chrome styling.
          */
         const applyHoveredNodeChrome = () => {
+            if (this.isSelected) {
+                this.applySelectedNodeChrome();
+                return;
+            }
             this.element.style.borderColor = "#f9c845";
             this.element.style.boxShadow =
                 "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
@@ -659,7 +668,19 @@ export class FlowchartNode {
     }
 
     /**
-     * Updates the node chrome to match current hover/drag state.
+     * Applies selected-node accent chrome.
+     */
+    applySelectedNodeChrome() {
+        if (!this.element) {
+            return;
+        }
+        this.element.style.borderColor = "#f9c845";
+        this.element.style.boxShadow =
+            "4px 4px 18px rgba(0, 0, 0, 0.65), 0 0 14px rgba(249, 200, 69, 0.4)";
+    }
+
+    /**
+     * Updates the node chrome to match current hover/drag/selection state.
      */
     updateNodeHoverChrome() {
         if (!this.element || this.isDragging) {
@@ -675,6 +696,11 @@ export class FlowchartNode {
             return;
         }
 
+        if (this.isSelected) {
+            this.applySelectedNodeChrome();
+            return;
+        }
+
         if (this.isHovered || this.element.matches(":hover")) {
             this.element.style.borderColor = "#f9c845";
             this.element.style.boxShadow =
@@ -682,6 +708,18 @@ export class FlowchartNode {
         } else {
             this.element.style.borderColor = "#404040";
             this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        }
+    }
+
+    /**
+     * Sets whether this node is part of the canvas selection.
+     * @param {boolean} selected
+     */
+    setSelected(selected) {
+        this.isSelected = Boolean(selected);
+        if (this.element) {
+            this.element.classList.toggle("flowchart-node-selected", this.isSelected);
+            this.updateNodeHoverChrome();
         }
     }
 

@@ -6,6 +6,7 @@ import re
 import selectors
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -79,6 +80,35 @@ class SystemMonitorMixin:
         """
         self.restart_callback()
         return {"message": "Backend restarted successfully"}, 200
+
+    def reboot_system(self) -> tuple[dict, int]:
+        """Reboot the host machine on Linux via ``sudo reboot``.
+
+        Returns:
+            tuple[dict, int]: Acceptance or error payload with HTTP status.
+        """
+        if sys.platform != "linux":
+            return {"error": "System reboot is only supported on Linux."}, 400
+
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "reboot"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.log(f"Failed to initiate system reboot: {error}")
+            return {"error": "Failed to initiate system reboot."}, 500
+
+        if result.returncode != 0:
+            error = result.stderr.strip() or "sudo reboot failed"
+            self.log(f"Failed to initiate system reboot: {error}")
+            return {"error": error}, 500
+
+        self.log("System reboot initiated")
+        return {"message": "System reboot initiated"}, 200
 
     def set_restart_required(self) -> tuple[dict, int]:
         """
@@ -165,6 +195,7 @@ class SystemMonitorMixin:
         return payload, 200
 
     def _repo_root(self) -> Path:
+        """Return the repository root used by update commands."""
         return Path(__file__).resolve().parents[3]
 
     def _ensure_system_update_state(self) -> None:
@@ -424,10 +455,18 @@ class SystemMonitorMixin:
                             line=line.rstrip("\n"),
                         )
                         continue
-
-                return_code = process.poll()
-                if return_code is None:
-                    continue
+                    try:
+                        return_code = process.wait(timeout=remaining_seconds)
+                    except subprocess.TimeoutExpired as error:
+                        process.kill()
+                        process.wait(timeout=5)
+                        raise RuntimeError(
+                            f"Update command timed out: {display_command}"
+                        ) from error
+                else:
+                    return_code = process.poll()
+                    if return_code is None:
+                        continue
 
                 remaining = process.stdout.read()
                 if remaining:
@@ -452,6 +491,7 @@ class SystemMonitorMixin:
                 return
         finally:
             selector.close()
+            process.stdout.close()
 
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
