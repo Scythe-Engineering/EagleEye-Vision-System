@@ -11,34 +11,35 @@ from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 
 
+MINIMUM_DOWNWARD_ANGLE_RADIANS = np.deg2rad(3.0)
+
+
 class GroundPlaneIntersection(OperationInstance):
     """Ground plane intersection for 3D position estimation.
 
-    This operation calculates the 3D intersection points of detection bounding boxes
-    with the ground plane using camera pose and calibration parameters.
+    This operation projects detection bounding boxes through calibrated camera
+    intrinsics, then intersects those rays with the field ground plane using the
+    supplied field-from-camera pose.
 
-    Input: List[Dict[str, Any]] with detection information
-    Output: List[Dict[str, Any]] with 3D position information
+    Input: Detection dictionaries and a 4x4 field-from-camera pose
+    Output: Detection dictionaries with field-relative 3D positions
     """
 
     def __init__(
         self,
         camera_bus_id: str | None = None,
-        camera_height: float = 1.0,
-        camera_pitch: float = 0.0,
+        ground_level: float = 0.0,
         camera_config_registry: CameraConfigRegistry | None = None,
     ) -> None:
         """Initialize ground plane intersection operation.
 
         Args:
-            camera_bus_id: Camera bus ID used to resolve intrinsics and extrinsics.
-            camera_height: Legacy fallback height used when extrinsics are unavailable.
-            camera_pitch: Legacy fallback pitch used when extrinsics are unavailable.
+            camera_bus_id: Camera bus ID used to resolve intrinsics.
+            ground_level: Ground-plane height in field coordinates, in meters.
             camera_config_registry: Injected shared camera config registry.
         """
         self.camera_bus_id = str(camera_bus_id) if camera_bus_id is not None else None
-        self._fallback_camera_height = float(camera_height)
-        self._fallback_camera_pitch = float(camera_pitch)
+        self.ground_level = float(ground_level)
         self.camera_config_registry = camera_config_registry
         self._intrinsics_cache: dict[str, Any] | None = None
 
@@ -125,8 +126,7 @@ class GroundPlaneIntersection(OperationInstance):
 
         intrinsics_stat = intrinsics_path.stat()
         cache_key = (
-            f"{intrinsics_path}:{intrinsics_stat.st_mtime_ns}:"
-            f"{intrinsics_stat.st_size}"
+            f"{intrinsics_path}:{intrinsics_stat.st_mtime_ns}:{intrinsics_stat.st_size}"
         )
 
         if (
@@ -159,38 +159,27 @@ class GroundPlaneIntersection(OperationInstance):
         }
         return self._intrinsics_cache
 
-    def _load_camera_pose_params(self) -> tuple[float, float]:
-        """Load camera height and pitch from selected camera extrinsics.
-
-        Returns:
-            Tuple of camera height in meters and pitch in radians. The current
-            extrinsics editor stores height as ``z_offset`` and pitch in degrees.
-        """
-        if self.camera_config_registry is None:
-            return self._fallback_camera_height, self._fallback_camera_pitch
-
-        camera_bus_id = self._resolve_camera_bus_id()
-        camera_config = self.camera_config_registry.get_config(camera_bus_id)
-        extrinsics = camera_config.extrinsics
-
-        camera_height = float(extrinsics.z_offset)
-        camera_pitch = float(np.deg2rad(extrinsics.pitch))
-
-        if not np.isfinite(camera_height) or not np.isfinite(camera_pitch):
-            return self._fallback_camera_height, self._fallback_camera_pitch
-
-        return camera_height, camera_pitch
-
-    def run(self, detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Process detections for ground plane intersection.
+    def run(self, input_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Intersect detection rays with the field ground plane.
 
         Args:
-            detections: List of detection dictionaries (already undistorted)
+            input_data: Dictionary containing undistorted ``detections`` and a
+                4x4 ``camera_pose`` mapping camera coordinates into field coordinates.
 
         Returns:
-            List of detection dictionaries with ground plane intersection information
+            Detection dictionaries with field-relative ``position_3d`` values.
         """
-        output_detections = []
+        detections = input_data.get("detections")
+        camera_pose = input_data.get("camera_pose")
+        if detections is None or camera_pose is None:
+            return []
+
+        field_from_camera = np.asarray(camera_pose, dtype=float)
+        if field_from_camera.shape != (4, 4) or not np.all(
+            np.isfinite(field_from_camera)
+        ):
+            raise ValueError("Camera pose must be a finite 4x4 matrix.")
+
         intrinsics = self._load_intrinsics()
         camera_matrix = intrinsics["camera_matrix"]
         image_width = intrinsics["image_width"]
@@ -199,7 +188,9 @@ class GroundPlaneIntersection(OperationInstance):
         fy = float(camera_matrix[1, 1])
         cx = float(camera_matrix[0, 2])
         cy = float(camera_matrix[1, 2])
-        camera_height, camera_pitch = self._load_camera_pose_params()
+        camera_origin = field_from_camera[:3, 3]
+        camera_height_from_ground = camera_origin[2] - self.ground_level
+        output_detections = []
 
         for detection in detections:
             if not isinstance(detection, dict):
@@ -214,29 +205,25 @@ class GroundPlaneIntersection(OperationInstance):
             x_pixel = np.clip(float(x_center), 0.0, 1.0) * image_width
             y_pixel = np.clip(float(y_bottom), 0.0, 1.0) * image_height
 
-            x_ray = (x_pixel - cx) / fx
-            y_ray = (y_pixel - cy) / fy
-
-            horizontal_angle_rad = np.arctan(x_ray)
-            vertical_angle_from_optical_rad = np.arctan(y_ray)
-            total_vertical_angle_rad = (
-                vertical_angle_from_optical_rad + camera_pitch
+            camera_ray = np.array(
+                [(x_pixel - cx) / fx, (y_pixel - cy) / fy, 1.0],
+                dtype=float,
             )
+            field_ray = field_from_camera[:3, :3] @ camera_ray
+            horizontal_ray_length = float(np.linalg.norm(field_ray[:2]))
+            downward_angle = np.arctan2(-field_ray[2], horizontal_ray_length)
 
-            min_vertical_angle_rad = np.deg2rad(3.0)
-            if total_vertical_angle_rad <= min_vertical_angle_rad:
+            if (
+                camera_height_from_ground <= 0.0
+                or downward_angle <= MINIMUM_DOWNWARD_ANGLE_RADIANS
+            ):
                 continue
 
-            distance = camera_height / np.tan(total_vertical_angle_rad)
-            if not np.isfinite(distance) or distance <= 0:
+            ray_scale = -camera_height_from_ground / field_ray[2]
+            if not np.isfinite(ray_scale) or ray_scale <= 0.0:
                 continue
 
-            x_position = distance * np.cos(horizontal_angle_rad)
-            y_position = distance * np.sin(horizontal_angle_rad)
-
-            z_position = 0.0
-
-            position_3d = np.array([y_position, z_position, x_position])
+            position_3d = camera_origin + field_ray * ray_scale
 
             updated_detection = detection.copy()
             updated_detection["position_3d"] = position_3d.tolist()
@@ -258,3 +245,5 @@ class GroundPlaneIntersection(OperationInstance):
             if next_camera_bus_id != self.camera_bus_id:
                 self.camera_bus_id = next_camera_bus_id
                 self._intrinsics_cache = None
+        if json_config.get("ground_level") is not None:
+            self.ground_level = float(json_config["ground_level"])

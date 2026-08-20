@@ -7,7 +7,9 @@
         style="box-shadow: 8px 8px 16px rgba(0, 0, 0, 0.4)"
     >
         <div class="mb-5">
-            <h2 class="text-xl font-bold text-[#f9c845]">Camera Config Utils</h2>
+            <h2 class="text-xl font-bold text-[#f9c845]">
+                Camera Config Utils
+            </h2>
             <p class="text-[#ac8a2f] mt-1">
                 Configure camera extrinsics and manage camera intrinsics files.
             </p>
@@ -152,6 +154,13 @@
                     Calibrate Camera
                 </button>
                 <button
+                    id="utilsViewDistortionBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                >
+                    View Distortion
+                </button>
+                <button
                     id="utilsDeleteIntrinsicsBtn"
                     type="button"
                     class="px-4 py-2 bg-[#232323] text-red-300 font-semibold rounded-md border border-[#414141] hover:border-red-500 transition-colors"
@@ -162,37 +171,169 @@
         </div>
     </div>
 
-    <div id="utilsCalibrationModal" class="hidden fixed inset-0 z-50 bg-black/70 p-4">
-        <div class="max-w-6xl mx-auto h-full bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5 flex flex-col">
+    <div
+        id="utilsDistortionModal"
+        class="hidden fixed inset-0 z-50 bg-black/70 p-4"
+    >
+        <div
+            class="max-w-7xl mx-auto h-full bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5 flex flex-col"
+        >
             <div class="flex items-start justify-between gap-4 mb-4">
                 <div>
-                    <h3 class="text-xl font-bold text-[#f9c845]">Camera Intrinsics Calibration</h3>
-                    <p class="text-sm text-[#ac8a2f]">Show an OpenCV checkerboard, capture frames with Space/C or the button, then calibrate. 10 frames recommended.</p>
+                    <h3 class="text-xl font-bold text-[#f9c845]">
+                        Camera Distortion Diagnostic
+                    </h3>
+                    <p class="text-sm text-[#ac8a2f]">
+                        Compare the raw camera image with the corrected image.
+                        The warped raw grid visualizes the saved distortion; the
+                        corrected grid provides a straight reference.
+                    </p>
                 </div>
-                <button id="utilsCalibrationCloseBtn" type="button" class="px-3 py-1 bg-[#232323] text-white rounded-md border border-[#414141]">Close</button>
+                <button
+                    id="utilsDistortionCloseBtn"
+                    type="button"
+                    class="px-3 py-1 bg-[#232323] text-white rounded-md border border-[#414141]"
+                >
+                    Close
+                </button>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-1">
+                <figure class="min-h-0 flex flex-col">
+                    <figcaption
+                        class="mb-2 text-sm font-semibold text-[#f9c845]"
+                    >
+                        Distorted / Raw View with Parameter Grid
+                    </figcaption>
+                    <div
+                        class="min-h-0 flex-1 bg-black border border-[#414141] rounded-md overflow-hidden flex items-center justify-center"
+                    >
+                        <img
+                            id="utilsDistortedFeed"
+                            alt="Raw camera view with distortion grid"
+                            class="w-full h-full object-contain"
+                        />
+                    </div>
+                </figure>
+                <figure class="min-h-0 flex flex-col">
+                    <figcaption
+                        class="mb-2 text-sm font-semibold text-[#f9c845]"
+                    >
+                        Undistorted View with Straight Reference Grid
+                    </figcaption>
+                    <div
+                        class="min-h-0 flex-1 bg-black border border-[#414141] rounded-md overflow-hidden flex items-center justify-center"
+                    >
+                        <img
+                            id="utilsUndistortedFeed"
+                            alt="Undistorted camera view with straight grid"
+                            class="w-full h-full object-contain"
+                        />
+                    </div>
+                </figure>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="utilsCalibrationModal"
+        class="hidden fixed inset-0 z-50 bg-black/70 p-4"
+    >
+        <div
+            class="max-w-6xl mx-auto h-full bg-[#1f1f1f] border-2 border-[#414141] rounded-[15px] p-5 flex flex-col"
+        >
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-xl font-bold text-[#f9c845]">
+                        Camera Intrinsics Calibration
+                    </h3>
+                    <p class="text-sm text-[#ac8a2f]">
+                        Show an OpenCV checkerboard, capture frames with Space/C
+                        or the button, then calibrate. 10 frames recommended.
+                    </p>
+                </div>
+                <button
+                    id="utilsCalibrationCloseBtn"
+                    type="button"
+                    class="px-3 py-1 bg-[#232323] text-white rounded-md border border-[#414141]"
+                >
+                    Close
+                </button>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 min-h-0 flex-1">
+            <div
+                class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 min-h-0 flex-1"
+            >
                 <div class="min-h-0 grid grid-rows-2 gap-3">
-                    <div class="min-h-0 bg-[#232323] border border-[#414141] rounded-md overflow-hidden flex items-center justify-center">
-                        <img id="utilsCalibrationFeed" alt="Current ChArUco detection feed" class="w-full h-full object-contain" />
+                    <div
+                        class="min-h-0 bg-[#232323] border border-[#414141] rounded-md overflow-hidden flex items-center justify-center"
+                    >
+                        <img
+                            id="utilsCalibrationFeed"
+                            alt="Current ChArUco detection feed"
+                            class="w-full h-full object-contain"
+                        />
                     </div>
-                    <div class="min-h-0 bg-black border border-[#414141] rounded-md overflow-hidden relative">
-                        <canvas id="utilsCalibrationHistoryCanvas" class="w-full h-full block"></canvas>
-                        <div id="utilsCalibrationHistoryEmpty" class="absolute inset-0 flex items-center justify-center text-sm text-[#ac8a2f] pointer-events-none">Captured corner coverage will appear here</div>
+                    <div
+                        class="min-h-0 bg-black border border-[#414141] rounded-md overflow-hidden relative"
+                    >
+                        <canvas
+                            id="utilsCalibrationHistoryCanvas"
+                            class="w-full h-full block"
+                        ></canvas>
+                        <div
+                            id="utilsCalibrationHistoryEmpty"
+                            class="absolute inset-0 flex items-center justify-center text-sm text-[#ac8a2f] pointer-events-none"
+                        >
+                            Captured corner coverage will appear here
+                        </div>
                     </div>
                 </div>
 
                 <div class="space-y-3 overflow-auto eagle-scrollbar">
                     <div class="grid grid-cols-2 gap-2">
-                        <label class="text-sm text-[#f9c845]">Squares X<input id="utilsCalibrationSquaresX" type="number" min="2" max="30" value="11" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
-                        <label class="text-sm text-[#f9c845]">Squares Y<input id="utilsCalibrationSquaresY" type="number" min="2" max="30" value="8" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
-                        <label class="text-sm text-[#f9c845]">Square m<input id="utilsCalibrationSquareSize" type="number" min="0.0001" step="0.001" value="0.015" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
-                        <label class="text-sm text-[#f9c845]">Marker m<input id="utilsCalibrationMarkerSize" type="number" min="0.0001" step="0.001" value="0.011" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1" /></label>
+                        <label class="text-sm text-[#f9c845]"
+                            >Squares X<input
+                                id="utilsCalibrationSquaresX"
+                                type="number"
+                                min="2"
+                                max="30"
+                                value="11"
+                                class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1"
+                        /></label>
+                        <label class="text-sm text-[#f9c845]"
+                            >Squares Y<input
+                                id="utilsCalibrationSquaresY"
+                                type="number"
+                                min="2"
+                                max="30"
+                                value="8"
+                                class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1"
+                        /></label>
+                        <label class="text-sm text-[#f9c845]"
+                            >Square m<input
+                                id="utilsCalibrationSquareSize"
+                                type="number"
+                                min="0.0001"
+                                step="0.001"
+                                value="0.015"
+                                class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1"
+                        /></label>
+                        <label class="text-sm text-[#f9c845]"
+                            >Marker m<input
+                                id="utilsCalibrationMarkerSize"
+                                type="number"
+                                min="0.0001"
+                                step="0.001"
+                                value="0.011"
+                                class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1"
+                        /></label>
                     </div>
                     <label class="block text-sm text-[#f9c845]">
                         Live View Resolution
-                        <select id="utilsCalibrationLiveResolution" class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1">
+                        <select
+                            id="utilsCalibrationLiveResolution"
+                            class="mt-1 w-full bg-[#232323] border border-[#414141] text-white rounded-md px-2 py-1"
+                        >
                             <option value="full">Full resolution</option>
                             <option value="1920x1080">1920x1080</option>
                             <option value="1280x720" selected>1280x720</option>
@@ -200,16 +341,52 @@
                             <option value="640x360">640x360</option>
                             <option value="320x240">320x240</option>
                         </select>
-                        <span class="mt-1 block text-xs text-[#ac8a2f]">Only affects the live preview. Captures always use full camera resolution.</span>
+                        <span class="mt-1 block text-xs text-[#ac8a2f]"
+                            >Only affects the live preview. Captures always use
+                            full camera resolution.</span
+                        >
                     </label>
-                    <p id="utilsCalibrationStatus" class="text-sm text-[#ac8a2f]">0 frames captured.</p>
+                    <p
+                        id="utilsCalibrationStatus"
+                        class="text-sm text-[#ac8a2f]"
+                    >
+                        0 frames captured.
+                    </p>
                     <div class="flex flex-wrap gap-2">
-                        <button id="utilsCalibrationCaptureBtn" type="button" class="px-3 py-2 bg-[#232323] text-[#f9c845] rounded-md border border-[#414141]">Capture</button>
-                        <button id="utilsCalibrationResetBtn" type="button" class="px-3 py-2 bg-[#232323] text-white rounded-md border border-[#414141]">Reset</button>
-                        <button id="utilsCalibrationRunBtn" type="button" class="px-3 py-2 bg-[#f9c845] text-black font-semibold rounded-md">Calibrate & Save</button>
+                        <button
+                            id="utilsCalibrationCaptureBtn"
+                            type="button"
+                            class="px-3 py-2 bg-[#232323] text-[#f9c845] rounded-md border border-[#414141]"
+                        >
+                            Capture
+                        </button>
+                        <button
+                            id="utilsCalibrationResetBtn"
+                            type="button"
+                            class="px-3 py-2 bg-[#232323] text-white rounded-md border border-[#414141]"
+                        >
+                            Reset
+                        </button>
+                        <button
+                            id="utilsCalibrationRunBtn"
+                            type="button"
+                            class="px-3 py-2 bg-[#f9c845] text-black font-semibold rounded-md"
+                        >
+                            Calibrate & Save
+                        </button>
                     </div>
-                    <div id="utilsCalibrationProgress" class="hidden h-2 bg-[#414141] rounded overflow-hidden"><div class="h-full w-1/2 bg-[#f9c845] animate-pulse"></div></div>
-                    <div id="utilsCalibrationFrames" class="grid grid-cols-3 gap-2 text-xs text-white"></div>
+                    <div
+                        id="utilsCalibrationProgress"
+                        class="hidden h-2 bg-[#414141] rounded overflow-hidden"
+                    >
+                        <div
+                            class="h-full w-1/2 bg-[#f9c845] animate-pulse"
+                        ></div>
+                    </div>
+                    <div
+                        id="utilsCalibrationFrames"
+                        class="grid grid-cols-3 gap-2 text-xs text-white"
+                    ></div>
                 </div>
             </div>
         </div>

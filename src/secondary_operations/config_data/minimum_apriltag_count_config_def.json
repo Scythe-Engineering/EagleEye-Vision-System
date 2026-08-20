@@ -1,0 +1,25 @@
+{
+    "class_name": "MinimumApriltagCount",
+    "description": "Continue processing a frame only when enough AprilTags were detected",
+    "category": "filt",
+    "folder": "Filtering",
+    "input_nodes": [
+        {
+            "name": "detections",
+            "has_default": false
+        }
+    ],
+    "output_nodes": [
+        "detections"
+    ],
+    "parameters": {
+        "minimum_detections": {
+            "type": "int",
+            "description": "Minimum number of AprilTag detections required to continue processing the frame",
+            "default": 2,
+            "required": false,
+            "min": 1,
+            "restart_for_change": false
+        }
+    }
+}

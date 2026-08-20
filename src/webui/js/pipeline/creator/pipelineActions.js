@@ -2,7 +2,11 @@
 import { renderOperations } from "../rendering.js";
 import { pipelineStore } from "../PipelineStore.js";
 import { confirmDialog } from "../../ui/confirmationDialog.js";
-import { showDanger, showSuccess, showWarning } from "../../ui/notificationSystem.js";
+import {
+    showDanger,
+    showSuccess,
+    showWarning,
+} from "../../ui/notificationSystem.js";
 import { creatorContext } from "./context.js";
 import {
     getOperations,
@@ -108,9 +112,12 @@ async function handlePipelineSelection({ loadPipelineIntoBuilder }) {
  * Load a pipeline configuration into the builder state.
  *
  * @param {string} pipelineName - Pipeline identifier to load.
- * @param {{renderCurrentPipeline?: Function}} [options={}] - Optional render callback.
+ * @param {{renderCurrentPipeline?: Function, centerView?: boolean}} [options={}] - Optional render callback.
  */
-async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } = {}) {
+async function loadPipelineIntoBuilder(
+    pipelineName,
+    { renderCurrentPipeline, centerView = true } = {},
+) {
     try {
         const operations = getOperations();
         if (operations.length === 0) {
@@ -121,13 +128,16 @@ async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } =
         const pipelineConfig = await fetchPipelineConfig(pipelineName);
         const allConnections = [];
         pipelineConfig.forEach((configItem) => {
-            if (configItem.connections && Array.isArray(configItem.connections)) {
+            if (
+                configItem.connections &&
+                Array.isArray(configItem.connections)
+            ) {
                 allConnections.push(...configItem.connections);
             }
         });
 
-        pipelineStore.loadPipelineData(pipelineConfig, allConnections);
-        await renderCurrentPipeline?.();
+        await pipelineStore.loadPipelineData(pipelineConfig, allConnections);
+        await renderCurrentPipeline?.({ centerView });
         updateRunButton();
         updatePipelineCameraNote();
     } catch (error) {
@@ -139,16 +149,16 @@ async function loadPipelineIntoBuilder(pipelineName, { renderCurrentPipeline } =
 /**
  * Render the current pipeline into the flowchart view.
  *
- * @param {Object} [_options={}] - Unused options placeholder.
+ * @param {{centerView?: boolean}} [options={}] - Render options.
  */
-async function renderCurrentPipeline({}) {
+async function renderCurrentPipeline({ centerView = true } = {}) {
     const flowchartRenderer = creatorContext.flowchartRenderer;
     if (!flowchartRenderer) return;
     const pipeline = getPipeline();
     const connections = pipelineStore.getConnectionsForRenderer();
     await flowchartRenderer.renderPipeline(pipeline, {
         connections,
-        centerView: true,
+        centerView,
     });
     await postFlowchartStructureRefresh();
 }
@@ -183,11 +193,69 @@ async function checkAndTriggerAutoFill({ loadPipelineIntoBuilder }) {
 }
 
 /**
- * Update the run button enabled state based on whether nodes exist.
+ * Update the run button enabled state based on graph and docking validity.
  */
 function updateRunButton() {
     const runButton = creatorContext.elements.runButton;
-    if (runButton) runButton.disabled = pipelineStore.getNodes().length === 0;
+    if (runButton) {
+        runButton.disabled =
+            pipelineStore.getNodes().length === 0 ||
+            !pipelineStore.validateDocking().valid;
+    }
+}
+
+/**
+ * Check that every Device Input belongs to the same undirected graph component.
+ * Malformed and dangling connections are ignored.
+ *
+ * @param {Array<Record<string, unknown>>} operations - Exported pipeline operations.
+ * @returns {boolean} Whether the Device Input component rule is satisfied.
+ */
+function deviceInputsShareComponent(operations) {
+    if (!Array.isArray(operations)) return true;
+
+    const operationsByUuid = new Map(
+        operations
+            .filter(
+                (operation) =>
+                    operation &&
+                    typeof operation === "object" &&
+                    typeof operation.uuid === "string" &&
+                    operation.uuid,
+            )
+            .map((operation) => [operation.uuid, operation]),
+    );
+    const adjacency = new Map(
+        [...operationsByUuid.keys()].map((uuid) => [uuid, new Set()]),
+    );
+    const deviceUuids = [...operationsByUuid]
+        .filter(([, operation]) =>
+            ["device_input", "device_input.py"].includes(operation.action_name),
+        )
+        .map(([uuid]) => uuid);
+    if (deviceUuids.length < 2) return true;
+
+    for (const operation of operationsByUuid.values()) {
+        if (!Array.isArray(operation.connections)) continue;
+        for (const connection of operation.connections) {
+            if (!connection || typeof connection !== "object") continue;
+            const fromUuid = connection.from_uuid;
+            const toUuid = connection.to_uuid;
+            if (!adjacency.has(fromUuid) || !adjacency.has(toUuid)) continue;
+            adjacency.get(fromUuid).add(toUuid);
+            adjacency.get(toUuid).add(fromUuid);
+        }
+    }
+
+    const pending = [deviceUuids[0]];
+    const visited = new Set();
+    while (pending.length > 0) {
+        const uuid = pending.pop();
+        if (visited.has(uuid)) continue;
+        visited.add(uuid);
+        pending.push(...adjacency.get(uuid));
+    }
+    return deviceUuids.every((uuid) => visited.has(uuid));
 }
 
 /**
@@ -203,6 +271,12 @@ async function autoSavePipelineImpl(options = {}) {
     }
     try {
         const pipelineConfig = pipelineStore.exportToConfig();
+        if (!deviceInputsShareComponent(pipelineConfig)) {
+            showDanger(
+                "Cannot save: connect all Device Input operations through the pipeline graph.",
+            );
+            return null;
+        }
         const result = await savePipelineConfig(
             selectedPipeline.name,
             pipelineConfig,
@@ -214,16 +288,16 @@ async function autoSavePipelineImpl(options = {}) {
                 result?.live_update_status === "unsupported",
         );
         if (restartRequired) {
-            await updateRestartIndicator(true, { syncBackend: !result?.restart_required });
+            await updateRestartIndicator(true, {
+                syncBackend: !result?.restart_required,
+            });
         } else if (result?.restart_required === false) {
             await updateRestartIndicator(false);
         }
         if (options.showNotification) {
             if (result?.live_update_status === "failed") {
                 showDanger("Operation settings saved, but live apply failed.");
-            } else if (
-                restartRequired
-            ) {
+            } else if (restartRequired) {
                 showWarning(
                     "Operation settings saved. Restart required to apply.",
                 );
@@ -284,7 +358,8 @@ async function createNewPipeline({
         const existingIndex = currentPipelines.findIndex(
             (p) => p.name === pipelineFileName,
         );
-        if (existingIndex >= 0) currentPipelines[existingIndex] = newPipelineObj;
+        if (existingIndex >= 0)
+            currentPipelines[existingIndex] = newPipelineObj;
         else currentPipelines.push(newPipelineObj);
         pipelineStore.setCurrentPipeline(pipelineFileName);
         populatePipelineDropdown(pipelineFileName);
@@ -293,7 +368,9 @@ async function createNewPipeline({
             if (pipelineSelect) pipelineSelect.value = pipelineFileName;
         }, 10);
         const operations = getOperations();
-        const deviceInputOp = operations.find((op) => op.id === "device_input.py");
+        const deviceInputOp = operations.find(
+            (op) => op.id === "device_input.py",
+        );
         if (deviceInputOp) {
             pipelineStore.addNode(
                 { id: deviceInputOp.id, config: {} },
@@ -362,13 +439,14 @@ async function deleteCurrentPipeline({
 }
 
 /**
- * Toggle delete button visibility based on whether a pipeline is selected.
+ * Toggle pipeline action button visibility based on whether a pipeline is selected.
  */
 function updateDeleteButtonVisibility() {
-    const deletePipelineButton = creatorContext.elements.deletePipelineButton;
-    if (!deletePipelineButton) return;
+    const { deletePipelineButton, pipelineSettingsButton } =
+        creatorContext.elements;
     const selectedPipeline = getSelectedPipeline();
-    deletePipelineButton.classList.toggle("hidden", !selectedPipeline);
+    deletePipelineButton?.classList.toggle("hidden", !selectedPipeline);
+    pipelineSettingsButton?.classList.toggle("hidden", !selectedPipeline);
 }
 
 /**
@@ -383,7 +461,12 @@ async function refreshPipelineCreator({
     loadPipelineIntoBuilder,
 }) {
     try {
-        console.log("[PIPELINE] Refreshing pipeline creator after reconnection");
+        console.log(
+            "[PIPELINE] Refreshing pipeline creator after reconnection",
+        );
+        const flowchartCanvas = creatorContext.flowchartRenderer?.canvas;
+        const savedViewport = flowchartCanvas?.getViewportState?.() || null;
+
         await fetchAvailableOperations(pipelineStore);
         const operations = getOperations();
         const operationsList = creatorContext.elements.operationsList;
@@ -400,7 +483,12 @@ async function refreshPipelineCreator({
         populatePipelineDropdown();
         const selectedPipeline = getSelectedPipeline();
         if (selectedPipeline) {
-            await loadPipelineIntoBuilder?.(selectedPipeline.name);
+            await loadPipelineIntoBuilder?.(selectedPipeline.name, {
+                centerView: false,
+            });
+        }
+        if (savedViewport && flowchartCanvas?.setViewportState) {
+            flowchartCanvas.setViewportState(savedViewport);
         }
         updateDeleteButtonVisibility();
         await checkBackendRestartStatus?.();
@@ -413,6 +501,12 @@ async function refreshPipelineCreator({
  * Trigger the pipeline run action for the current configuration.
  */
 function runPipeline() {
+    const dockingValidation = pipelineStore.validateDocking();
+    if (!dockingValidation.valid) {
+        showDanger(`Cannot start: ${dockingValidation.errors[0].message}`);
+        updateRunButton();
+        return;
+    }
     console.log("Running pipeline:", getPipeline());
     alert("Pipeline run! Check console for details.");
 }
@@ -423,6 +517,7 @@ export {
     checkAndTriggerAutoFill,
     createNewPipeline,
     deleteCurrentPipeline,
+    deviceInputsShareComponent,
     handlePipelineSelection,
     loadPipelineIntoBuilder,
     populatePipelineDropdown,

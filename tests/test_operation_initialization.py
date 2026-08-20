@@ -2,46 +2,32 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
 from tests.utils.config_defaults import resolve_operation_defaults
-from tests.utils.dummy_data import dummy_frame
-from tests.utils.dummy_dependencies import (
-    DummyComputePool,
-    FakeCameraThreadManager,
-    FakeEagleEyeInterface,
-    FakeNetworkTable,
-)
+from tests.utils.dummy_dependencies import build_dummy_dependencies
 from tests.utils.operation_discovery import (
+    OperationSpec,
     build_exclusion_list,
     discover_operations,
     filter_init_params,
     is_rust_operation,
     import_operation_class,
 )
-from src.utils.logging.logger import Logger
-
-
-def _build_dummy_dependencies() -> dict[str, Any]:
-    return {
-        "web_interface": FakeEagleEyeInterface(),
-        "compute_pool": DummyComputePool(),
-        "network_table": FakeNetworkTable(),
-        "camera_manager": FakeCameraThreadManager(default_frame=dummy_frame()),
-        "logger": Logger(log_directory="logs/test"),
-    }
 
 
 @pytest.mark.parametrize(
     "spec", discover_operations(Path(__file__).resolve().parents[1])
 )
-def test_operation_initialization(spec) -> None:
+def test_operation_initialization(spec: OperationSpec) -> None:
+    """Initialize every discoverable operation with default dependencies."""
     exclusion_list = build_exclusion_list()
     if spec.action_name in exclusion_list:
-        pytest.skip("yolo_excluded")
+        pytest.skip(exclusion_list[spec.action_name])
 
     operation_class, import_error = import_operation_class(spec)
     if operation_class is None:
@@ -55,16 +41,17 @@ def test_operation_initialization(spec) -> None:
 
     defaults = resolve_operation_defaults(spec)
     init_params = defaults.action_params.copy()
-    dependencies = _build_dummy_dependencies()
+    dependencies = build_dummy_dependencies()
 
-    init_signature = getattr(operation_class.__init__, "__code__", None)
-    if init_signature is not None:
-        for name, value in dependencies.items():
-            if name in init_signature.co_varnames:
-                init_params[name] = value
+    init_parameters = inspect.signature(operation_class.__init__).parameters
+    for name, value in dependencies.items():
+        if name in init_parameters:
+            init_params[name] = value
 
     if spec.action_name == "device_input":
-        dependencies["camera_manager"].add_camera(init_params.get("camera_name", "test_camera"))
+        dependencies["camera_manager"].add_camera(
+            init_params.get("camera_name", "test_camera")
+        )
 
     if operation_class is None:
         pytest.fail(f"Missing class for {spec.action_name}")

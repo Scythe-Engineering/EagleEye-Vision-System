@@ -109,6 +109,7 @@ export class FlowchartConnections {
                       dataType: args[5],
                       isDefault: args[6] ?? false,
                       customWaypoints: args[7] ?? null,
+                      isDocked: args[8] ?? false,
                   };
         const {
             connectionId,
@@ -119,8 +120,42 @@ export class FlowchartConnections {
             dataType,
             isDefault = false,
             customWaypoints = null,
+            isDocked = false,
         } = options;
         if (this.connections.has(connectionId)) {
+            const existing = this.connections.get(connectionId);
+            if (existing) {
+                existing.isDefault = Boolean(isDefault);
+                const wasDocked = existing.isDocked;
+                existing.isDocked = Boolean(isDocked);
+                if (wasDocked !== existing.isDocked) {
+                    // lastPosKey only tracks endpoints, so the cached path would
+                    // survive a docking change and keep the old geometry.
+                    existing.lastPosKey = null;
+                }
+                existing.dockDots.style.display = existing.isDocked
+                    ? "block"
+                    : "none";
+                existing.labelGroup.style.display = existing.isDocked
+                    ? "none"
+                    : "";
+                if (existing.isDocked) {
+                    existing.path.removeAttribute("marker-end");
+                } else {
+                    existing.path.setAttribute(
+                        "marker-end",
+                        "url(#flowchart-arrow)",
+                    );
+                }
+                if (existing.isDefault && !existing.isDocked) {
+                    existing.path.setAttribute("stroke-dasharray", "5,5");
+                } else {
+                    existing.path.removeAttribute("stroke-dasharray");
+                }
+                if (customWaypoints) {
+                    existing.customWaypoints = customWaypoints;
+                }
+            }
             this.updateConnection(
                 connectionId,
                 fromNode,
@@ -128,18 +163,10 @@ export class FlowchartConnections {
                 toNode,
                 toPortName,
             );
-            const existing = this.connections.get(connectionId);
-            if (existing) {
-                existing.isDefault = isDefault;
-                if (isDefault) {
-                    existing.path.setAttribute("stroke-dasharray", "5,5");
-                } else {
-                    existing.path.removeAttribute("stroke-dasharray");
-                }
-                if (customWaypoints) {
-                    existing.customWaypoints = customWaypoints;
-                    this.updateConnectionWithWaypoints(connectionId);
-                }
+            if (existing?.customWaypoints && !existing.isDocked) {
+                // Docked connections render a dock marker that waypoint routing
+                // would immediately overwrite.
+                this.updateConnectionWithWaypoints(connectionId);
             }
             return;
         }
@@ -159,7 +186,9 @@ export class FlowchartConnections {
         path.setAttribute("stroke", this.connectionColor);
         path.setAttribute("stroke-width", this.connectionWidth.toString());
         path.setAttribute("stroke-linecap", "round");
-        path.setAttribute("marker-end", "url(#flowchart-arrow)");
+        if (!isDocked) {
+            path.setAttribute("marker-end", "url(#flowchart-arrow)");
+        }
         path.style.transition = "stroke 0.15s ease, stroke-width 0.15s ease";
         path.setAttribute("pointer-events", "none");
 
@@ -208,8 +237,25 @@ export class FlowchartConnections {
         labelGroup.appendChild(labelBackground);
         labelGroup.appendChild(labelText);
 
+        const dockDots = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "g",
+        );
+        dockDots.setAttribute("pointer-events", "none");
+        [0, 1].forEach(() => {
+            const dot = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "circle",
+            );
+            dot.setAttribute("r", "2.5");
+            dot.setAttribute("fill", this.connectionColor);
+            dockDots.appendChild(dot);
+        });
+        dockDots.style.display = isDocked ? "block" : "none";
+
         group.appendChild(hitArea);
         group.appendChild(path);
+        group.appendChild(dockDots);
 
         this.setupHoverEffects(group, path);
 
@@ -231,9 +277,11 @@ export class FlowchartConnections {
             isDefault: isDefault || false,
             isAnimating: false,
             customWaypoints: customWaypoints ? [...customWaypoints] : null,
+            isDocked: Boolean(isDocked),
+            dockDots,
         });
 
-        if (customWaypoints && customWaypoints.length >= 2) {
+        if (!isDocked && customWaypoints && customWaypoints.length >= 2) {
             this.updateConnectionWithWaypoints(connectionId);
         } else {
             this.updateConnection(
@@ -245,8 +293,12 @@ export class FlowchartConnections {
             );
         }
 
+        if (isDocked) {
+            labelGroup.style.display = "none";
+        }
+
         // Apply default visual style
-        if (isDefault) {
+        if (isDefault && !isDocked) {
             path.setAttribute("stroke-dasharray", "5,5");
         }
 
@@ -331,6 +383,7 @@ export class FlowchartConnections {
 
         const connection = this.connections.get(connectionId);
         const isDefault = connection?.isDefault || false;
+        const isDocked = connection?.isDocked || false;
         const defaultAllowed = this.onCheckDefaultAllowed(
             connection?.toNodeId,
             connection?.toPortName,
@@ -370,7 +423,9 @@ export class FlowchartConnections {
 
         // Remove option
         const removeItem = document.createElement("div");
-        removeItem.textContent = "Remove Connection";
+        removeItem.textContent = isDocked
+            ? "Detach Docked Detector"
+            : "Remove Connection";
         removeItem.style.padding = "8px 12px";
         removeItem.style.cursor = "pointer";
         removeItem.style.color = "#ff6b6b";
@@ -442,9 +497,11 @@ export class FlowchartConnections {
             });
         }
 
-        menu.appendChild(manualPathItem);
-        menu.appendChild(resetPathItem);
-        menu.appendChild(toggleItem);
+        if (!isDocked) {
+            menu.appendChild(manualPathItem);
+            menu.appendChild(resetPathItem);
+            menu.appendChild(toggleItem);
+        }
         menu.appendChild(removeItem);
         document.body.appendChild(menu);
 
@@ -544,7 +601,10 @@ export class FlowchartConnections {
         connection.lastPosKey = posKey;
 
         let pathD;
-        if (
+        if (connection.isDocked) {
+            pathD = this.calculateDockMarkerPath(fromPos, toPos);
+            this.updateDockMarker(connection, fromPos, toPos);
+        } else if (
             connection.customWaypoints &&
             connection.customWaypoints.length >= 2
         ) {
@@ -582,9 +642,40 @@ export class FlowchartConnections {
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
 
-        if (!skipLabelUpdate) {
+        if (!skipLabelUpdate && !connection.isDocked) {
             this.updateLabel(connection);
         }
+    }
+
+    /**
+     * Builds the compact visual marker for an ordinary docking connection.
+     *
+     * @param {{x:number,y:number}} from Source port position.
+     * @param {{x:number,y:number}} to Target port position.
+     * @returns {string} SVG path data.
+     */
+    calculateDockMarkerPath(from, to) {
+        const centerX = (from.x + to.x) / 2;
+        const gap = 8;
+        return `M ${from.x} ${from.y} H ${centerX - gap} M ${centerX + gap} ${to.y} H ${to.x}`;
+    }
+
+    /**
+     * Positions the two central dots used by a docking marker.
+     *
+     * @param {object} connection Stored connection.
+     * @param {{x:number,y:number}} from Source port position.
+     * @param {{x:number,y:number}} to Target port position.
+     */
+    updateDockMarker(connection, from, to) {
+        const dots = connection.dockDots?.querySelectorAll("circle") || [];
+        const centerX = (from.x + to.x) / 2;
+        dots.forEach((dot, index) => {
+            // Each dot continues its own marker segment, which ends at that
+            // endpoint's Y coordinate rather than at the midpoint.
+            dot.setAttribute("cx", String(centerX + (index === 0 ? -3 : 3)));
+            dot.setAttribute("cy", String(index === 0 ? from.y : to.y));
+        });
     }
 
     /**
@@ -777,9 +868,13 @@ export class FlowchartConnections {
 
         if (!fromPos || !toPos) return;
 
-        const pathData = this.calculateMultiSegmentPath(fromPos, toPos);
-        connection.path.setAttribute("d", pathData);
-        connection.hitArea.setAttribute("d", pathData);
+        this.updateConnection(
+            connectionId,
+            fromNode,
+            connection.fromPortName,
+            toNode,
+            connection.toPortName,
+        );
     }
 
     /**
@@ -835,7 +930,7 @@ export class FlowchartConnections {
             connection.labelGroup.remove();
             this.connections.delete(connectionId);
             if (notify) {
-                this.onConnectionRemoved(connectionId);
+                this.onConnectionRemoved(connectionId, connection);
             }
         }
     }

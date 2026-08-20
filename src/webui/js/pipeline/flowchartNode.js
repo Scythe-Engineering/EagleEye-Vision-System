@@ -44,11 +44,15 @@ export class FlowchartNode {
 
         this.isDragging = false;
         this.isHovered = false;
+        this.isSelected = false;
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
         this.gridSpacing = options.gridSpacing || 20;
 
         this.configDataLoaded = false;
+        this.docking = null;
+        this.isDocked = false;
+        this.isDockInvalid = false;
         this.threadInfo = null;
         this.profilingInfo = null;
         this.dragContext = null;
@@ -176,6 +180,13 @@ export class FlowchartNode {
      * @param {object} configData - Operation config payload.
      */
     initializePortsFromConfig(configData) {
+        const docking = configData?.docking;
+        this.docking =
+            docking?.source_action &&
+            docking?.source_port &&
+            docking?.target_port
+                ? docking
+                : null;
         this.inputNodeConfig.clear();
         this.outputNodeConfig.clear();
 
@@ -603,6 +614,10 @@ export class FlowchartNode {
          * Restores the default node chrome styling.
          */
         const applyDefaultNodeChrome = () => {
+            if (this.isSelected) {
+                this.applySelectedNodeChrome();
+                return;
+            }
             this.element.style.borderColor = "#404040";
             this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
         };
@@ -611,6 +626,10 @@ export class FlowchartNode {
          * Applies the hovered node chrome styling.
          */
         const applyHoveredNodeChrome = () => {
+            if (this.isSelected) {
+                this.applySelectedNodeChrome();
+                return;
+            }
             this.element.style.borderColor = "#f9c845";
             this.element.style.boxShadow =
                 "4px 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(249, 200, 69, 0.2)";
@@ -649,10 +668,36 @@ export class FlowchartNode {
     }
 
     /**
-     * Updates the node chrome to match current hover/drag state.
+     * Applies selected-node accent chrome.
+     */
+    applySelectedNodeChrome() {
+        if (!this.element) {
+            return;
+        }
+        this.element.style.borderColor = "#f9c845";
+        this.element.style.boxShadow =
+            "4px 4px 18px rgba(0, 0, 0, 0.65), 0 0 14px rgba(249, 200, 69, 0.4)";
+    }
+
+    /**
+     * Updates the node chrome to match current hover/drag/selection state.
      */
     updateNodeHoverChrome() {
         if (!this.element || this.isDragging) {
+            return;
+        }
+        if (this.isDocked) {
+            this.element.style.borderColor = "#f9c845";
+            return;
+        }
+        if (this.isDockInvalid) {
+            this.element.style.borderColor = "#ff6b6b";
+            this.element.style.borderStyle = "dashed";
+            return;
+        }
+
+        if (this.isSelected) {
+            this.applySelectedNodeChrome();
             return;
         }
 
@@ -663,6 +708,18 @@ export class FlowchartNode {
         } else {
             this.element.style.borderColor = "#404040";
             this.element.style.boxShadow = "4px 4px 12px rgba(0, 0, 0, 0.5)";
+        }
+    }
+
+    /**
+     * Sets whether this node is part of the canvas selection.
+     * @param {boolean} selected
+     */
+    setSelected(selected) {
+        this.isSelected = Boolean(selected);
+        if (this.element) {
+            this.element.classList.toggle("flowchart-node-selected", this.isSelected);
+            this.updateNodeHoverChrome();
         }
     }
 
@@ -774,6 +831,15 @@ export class FlowchartNode {
                         flex: 1;
                         min-width: 0;
                     ">${escapeHtml(this.operationData.name)}</span>
+                    <span class="docking-status-badge" style="
+                        display: ${this.isDockInvalid ? "inline-flex" : "none"};
+                        align-items: center;
+                        color: #ffb4b4;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 0.4px;
+                        flex-shrink: 0;
+                    ">UNBOUND</span>
                     <div class="node-error-icon" style="
                         display: none;
                         width: 18px;
@@ -788,7 +854,7 @@ export class FlowchartNode {
                         flex-shrink: 0;
                     ">i</div>
                 </div>
-                <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                <div style="display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0;">
                     <button class="node-settings-btn" title="Settings" style="
                         padding: 4px;
                         background: transparent;
@@ -843,8 +909,62 @@ export class FlowchartNode {
         this.setupButtonListeners();
         this.cachePortElements();
         this.applyIslandInactiveState();
+        this.applyDockState();
         this.cachedElementWidth =
             this.element.offsetWidth || this.cachedElementWidth;
+    }
+
+    /**
+     * Applies the visual and interaction state of a metadata-driven dock.
+     *
+     * @param {{docked:boolean, invalid:boolean}} state Dock state.
+     */
+    setDockState({ docked = false, invalid = false } = {}) {
+        const normalizedDocked = Boolean(docked);
+        const normalizedInvalid = Boolean(invalid);
+        if (
+            normalizedDocked === this.isDocked &&
+            normalizedInvalid === this.isDockInvalid
+        ) {
+            return;
+        }
+        this.isDocked = normalizedDocked;
+        this.isDockInvalid = normalizedInvalid;
+        this.applyDockState();
+    }
+
+    /**
+     * Updates dock state chrome without rebuilding the node.
+     */
+    applyDockState() {
+        if (!this.element) return;
+        const badge = this.element.querySelector(".docking-status-badge");
+        if (badge) {
+            badge.style.display = this.isDockInvalid ? "inline-flex" : "none";
+        }
+        this.element.classList.toggle("flowchart-node-docked", this.isDocked);
+        this.element.classList.toggle(
+            "flowchart-node-dock-invalid",
+            this.isDockInvalid,
+        );
+        if (this.isDocked) {
+            this.element.style.cursor = "default";
+            this.element.style.borderColor = "#f9c845";
+            this.element.style.borderStyle = "solid";
+            this.element.title =
+                "Docked to Device Input. Remove the dock connection to detach.";
+        } else if (this.isDockInvalid) {
+            this.element.style.cursor = "move";
+            this.element.style.borderColor = "#ff6b6b";
+            this.element.style.borderStyle = "dashed";
+            this.element.title =
+                "Unbound: connect Device Input frame to dock this detector.";
+        } else {
+            this.element.style.cursor = "move";
+            this.element.style.borderStyle = "solid";
+            this.element.removeAttribute("title");
+            this.updateNodeHoverChrome();
+        }
     }
 
     /**
@@ -1214,8 +1334,15 @@ export class FlowchartNode {
      * @param {MouseEvent} event - Mouse down event.
      */
     handleDragStart(event) {
-        // Only handle left mouse button
-        if (event.button !== 0) return;
+        // Only handle left mouse button. Docked nodes follow their source and
+        // can be detached only by removing their ordinary connection.
+        if (event.button !== 0 || this.isDocked) {
+            if (this.isDocked) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            return;
+        }
 
         this.isDragging = true;
         // Find the canvas to get scale and translate

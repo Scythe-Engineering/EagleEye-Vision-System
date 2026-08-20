@@ -27,6 +27,7 @@ dependencies = [
   "pydantic",
   "mypy",
   "psutil",
+  "memryx==2.2.5; sys_platform == 'linux'",
 ]
 
 [[tool.uv.index]]
@@ -38,6 +39,14 @@ explicit = true
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[[tool.uv.index]]
+name = "memryx"
+url = "https://developer.memryx.com/pip"
+explicit = true
+
+[tool.uv.sources]
+memryx = { index = "memryx" }
 
 [dependency-groups]
 dev = [

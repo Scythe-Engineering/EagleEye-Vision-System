@@ -3,10 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
-
-import ntcore
-import numpy as np
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from src.utils.camera_utils.add_system_cameras import add_system_cameras
 from src.utils.camera_utils.add_video_file_cameras import add_video_file_cameras
@@ -14,7 +11,12 @@ from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 from src.utils.camera_utils.cameras.video_file_camera import VideoFileCamera
 from src.utils.colors import Colors
 from src.utils.logging.logger import Logger
-from src.utils.timing import FramePacket, TimedValue, TimingMetadata
+from src.utils.timing import (
+    FramePacket,
+    TimedValue,
+    TimingMetadata,
+    monotonic_ns_to_nt_us,
+)
 
 if TYPE_CHECKING:
     from src.webui.web_server import EagleEyeInterface
@@ -82,6 +84,13 @@ class CameraWorker:
                 return None
             return TimedValue(self._current_packet.value.copy(), self._current_packet.timing)
 
+    def get_current_timing(self) -> TimingMetadata | None:
+        """Return current frame timing without copying the image."""
+        with self._lock:
+            if self._current_packet is None:
+                return None
+            return self._current_packet.timing
+
     def wait_for_new_frame(
         self, after_frame_seq: int, timeout_s: float | None = None
     ) -> bool:
@@ -105,24 +114,6 @@ class CameraWorker:
         with self._frame_available:
             return self._frame_available.wait_for(frame_is_newer, timeout_s)
 
-    def set_current_frame(self, frame: np.ndarray, timestamp: float) -> None:
-        """Compatibility frame update using a millisecond timestamp."""
-        timing = TimingMetadata(
-            capture_nt_us=int(timestamp * 1000),
-            capture_monotonic_ns=time.monotonic_ns(),
-            frame_seq=self.next_frame_seq(),
-            camera_name=self.camera_name,
-            source="compatibility",
-        )
-        self.set_current_packet(TimedValue(frame, timing))
-
-    def get_current_frame(self) -> Optional[Tuple[np.ndarray, float]]:
-        """Thread-safe compatibility frame retrieval."""
-        packet = self.get_current_packet()
-        if packet is None:
-            return None
-        return (packet.value.copy(), packet.timing.capture_nt_us / 1000.0)
-
     def set_cached_packet(self, packet: FramePacket) -> None:
         """Thread-safe cached packet update."""
         with self._lock:
@@ -138,37 +129,30 @@ class CameraWorker:
                 self._last_cached_packet.timing,
             )
 
-    def set_cached_frame(self, frame: np.ndarray) -> None:
-        """Compatibility cached frame update."""
-        timing = TimingMetadata(
-            capture_nt_us=ntcore._now(),
-            capture_monotonic_ns=time.monotonic_ns(),
-            frame_seq=self.next_frame_seq(),
-            camera_name=self.camera_name,
-            source="compatibility-cache",
-        )
-        self.set_cached_packet(TimedValue(frame, timing))
-
-    def get_cached_frame(self) -> Optional[np.ndarray]:
-        """Thread-safe cached frame retrieval."""
-        packet = self.get_cached_packet()
-        return packet.value.copy() if packet is not None else None
+    def _run(self, worker_fn) -> None:
+        """Run the capture loop and release its camera on every exit path."""
+        try:
+            worker_fn(self)
+        finally:
+            self.camera.close()
 
     def start(self, worker_fn) -> None:
         """Start the camera worker thread."""
         self.thread = threading.Thread(
-            target=worker_fn,
-            args=(self,),
+            target=self._run,
+            args=(worker_fn,),
             daemon=True,
             name=f"CameraThread-{self.camera_name}",
         )
         self.thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
-        """Stop the camera worker thread."""
+        """Stop the worker; its termination path owns camera cleanup."""
         self.running = False
         if self.thread:
             self.thread.join(timeout=timeout)
+            return
+        self.camera.close()
 
 
 class CameraThreadManager:
@@ -185,7 +169,6 @@ class CameraThreadManager:
         self.web_interface = web_interface
         self.logger = logger
         self.cameras: Dict[str, CameraWorker] = {}
-        self.start_time_ms = time.time() * 1000.0
         self.known_cameras: list[dict[str, str | int]] = []
         self.bus_id_to_name: Dict[str, str] = {}
         self._initialize_cameras()
@@ -234,24 +217,25 @@ class CameraThreadManager:
         while worker.running:
             try:
                 start_time = time.time()
-                frame = camera.get_frame()
+                captured = camera.get_frame()
 
-                if frame is not None:
+                if captured is not None:
                     failure_tracker.reset()
                     packet = TimedValue(
-                        frame,
+                        captured.image,
                         TimingMetadata(
-                            capture_nt_us=ntcore._now(),
-                            capture_monotonic_ns=time.monotonic_ns(),
+                            capture_nt_us=monotonic_ns_to_nt_us(
+                                captured.capture_monotonic_ns
+                            ),
+                            capture_monotonic_ns=captured.capture_monotonic_ns,
                             frame_seq=worker.next_frame_seq(),
                             camera_name=camera_name,
                             bus_id=self.get_bus_id_for_camera_name(camera_name),
-                            source="camera",
                         ),
                     )
                     worker.set_cached_packet(packet)
                     worker.set_current_packet(packet)
-                    self.web_interface.update_camera_frame(camera_name, frame)
+                    self.web_interface.update_camera_frame(camera_name, captured.image)
                 else:
                     if failure_tracker.record_failure():
                         self.logger.log(
@@ -370,41 +354,6 @@ class CameraThreadManager:
         worker = self.cameras.get(camera_name)
         return worker.get_current_packet() if worker else None
 
-    def get_current_frame(self, camera_name: str) -> Optional[Tuple[np.ndarray, float]]:
-        """
-        Get the most current frame and timestamp for a specific camera.
-
-        Args:
-            camera_name: The name of the camera.
-
-        Returns:
-            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
-        """
-        worker = self.cameras.get(camera_name)
-        return worker.get_current_frame() if worker else None
-
-    def get_all_current_frames(self) -> Dict[str, Tuple[np.ndarray, float]]:
-        """
-        Get the most current frames and timestamps for all cameras.
-
-        Returns:
-            Dictionary mapping camera names to (frame, timestamp_ms_from_start) tuples.
-        """
-        result = {}
-        for name, worker in self.cameras.items():
-            if frame_data := worker.get_current_frame():
-                result[name] = frame_data
-        return result
-
-    def get_start_time_ms(self) -> float:
-        """
-        Get the start time in milliseconds when the manager was initialized.
-
-        Returns:
-            Start time in milliseconds since epoch.
-        """
-        return self.start_time_ms
-
     def get_all_camera_names(self) -> list[str]:
         """
         Get the names of all cameras.
@@ -498,6 +447,18 @@ class CameraThreadManager:
             return None
         return self.get_current_packet(camera_name)
 
+    def get_current_timing_by_bus_id(
+        self, bus_id: str
+    ) -> TimingMetadata | None:
+        """Get current frame timing without copying its image."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        if camera_name is None:
+            return None
+        worker = self.cameras.get(camera_name)
+        if worker is None:
+            return None
+        return worker.get_current_timing()
+
     def wait_for_new_frame_by_bus_id(
         self,
         bus_id: str,
@@ -512,22 +473,6 @@ class CameraThreadManager:
         if worker is None:
             return False
         return worker.wait_for_new_frame(after_frame_seq, timeout_s)
-
-    def get_current_frame_by_bus_id(
-        self, bus_id: str
-    ) -> Optional[Tuple[np.ndarray, float]]:
-        """Get the current frame for a camera identified by bus_id.
-
-        Args:
-            bus_id: The USB bus identifier for the camera.
-
-        Returns:
-            Tuple of (frame, timestamp_ms_from_start) if available, None otherwise.
-        """
-        camera_name = self.get_camera_name_by_bus_id(bus_id)
-        if camera_name is None:
-            return None
-        return self.get_current_frame(camera_name)
 
     def get_all_bus_ids(self) -> list[str]:
         """Get all registered bus IDs.

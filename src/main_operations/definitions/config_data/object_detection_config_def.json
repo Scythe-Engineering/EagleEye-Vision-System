@@ -1,6 +1,6 @@
 {
     "class_name": "ObjectDetectionDefinition",
-    "description": "Generic object detection operation using device-backed model if available or CPU fallback. Supports compiled models (.dfp) with optional post-processing or standalone ONNX models. Returns detections as dictionaries with bbox, score, and class_id.",
+    "description": "Synchronous Ultralytics-compatible YOLO detection on an explicitly selected CPU or NVIDIA CUDA device. Models and artifacts are selected by stable managed-library IDs.",
     "category": "det",
     "folder": "Detection",
     "input_nodes": [
@@ -13,49 +13,41 @@
         "detections"
     ],
     "parameters": {
-        "model_path": {
+        "model_id": {
             "type": "str",
-            "description": "Path to device-compatible model file. Can be compiled model (.dfp) for MX3 with optional post-processing, or standalone ONNX model (.onnx) for CPU/GPU/MX3. If omitted, CPU fallback is used.",
-            "default": null,
-            "required": false,
-            "restart_for_change": true
+            "description": "Managed model",
+            "default": "",
+            "required": true,
+            "restart_for_change": true,
+            "ui_hint": "model_library",
+            "device_param": "device_id"
         },
         "device_id": {
             "type": "str",
-            "description": "Identifier for compute device from ComputePool. Required if model_path is provided.",
-            "default": null,
-            "required": false,
-            "restart_for_change": true
+            "description": "Inference device",
+            "default": "cpu",
+            "required": true,
+            "restart_for_change": true,
+            "ui_hint": "device_registry",
+            "model_param": "model_id",
+            "allowed_device_kinds": [
+                "cpu",
+                "cuda"
+            ]
         },
-        "post_processing_model_path": {
-            "type": "str",
-            "description": "Optional path to ONNX post-processing model. Used with compiled models (.dfp) to convert raw outputs to detections.",
-            "default": null,
-            "required": false,
-            "restart_for_change": true
-        },
-        "target_width": {
-            "type": "int",
-            "description": "Target model input width.",
-            "default": 320,
-            "required": false,
-            "min": 16,
-            "max": 4096,
-            "restart_for_change": true
-        },
-        "target_height": {
-            "type": "int",
-            "description": "Target model input height.",
-            "default": 320,
-            "required": false,
-            "min": 16,
-            "max": 4096,
-            "restart_for_change": true
-        },
-        "conf_threshold": {
+        "confidence_threshold": {
             "type": "float",
-            "description": "Minimum confidence threshold for detections.",
+            "description": "Minimum detection confidence",
             "default": 0.25,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0,
+            "restart_for_change": false
+        },
+        "iou_threshold": {
+            "type": "float",
+            "description": "Non-maximum-suppression IoU threshold",
+            "default": 0.45,
             "required": false,
             "min": 0.0,
             "max": 1.0,
@@ -63,18 +55,20 @@
         },
         "max_detections": {
             "type": "int",
-            "description": "Maximum number of detections to return.",
+            "description": "Maximum detections returned per frame",
             "default": 100,
             "required": false,
             "min": 1,
             "max": 1000,
             "restart_for_change": false
         },
-        "is_grayscale": {
-            "type": "bool",
-            "description": "Whether the model expects grayscale input (single channel) instead of RGB (3 channels). Set to true for grayscale models, false for RGB models.",
-            "default": false,
+        "image_size": {
+            "type": "int",
+            "description": "Optional square inference size override (0 uses model metadata)",
+            "default": 0,
             "required": false,
+            "min": 0,
+            "max": 4096,
             "restart_for_change": true
         }
     }

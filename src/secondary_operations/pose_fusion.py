@@ -1,7 +1,6 @@
 import numpy as np
 from typing import List, Optional, Any
 from src.main_operations.definitions.base.base_class import OperationInstance
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.webui.web_server import EagleEyeInterface
 from src.utils.quaternion_utils import (
     rotation_matrix_to_quaternion,
@@ -22,7 +21,6 @@ class PoseFusion(OperationInstance):
     def __init__(
         self,
         web_interface: EagleEyeInterface,
-        compute_pool: ComputePool,
         outlier_threshold: float = 1.0,
         rotation_weight: float = 0.5,
     ) -> None:
@@ -30,12 +28,10 @@ class PoseFusion(OperationInstance):
 
         Args:
             web_interface: Web interface for runtime updates.
-            compute_pool: Compute pool for device operations.
             outlier_threshold: Distance threshold for outlier rejection.
             rotation_weight: Weight factor for rotation distance relative to translation.
         """
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self.outlier_threshold = outlier_threshold
         self.rotation_weight = rotation_weight
 

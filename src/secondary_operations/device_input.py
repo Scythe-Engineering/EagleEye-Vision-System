@@ -1,10 +1,9 @@
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
-from src.utils.device_management_utils.compute_pool import ComputePool
 from src.utils.timing import FramePacket, TimedValue
 from src.webui.web_server import EagleEyeInterface
 
@@ -35,7 +34,7 @@ class DeviceInput(OperationInstance):
             (height, width, 3) for color images.
 
     Example:
-        >>> device_input = DeviceInput(web_interface, compute_pool, camera_manager, "1", 90)
+        >>> device_input = DeviceInput(web_interface, camera_manager, "1", 90)
         >>> frame = device_input.run(None)
         >>> if frame is not None:
         ...     print(frame.shape)  # e.g., (720, 1280, 3)
@@ -46,7 +45,6 @@ class DeviceInput(OperationInstance):
     def __init__(
         self,
         web_interface: EagleEyeInterface,
-        compute_pool: ComputePool,
         camera_manager: "CameraThreadManager",
         camera_bus_id: str,
         frame_rotation: int = 0,
@@ -55,13 +53,11 @@ class DeviceInput(OperationInstance):
 
         Args:
             web_interface: Web interface for runtime updates.
-            compute_pool: Compute pool available for device operations.
             camera_manager: Camera thread manager to fetch frames from.
             camera_bus_id: USB bus identifier for the camera to read frames from.
             frame_rotation: Rotation angle in degrees (0, 90, 180, or 270). Defaults to 0.
         """
         self.web_interface = web_interface
-        self.compute_pool = compute_pool
         self.camera_manager = camera_manager
         self.camera_bus_id = camera_bus_id
         self.frame_rotation = self._normalize_rotation(frame_rotation)
@@ -113,19 +109,80 @@ class DeviceInput(OperationInstance):
         Returns:
             Timestamped frame packet with rotation applied, or None if unavailable.
         """
-        get_packet = getattr(self.camera_manager, "get_current_packet_by_bus_id", None)
-        if callable(get_packet):
-            packet = get_packet(self.camera_bus_id)
-            if packet is None:
-                return None
-            return TimedValue(self._apply_rotation(packet.value), packet.timing)
+        packet = self.camera_manager.get_current_packet_by_bus_id(self.camera_bus_id)
+        if packet is None:
+            return None
+        return TimedValue(self._apply_rotation(packet.value), packet.timing)
 
-        frame_result = self.camera_manager.get_current_frame_by_bus_id(
-            self.camera_bus_id
-        )
-        if frame_result is not None:
-            frame, _ = frame_result
-            return self._apply_rotation(frame)
+    def _require_running_worker(self) -> None:
+        """Fail fast when the configured camera's worker is gone or stopped.
+
+        Raises:
+            RuntimeError: If the camera, its worker, or its thread has stopped.
+        """
+        camera_name = self.camera_manager.get_camera_name_by_bus_id(self.camera_bus_id)
+        if camera_name is None:
+            raise RuntimeError(f"Unknown camera bus ID {self.camera_bus_id!r}")
+        workers = getattr(self.camera_manager, "cameras", None)
+        if workers is None:
+            # A manager without a worker registry cannot report liveness.
+            return
+        worker = workers.get(camera_name)
+        if worker is None:
+            raise RuntimeError(f"Unknown camera worker {camera_name!r}")
+        # A stopped worker never publishes another frame, so waiting forever
+        # would silently starve the docked asynchronous consumer.
+        thread = getattr(worker, "thread", None)
+        if not getattr(worker, "running", True) or (
+            thread is not None and not thread.is_alive()
+        ):
+            raise RuntimeError(f"Camera worker {camera_name!r} has stopped")
+
+    def latest_frame_seq(self) -> int | None:
+        """Return the newest captured frame sequence for this camera."""
+        timing = self.camera_manager.get_current_timing_by_bus_id(self.camera_bus_id)
+        return timing.frame_seq if timing is not None else None
+
+    def wait_for_next_packet(
+        self,
+        after_frame_seq: int,
+        should_continue: Callable[[], bool],
+    ) -> FramePacket | None:
+        """Wait for and return the newest unique transformed camera packet.
+
+        Args:
+            after_frame_seq: Last consumed frame sequence number.
+            should_continue: Callback that remains true while waiting is allowed.
+
+        Returns:
+            The next transformed packet, or ``None`` when waiting stops.
+
+        Raises:
+            RuntimeError: If the configured camera or its worker is unknown.
+        """
+        while should_continue():
+            frame_available = self.camera_manager.wait_for_new_frame_by_bus_id(
+                self.camera_bus_id,
+                after_frame_seq,
+                timeout_s=0.05,
+            )
+            if not frame_available:
+                self._require_running_worker()
+                continue
+            if not should_continue():
+                return None
+            packet = self.camera_manager.get_current_packet_by_bus_id(
+                self.camera_bus_id
+            )
+            if (
+                packet is not None
+                and packet.timing.frame_seq is not None
+                and packet.timing.frame_seq > after_frame_seq
+            ):
+                return TimedValue(
+                    self._apply_rotation(packet.value),
+                    packet.timing,
+                )
         return None
 
     def update_config(self, json_config: dict[str, Any]) -> None:
@@ -136,11 +193,11 @@ class DeviceInput(OperationInstance):
                 - camera_bus_id: Changes the camera source (requires restart).
                 - frame_rotation: Changes rotation angle (applied immediately).
         """
-        self.camera_bus_id = json_config.get(
-            "camera_bus_id", self.camera_bus_id
-        )
+        camera_bus_id = json_config.get("camera_bus_id")
+        if camera_bus_id is not None:
+            self.camera_bus_id = camera_bus_id
 
-        if "frame_rotation" in json_config:
+        if json_config.get("frame_rotation") is not None:
             try:
                 new_rotation = self._normalize_rotation(json_config["frame_rotation"])
                 if new_rotation != self.frame_rotation:

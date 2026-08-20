@@ -9,6 +9,8 @@ import {
     hideModal,
     showModal,
 } from "../ui/modal.js";
+import { showUploadToast } from "../ui/notificationSystem.js";
+import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 
 /**
  * Registers and returns the singleton file manager popup instance.
@@ -230,34 +232,29 @@ export function registerFileManagerPopup() {
 
         const formData = new FormData();
         formData.append("file", file);
+        const uploadToast = showUploadToast({
+            label: `Uploading ${file.name}...`,
+        });
 
         try {
-            const response = await fetch(
-                `${BACKEND_BASE_URL}/upload-operation-file/${encodeURIComponent(currentOperationName)}/${encodeURIComponent(currentParameterName)}`,
-                {
-                    method: "POST",
-                    body: formData,
-                },
-            );
-
-            if (response.ok) {
-                const data = await response.json();
-                await fetchFiles();
-                if (onFileSelectedCallback) {
-                    onFileSelectedCallback(data.filename);
-                }
-                if (globalThis.refreshPathDropdown) {
-                    globalThis.refreshPathDropdown(data.filename);
-                }
-            } else {
-                const error = await response.json();
-                alert(
-                    `Failed to upload file: ${error.error || "Unknown error"}`,
-                );
+            const data = await uploadWithProgress({
+                url: `/upload-operation-file/${encodeURIComponent(currentOperationName)}/${encodeURIComponent(currentParameterName)}`,
+                formData,
+                onProgress: uploadToast.setProgress,
+            });
+            uploadToast.complete(`Uploaded ${data.filename || file.name}`);
+            await fetchFiles();
+            if (onFileSelectedCallback) {
+                onFileSelectedCallback(data.filename);
+            }
+            if (globalThis.refreshPathDropdown) {
+                globalThis.refreshPathDropdown(data.filename);
             }
         } catch (error) {
             console.error("Error uploading file:", error);
-            alert("Failed to upload file");
+            uploadToast.fail(
+                error.payload?.error || error.message || "Failed to upload file",
+            );
         }
     }
 

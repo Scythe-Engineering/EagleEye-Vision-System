@@ -9,7 +9,6 @@ let terminalCommandHistory = [];
 let terminalHistoryIndex = -1;
 let terminalDraftCommand = "";
 let terminalCommandInFlight = false;
-let terminalInitialized = false;
 
 /**
  * Wire up terminal and log-related UI event handlers.
@@ -25,7 +24,7 @@ export function initializeTerminalHandlers() {
 
     if (terminalPanel) {
         loadLogMessages();
-        initializeTerminalSession();
+        loadTerminalPrompt();
     }
 
     if (clearLogsBtn) {
@@ -105,35 +104,17 @@ export function initializeTerminalHandlers() {
 }
 
 /**
- * Initialize the terminal session prompt and welcome output.
+ * Fetch the initial prompt for the backend shell session.
  *
  * @returns {Promise<void>}
  */
-async function initializeTerminalSession() {
-    if (terminalInitialized) {
-        return;
-    }
-
-    terminalInitialized = true;
-    await refreshTerminalPrompt();
-    clearTerminalDisplay();
-}
-
-/**
- * Refresh the terminal prompt text from the backend session.
- *
- * @returns {Promise<void>}
- */
-async function refreshTerminalPrompt() {
+async function loadTerminalPrompt() {
     try {
         const response = await fetch(buildBackendUrl("/terminal/cwd"));
-        const data = await response.json();
-        applyTerminalSessionState(data);
+        applyTerminalPrompt(await response.json());
     } catch (error) {
-        terminalPromptText = "$";
-        updateTerminalPromptDisplay();
         appendToTerminal(
-            getTerminalOutputElement(),
+            document.getElementById("terminalOutput"),
             `Failed to load terminal session: ${error.message}`,
             "error",
         );
@@ -141,21 +122,15 @@ async function refreshTerminalPrompt() {
 }
 
 /**
- * Apply prompt and cwd metadata returned by the terminal API.
+ * Adopt the prompt returned by the terminal API and show it next to the input.
  *
  * @param {{prompt?: string}} data - Terminal session payload.
  */
-function applyTerminalSessionState(data) {
+function applyTerminalPrompt(data) {
     if (data && typeof data.prompt === "string" && data.prompt.trim()) {
         terminalPromptText = data.prompt.trim();
     }
-    updateTerminalPromptDisplay();
-}
 
-/**
- * Update the visible prompt next to the command input.
- */
-function updateTerminalPromptDisplay() {
     const terminalPrompt = document.getElementById("terminalPrompt");
     if (terminalPrompt) {
         terminalPrompt.textContent = terminalPromptText;
@@ -163,25 +138,13 @@ function updateTerminalPromptDisplay() {
 }
 
 /**
- * Clear the terminal output pane and show the current prompt.
+ * Clear the terminal output pane without touching the backend session.
  */
 function clearTerminalDisplay() {
-    const terminalOutput = getTerminalOutputElement();
-    if (!terminalOutput) {
-        return;
+    const terminalOutput = document.getElementById("terminalOutput");
+    if (terminalOutput) {
+        terminalOutput.innerHTML = "";
     }
-
-    terminalOutput.innerHTML = "";
-    appendToTerminal(terminalOutput, terminalPromptText, "prompt");
-}
-
-/**
- * Return the terminal output container element.
- *
- * @returns {HTMLElement | null} Terminal output element when present.
- */
-function getTerminalOutputElement() {
-    return document.getElementById("terminalOutput");
 }
 
 /**
@@ -261,7 +224,7 @@ function setTerminalInputEnabled(isEnabled) {
  */
 async function sendTerminalCommand() {
     const terminalInput = document.getElementById("terminalInput");
-    const terminalOutput = getTerminalOutputElement();
+    const terminalOutput = document.getElementById("terminalOutput");
 
     if (!terminalInput || !terminalOutput || terminalCommandInFlight) {
         return;
@@ -280,7 +243,11 @@ async function sendTerminalCommand() {
     }
 
     pushTerminalHistory(command);
-    appendToTerminal(terminalOutput, `${terminalPromptText} ${command}`, "command");
+    appendToTerminal(
+        terminalOutput,
+        `${terminalPromptText} ${command}`,
+        "command",
+    );
     terminalInput.value = "";
     terminalCommandInFlight = true;
     setTerminalInputEnabled(false);
@@ -294,7 +261,7 @@ async function sendTerminalCommand() {
             body: JSON.stringify({ command }),
         });
         const data = await response.json();
-        applyTerminalSessionState(data);
+        applyTerminalPrompt(data);
 
         if (data.output) {
             appendToTerminal(terminalOutput, data.output, "output");
@@ -314,11 +281,7 @@ async function sendTerminalCommand() {
             );
         }
     } catch (error) {
-        appendToTerminal(
-            terminalOutput,
-            `Error: ${error.message}`,
-            "error",
-        );
+        appendToTerminal(terminalOutput, `Error: ${error.message}`, "error");
     } finally {
         terminalCommandInFlight = false;
         setTerminalInputEnabled(true);
@@ -326,35 +289,30 @@ async function sendTerminalCommand() {
     }
 }
 
+const TERMINAL_TEXT_CLASSES = {
+    command: "text-green-400",
+    error: "text-red-400",
+    output: "text-gray-300",
+};
+
 /**
- * Append one or more lines of terminal output with styling for the given type.
+ * Append a block of terminal text with styling for the given type.
  *
  * @param {HTMLElement | null} terminalOutput - Terminal output container element.
- * @param {string} text - Text to append.
- * @param {"command"|"error"|"output"|"prompt"} type - Output styling type.
+ * @param {string} text - Text to append. Newlines render as line breaks.
+ * @param {"command"|"error"|"output"} type - Output styling type.
  */
 function appendToTerminal(terminalOutput, text, type) {
     if (!terminalOutput || text === "") {
         return;
     }
 
-    const lines = text.split("\n");
-    for (const line of lines) {
-        const lineDiv = document.createElement("div");
-        if (type === "command" || type === "prompt") {
-            lineDiv.className = "text-green-400";
-            lineDiv.textContent = line;
-        } else if (type === "error") {
-            lineDiv.className = "text-red-400";
-            lineDiv.textContent = line;
-        } else {
-            lineDiv.className = "text-gray-300";
-            lineDiv.textContent = line;
-        }
-        lineDiv.style.whiteSpace = "pre-wrap";
-        terminalOutput.appendChild(lineDiv);
-    }
-
+    const block = document.createElement("div");
+    block.className =
+        TERMINAL_TEXT_CLASSES[type] ?? TERMINAL_TEXT_CLASSES.output;
+    block.style.whiteSpace = "pre-wrap";
+    block.textContent = text;
+    terminalOutput.appendChild(block);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 

@@ -1,10 +1,64 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+import ntcore
+
 T = TypeVar("T")
+
+_nt_monotonic_offset_us: int | None = None
+
+
+def now_nt_us() -> int:
+    """Return the current NetworkTables timestamp in microseconds.
+
+    Wraps the one private ntcore entry point the project depends on so a
+    pyntcore change is contained to this module.
+    """
+    return ntcore._now()
+
+
+def _measure_nt_monotonic_offset_us(samples: int = 11) -> int:
+    """Measure the constant offset between the NT clock and CLOCK_MONOTONIC.
+
+    Both clocks tick at the same rate but need not share an epoch. Sampling
+    both in a tight loop and taking the median rejects the occasional sample
+    that gets descheduled between the two reads.
+
+    Args:
+        samples: Number of paired readings to take.
+
+    Returns:
+        Microseconds to add to a monotonic timestamp to reach the NT clock.
+    """
+    deltas = sorted(
+        now_nt_us() - time.monotonic_ns() // 1000 for _ in range(samples)
+    )
+    return deltas[len(deltas) // 2]
+
+
+def nt_monotonic_offset_us() -> int:
+    """Return the cached NT-to-monotonic offset, measuring it on first use."""
+    global _nt_monotonic_offset_us
+    if _nt_monotonic_offset_us is None:
+        _nt_monotonic_offset_us = _measure_nt_monotonic_offset_us()
+    return _nt_monotonic_offset_us
+
+
+def monotonic_ns_to_nt_us(monotonic_ns: int) -> int:
+    """Convert a CLOCK_MONOTONIC timestamp to the NetworkTables clock.
+
+    Args:
+        monotonic_ns: Timestamp in nanoseconds on CLOCK_MONOTONIC, such as a
+            V4L2 buffer timestamp or ``time.monotonic_ns()``.
+
+    Returns:
+        The same instant in NetworkTables microseconds.
+    """
+    return monotonic_ns // 1000 + nt_monotonic_offset_us()
 
 
 @dataclass(frozen=True)
@@ -16,8 +70,6 @@ class TimingMetadata:
     frame_seq: int | None = None
     camera_name: str | None = None
     bus_id: str | None = None
-    source: str | None = None
-    derived_from: tuple["TimingMetadata", ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -29,10 +81,6 @@ class TimedValue(Generic[T]):
 
 
 FramePacket = TimedValue[Any]
-
-
-def is_timed(value: object) -> bool:
-    return isinstance(value, TimedValue)
 
 
 def unwrap_timed(value: T | TimedValue[T]) -> T:
@@ -72,8 +120,6 @@ def average_timings(timings: Sequence[TimingMetadata]) -> TimingMetadata:
         capture_monotonic_ns=round(
             sum(t.capture_monotonic_ns for t in timings) / len(timings)
         ),
-        source="average",
-        derived_from=tuple(timings),
     )
 
 
@@ -107,9 +153,3 @@ def attach_output_timing(output: Any, inputs: Any) -> Any:
 
     timing = timings[0] if len(timings) == 1 else average_timings(timings)
     return TimedValue(output, timing)
-
-
-def clone_timing(timing: TimingMetadata, **changes: Any) -> TimingMetadata:
-    """Return a copy of timing with selected debug/source fields changed."""
-
-    return replace(timing, **changes)

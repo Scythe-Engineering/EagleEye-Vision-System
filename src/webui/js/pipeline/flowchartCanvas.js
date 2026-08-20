@@ -21,6 +21,9 @@ export class FlowchartCanvas {
         this.nodesLayer = null;
 
         this.onViewportChange = options.onViewportChange || (() => {});
+        this.onMarqueeSelect = options.onMarqueeSelect || (() => {});
+        this.onCanvasBackgroundClick =
+            options.onCanvasBackgroundClick || (() => {});
         this.interactiveGrid = null;
 
         // Cache container dimensions to avoid getBoundingClientRect during zoom/pan
@@ -129,11 +132,20 @@ export class FlowchartCanvas {
     }
 
     /**
-     * Set up panning, zooming, and view reset interactions.
+     * Set up panning, zooming, marquee selection, and view reset interactions.
      */
     setupPanZoom() {
         let isPanning = false;
-        let startX, startY;
+        let isMarqueeSelecting = false;
+        let startX = 0;
+        let startY = 0;
+        let panStartClientX = 0;
+        let panStartClientY = 0;
+        let panDidMove = false;
+        let marqueeStartClientX = 0;
+        let marqueeStartClientY = 0;
+        /** @type {HTMLElement | null} */
+        let marqueeElement = null;
         this.placeholderVisible = false;
 
         const resizeObserver = new ResizeObserver(() => {
@@ -141,84 +153,220 @@ export class FlowchartCanvas {
         });
         resizeObserver.observe(this.container);
 
-        this.container.addEventListener("mousedown", (e) => {
+        /**
+         * Creates the on-canvas marquee overlay element.
+         * @returns {HTMLElement}
+         */
+        const ensureMarqueeElement = () => {
+            if (marqueeElement) {
+                return marqueeElement;
+            }
+            marqueeElement = document.createElement("div");
+            marqueeElement.className = "flowchart-marquee-selection";
+            Object.assign(marqueeElement.style, {
+                position: "absolute",
+                left: "0",
+                top: "0",
+                width: "0",
+                height: "0",
+                border: "1.5px solid #f9c845",
+                borderRadius: "6px",
+                background:
+                    "linear-gradient(135deg, rgba(249, 200, 69, 0.16), rgba(249, 200, 69, 0.06))",
+                boxShadow:
+                    "0 0 0 1px rgba(249, 200, 69, 0.2), inset 0 0 24px rgba(249, 200, 69, 0.08), 0 8px 24px rgba(0, 0, 0, 0.35)",
+                pointerEvents: "none",
+                zIndex: "40",
+                display: "none",
+            });
+            this.container.appendChild(marqueeElement);
+            return marqueeElement;
+        };
+
+        /**
+         * Updates the marquee overlay from screen-space start/end points.
+         * @param {number} endClientX
+         * @param {number} endClientY
+         */
+        const updateMarqueeElement = (endClientX, endClientY) => {
+            const overlay = ensureMarqueeElement();
+            const rect = this.containerRect;
+            const startLocalX = marqueeStartClientX - rect.left;
+            const startLocalY = marqueeStartClientY - rect.top;
+            const endLocalX = endClientX - rect.left;
+            const endLocalY = endClientY - rect.top;
+            const left = Math.min(startLocalX, endLocalX);
+            const top = Math.min(startLocalY, endLocalY);
+            const width = Math.abs(endLocalX - startLocalX);
+            const height = Math.abs(endLocalY - startLocalY);
+            overlay.style.display = "block";
+            overlay.style.left = `${left}px`;
+            overlay.style.top = `${top}px`;
+            overlay.style.width = `${width}px`;
+            overlay.style.height = `${height}px`;
+        };
+
+        /**
+         * Hides and resets the marquee overlay.
+         */
+        const hideMarqueeElement = () => {
+            if (!marqueeElement) {
+                return;
+            }
+            marqueeElement.style.display = "none";
+            marqueeElement.style.width = "0";
+            marqueeElement.style.height = "0";
+        };
+
+        const handleMouseDown = (e) => {
             if (e.button !== 0) return;
             if (this.placeholderVisible) return;
+            this.updateContainerRect();
 
             const isNode = e.target.closest(".flowchart-node");
             const isButton = e.target.closest("button");
             const isPort = e.target.closest(".port-connector");
 
             if (!isNode && !isButton && !isPort) {
+                if (e.shiftKey) {
+                    isMarqueeSelecting = true;
+                    marqueeStartClientX = e.clientX;
+                    marqueeStartClientY = e.clientY;
+                    this.container.style.cursor = "crosshair";
+                    updateMarqueeElement(e.clientX, e.clientY);
+                    e.preventDefault();
+                    return;
+                }
+
                 isPanning = true;
+                panDidMove = false;
+                panStartClientX = e.clientX;
+                panStartClientY = e.clientY;
                 this.container.style.cursor = "grabbing";
                 startX = e.clientX - this.translateX;
                 startY = e.clientY - this.translateY;
                 e.preventDefault();
             }
-        });
+        };
 
-        globalThis.addEventListener("mousemove", (e) => {
+        const handleMouseMove = (e) => {
+            if (isMarqueeSelecting) {
+                updateMarqueeElement(e.clientX, e.clientY);
+                return;
+            }
+
             if (!isPanning) return;
+
+            if (
+                Math.abs(e.clientX - panStartClientX) <= 3 &&
+                Math.abs(e.clientY - panStartClientY) <= 3
+            ) {
+                return;
+            }
+            panDidMove = true;
 
             this.translateX = e.clientX - startX;
             this.translateY = e.clientY - startY;
             this.updateTransform();
-        });
+        };
 
-        globalThis.addEventListener("mouseup", () => {
+        const handleMouseUp = (e) => {
+            if (isMarqueeSelecting) {
+                isMarqueeSelecting = false;
+                this.container.style.cursor = "grab";
+                const startWorld = this.screenToWorld(
+                    marqueeStartClientX,
+                    marqueeStartClientY,
+                );
+                const endWorld = this.screenToWorld(e.clientX, e.clientY);
+                hideMarqueeElement();
+                this.onMarqueeSelect({
+                    x1: startWorld.x,
+                    y1: startWorld.y,
+                    x2: endWorld.x,
+                    y2: endWorld.y,
+                });
+                return;
+            }
+
             if (isPanning) {
                 isPanning = false;
                 this.container.style.cursor = "grab";
-            }
-        });
-
-        this.container.addEventListener(
-            "wheel",
-            (e) => {
-                if (this.placeholderVisible) return;
-
-                const rect = this.containerRect;
-                if (
-                    e.clientX < rect.left ||
-                    e.clientX > rect.left + rect.width ||
-                    e.clientY < rect.top ||
-                    e.clientY > rect.top + rect.height
-                ) {
-                    return;
+                if (!panDidMove) {
+                    this.onCanvasBackgroundClick();
                 }
+            }
+        };
 
-                e.preventDefault();
+        const cancelGesture = () => {
+            isMarqueeSelecting = false;
+            isPanning = false;
+            this.container.style.cursor = "grab";
+            hideMarqueeElement();
+        };
 
-                const delta = -e.deltaY;
-                const zoomFactor = Math.pow(1.1, delta / 100);
+        globalThis.addEventListener("mousemove", handleMouseMove);
+        globalThis.addEventListener("mouseup", handleMouseUp);
+        globalThis.addEventListener("blur", cancelGesture);
+        this.panZoomCleanup = () => {
+            resizeObserver.disconnect();
+            globalThis.removeEventListener("mousemove", handleMouseMove);
+            globalThis.removeEventListener("mouseup", handleMouseUp);
+            globalThis.removeEventListener("blur", cancelGesture);
+            this.container.removeEventListener("mousedown", handleMouseDown);
+            this.container.removeEventListener("wheel", handleWheel);
+            this.container.removeEventListener("dblclick", handleDoubleClick);
+            marqueeElement?.remove();
+        };
 
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
+        const handleWheel = (e) => {
+            if (this.placeholderVisible) return;
 
-                const worldX = (mouseX - this.translateX) / this.scale;
-                const worldY = (mouseY - this.translateY) / this.scale;
+            const rect = this.containerRect;
+            if (
+                e.clientX < rect.left ||
+                e.clientX > rect.left + rect.width ||
+                e.clientY < rect.top ||
+                e.clientY > rect.top + rect.height
+            ) {
+                return;
+            }
 
-                const newScale = Math.min(
-                    Math.max(0.1, this.scale * zoomFactor),
-                    3,
-                );
+            e.preventDefault();
 
-                this.translateX = mouseX - worldX * newScale;
-                this.translateY = mouseY - worldY * newScale;
-                this.scale = newScale;
+            const delta = -e.deltaY;
+            const zoomFactor = Math.pow(1.1, delta / 100);
 
-                this.updateTransform();
-            },
-            { passive: false },
-        );
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-        this.container.addEventListener("dblclick", (e) => {
+            const worldX = (mouseX - this.translateX) / this.scale;
+            const worldY = (mouseY - this.translateY) / this.scale;
+
+            const newScale = Math.min(
+                Math.max(0.1, this.scale * zoomFactor),
+                3,
+            );
+
+            this.translateX = mouseX - worldX * newScale;
+            this.translateY = mouseY - worldY * newScale;
+            this.scale = newScale;
+
+            this.updateTransform();
+        };
+
+        const handleDoubleClick = (e) => {
             const isNode = e.target.closest(".flowchart-node");
             if (!isNode) {
                 this.resetView();
             }
+        };
+
+        this.container.addEventListener("mousedown", handleMouseDown);
+        this.container.addEventListener("wheel", handleWheel, {
+            passive: false,
         });
+        this.container.addEventListener("dblclick", handleDoubleClick);
     }
 
     /**
@@ -359,6 +507,16 @@ export class FlowchartCanvas {
      */
     setPlaceholderVisible(isVisible) {
         this.placeholderVisible = isVisible;
+    }
+
+    /**
+     * Release global interaction handlers and observers.
+     */
+    destroy() {
+        this.panZoomCleanup?.();
+        this.panZoomCleanup = null;
+        this.interactiveGrid?.destroy();
+        this.interactiveGrid = null;
     }
 
     /**

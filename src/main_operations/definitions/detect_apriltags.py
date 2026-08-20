@@ -47,32 +47,33 @@ class DetectApriltagsDefinition(OperationInstance):
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
+        self.last_search_regions: list[np.ndarray] = []
         self.last_detections_lock: Lock = Lock()
 
     def run(
         self,
-        input_data: np.ndarray
-        | tuple[list[tuple[np.ndarray, tuple[int, int]]], np.ndarray],
+        input_data: np.ndarray | tuple[list[tuple[np.ndarray, np.ndarray]], np.ndarray],
     ) -> List[Detection] | List[CustomDetection] | None:
         """Detect AprilTags in the given image or image segments.
 
         Args:
             input_data: Either a single image array (np.ndarray) or a tuple of
-                       (segments, full_frame) where segments is a list of (image, offset) tuples.
+                       (segments, full_frame), with each segment paired with its
+                       mapping into full-frame coordinates.
 
         Returns:
             List of Detection objects containing detected AprilTag information.
             None if no detections are found.
         """
-        # Handle input from temporal acceleration preprocessor (tuple) or direct image input
-        if isinstance(input_data, tuple) and len(input_data) == 2:
-            segments, full_frame = input_data
-            detections = self.detector.detect(segments, full_frame)
-        else:
-            detections = self.detector.detect(input_data)
-
+        # Serialize detection so its visualization data always comes from one run.
         with self.last_detections_lock:
+            if isinstance(input_data, tuple) and len(input_data) == 2:
+                segments, full_frame = input_data
+                detections = self.detector.detect(segments, full_frame)
+            else:
+                detections = self.detector.detect(input_data)
             self.last_detections = detections
+            self.last_search_regions = self.detector.get_last_search_regions()
 
         if detections is None or (
             isinstance(detections, list) and len(detections) == 0
@@ -120,7 +121,17 @@ class DetectApriltagsDefinition(OperationInstance):
         visualization_frame = frame.copy()
 
         with self.last_detections_lock:
+            search_regions = [region.copy() for region in self.last_search_regions]
             detections = self.last_detections
+
+        for region in search_regions:
+            cv2.polylines(
+                visualization_frame,
+                [np.rint(region).astype(np.int32)],
+                True,
+                (0, 0, 255),
+                2,
+            )
 
         if detections is not None:
             for detection in detections:
