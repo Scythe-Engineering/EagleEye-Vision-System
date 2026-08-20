@@ -18,7 +18,7 @@ publishes two topics under its own subtable:
 | `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
 
-Both are published from the same pipeline branch, so both carry the identical capture timestamp.
+Both come from one solver output on one frame, so both carry the identical capture timestamp.
 `EagleEyeCamera` joins them on exact timestamp equality rather than searching for a near match.
 
 `<source>` is yours to name — `front`, `back`, `left`. Use one per camera.
@@ -38,8 +38,12 @@ device_input → detect_apriltags → minimum_apriltag_count → pnp_camera_loca
                                                               └─ pose_meta ─────────────────────────────────────────────→ publish "localization/front/meta"
 ```
 
-Nothing may sit between `pose_meta` and its publisher — an operation in between would restamp the
-value and break the timestamp join.
+Operations may sit on either branch, but only single-input ones. A single-input operation passes
+its capture timestamp through untouched, which is why the pose branch can run through
+`camera_to_robot_pose` and `robot_pose_output` and still match the metrics exactly. A multi-input
+operation averages the timestamps of everything feeding it, producing a time that no longer
+matches the other branch, and the robot silently drops every sample. `pose_fusion` is the one to
+watch for here.
 
 For a second camera, duplicate the whole chain with a different `camera_bus_id` and a different
 source name. Insert `temporal_acceleration_preprocessor_rust` between `device_input` and

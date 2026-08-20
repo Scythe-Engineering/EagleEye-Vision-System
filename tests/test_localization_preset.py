@@ -62,18 +62,35 @@ def test_preset_publishes_the_contract_the_java_library_reads() -> None:
     }
 
 
-def test_preset_feeds_pose_meta_straight_from_the_solver() -> None:
-    """Metrics must keep the solver's capture timestamp, so nothing may sit in between."""
-    meta_connections = [
-        connection
-        for operation in _preset()
-        for connection in operation["connections"]
-        if connection["from_port"] == "pose_meta"
-    ]
-    assert len(meta_connections) == 1
-    publisher = next(
+def test_both_branches_keep_one_capture_timestamp() -> None:
+    """The robot joins pose to meta on exact timestamp equality, so both must keep the solver's.
+
+    A single-input operation passes its capture timing through untouched. A multi-input one
+    averages the timings of everything feeding it, which would leave the two branches carrying
+    different timestamps and the robot silently dropping every sample.
+    """
+    operations = _preset()
+    incoming: dict[str, int] = {operation["uuid"]: 0 for operation in operations}
+    for operation in operations:
+        for connection in operation["connections"]:
+            incoming[connection["to_uuid"]] += 1
+
+    solver = next(
         operation
-        for operation in _preset()
-        if operation["uuid"] == meta_connections[0]["to_uuid"]
+        for operation in operations
+        if operation["action_name"] == "pnp_camera_localization.py"
     )
-    assert publisher["action_name"] == "publish_to_networktables.py"
+    downstream = {
+        connection["to_uuid"] for connection in solver["connections"]
+    }
+    assert {
+        connection["from_port"] for connection in solver["connections"]
+    } == {"camera_pose", "pose_meta"}
+
+    by_uuid = {operation["uuid"]: operation for operation in operations}
+    while downstream:
+        uuid = downstream.pop()
+        assert incoming[uuid] == 1, f"{by_uuid[uuid]['action_name']} averages capture timings"
+        downstream.update(
+            connection["to_uuid"] for connection in by_uuid[uuid]["connections"]
+        )

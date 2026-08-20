@@ -22,8 +22,9 @@ Use this operation after AprilTag detection when the pipeline needs a field-rela
 
 Publish `pose_meta` alongside the pose whenever robot code consumes it. Both ports are stamped
 with the same frame capture time, which is how the robot library pairs them; see
-[`library/README.md`](../../../../library/README.md). Do not place an operation between
-`pose_meta` and its publisher, since that would restamp the value.
+[`library/README.md`](../../../../library/README.md). Only single-input operations may sit between
+either port and its publisher; a multi-input operation averages its inputs' capture times, which
+leaves the two branches carrying different timestamps.
 
 ## Configuration
 
