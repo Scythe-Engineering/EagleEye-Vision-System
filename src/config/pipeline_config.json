@@ -256,5 +256,112 @@
             "uuid": "op-mobk406l-hf4t",
             "connections": []
         }
+    ],
+    "2026_apriltag_starter": [
+        {
+            "action_name": "device_input.py",
+            "action_params": {
+                "camera_bus_id": "",
+                "frame_rotation": 0
+            },
+            "position": {
+                "x": -200,
+                "y": -80
+            },
+            "uuid": "op-2026starter-input",
+            "connections": [
+                {
+                    "from_uuid": "op-2026starter-input",
+                    "from_port": "frame",
+                    "to_uuid": "op-2026starter-detect",
+                    "to_port": "frame",
+                    "data_type": "frame",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "detect_apriltags.py",
+            "action_params": {
+                "families": "tag36h11",
+                "nthreads": 1,
+                "quad_decimate": 2.0,
+                "quad_sigma": 0.0,
+                "refine_edges": 1,
+                "decode_sharpening": 0.25
+            },
+            "position": {
+                "x": 140,
+                "y": -80
+            },
+            "uuid": "op-2026starter-detect",
+            "connections": [
+                {
+                    "from_uuid": "op-2026starter-detect",
+                    "from_port": "detections",
+                    "to_uuid": "op-2026starter-pnp",
+                    "to_port": "detections",
+                    "data_type": "detections",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "pnp_camera_localization.py",
+            "action_params": {
+                "camera_bus_id": "",
+                "apriltag_map_path": ""
+            },
+            "position": {
+                "x": 480,
+                "y": -80
+            },
+            "uuid": "op-2026starter-pnp",
+            "connections": [
+                {
+                    "from_uuid": "op-2026starter-pnp",
+                    "from_port": "camera_pose",
+                    "to_uuid": "op-2026starter-camera-to-robot",
+                    "to_port": "camera_pose",
+                    "data_type": "camera_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "camera_to_robot_pose.py",
+            "action_params": {
+                "camera_bus_id": ""
+            },
+            "position": {
+                "x": 820,
+                "y": -80
+            },
+            "uuid": "op-2026starter-camera-to-robot",
+            "connections": [
+                {
+                    "from_uuid": "op-2026starter-camera-to-robot",
+                    "from_port": "robot_pose",
+                    "to_uuid": "op-2026starter-robot-pose-output",
+                    "to_port": "pose",
+                    "data_type": "robot_pose",
+                    "is_default": false,
+                    "custom_waypoints": null
+                }
+            ]
+        },
+        {
+            "action_name": "robot_pose_output.py",
+            "action_params": {},
+            "position": {
+                "x": 1160,
+                "y": -80
+            },
+            "uuid": "op-2026starter-robot-pose-output",
+            "connections": []
+        }
     ]
 }

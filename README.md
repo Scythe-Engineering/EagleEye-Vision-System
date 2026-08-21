@@ -16,7 +16,29 @@
 EagleEye Object Detection is designed to help identify and track game pieces in 3d space over different years. Code similarity between years is a priority where teams can simply create their detection model for each year while keeping the same simple and reliable code.
 
 ## Installation
-For installation and further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
+
+Run this as the normal (non-root) sudo-capable user that should own the install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Scythe-Engineering/EagleEye-Vision-System/main/install.sh | bash
+```
+
+The installer clones into `~/EagleEye-Vision-System`, installs the apt packages,
+uv, Node.js, and Rust, syncs the Python dependencies (including MemryX) and the
+frontend build, adds the user to the camera device groups, then installs,
+enables, and starts the `eagleeye` systemd service. It is tested on Raspberry Pi
+OS Lite 64-bit (Debian 12, arm64); other platforms warn and continue. It
+performs fresh installs only — if the target directory already exists it refuses
+and points you at **Settings -> System Update** in the Web UI
+(`http://<pi-address>:5001`).
+
+A fresh install ships an intentionally incomplete `2026_apriltag_starter`
+pipeline (Device Input -> Detect AprilTags -> PnP Camera Localization ->
+Camera to Robot Pose -> Robot Pose Output). Fill in the camera bus ID,
+calibration, extrinsics, and 2026 AprilTag map path in the Web UI before it will
+run; until then it stays inactive.
+
+For further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
 
 ## Contributing
 We welcome contributions to improve EagleEye Object Detection. To contribute:
