@@ -20,7 +20,12 @@ EagleEye Object Detection is designed to help identify and track game pieces in 
 Run this as the normal (non-root) sudo-capable user that should own the install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Scythe-Engineering/EagleEye-Vision-System/main/install.sh | bash
+(
+  installer="$(mktemp)" &&
+  trap 'rm -f "$installer"' EXIT &&
+  curl -fsSL https://raw.githubusercontent.com/Scythe-Engineering/EagleEye-Vision-System/main/install.sh -o "$installer" &&
+  bash "$installer"
+)
 ```
 
 The installer clones into `~/EagleEye-Vision-System`, installs the apt packages,

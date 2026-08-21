@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # EagleEye Vision System installer.
 #
-# One-line install (tested on Raspberry Pi OS Lite 64-bit, Debian 12, arm64):
-#
-#   curl -fsSL https://raw.githubusercontent.com/Scythe-Engineering/EagleEye-Vision-System/main/install.sh | bash
+# Tested on Raspberry Pi OS Lite 64-bit, Debian 12, arm64.
+# Download this file successfully before running it; see README.md for the command.
 #
 # Run as the normal (non-root) sudo-capable user that should own the install.
 # Every function below is defined before "main" runs at the very bottom, so a
@@ -146,6 +145,7 @@ Type=simple
 User=${service_user}
 WorkingDirectory=${install_dir}
 Environment=PYTHONUNBUFFERED=1
+Environment=SERVICE_NAME=${SERVICE_NAME}
 Environment=HOME=${service_home}
 Environment=PATH=${service_home}/.local/bin:${service_home}/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${install_dir}/.venv/bin/python -m src.main_backend
@@ -299,7 +299,7 @@ verify_install() {
     local install_dir="$1"
     log_step "Verifying the install"
 
-    verification_failed=0
+    local verification_failed=0
     if [ -x "$install_dir/.venv/bin/python" ]; then
         log_info "OK   python venv: $install_dir/.venv"
     else
@@ -408,6 +408,11 @@ main() {
         trap - EXIT
     else
         log_error "Install finished with failed verification checks (see above)."
+        log_error "Remove $install_dir before retrying the installer."
+        log_error "Also remove /etc/systemd/system/${SERVICE_NAME}.service and /etc/sudoers.d/${SERVICE_NAME}."
+        install_dir_created=0
+        service_installed=0
+        sudoers_installed=0
         return 1
     fi
 }
