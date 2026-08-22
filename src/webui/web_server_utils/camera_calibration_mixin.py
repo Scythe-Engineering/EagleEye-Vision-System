@@ -159,8 +159,24 @@ class CameraCalibrationMixin:
         target_size = (max(1, int(width * scale)), max(1, int(height * scale)))
         return cv2.resize(frame, target_size, interpolation=cv2.INTER_AREA)
 
+    def _grayscale_frame(self, frame: np.ndarray) -> np.ndarray:
+        """Return a single-channel image from gray, BGR, or BGRA camera data."""
+        if frame.ndim == 2:
+            return frame
+        if frame.ndim != 3:
+            raise ValueError(f"Unsupported camera frame shape: {frame.shape}")
+
+        channel_count = frame.shape[2]
+        if channel_count == 1:
+            return frame[:, :, 0]
+        if channel_count == 3:
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if channel_count == 4:
+            return cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        raise ValueError(f"Unsupported camera frame shape: {frame.shape}")
+
     def _find_charuco(self, frame: np.ndarray, board: Any):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = self._grayscale_frame(frame)
         dictionary = board.getDictionary()
         corners, ids, rejected = cv2.aruco.detectMarkers(gray, dictionary)
         if ids is None or len(ids) == 0:
@@ -215,7 +231,8 @@ class CameraCalibrationMixin:
     def _draw_detection(
         self, frame: np.ndarray, params: tuple[int, int, float, float, int], count: int
     ) -> tuple[np.ndarray, bool]:
-        output = frame.copy()
+        gray = self._grayscale_frame(frame)
+        output = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
         best_params, _, result = self._find_best_charuco(frame, params)
         found, charuco_corners, charuco_ids, marker_corners, marker_ids, _ = result
         if marker_ids is not None and len(marker_ids) > 0:

@@ -62,6 +62,37 @@ def test_scaled_camera_matrix_matches_live_frame_size() -> None:
     )
 
 
+def test_grayscale_frame_accepts_two_dimensional_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.arange(12, dtype=np.uint8).reshape(3, 4)
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    np.testing.assert_array_equal(gray, frame)
+
+
+def test_grayscale_frame_accepts_single_channel_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.arange(12, dtype=np.uint8).reshape(3, 4, 1)
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    np.testing.assert_array_equal(gray, frame[:, :, 0])
+
+
+def test_grayscale_frame_converts_color_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.zeros((3, 4, 3), dtype=np.uint8)
+    frame[:, :, 1] = 255
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    assert np.all(gray == 150)
+
+
 def test_distortion_grid_draws_warped_lines() -> None:
     harness = _CalibrationHarness()
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
