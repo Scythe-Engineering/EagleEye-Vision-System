@@ -41,6 +41,7 @@ SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
 ]
 
 SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
+SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
 _GIT_BRANCH_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
 
 
@@ -315,13 +316,16 @@ class SystemMonitorMixin:
             remote_sha_by_branch = {
                 branch["name"]: branch["sha"] for branch in remote_branches
             }
-            remote_sha = remote_sha_by_branch.get(current_branch)
-            remote_full_sha = remote_full_sha_by_branch.get(current_branch)
+            remote_sha = remote_sha_by_branch.get(SYSTEM_UPDATE_DEFAULT_BRANCH)
+            remote_full_sha = remote_full_sha_by_branch.get(
+                SYSTEM_UPDATE_DEFAULT_BRANCH
+            )
             update_needed = (
                 remote_full_sha is None or remote_full_sha != current_sha_full
             )
             return {
                 "available": True,
+                "default_branch": SYSTEM_UPDATE_DEFAULT_BRANCH,
                 "current_branch": current_branch,
                 "current_sha": current_sha,
                 "remote_sha": remote_sha,
@@ -496,7 +500,9 @@ class SystemMonitorMixin:
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
         phase_count = SYSTEM_UPDATE_PHASE_COUNT
-        target_branch = self._system_update_target_branch or "main"
+        target_branch = (
+            self._system_update_target_branch or SYSTEM_UPDATE_DEFAULT_BRANCH
+        )
         try:
             self._checkout_branch_preserving_pipeline_config(
                 target_branch,
@@ -697,9 +703,7 @@ class SystemMonitorMixin:
             if isinstance(requested_branch, str) and requested_branch.strip():
                 target_branch = self._normalize_git_branch_name(requested_branch)
             else:
-                target_branch = self._normalize_git_branch_name(
-                    self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
-                )
+                target_branch = SYSTEM_UPDATE_DEFAULT_BRANCH
         except ValueError as error:
             return {"error": str(error)}, 400
         except Exception as error:
