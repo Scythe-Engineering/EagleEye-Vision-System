@@ -78,9 +78,8 @@ chroot "$MNT" /bin/bash -euxc "
 
 # Keep package-manager caches (uv/npm/pip) on the host disk, not in the image.
 mkdir -p "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
 mount --bind "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-chown 1000:1000 "$BUILD_DIR/user-cache"
+chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
 
 echo "==> Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
