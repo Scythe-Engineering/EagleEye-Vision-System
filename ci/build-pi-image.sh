@@ -113,7 +113,8 @@ rm -f "$MNT/usr/sbin/policy-rc.d" "$MNT/etc/resolv.conf"
 sed -i 's/^#//' "$MNT/etc/ld.so.preload" || true
 
 echo "==> Verifying image contents"
-test -x "$MNT/home/$IMAGE_USER/EagleEye-Vision-System/.venv/bin/python"
+# The venv python is a symlink that only resolves inside the image root.
+chroot "$MNT" test -x "/home/$IMAGE_USER/EagleEye-Vision-System/.venv/bin/python"
 test -f "$MNT/home/$IMAGE_USER/EagleEye-Vision-System/src/webui/static/bundle.js"
 test -f "$MNT/etc/systemd/system/eagleeye.service"
 test -L "$MNT/etc/systemd/system/multi-user.target.wants/eagleeye.service"
