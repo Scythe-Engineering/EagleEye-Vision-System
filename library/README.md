@@ -2,7 +2,8 @@
 
 Robot-side code for consuming EagleEye localization on a roboRIO. Copy
 `java/frc/robot/vision/EagleEyeCamera.java` into your robot project and adjust the package
-declaration if your vision code lives elsewhere.
+declaration if your vision code lives elsewhere. Copy `EagleEyeCameraSim.java` too if you develop
+in WPILib simulation.
 
 There is no vendordep. One file with no dependencies beyond WPILib is less to maintain than a
 maven repository, and copying it lets a team read and tune the thing that decides where their
@@ -89,6 +90,35 @@ Call it from a subsystem's `periodic()`, not from a NetworkTables listener threa
 
 Use `camera.poll()` directly if you want the raw observations for logging or for your own
 filtering; it returns them in capture order with the quality metrics attached.
+
+## Simulation
+
+`EagleEyeCameraSim` publishes the same two topics with the same shared timestamp from a simulated
+robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unchanged in WPILib
+simulation with no camera and no coprocessor.
+
+```java
+// simulationInit, one per source your real robot has:
+EagleEyeCameraSim frontSim =
+    new EagleEyeCameraSim(
+        "localization/front",
+        new Transform3d(),   // camera mounting; only yaw and translation matter
+        AprilTagFieldLayout.loadField(AprilTagFields.kDefaultField));
+
+// simulationPeriodic, with ground truth from your drive sim:
+frontSim.update(driveSim.getPose());
+```
+
+Given a tag layout, a tag counts as visible when it is inside `cameraFovDegrees` and within
+`maximumTagRangeMeters`; too few visible tags and nothing publishes, which reproduces vision dead
+zones. Noise is Gaussian, scaled by the same distance-squared-over-tag-count model the consumer
+uses for standard deviations — set `translationNoiseBase` to zero for deterministic tests. The
+single-argument constructor skips the layout and always publishes fixed metrics, for testing the
+NetworkTables plumbing alone.
+
+What it does not simulate: pipeline latency (samples are stamped "now" rather than an exposure
+instant in the past) and solver failure modes like reprojection outliers. It validates your robot
+code's consumption, filtering, and dead-zone handling — not the solver.
 
 ## Time synchronization
 
