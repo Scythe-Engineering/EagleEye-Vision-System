@@ -1,0 +1,30 @@
+name: Build Raspberry Pi image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/license-and-pi-image]
+    tags: ["v*"]
+
+jobs:
+  pi-image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          df -h /
+
+      - name: Build image
+        run: sudo -E bash ci/build-pi-image.sh
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: eagleeye-pi-image
+          path: eagleeye-*.img.xz
+          if-no-files-found: error
+          compression-level: 0

@@ -70,7 +70,13 @@ this check; protected-branch CI should remain required as the authoritative
 gate.
 
 ## License
-EagleEye Framework © 2025 by ScytheEngineering is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
+EagleEye Vision System © 2025-2026 ScytheEngineering, licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+See the [LICENSE](LICENSE) file for the full terms.
+
+In plain language: every FIRST team, student, school, and hobbyist can use, modify, and
+share EagleEye for free, forever — noncommercial use is unrestricted. Commercial use
+requires a separate commercial license: contact darkedenc9@gmail.com first.
 <img width="1606" height="979" alt="image" src="https://github.com/user-attachments/assets/00b03576-f924-415a-a8c5-8559e4f1a509" />
 
 
