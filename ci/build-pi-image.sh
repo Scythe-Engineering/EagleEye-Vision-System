@@ -13,7 +13,17 @@ IMAGE_USER="eagleeye"
 IMAGE_PASSWORD="eagleeye"
 IMAGE_HOSTNAME="eagleeye"
 REPO_SRC="${REPO_SRC:-$(pwd)}"
-OUT_IMG="eagleeye-$(date +%Y-%m-%d).img"
+OUT_NAME="eagleeye-$(date +%Y-%m-%d).img"
+
+# Build outside the repo checkout (the repo gets copied into the image, and
+# the image must not contain itself). Prefer /mnt, the runner's larger disk.
+if [ -d /mnt ] && [ -w /mnt ]; then
+    BUILD_DIR=/mnt/eagleeye-image-build
+else
+    BUILD_DIR="$(mktemp -d)"
+fi
+mkdir -p "$BUILD_DIR"
+OUT_IMG="$BUILD_DIR/$OUT_NAME"
 
 MNT=""
 LOOP=""
@@ -67,7 +77,8 @@ chroot "$MNT" /bin/bash -euxc "
 
 echo "==> Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
-cp -a "$REPO_SRC" "$MNT/tmp/eagleeye-src"
+rsync -a --exclude='*.img' --exclude='*.img.xz' --exclude=node_modules \
+    --exclude=.venv "$REPO_SRC/" "$MNT/tmp/eagleeye-src/"
 chroot "$MNT" chown -R "$IMAGE_USER:$IMAGE_USER" /tmp/eagleeye-src
 
 echo "==> Running the EagleEye installer inside the chroot"
@@ -108,3 +119,4 @@ MNT=""
 LOOP=""
 xz -T0 -3 "$OUT_IMG"
 ls -lh "$OUT_IMG.xz"
+mv "$OUT_IMG.xz" "${GITHUB_WORKSPACE:-$REPO_SRC}/"
