@@ -7,6 +7,10 @@
         {
             "name": "detections",
             "has_default": false
+        },
+        {
+            "name": "robot_yaw",
+            "has_default": false
         }
     ],
     "output_nodes": [

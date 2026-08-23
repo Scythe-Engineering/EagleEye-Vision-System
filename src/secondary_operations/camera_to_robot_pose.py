@@ -7,6 +7,47 @@ from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.quaternion_utils import euler_to_rotation_matrix
 
 
+def build_robot_from_camera_transform(
+    camera_config_registry: CameraConfigRegistry | None,
+    camera_bus_id: str,
+) -> np.ndarray:
+    """Build ``T_robot_from_camera`` from a camera's registered extrinsics.
+
+    This is the one definition of the pipeline's camera-mounting transform;
+    every operation that needs to relate the camera frame to the robot frame
+    must use it so the conventions stay consistent.
+
+    Args:
+        camera_config_registry: Shared camera config registry, or None.
+        camera_bus_id: Camera bus ID used to resolve extrinsics.
+
+    Returns:
+        4x4 transform mapping points from camera frame to robot frame, identity
+        when no registry is available.
+    """
+    if camera_config_registry is None:
+        return np.eye(4, dtype=float)
+
+    camera_config = camera_config_registry.get_config(camera_bus_id)
+    extrinsics = camera_config.extrinsics
+
+    # stuff in strange order because of coordinate system conversion for both frontend and wpilib/robot
+    transform = euler_to_rotation_matrix(
+        pitch=float(-extrinsics.yaw),
+        yaw=float(-extrinsics.pitch),
+        roll=float(extrinsics.roll),
+    )
+    transform[:3, 3] = np.array(
+        [
+            float(extrinsics.y_offset),
+            float(-extrinsics.z_offset),
+            float(extrinsics.x_offset),
+        ],
+        dtype=float,
+    )
+    return transform
+
+
 class CameraToRobotPose(OperationInstance):
     """Convert camera pose to robot pose using camera extrinsics.
 
@@ -52,44 +93,15 @@ class CameraToRobotPose(OperationInstance):
         inverse_transform[:3, 3] = translation_inverse
         return inverse_transform
 
-    def _build_camera_to_robot_transform(self) -> np.ndarray:
-        """Build ``T_robot_from_camera`` from current camera extrinsics.
-
-        Returns:
-            4x4 transform mapping points from camera frame to robot frame.
-
-        Raises:
-            ValueError: If camera config registry is unavailable.
-        """
-        if self.camera_config_registry is None:
-            return np.eye(4, dtype=float)
-
-        camera_config = self.camera_config_registry.get_config(self.camera_bus_id)
-        extrinsics = camera_config.extrinsics
-
-        # stuff in strange order because of coordinate system conversion for both frontend and wpilib/robot
-        transform = euler_to_rotation_matrix(
-            pitch=float(-extrinsics.yaw),
-            yaw=float(-extrinsics.pitch),
-            roll=float(extrinsics.roll),
-        )
-        transform[:3, 3] = np.array(
-            [
-                float(extrinsics.y_offset),
-                float(-extrinsics.z_offset),
-                float(extrinsics.x_offset),
-            ],
-            dtype=float,
-        )
-        return transform
-
     def _build_inverse_transform(self) -> np.ndarray:
         """Build ``T_camera_from_robot`` by inverting camera extrinsics.
 
         Returns:
             4x4 transform mapping robot frame to camera frame.
         """
-        robot_from_camera = self._build_camera_to_robot_transform()
+        robot_from_camera = build_robot_from_camera_transform(
+            self.camera_config_registry, self.camera_bus_id
+        )
         return self._fast_se3_inverse(robot_from_camera)
 
     def _get_cached_inverse_transform(self) -> np.ndarray:

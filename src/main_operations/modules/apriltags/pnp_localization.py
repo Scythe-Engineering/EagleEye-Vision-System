@@ -131,14 +131,73 @@ class PnpLocalization:
 
         return [float(tag_count), mean_distance, reprojection_error]
 
+    def _solve_position_with_fixed_rotation(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        field_from_camera_rotation: np.ndarray,
+    ) -> Optional[np.ndarray]:
+        """Solve the camera position given a known camera rotation.
+
+        With the rotation fixed (from the robot gyro plus the camera mounting),
+        each undistorted corner gives two equations linear in the camera
+        position, so the solve is one exact least squares with no iteration and
+        no pose ambiguity — the constrained equivalent of MegaTag2.
+
+        Args:
+            object_points: Stacked field-space tag corners, shape (N, 3).
+            image_points: Matching image-space corners, shape (N, 2).
+            field_from_camera_rotation: Fixed 3x3 camera rotation in field
+                coordinates (OpenCV camera axes).
+
+        Returns:
+            Camera position in field coordinates, shape (3,), or None when the
+            system is degenerate or the solution puts points behind the camera.
+        """
+        normalized = cv2.undistortPoints(
+            image_points.reshape(-1, 1, 2).astype(np.float64),
+            self.camera_matrix.astype(np.float64),
+            self.distortion_coefficients.astype(np.float64),
+        ).reshape(-1, 2)
+
+        camera_from_field_rotation = field_from_camera_rotation.T.astype(np.float64)
+        rotated_points = object_points.astype(np.float64) @ camera_from_field_rotation.T
+
+        # Let s = R_cw @ C. Projection u = (q_x - s_x) / (q_z - s_z) gives
+        # -s_x + u * s_z = u * q_z - q_x, and likewise for v.
+        point_count = normalized.shape[0]
+        coefficients = np.zeros((2 * point_count, 3), dtype=np.float64)
+        coefficients[0::2, 0] = -1.0
+        coefficients[0::2, 2] = normalized[:, 0]
+        coefficients[1::2, 1] = -1.0
+        coefficients[1::2, 2] = normalized[:, 1]
+        rhs = np.empty(2 * point_count, dtype=np.float64)
+        rhs[0::2] = normalized[:, 0] * rotated_points[:, 2] - rotated_points[:, 0]
+        rhs[1::2] = normalized[:, 1] * rotated_points[:, 2] - rotated_points[:, 1]
+
+        solution, _, rank, _ = np.linalg.lstsq(coefficients, rhs, rcond=None)
+        if rank < 3 or not np.all(np.isfinite(solution)):
+            return None
+
+        depths = rotated_points[:, 2] - solution[2]
+        if np.any(depths <= 0.0):
+            return None
+
+        return field_from_camera_rotation.astype(np.float64) @ solution
+
     def estimate_pose_from_detections(
         self,
         detections: List[Detection],
+        field_from_camera_rotation: Optional[np.ndarray] = None,
     ) -> Optional[Tuple[np.ndarray, List[float]]]:
         """Estimate camera pose from AprilTag detections.
 
         Args:
             detections: List of AprilTag detections.
+            field_from_camera_rotation: Optional fixed 3x3 camera rotation in
+                field coordinates. When given, only the camera position is
+                solved (yaw-constrained mode); when the constrained solve is
+                degenerate the unconstrained solver runs instead.
 
         Returns:
             The 4x4 camera pose in field coordinates paired with its quality
@@ -177,6 +236,35 @@ class PnpLocalization:
             np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))
         ):
             return None
+
+        if field_from_camera_rotation is not None:
+            camera_position = self._solve_position_with_fixed_rotation(
+                object_points, image_points, field_from_camera_rotation
+            )
+            if camera_position is not None:
+                rotation_matrix = field_from_camera_rotation.astype(
+                    np.float32, copy=False
+                )
+                camera_from_field_rotation = rotation_matrix.T
+                translation_vector = -(
+                    camera_from_field_rotation @ camera_position.astype(np.float32)
+                )
+                rotation_vector, _ = cv2.Rodrigues(camera_from_field_rotation)
+
+                global_camera_transform = np.eye(4, dtype=np.float32)
+                global_camera_transform[:3, :3] = rotation_matrix
+                global_camera_transform[:3, 3] = camera_position.astype(np.float32)
+
+                quality = self._solution_quality(
+                    object_points,
+                    image_points,
+                    rotation_vector,
+                    camera_from_field_rotation,
+                    translation_vector,
+                    valid_tags_found,
+                )
+                return global_camera_transform, quality
+            # Degenerate constrained system: fall through to the full solver.
 
         success, rotation_vector, translation_vector = cv2.solvePnP(
             object_points,
