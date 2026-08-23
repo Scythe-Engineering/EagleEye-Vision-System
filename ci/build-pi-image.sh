@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 BASE_IMAGE_URL="${BASE_IMAGE_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}"
-IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-5G}"
+IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-8G}"
 IMAGE_USER="eagleeye"
 IMAGE_PASSWORD="eagleeye"
 IMAGE_HOSTNAME="eagleeye"
@@ -31,6 +31,7 @@ LOOP=""
 cleanup() {
     set +e
     if [ -n "$MNT" ]; then
+        umount "$MNT/home/$IMAGE_USER/.cache" 2>/dev/null
         for fs in run dev/pts dev sys proc; do umount "$MNT/$fs" 2>/dev/null; done
         umount "$MNT/boot/firmware" 2>/dev/null
         umount "$MNT" 2>/dev/null
@@ -74,6 +75,12 @@ chroot "$MNT" /bin/bash -euxc "
     echo '$IMAGE_USER ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/010_${IMAGE_USER}-nopasswd
     chmod 440 /etc/sudoers.d/010_${IMAGE_USER}-nopasswd
 "
+
+# Keep package-manager caches (uv/npm/pip) on the host disk, not in the image.
+mkdir -p "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
+chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
+mount --bind "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
+chown 1000:1000 "$BUILD_DIR/user-cache"
 
 echo "==> Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
