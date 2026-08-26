@@ -26,6 +26,7 @@ import { applySelectedPipelineProfiling } from "./profilingController.js";
 import { postFlowchartStructureRefresh } from "./flowchartController.js";
 import { updateRestartIndicator } from "./restartController.js";
 import { updatePipelineCameraNote } from "./stateHelpers.js";
+import { getPipelineTemplate, newPipelineDialog } from "./newPipelineDialog.js";
 
 /**
  * Populate the pipeline select dropdown from the current pipeline list.
@@ -284,8 +285,8 @@ async function autoSavePipelineImpl(options = {}) {
         console.log("Pipeline auto-saved successfully");
         const restartRequired = Boolean(
             result?.restart_required ||
-                options.requiresRestart ||
-                result?.live_update_status === "unsupported",
+            options.requiresRestart ||
+            result?.live_update_status === "unsupported",
         );
         if (restartRequired) {
             await updateRestartIndicator(true, {
@@ -333,9 +334,10 @@ async function createNewPipeline({
     updateDeleteButtonVisibility,
     autoSavePipeline,
 }) {
-    const newPipelineName = prompt("Enter a name for the new pipeline:");
-    if (!newPipelineName || newPipelineName.trim() === "") return;
-    const pipelineFileName = newPipelineName.trim().replaceAll(/\s+/g, "_");
+    const request = await newPipelineDialog();
+    if (!request) return;
+    const newPipelineName = request.name;
+    const pipelineFileName = newPipelineName.replaceAll(/\s+/g, "_");
     const pipelines = getPipelines();
     const existingPipeline = pipelines.find((p) => p.name === pipelineFileName);
     if (existingPipeline) {
@@ -367,15 +369,24 @@ async function createNewPipeline({
             const pipelineSelect = creatorContext.elements.pipelineSelect;
             if (pipelineSelect) pipelineSelect.value = pipelineFileName;
         }, 10);
-        const operations = getOperations();
-        const deviceInputOp = operations.find(
-            (op) => op.id === "device_input.py",
-        );
-        if (deviceInputOp) {
-            pipelineStore.addNode(
-                { id: deviceInputOp.id, config: {} },
-                { x: 100, y: 100 },
+        const template = request.templateId
+            ? getPipelineTemplate(request.templateId)
+            : null;
+        if (template) {
+            const connections = template.flatMap(
+                (node) => node.connections || [],
             );
+            await pipelineStore.loadPipelineData(template, connections);
+        } else {
+            const deviceInputOp = getOperations().find(
+                (op) => op.id === "device_input.py",
+            );
+            if (deviceInputOp) {
+                pipelineStore.addNode(
+                    { id: deviceInputOp.id, config: {} },
+                    { x: 100, y: 100 },
+                );
+            }
         }
         await renderCurrentPipeline?.();
         updateRunButton();
