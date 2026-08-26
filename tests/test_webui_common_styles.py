@@ -20,8 +20,10 @@ def test_common_native_controls_have_global_project_styles() -> None:
         css, "*::-webkit-scrollbar-thumb"
     )
     assert "background-image:" in _rule(css, "select")
+    assert "background: #2a2a2a" in _rule(css, "select option")
+    assert "background: #f9c845" in _rule(css, "select option:checked")
     assert "color-scheme: dark" in _rule(css, 'input[type="number"]')
-    assert "filter:" in _rule(
-        css, 'input[type="number"]::-webkit-inner-spin-button'
-    )
+    number_buttons = _rule(css, 'input[type="number"]::-webkit-inner-spin-button')
+    assert "appearance: none" in number_buttons
+    assert "background: transparent url(" in number_buttons
     assert "appearance: none" in _rule(css, 'input[type="checkbox"]')

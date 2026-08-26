@@ -48,6 +48,9 @@
 
 select {
     appearance: none;
+    border-color: #414141;
+    background-color: #2a2a2a;
+    color: #f4f4f5;
     padding-right: 2rem !important;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23f9c845' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m3 6 5 5 5-5'/%3E%3C/svg%3E");
     background-position: right 0.65rem center;
@@ -55,14 +58,33 @@ select {
     background-size: 0.75rem;
 }
 
+select:focus-visible {
+    outline: none;
+    border-color: #f9c845;
+    box-shadow: 0 0 0 1px #f9c845;
+}
+
+select option {
+    background: #2a2a2a;
+    color: #f4f4f5;
+}
+
+select option:checked {
+    background: #f9c845;
+    color: #1b1b1b;
+}
+
 input[type="number"] {
     color-scheme: dark;
 }
 
 input[type="number"]::-webkit-inner-spin-button {
-    opacity: 1;
+    appearance: none;
+    width: 0.85rem;
+    height: 1.25rem;
+    margin: 0;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath fill='none' stroke='%23f9c845' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='m3 7 3-3 3 3M3 13l3 3 3-3'/%3E%3C/svg%3E") center / contain no-repeat;
     cursor: pointer;
-    filter: sepia(1) saturate(4) hue-rotate(355deg) brightness(1.15);
 }
 
 /* Backend state warning styling */
