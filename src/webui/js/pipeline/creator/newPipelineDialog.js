@@ -73,12 +73,41 @@ export function newPipelineDialog() {
         );
     });
 
+    const templateText = createElement("span", {
+        className:
+            "overflow-hidden whitespace-nowrap opacity-100 transition-all duration-150",
+        text: "Use a template pipeline as a starting point",
+    });
+    const templateSelectWrapper = createElement(
+        "div",
+        {
+            className:
+                "invisible grid -translate-y-2 grid-rows-[0fr] opacity-0 transition-all delay-150 duration-200",
+        },
+        [
+            createElement("div", { className: "overflow-hidden" }, [
+                templateSelect,
+            ]),
+        ],
+    );
     const useTemplate = createElement("input", {
         id: "usePipelineTemplate",
         type: "checkbox",
-        className: "h-4 w-4 accent-[#f9c845]",
+        className: "h-4 w-4 shrink-0 accent-[#f9c845]",
         onchange: () => {
-            templateSelect.disabled = !useTemplate.checked;
+            const enabled = useTemplate.checked;
+            templateSelect.disabled = !enabled;
+            templateText.classList.toggle("opacity-0", enabled);
+            templateText.classList.toggle("max-w-0", enabled);
+            templateText.classList.toggle("delay-150", !enabled);
+            templateSelectWrapper.classList.toggle("invisible", !enabled);
+            templateSelectWrapper.classList.toggle("grid-rows-[0fr]", !enabled);
+            templateSelectWrapper.classList.toggle("-translate-y-2", !enabled);
+            templateSelectWrapper.classList.toggle("opacity-0", !enabled);
+            templateSelectWrapper.classList.toggle("grid-rows-[1fr]", enabled);
+            templateSelectWrapper.classList.toggle("translate-y-0", enabled);
+            templateSelectWrapper.classList.toggle("opacity-100", enabled);
+            templateSelectWrapper.classList.toggle("delay-150", enabled);
         },
     });
     const form = createElement(
@@ -117,21 +146,9 @@ export function newPipelineDialog() {
                         className:
                             "flex cursor-pointer items-center gap-2 text-sm text-gray-200",
                     },
-                    [
-                        useTemplate,
-                        document.createTextNode(
-                            "Use a template pipeline as a starting point",
-                        ),
-                    ],
+                    [useTemplate, templateText],
                 ),
-                createElement("div", { className: "space-y-2" }, [
-                    createElement("label", {
-                        for: "newPipelineTemplate",
-                        className: "block text-sm font-medium text-gray-200",
-                        text: "Template",
-                    }),
-                    templateSelect,
-                ]),
+                templateSelectWrapper,
             ]),
             createElement(
                 "div",
