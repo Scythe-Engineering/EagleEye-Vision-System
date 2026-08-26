@@ -91,6 +91,25 @@ Call it from a subsystem's `periodic()`, not from a NetworkTables listener threa
 Use `camera.poll()` directly if you want the raw observations for logging or for your own
 filtering; it returns them in capture order with the quality metrics attached.
 
+## Gyro-fused localization
+
+The solver accepts an optional robot heading. When it has one, camera orientation is treated as
+known (gyro yaw plus camera mounting, robot flat on the field) and only position is solved — the
+same idea as MegaTag2, and the cure for noisy single-tag and long-range poses.
+
+Robot side, once per loop alongside the estimator update:
+
+```java
+EagleEyeCamera.publishRobotYaw(gyro.getRotation2d());
+```
+
+Coprocessor side, add a `get_networktables_value` operation reading `robot/yaw` and connect its
+output to the solver's `robot_yaw` input. That node is a data source, so it does not disturb the
+timestamp join described above.
+
+The gyro is trusted over the tags in this mode: seed it before relying on the fused pose, and if
+nothing publishes the key the solver quietly runs unconstrained.
+
 ## Simulation
 
 `EagleEyeCameraSim` publishes the same two topics with the same shared timestamp from a simulated

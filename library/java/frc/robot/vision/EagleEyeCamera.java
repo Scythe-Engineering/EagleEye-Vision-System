@@ -4,9 +4,11 @@ import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.networktables.DoubleArraySubscriber;
+import edu.wpi.first.networktables.DoublePublisher;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
@@ -97,6 +99,11 @@ public class EagleEyeCamera {
 
   /** Root table EagleEye publishes into. Fixed on the coprocessor side too. */
   private static final String TABLE = "EagleEye";
+
+  /** Key the yaw-constrained solver reads the robot heading from; see publishRobotYaw. */
+  public static final String ROBOT_YAW_KEY = "robot/yaw";
+
+  private static DoublePublisher yawPublisher;
 
   private static final int POLL_STORAGE = 20;
 
@@ -192,6 +199,32 @@ public class EagleEyeCamera {
     carriedPoses.addAll(unmatched);
     carriedMetas.removeIf(meta -> (nowMicros - meta.timestamp) / 1e6 > maximumSampleAgeSeconds);
     return observations;
+  }
+
+  /**
+   * Publish the robot heading for EagleEye's yaw-constrained (gyro-fused) localization.
+   *
+   * <p>Call every loop from the same {@code periodic()} that updates the pose estimator, passing
+   * the gyro heading in field convention — the same rotation given to {@code
+   * poseEstimator.update}. On the coprocessor, point a {@code get_networktables_value} operation
+   * at {@value #ROBOT_YAW_KEY} and wire it into the solver's {@code robot_yaw} input.
+   *
+   * <p>The solver reads the latest published yaw when a frame is processed, so a heading published
+   * mid-turn can be newer than the frame it constrains. At 50 Hz publishing this is harmless at
+   * normal rotation rates; if your robot spins while ranging long distances, gate vision on
+   * angular velocity as usual.
+   *
+   * @param yaw the robot heading, usually {@code gyro.getRotation2d()}.
+   */
+  public static void publishRobotYaw(Rotation2d yaw) {
+    if (yawPublisher == null) {
+      yawPublisher =
+          NetworkTableInstance.getDefault()
+              .getTable(TABLE)
+              .getDoubleTopic(ROBOT_YAW_KEY)
+              .publish();
+    }
+    yawPublisher.set(yaw.getRadians());
   }
 
   /**

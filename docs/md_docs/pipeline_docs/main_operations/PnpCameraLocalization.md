@@ -5,6 +5,9 @@
 ## Inputs
 
 - `detections`: AprilTag detections containing `tag_id` and four image-space `corners`, normally from `detect_apriltags`.
+- `robot_yaw` (optional): the robot heading in radians, WPILib convention, normally from a
+  `get_networktables_value` operation reading a key the robot publishes (the robot library's
+  `EagleEyeCamera.publishRobotYaw` uses `robot/yaw`). Leave unconnected for the standard solve.
 
 ## Outputs
 
@@ -39,6 +42,24 @@ leaves the two branches carrying different timestamps.
   "apriltag_map_path": "{project_root}/files/apriltag_map_path/frc2025r2.json"
 }
 ```
+
+## Yaw-constrained mode
+
+When `robot_yaw` carries a finite value, the solver treats the camera orientation as known — the
+gyro heading plus the camera mounting extrinsics, assuming the robot sits flat on the field — and
+solves only for camera position. With rotation fixed, each corner gives two equations linear in
+position, so the solve is one exact least squares: no iteration, and none of the pose ambiguity
+that makes single-tag and long-range solves noisy. This is the same idea as Limelight's MegaTag2,
+and like it, the gyro is trusted over the tags: a wrong yaw in produces a wrong pose out, so seed
+the gyro before relying on it.
+
+The yaw is read at solve time, not at frame exposure, so a robot spinning quickly constrains a
+frame with a slightly newer heading. Publish the yaw every robot loop and gate vision on angular
+velocity if you range at distance while rotating.
+
+If the constrained system is degenerate the operation falls back to the unconstrained solver for
+that frame. When `robot_yaw` is connected but nothing publishes the key,
+`get_networktables_value` outputs None and the solve is simply unconstrained.
 
 ## Important behavior and limitations
 
