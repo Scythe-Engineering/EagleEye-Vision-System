@@ -298,7 +298,13 @@ function renderConfirmContent(infoPayload) {
         infoPayload.default_branch
             ? infoPayload.default_branch
             : DEFAULT_UPDATE_BRANCH;
-    let selectedBranch = defaultBranch;
+    const currentBranch =
+        typeof infoPayload.current_branch === "string" &&
+        infoPayload.current_branch &&
+        infoPayload.current_branch !== "HEAD"
+            ? infoPayload.current_branch
+            : defaultBranch;
+    let selectedBranch = currentBranch;
 
     if (!branchShaByName.has(selectedBranch) && selectedBranch) {
         remoteBranches.unshift({
@@ -330,7 +336,7 @@ function renderConfirmContent(infoPayload) {
     }
 
     const otherBranches = remoteBranches.filter(
-        (branch) => branch.name !== defaultBranch,
+        (branch) => branch.name !== currentBranch,
     );
     const branchOptions =
         otherBranches.length > 0
@@ -380,7 +386,7 @@ function renderConfirmContent(infoPayload) {
     );
     const trackingBranchLabel = createElement("span", {
         className: "font-mono text-sm text-gray-200",
-        text: `Tracking branch: ${defaultBranch}`,
+        text: `Tracking branch: ${currentBranch}`,
     });
     const selectOtherBranchButton = createElement("button", {
         type: "button",
@@ -393,10 +399,10 @@ function renderConfirmContent(infoPayload) {
             if (isHidden) {
                 branchPicker.classList.remove("hidden");
                 selectedBranch = branchSelect.value;
-                selectOtherBranchButton.textContent = `Track ${defaultBranch}`;
+                selectOtherBranchButton.textContent = `Track ${currentBranch}`;
             } else {
                 branchPicker.classList.add("hidden");
-                selectedBranch = defaultBranch;
+                selectedBranch = currentBranch;
                 selectOtherBranchButton.textContent = "Select other branch";
             }
             trackingBranchLabel.textContent = `Tracking branch: ${selectedBranch}`;
