@@ -99,6 +99,7 @@ export function newPipelineDialog() {
             templateSelect.disabled = !enabled;
             templateText.classList.toggle("opacity-0", enabled);
             templateText.classList.toggle("max-w-0", enabled);
+            templateText.classList.toggle("max-w-[22rem]", !enabled);
             templateText.classList.toggle("delay-150", !enabled);
             templateSelectWrapper.classList.toggle("invisible", !enabled);
             templateSelectWrapper.classList.toggle("grid-rows-[0fr]", !enabled);
