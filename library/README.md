@@ -51,13 +51,14 @@ The chain is:
 
 ```
 device_input → detect_apriltags → minimum_apriltag_count → pnp_camera_localization
-                                                              ├─ camera_pose → camera_to_robot_pose → robot_pose_output → publish "localization/front/pose"
-                                                              └─ pose_meta ─────────────────────────────────────────────→ publish "localization/front/meta"
+                                                              ├─ camera_pose → camera_to_robot_pose → publish "localization/front/pose"
+                                                              │                                      └→ robot_pose_output
+                                                              └─ pose_meta ─────────────────────────→ publish "localization/front/meta"
 ```
 
-Operations may sit on either branch, but only single-input ones. A single-input operation passes
-its capture timestamp through untouched, which is why the pose branch can run through
-`camera_to_robot_pose` and `robot_pose_output` and still match the metrics exactly. A multi-input
+Operations may sit on either publishing branch, but only single-input ones. A single-input
+operation passes its capture timestamp through untouched, which is why the pose branch can run
+through `camera_to_robot_pose` and still match the metrics exactly. A multi-input
 operation averages the timestamps of everything feeding it, producing a time that no longer
 matches the other branch, and the robot silently drops every sample. `pose_fusion` is the one to
 watch for here.
@@ -127,19 +128,19 @@ You do not need to compensate for latency. Do not subtract one, and do not pass
 
 The timestamp on a sample traces back through:
 
-1. The V4L2 driver's `CLOCK_MONOTONIC` buffer timestamp — the moment the frame was *exposed*, not
-   the moment EagleEye finished with it.
-2. `src/utils/timing.py`, which converts that to the NetworkTables clock using an offset measured
-   once at startup (median of eleven paired readings; both clocks tick at the same rate, so there
-   is nothing to re-measure).
-3. `publish_to_networktables`, which sets the value with that timestamp instead of "now".
-4. ntcore on the roboRIO, which translates the client's timestamp into server time using its
-   negotiated clock offset.
-5. WPILib, where NetworkTables server time on a roboRIO *is* FPGA time — the same clock
+1. V4L2 provides the exposure time when the buffer has both `TIMESTAMP_MONOTONIC` and
+   `TSTAMP_SRC_SOE`. Other V4L2 drivers, OpenCV, and video-file sources use delivery time instead.
+2. `src/utils/timing.py` converts that timestamp to the NetworkTables clock using an offset cached
+   on first use. It takes the median of eleven paired readings; both clocks tick at the same rate,
+   so there is nothing to re-measure.
+3. `publish_to_networktables` sets the value with that timestamp instead of "now".
+4. ntcore on the roboRIO translates the client's timestamp into server time using its negotiated
+   clock offset.
+5. WPILib uses NetworkTables server time as FPGA time on a roboRIO, the same clock
    `Timer.getFPGATimestamp()` reads.
 
-So `sample.timestamp / 1e6` is already in the domain `addVisionMeasurement` wants, and it refers
-to the exposure instant rather than to any point in the processing or transport path.
+So `sample.timestamp / 1e6` is already in the domain `addVisionMeasurement` wants. With supported
+V4L2 drivers it identifies exposure time; with fallback sources it identifies delivery time.
 
 Two consequences worth knowing:
 

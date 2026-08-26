@@ -123,6 +123,15 @@
           "data_type": "robot_pose",
           "is_default": false,
           "custom_waypoints": null
+        },
+        {
+          "from_uuid": "ee-loc-robot-pose",
+          "from_port": "robot_pose",
+          "to_uuid": "ee-loc-publish-pose",
+          "to_port": "data",
+          "data_type": "robot_pose",
+          "is_default": false,
+          "custom_waypoints": null
         }
       ]
     },
@@ -134,17 +143,7 @@
         "y": -140
       },
       "uuid": "ee-loc-view",
-      "connections": [
-        {
-          "from_uuid": "ee-loc-view",
-          "from_port": "pose",
-          "to_uuid": "ee-loc-publish-pose",
-          "to_port": "data",
-          "data_type": "pose",
-          "is_default": false,
-          "custom_waypoints": null
-        }
-      ]
+      "connections": []
     },
     {
       "action_name": "publish_to_networktables.py",

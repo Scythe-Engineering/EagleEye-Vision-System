@@ -61,6 +61,7 @@ def _estimator_and_detections() -> tuple[PnpLocalization, list[SimpleNamespace]]
 
 
 def test_pose_meta_reports_tag_count_distance_and_reprojection_error() -> None:
+    """A solved pose must include the metrics used by robot-side filtering."""
     estimator, detections = _estimator_and_detections()
 
     solution = estimator.estimate_pose_from_detections(detections)
@@ -77,6 +78,7 @@ def test_pose_meta_reports_tag_count_distance_and_reprojection_error() -> None:
 
 
 def test_unmapped_tags_produce_no_solution() -> None:
+    """Detections absent from the configured field map cannot produce a pose."""
     estimator, _ = _estimator_and_detections()
 
     assert (
@@ -98,6 +100,7 @@ def test_failed_solve_still_fills_both_output_ports() -> None:
 
 
 def test_successful_solve_routes_pose_and_meta_to_separate_ports() -> None:
+    """Successful solves must route pose and quality metadata independently."""
     estimator, detections = _estimator_and_detections()
     definition = object.__new__(PnpCameraLocalizationDefinition)
     definition.pose_estimator = estimator

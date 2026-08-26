@@ -144,7 +144,7 @@ public class EagleEyeCameraSim {
     double distanceSum = 0.0;
     for (var tag : layout.getTags()) {
       var offset = new Translation2d(tag.pose.getX(), tag.pose.getY()).minus(cameraPosition);
-      double distance = offset.getNorm();
+      double distance = cameraPose.getTranslation().getDistance(tag.pose.getTranslation());
       if (distance > maximumTagRangeMeters || distance < 1e-6) {
         continue;
       }

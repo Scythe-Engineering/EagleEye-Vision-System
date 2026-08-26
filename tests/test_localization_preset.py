@@ -25,12 +25,14 @@ def _config_def(action_name: str) -> dict[str, Any]:
 
 
 def _preset() -> list[dict[str, Any]]:
+    """Load the localization operations from the shipped preset."""
     pipelines = json.loads(PRESET_PATH.read_text(encoding="utf-8"))
     assert list(pipelines) == ["localization"]
     return pipelines["localization"]
 
 
 def test_preset_ports_and_targets_resolve() -> None:
+    """Every preset connection must reference declared ports and operations."""
     operations = _preset()
     by_uuid = {operation["uuid"]: operation for operation in operations}
     assert len(by_uuid) == len(operations), "duplicate uuid in preset"
@@ -60,6 +62,18 @@ def test_preset_publishes_the_contract_the_java_library_reads() -> None:
         "localization/front/pose": "pose3d",
         "localization/front/meta": "auto",
     }
+
+    pose_publisher = next(
+        operation
+        for operation in _preset()
+        if operation["action_params"].get("target_key") == "localization/front/pose"
+    )
+    publishers = {
+        connection["to_uuid"]: operation["action_name"]
+        for operation in _preset()
+        for connection in operation["connections"]
+    }
+    assert publishers[pose_publisher["uuid"]] == "camera_to_robot_pose.py"
 
 
 def test_both_branches_keep_one_capture_timestamp() -> None:
