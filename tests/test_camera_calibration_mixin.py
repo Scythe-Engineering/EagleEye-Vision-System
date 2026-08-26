@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 
+import cv2
 import numpy as np
 
 from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
@@ -62,6 +63,37 @@ def test_scaled_camera_matrix_matches_live_frame_size() -> None:
     )
 
 
+def test_grayscale_frame_accepts_two_dimensional_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.arange(12, dtype=np.uint8).reshape(3, 4)
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    np.testing.assert_array_equal(gray, frame)
+
+
+def test_grayscale_frame_accepts_single_channel_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.arange(12, dtype=np.uint8).reshape(3, 4, 1)
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    np.testing.assert_array_equal(gray, frame[:, :, 0])
+
+
+def test_grayscale_frame_converts_color_camera_data() -> None:
+    harness = _CalibrationHarness()
+    frame = np.zeros((3, 4, 3), dtype=np.uint8)
+    frame[:, :, 1] = 255
+
+    gray = harness._grayscale_frame(frame)
+
+    assert gray.shape == (3, 4)
+    assert np.all(gray == 150)
+
+
 def test_distortion_grid_draws_warped_lines() -> None:
     harness = _CalibrationHarness()
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
@@ -83,3 +115,85 @@ def test_straight_reference_grid_draws_lines() -> None:
 
     assert output.shape == frame.shape
     assert np.count_nonzero(output) > 0
+
+
+def _rendered_board(
+    harness: _CalibrationHarness, legacy_pattern: bool = False
+) -> tuple[np.ndarray, object]:
+    """Render a ChArUco board that runs off every edge of the frame."""
+    board = harness._charuco_board(
+        11, 8, 0.015, 0.011, cv2.aruco.DICT_4X4_50, legacy_pattern
+    )
+    image = board.generateImage((1100, 800), marginSize=0)
+    height, width = image.shape[:2]
+    source = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
+    target = np.float32(
+        [[-90, -70], [width + 90, -70], [width + 90, height + 70], [-90, height + 70]]
+    )
+    frame = cv2.warpPerspective(
+        cv2.cvtColor(image, cv2.COLOR_GRAY2BGR),
+        cv2.getPerspectiveTransform(source, target),
+        (width, height),
+        borderValue=(255, 255, 255),
+    )
+    return frame, board
+
+
+def test_detector_parameters_keep_markers_at_the_frame_border() -> None:
+    harness = _CalibrationHarness()
+
+    parameters = harness._detector_parameters()
+
+    assert parameters.minDistanceToBorder == 0
+    assert parameters.cornerRefinementMethod == cv2.aruco.CORNER_REFINE_SUBPIX
+
+
+def test_find_charuco_recovers_corners_clipped_by_the_frame_edge() -> None:
+    harness = _CalibrationHarness()
+    frame, board = _rendered_board(harness)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    corners, ids, rejected = cv2.aruco.detectMarkers(gray, board.getDictionary())
+    corners, ids, _, _ = cv2.aruco.refineDetectedMarkers(
+        gray, board, corners, ids, rejected
+    )
+    _, _, default_ids = cv2.aruco.interpolateCornersCharuco(corners, ids, gray, board)
+
+    _, _, tuned_ids, _, _, _ = harness._find_charuco(frame, board)
+
+    assert len(tuned_ids) > len(default_ids)
+
+
+def test_planar_fit_error_accepts_a_consistent_corner_mapping() -> None:
+    harness = _CalibrationHarness()
+    frame, board = _rendered_board(harness)
+
+    _, corners, ids, _, _, _ = harness._find_charuco(frame, board)
+
+    assert harness._planar_fit_error(board, corners, ids) < 1.0
+
+
+def test_planar_fit_error_rejects_a_scrambled_corner_mapping() -> None:
+    harness = _CalibrationHarness()
+    frame, board = _rendered_board(harness)
+
+    _, corners, ids, _, _, _ = harness._find_charuco(frame, board)
+    scrambled = ids.copy()
+    np.random.default_rng(0).shuffle(scrambled)
+
+    error = harness._planar_fit_error(board, corners, scrambled)
+
+    assert error > harness._MAX_PLANAR_FIT_ERROR_PX
+
+
+def test_find_best_charuco_selects_the_rendered_pattern_variant() -> None:
+    harness = _CalibrationHarness()
+    params = (11, 8, 0.015, 0.011, cv2.aruco.DICT_4X4_50)
+
+    for legacy_pattern in (False, True):
+        frame, _ = _rendered_board(harness, legacy_pattern)
+
+        best_params, _, _ = harness._find_best_charuco(frame, params)
+
+        assert (best_params[0], best_params[1]) == (11, 8)
+        assert best_params[5] is legacy_pattern

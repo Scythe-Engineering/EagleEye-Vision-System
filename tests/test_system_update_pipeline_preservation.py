@@ -14,6 +14,34 @@ class _UpdateHarness(SystemMonitorMixin):
         return self.repo_root
 
 
+class _UpdateInfoHarness(SystemMonitorMixin):
+    def system_update_status(self) -> tuple[dict, int]:
+        return {"available": True}, 200
+
+    def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
+        del timeout
+        responses = {
+            ("fetch", "origin", "--prune"): "",
+            ("rev-parse", "--abbrev-ref", "HEAD"): "feature/test",
+            ("rev-parse", "--short", "HEAD"): "1111111",
+            ("rev-parse", "HEAD"): "1" * 40,
+            (
+                "for-each-ref",
+                "--format=%(refname:short) %(objectname:short) %(objectname)",
+                "refs/remotes/origin",
+            ): "\n".join(
+                [
+                    f"origin/feature/test 1111111 {'1' * 40}",
+                    f"origin/main 2222222 {'2' * 40}",
+                ]
+            ),
+        }
+        return responses[tuple(args)]
+
+    def log(self, _message: str) -> None:
+        return None
+
+
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -101,3 +129,14 @@ def test_failed_pull_still_restores_pipeline_configuration(tmp_path: Path) -> No
 
     assert pipeline_path.read_bytes() == local_pipeline
     assert _git(repo, "stash", "list") == ""
+
+
+def test_update_info_tracks_current_branch() -> None:
+    payload, status = _UpdateInfoHarness().system_update_info()
+
+    assert status == 200
+    assert payload["default_branch"] == "main"
+    assert payload["current_branch"] == "feature/test"
+    assert payload["current_sha"] == "1111111"
+    assert payload["remote_sha"] == "1111111"
+    assert payload["update_needed"] is False

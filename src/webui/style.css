@@ -13,6 +13,80 @@
     --eagle-tooltip-text: #f4f4f5;
 }
 
+/* Shared native control styling. Global selectors keep new UI consistent. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--eagle-scrollbar-thumb) var(--eagle-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+    background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--eagle-scrollbar-track);
+    border-radius: 0 15px 15px 0;
+}
+
+*::-webkit-scrollbar-thumb {
+    background-color: var(--eagle-scrollbar-thumb);
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background-color: var(--eagle-scrollbar-thumb-hover);
+    background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-button {
+    display: none;
+}
+
+select {
+    appearance: none;
+    border-color: #414141;
+    background-color: #2a2a2a;
+    color: #f4f4f5;
+    padding-right: 2rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23f9c845' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m3 6 5 5 5-5'/%3E%3C/svg%3E");
+    background-position: right 0.65rem center;
+    background-repeat: no-repeat;
+    background-size: 0.75rem;
+}
+
+select:focus-visible {
+    outline: none;
+    border-color: #f9c845;
+    box-shadow: 0 0 0 1px #f9c845;
+}
+
+select option {
+    background: #2a2a2a;
+    color: #f4f4f5;
+}
+
+select option:checked {
+    background: #f9c845;
+    color: #1b1b1b;
+}
+
+input[type="number"] {
+    color-scheme: dark;
+}
+
+input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
+    width: 0.85rem;
+    height: 1.25rem;
+    margin: 0;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 20'%3E%3Cpath fill='none' stroke='%23f9c845' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='m3 7 3-3 3 3M3 13l3 3 3-3'/%3E%3C/svg%3E") center / contain no-repeat;
+    cursor: pointer;
+}
+
 /* Backend state warning styling */
 .backend-state-warning {
     animation: pulse-warning 2s infinite;

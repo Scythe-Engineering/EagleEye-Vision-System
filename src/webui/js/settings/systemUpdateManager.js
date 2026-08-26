@@ -14,6 +14,7 @@ const OVERLAY_ID = "systemUpdateOverlay";
 const MODAL_ID = "systemUpdateModal";
 const CONFIRM_OVERLAY_ID = "systemUpdateConfirmOverlay";
 const CONFIRM_MODAL_ID = "systemUpdateConfirmModal";
+const DEFAULT_UPDATE_BRANCH = "main";
 
 const PHASE_LABELS = {
     starting: "Starting update...",
@@ -90,7 +91,9 @@ async function fetchJson(path, options = {}) {
     }
     if (!response.ok) {
         const error = new Error(
-            payload.error || payload.message || `Request failed: ${response.status}`,
+            payload.error ||
+                payload.message ||
+                `Request failed: ${response.status}`,
         );
         error.payload = payload;
         error.status = response.status;
@@ -148,7 +151,8 @@ async function refreshUpdateStatus() {
     try {
         const payload = await fetchJson("/system-update/status");
         updateAvailable = payload.available === true;
-        statusReason = payload.reason || "Update requires WiFi with internet access";
+        statusReason =
+            payload.reason || "Update requires WiFi with internet access";
 
         if (
             payload.in_progress === true &&
@@ -157,13 +161,16 @@ async function refreshUpdateStatus() {
         ) {
             applyCachedUpdateProgress(
                 payload.latest_progress,
-                typeof payload.update_id === "string" ? payload.update_id : null,
+                typeof payload.update_id === "string"
+                    ? payload.update_id
+                    : null,
             );
             return;
         }
     } catch (error) {
         updateAvailable = false;
-        statusReason = error.payload?.error || "Unable to check WiFi internet access";
+        statusReason =
+            error.payload?.error || "Unable to check WiFi internet access";
     }
     setButtonState();
 }
@@ -183,8 +190,14 @@ function createVersionStatusIcon(status) {
         "class",
         `h-5 w-5 shrink-0 ${isUpToDate ? "text-green-400" : "text-yellow-400"}`,
     );
-    const iconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    iconPath.setAttribute("d", isUpToDate ? CHECK_ICON_PATH : UPDATE_AVAILABLE_ICON_PATH);
+    const iconPath = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path",
+    );
+    iconPath.setAttribute(
+        "d",
+        isUpToDate ? CHECK_ICON_PATH : UPDATE_AVAILABLE_ICON_PATH,
+    );
     icon.appendChild(iconPath);
     return icon;
 }
@@ -197,7 +210,9 @@ function createVersionStatusIcon(status) {
  * @returns {HTMLElement}
  */
 function buildVersionSummary(currentSha, remoteSha, updateNeeded) {
-    const statusIcon = createVersionStatusIcon(updateNeeded ? "update_needed" : "up_to_date");
+    const statusIcon = createVersionStatusIcon(
+        updateNeeded ? "update_needed" : "up_to_date",
+    );
     const versionLines = [
         createElement("div", {
             className: "font-mono text-sm text-gray-200",
@@ -242,7 +257,11 @@ function buildVersionSummary(currentSha, remoteSha, updateNeeded) {
         },
         [
             statusIcon,
-            createElement("div", { className: "min-w-0 space-y-0.5" }, versionLines),
+            createElement(
+                "div",
+                { className: "min-w-0 space-y-0.5" },
+                versionLines,
+            ),
         ],
     );
 }
@@ -259,12 +278,10 @@ function renderConfirmContent(infoPayload) {
     const remoteBranches = Array.isArray(infoPayload.remote_branches)
         ? infoPayload.remote_branches
         : [];
-    const currentBranch =
-        typeof infoPayload.current_branch === "string"
-            ? infoPayload.current_branch
-            : "";
     const currentSha =
-        typeof infoPayload.current_sha === "string" ? infoPayload.current_sha : "unknown";
+        typeof infoPayload.current_sha === "string"
+            ? infoPayload.current_sha
+            : "unknown";
     const branchShaByName = new Map(
         remoteBranches
             .filter(
@@ -276,17 +293,31 @@ function renderConfirmContent(infoPayload) {
             .map((branch) => [branch.name, branch.sha]),
     );
 
-    let selectedBranch =
-        currentBranch && branchShaByName.has(currentBranch)
-            ? currentBranch
-            : remoteBranches[0]?.name || currentBranch;
+    const defaultBranch =
+        typeof infoPayload.default_branch === "string" &&
+        infoPayload.default_branch
+            ? infoPayload.default_branch
+            : DEFAULT_UPDATE_BRANCH;
+    const currentBranch =
+        typeof infoPayload.current_branch === "string" &&
+        infoPayload.current_branch &&
+        infoPayload.current_branch !== "HEAD"
+            ? infoPayload.current_branch
+            : defaultBranch;
+    let selectedBranch = currentBranch;
 
     if (!branchShaByName.has(selectedBranch) && selectedBranch) {
         remoteBranches.unshift({
             name: selectedBranch,
-            sha: typeof infoPayload.remote_sha === "string" ? infoPayload.remote_sha : "",
+            sha:
+                typeof infoPayload.remote_sha === "string"
+                    ? infoPayload.remote_sha
+                    : "",
         });
-        if (typeof infoPayload.remote_sha === "string" && infoPayload.remote_sha) {
+        if (
+            typeof infoPayload.remote_sha === "string" &&
+            infoPayload.remote_sha
+        ) {
             branchShaByName.set(selectedBranch, infoPayload.remote_sha);
         }
     }
@@ -304,39 +335,80 @@ function renderConfirmContent(infoPayload) {
         );
     }
 
+    const otherBranches = remoteBranches.filter(
+        (branch) => branch.name !== currentBranch,
+    );
     const branchOptions =
-        remoteBranches.length > 0
-            ? remoteBranches.map((branch) =>
+        otherBranches.length > 0
+            ? otherBranches.map((branch) =>
                   createElement("option", {
                       value: branch.name,
                       text: branch.name,
-                      ...(branch.name === selectedBranch ? { selected: "selected" } : {}),
                   }),
               )
             : [
                   createElement("option", {
-                      value: selectedBranch || currentBranch || "main",
-                      text: selectedBranch || currentBranch || "main",
+                      value: "",
+                      text: "No other remote branches",
                       selected: "selected",
+                      disabled: "disabled",
                   }),
               ];
-
-    if (!selectedBranch) {
-        selectedBranch = branchOptions[0]?.value || currentBranch || "main";
-    }
 
     const branchSelect = createElement(
         "select",
         {
             className:
-                "mt-1 w-full rounded-md border border-[#414141] bg-[#242424] px-3 py-2 text-sm text-gray-100 focus:border-[#f9c845] focus:outline-none",
+                "w-full rounded-md border border-[#414141] bg-[#242424] px-3 py-2 text-sm text-gray-100 focus:border-[#f9c845] focus:outline-none",
+            ...(otherBranches.length === 0 ? { disabled: "disabled" } : {}),
             onchange: (event) => {
                 selectedBranch = event.target.value;
                 refreshVersionSummary();
+                trackingBranchLabel.textContent = `Tracking branch: ${selectedBranch}`;
             },
         },
         branchOptions,
     );
+
+    const branchPicker = createElement(
+        "div",
+        {
+            className: "mt-2 hidden",
+        },
+        [
+            createElement("label", {
+                className:
+                    "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400",
+                text: "Other branch",
+            }),
+            branchSelect,
+        ],
+    );
+    const trackingBranchLabel = createElement("span", {
+        className: "font-mono text-sm text-gray-200",
+        text: `Tracking branch: ${currentBranch}`,
+    });
+    const selectOtherBranchButton = createElement("button", {
+        type: "button",
+        className:
+            "rounded-md border border-[#414141] bg-[#242424] px-3 py-2 text-sm font-semibold text-[#f9c845] transition-colors hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-50",
+        text: "Select other branch",
+        ...(otherBranches.length === 0 ? { disabled: "disabled" } : {}),
+        onclick: () => {
+            const isHidden = branchPicker.classList.contains("hidden");
+            if (isHidden) {
+                branchPicker.classList.remove("hidden");
+                selectedBranch = branchSelect.value;
+                selectOtherBranchButton.textContent = `Track ${currentBranch}`;
+            } else {
+                branchPicker.classList.add("hidden");
+                selectedBranch = currentBranch;
+                selectOtherBranchButton.textContent = "Select other branch";
+            }
+            trackingBranchLabel.textContent = `Tracking branch: ${selectedBranch}`;
+            refreshVersionSummary();
+        },
+    });
 
     refreshVersionSummary();
 
@@ -351,7 +423,8 @@ function renderConfirmContent(infoPayload) {
                     }),
                     createElement("div", { className: "min-w-0 flex-1" }, [
                         createElement("h3", {
-                            className: "mb-2 text-lg font-bold leading-tight text-yellow-400",
+                            className:
+                                "mb-2 text-lg font-bold leading-tight text-yellow-400",
                             text: "Update System?",
                         }),
                         createElement("p", {
@@ -359,16 +432,20 @@ function renderConfirmContent(infoPayload) {
                             text: "This will restart the system. Are you sure?",
                         }),
                         createElement("p", {
-                            className: "mt-1.5 text-sm leading-relaxed text-gray-400",
+                            className:
+                                "mt-1.5 text-sm leading-relaxed text-gray-400",
                             text: "The backend will checkout the selected branch, run apt update, and non-interactive apt upgrade before restarting.",
                         }),
                         versionSummaryHost,
-                        createElement("label", {
-                            className:
-                                "mt-3 block text-xs font-semibold uppercase tracking-wide text-gray-400",
-                            text: "Target branch",
-                        }),
-                        branchSelect,
+                        createElement(
+                            "div",
+                            {
+                                className:
+                                    "mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#414141] bg-[#141414] px-3 py-2.5",
+                            },
+                            [trackingBranchLabel, selectOtherBranchButton],
+                        ),
+                        branchPicker,
                     ]),
                 ]),
             ]),
@@ -385,7 +462,10 @@ function renderConfirmContent(infoPayload) {
                             "rounded-md border border-[#414141] bg-[#242424] px-3.5 py-2 text-sm font-semibold text-[#f9c845] transition-colors hover:bg-[#303030]",
                         text: "Cancel",
                         onclick: () =>
-                            resolveConfirmDialog({ confirmed: false, branch: null }),
+                            resolveConfirmDialog({
+                                confirmed: false,
+                                branch: null,
+                            }),
                     }),
                     createElement("button", {
                         type: "button",
@@ -419,7 +499,9 @@ function renderConfirmPlaceholder(state, message = "") {
         createElement("div", { className: "p-5" }, [
             createElement("h3", {
                 className: `mb-2 text-lg font-bold ${isError ? "text-red-300" : "text-yellow-400"}`,
-                text: isError ? "Unable to Load Update Info" : "Checking versions...",
+                text: isError
+                    ? "Unable to Load Update Info"
+                    : "Checking versions...",
             }),
             createElement("p", {
                 className: "text-sm text-gray-300",
@@ -429,19 +511,23 @@ function renderConfirmPlaceholder(state, message = "") {
             }),
             ...(isError
                 ? [
-                      createElement("div", { className: "mt-4 flex justify-end" }, [
-                          createElement("button", {
-                              type: "button",
-                              className:
-                                  "rounded-md border border-[#414141] bg-[#242424] px-3.5 py-2 text-sm font-semibold text-[#f9c845] transition-colors hover:bg-[#303030]",
-                              text: "Close",
-                              onclick: () =>
-                                  resolveConfirmDialog({
-                                      confirmed: false,
-                                      branch: null,
-                                  }),
-                          }),
-                      ]),
+                      createElement(
+                          "div",
+                          { className: "mt-4 flex justify-end" },
+                          [
+                              createElement("button", {
+                                  type: "button",
+                                  className:
+                                      "rounded-md border border-[#414141] bg-[#242424] px-3.5 py-2 text-sm font-semibold text-[#f9c845] transition-colors hover:bg-[#303030]",
+                                  text: "Close",
+                                  onclick: () =>
+                                      resolveConfirmDialog({
+                                          confirmed: false,
+                                          branch: null,
+                                      }),
+                              }),
+                          ],
+                      ),
                   ]
                 : []),
         ]),
@@ -474,7 +560,9 @@ async function renderConfirm() {
         }
         renderConfirmPlaceholder(
             "error",
-            error.payload?.error || error.message || "Failed to fetch update info",
+            error.payload?.error ||
+                error.message ||
+                "Failed to fetch update info",
         );
     }
 
@@ -548,7 +636,8 @@ function renderLiveProgress() {
     });
 
     progressBarFill = createElement("div", {
-        className: "h-full rounded-full bg-yellow-400 transition-[width] duration-300 ease-out",
+        className:
+            "h-full rounded-full bg-yellow-400 transition-[width] duration-300 ease-out",
     });
     progressBarFill.style.width = "0%";
 
@@ -696,7 +785,8 @@ export function handleSystemUpdateProgress(data) {
             typeof data.error === "string" ? data.error : "Update failed";
         if (terminalElement) {
             appendTerminalLine(errorMessage);
-            const terminalSnapshot = terminalElement.textContent || errorMessage;
+            const terminalSnapshot =
+                terminalElement.textContent || errorMessage;
             renderError(terminalSnapshot);
         } else {
             renderError(errorMessage);
@@ -739,7 +829,9 @@ async function runUpdate(targetBranch) {
     try {
         const status = await fetchJson("/system-update/status");
         if (status.available !== true) {
-            throw new Error(status.reason || "WiFi internet access is required.");
+            throw new Error(
+                status.reason || "WiFi internet access is required.",
+            );
         }
 
         appendTerminalLine(`Target branch: ${targetBranch}`);
@@ -755,7 +847,10 @@ async function runUpdate(targetBranch) {
         }
     } catch (error) {
         const message =
-            error.payload?.error || error.payload?.output || error.message || "Update failed";
+            error.payload?.error ||
+            error.payload?.output ||
+            error.message ||
+            "Update failed";
         renderError(message);
     }
 }

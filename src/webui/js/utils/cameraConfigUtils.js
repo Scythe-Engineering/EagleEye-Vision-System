@@ -885,8 +885,9 @@ async function runCalibration() {
             },
         );
         showSuccess(
-            `Calibration saved. Reprojection error: ${result.reprojection_error?.toFixed?.(4) ?? result.reprojection_error}`,
+            `Calibration saved using ${result.frame_count} of ${result.captured_frame_count ?? result.frame_count} frames. Reprojection error: ${result.reprojection_error?.toFixed?.(4) ?? result.reprojection_error}`,
         );
+        for (const warning of result.warnings || []) showWarning(warning);
         closeCalibrationModal();
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {

@@ -1,6 +1,6 @@
 # WebUI
 
-The WebUI runs on the Flask server at port 5001. It provides camera views, a Three.js field view, pipeline editing, profiling, calibration, asset management, network setup, logs, and system controls.
+The WebUI runs on the Flask server at port 5001. It provides camera views, a Three.js field view, pipeline editing, profiling, calibration, asset management, network setup, logs, a shell terminal, and system controls.
 
 ## Architecture
 
@@ -12,7 +12,4 @@ The production page loads `static/bundle.js` through `/js/main.js` and `static/m
 
 ## Guides
 
-- [API reference](API_DOCUMENTATION.md)
-- [Frontend workflow](FRONTEND_OVERVIEW.md)
-- [Pipeline flowchart](PIPELINE_FLOWCHART_INTERFACE.md)
 - [Assets](ASSETS_OVERVIEW.md)
