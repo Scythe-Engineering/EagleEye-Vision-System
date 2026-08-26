@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import time
+from collections import Counter
 from typing import Any, Generator
 
 import cv2
@@ -229,25 +230,61 @@ class CameraCalibrationMixin:
             gray.shape[::-1],
         )
 
+    # A correct mapping fits the board plane to well under a pixel plus lens
+    # distortion; a wrong one misses by hundreds. Anything between is unusable.
+    _MAX_PLANAR_FIT_ERROR_PX = 5.0
+
+    def _planar_fit_error(self, board: Any, charuco_corners, charuco_ids) -> float:
+        """Return the RMS residual of the best homography onto a board layout.
+
+        A ChArUco board is planar, so a correct corner-to-object-point mapping is
+        explained by a single homography to within lens distortion, while a
+        scrambled mapping leaves a residual of hundreds of pixels. It needs no
+        intrinsics, which is the point: it screens board layouts before any
+        calibration has run.
+
+        It cannot separate the legacy from the current marker layout. That
+        mismatch shifts every corner by a whole square in the same direction, and
+        a homography absorbs a uniform shift as translation, so both layouts fit
+        equally well. Corner count is what separates those two; this is a
+        validity check, not the tiebreak.
+        """
+        if charuco_ids is None or charuco_corners is None or len(charuco_ids) < 4:
+            return float("inf")
+        object_points = board.getChessboardCorners()[charuco_ids.reshape(-1)]
+        image_points = charuco_corners.reshape(-1, 2).astype(np.float64)
+        homography, _ = cv2.findHomography(object_points[:, :2], image_points)
+        if homography is None:
+            return float("inf")
+        projected = cv2.perspectiveTransform(
+            object_points[:, :2].reshape(-1, 1, 2), homography
+        ).reshape(-1, 2)
+        return float(np.sqrt(np.mean(np.sum((projected - image_points) ** 2, axis=1))))
+
     def _find_best_charuco(
         self, frame: np.ndarray, params: tuple[int, int, float, float, int]
     ):
-        best = None
-        best_count = -1
+        candidates = []
         for candidate_params, board in self._charuco_board_candidates(params):
             result = self._find_charuco(frame, board)
             charuco_ids = result[2]
-            marker_ids = result[4]
             charuco_count = 0 if charuco_ids is None else len(charuco_ids)
-            marker_count = 0 if marker_ids is None else len(marker_ids)
-            score = charuco_count * 1000 + marker_count
-            if score > best_count:
-                best_count = score
-                best = (candidate_params, board, result)
-        if best is None:
+            error = self._planar_fit_error(board, result[1], charuco_ids)
+            candidates.append((candidate_params, board, result, charuco_count, error))
+        if not candidates:
             board = self._charuco_board(*params)
-            best = ((*params, False), board, self._find_charuco(frame, board))
-        return best
+            return ((*params, False), board, self._find_charuco(frame, board))
+
+        # Drop layouts the board plane cannot explain at all before comparing
+        # corner counts, so a layout that happens to interpolate many corners
+        # from a geometrically inconsistent mapping cannot win on count alone.
+        consistent = [
+            candidate
+            for candidate in candidates
+            if candidate[4] <= self._MAX_PLANAR_FIT_ERROR_PX
+        ] or candidates
+        best = max(consistent, key=lambda candidate: (candidate[3], -candidate[4]))
+        return best[0], best[1], best[2]
 
     def _draw_detection(
         self, frame: np.ndarray, params: tuple[int, int, float, float, int], count: int
@@ -653,28 +690,60 @@ class CameraCalibrationMixin:
         if len(frames) < 3:
             return {"error": "At least 3 captured frames are required"}, 400
 
-        stored_params = None
-        for item in frames:
-            if isinstance(item, dict) and item.get("params") is not None:
-                stored_params = tuple(item["params"])
-                break
-        active_params = stored_params or (*request_params, False)
+        # Take the layout the most frames agree on rather than whichever frame
+        # happens to be first: a single frame that resolved to a different
+        # layout should not disqualify every other capture.
+        stored_counts = Counter(
+            tuple(item["params"])
+            for item in frames
+            if isinstance(item, dict) and item.get("params") is not None
+        )
+        active_params = (
+            stored_counts.most_common(1)[0][0]
+            if stored_counts
+            else (*request_params, False)
+        )
         board = self._charuco_board(*active_params)
 
         all_corners, all_ids, image_size = [], [], None
-        for item in frames:
+        mismatched_indices, undetected_indices = [], []
+        for index, item in enumerate(frames):
             frame = item["frame"] if isinstance(item, dict) else item
             if isinstance(item, dict) and item.get("params") != active_params:
+                mismatched_indices.append(index)
                 continue
             found, charuco_corners, charuco_ids, _, _, size = self._find_charuco(
                 frame, board
             )
-            if found:
-                all_corners.append(charuco_corners)
-                all_ids.append(charuco_ids)
-                image_size = size
+            if not found:
+                undetected_indices.append(index)
+                continue
+            all_corners.append(charuco_corners)
+            all_ids.append(charuco_ids)
+            image_size = size
+
+        warnings = []
+        if mismatched_indices:
+            warnings.append(
+                f"Skipped {len(mismatched_indices)} frame(s) captured with a "
+                f"different board layout than "
+                f"{active_params[0]}x{active_params[1]}"
+                f"{' legacy' if active_params[5] else ''}: "
+                f"indices {mismatched_indices}"
+            )
+        if undetected_indices:
+            warnings.append(
+                f"Skipped {len(undetected_indices)} frame(s) with too few "
+                f"ChArUco corners to use: indices {undetected_indices}"
+            )
+        for warning in warnings:
+            self.log(f"Warning: camera {camera_bus_id} calibration: {warning}")
+
         if len(all_corners) < 3 or image_size is None:
-            return {"error": "At least 3 valid ChArUco frames are required"}, 400
+            return {
+                "error": "At least 3 valid ChArUco frames are required",
+                "warnings": warnings,
+            }, 400
         rms, camera_matrix, dist, _, _ = cv2.aruco.calibrateCameraCharuco(
             all_corners, all_ids, board, image_size, None, None
         )
@@ -706,6 +775,8 @@ class CameraCalibrationMixin:
         return {
             "success": True,
             "frame_count": len(all_corners),
+            "captured_frame_count": len(frames),
             "reprojection_error": float(rms),
             "intrinsics_path": target_path,
+            "warnings": warnings,
         }, 200

@@ -162,3 +162,38 @@ def test_find_charuco_recovers_corners_clipped_by_the_frame_edge() -> None:
     _, _, tuned_ids, _, _, _ = harness._find_charuco(frame, board)
 
     assert len(tuned_ids) > len(default_ids)
+
+
+def test_planar_fit_error_accepts_a_consistent_corner_mapping() -> None:
+    harness = _CalibrationHarness()
+    frame, board = _rendered_board(harness)
+
+    _, corners, ids, _, _, _ = harness._find_charuco(frame, board)
+
+    assert harness._planar_fit_error(board, corners, ids) < 1.0
+
+
+def test_planar_fit_error_rejects_a_scrambled_corner_mapping() -> None:
+    harness = _CalibrationHarness()
+    frame, board = _rendered_board(harness)
+
+    _, corners, ids, _, _, _ = harness._find_charuco(frame, board)
+    scrambled = ids.copy()
+    np.random.default_rng(0).shuffle(scrambled)
+
+    error = harness._planar_fit_error(board, corners, scrambled)
+
+    assert error > harness._MAX_PLANAR_FIT_ERROR_PX
+
+
+def test_find_best_charuco_selects_the_rendered_pattern_variant() -> None:
+    harness = _CalibrationHarness()
+    params = (11, 8, 0.015, 0.011, cv2.aruco.DICT_4X4_50)
+
+    for legacy_pattern in (False, True):
+        frame, _ = _rendered_board(harness, legacy_pattern)
+
+        best_params, _, _ = harness._find_best_charuco(frame, params)
+
+        assert (best_params[0], best_params[1]) == (11, 8)
+        assert best_params[5] is legacy_pattern
