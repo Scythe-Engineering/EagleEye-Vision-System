@@ -75,14 +75,14 @@ export function newPipelineDialog() {
 
     const templateText = createElement("span", {
         className:
-            "overflow-hidden whitespace-nowrap opacity-100 transition-all duration-150",
+            "max-w-[22rem] overflow-hidden whitespace-nowrap opacity-100 transition-all duration-150",
         text: "Use a template pipeline as a starting point",
     });
     const templateSelectWrapper = createElement(
         "div",
         {
             className:
-                "invisible grid -translate-y-2 grid-rows-[0fr] opacity-0 transition-all delay-150 duration-200",
+                "invisible grid min-w-0 flex-1 -translate-x-2 grid-rows-[0fr] opacity-0 transition-all delay-150 duration-200",
         },
         [
             createElement("div", { className: "overflow-hidden" }, [
@@ -102,10 +102,10 @@ export function newPipelineDialog() {
             templateText.classList.toggle("delay-150", !enabled);
             templateSelectWrapper.classList.toggle("invisible", !enabled);
             templateSelectWrapper.classList.toggle("grid-rows-[0fr]", !enabled);
-            templateSelectWrapper.classList.toggle("-translate-y-2", !enabled);
+            templateSelectWrapper.classList.toggle("-translate-x-2", !enabled);
             templateSelectWrapper.classList.toggle("opacity-0", !enabled);
             templateSelectWrapper.classList.toggle("grid-rows-[1fr]", enabled);
-            templateSelectWrapper.classList.toggle("translate-y-0", enabled);
+            templateSelectWrapper.classList.toggle("translate-x-0", enabled);
             templateSelectWrapper.classList.toggle("opacity-100", enabled);
             templateSelectWrapper.classList.toggle("delay-150", enabled);
         },
@@ -140,15 +140,21 @@ export function newPipelineDialog() {
                     nameInput,
                 ]),
                 createElement(
-                    "label",
-                    {
-                        for: "usePipelineTemplate",
-                        className:
-                            "flex cursor-pointer items-center gap-2 text-sm text-gray-200",
-                    },
-                    [useTemplate, templateText],
+                    "div",
+                    { className: "flex min-h-10 items-center gap-2" },
+                    [
+                        createElement(
+                            "label",
+                            {
+                                for: "usePipelineTemplate",
+                                className:
+                                    "flex shrink-0 cursor-pointer items-center gap-2 text-sm text-gray-200",
+                            },
+                            [useTemplate, templateText],
+                        ),
+                        templateSelectWrapper,
+                    ],
                 ),
-                templateSelectWrapper,
             ]),
             createElement(
                 "div",
