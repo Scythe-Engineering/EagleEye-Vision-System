@@ -1,0 +1,759 @@
+{
+    "apriltag_localization": {
+        "name": "AprilTag localization",
+        "nodes": [
+            {
+                "action_name": "device_input.py",
+                "action_params": {
+                    "frame_rotation": 0
+                },
+                "position": {
+                    "x": 100,
+                    "y": 100
+                },
+                "uuid": "op-mtaj740y-5cld",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaj740y-5cld",
+                        "from_port": "frame",
+                        "to_uuid": "op-mtaj87c1-h9xl",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust.py",
+                "action_params": {
+                    "padding_factor": 0.35,
+                    "max_regions": 20,
+                    "min_region_size_px": 16,
+                    "max_detection_distance_m": 0
+                },
+                "position": {
+                    "x": 420,
+                    "y": 100
+                },
+                "uuid": "op-mtaj87c1-h9xl",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaj87c1-h9xl",
+                        "from_port": "processed_frame",
+                        "to_uuid": "op-mtalo6q0-49d4",
+                        "to_port": "frame",
+                        "data_type": "processed_frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "pnp_camera_localization.py",
+                "action_params": {},
+                "position": {
+                    "x": 1540,
+                    "y": 100
+                },
+                "uuid": "op-mtaj8enn-gbrv",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaj8enn-gbrv",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtaj87c1-h9xl",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": true,
+                        "custom_waypoints": [
+                            {
+                                "x": 1794.9061792287646,
+                                "y": 161.0000032496996
+                            },
+                            {
+                                "x": 1820,
+                                "y": 161.0000032496996
+                            },
+                            {
+                                "x": 1820,
+                                "y": 240
+                            },
+                            {
+                                "x": 380,
+                                "y": 240
+                            },
+                            {
+                                "x": 380,
+                                "y": 184.99997883683295
+                            },
+                            {
+                                "x": 412.0000080116051,
+                                "y": 184.99997883683295
+                            }
+                        ]
+                    },
+                    {
+                        "from_uuid": "op-mtaj8enn-gbrv",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtaj8lpe-7f63",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtaj8enn-gbrv",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtaloeip-43e2",
+                        "to_port": "data",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "minimum_apriltag_count.py",
+                "action_params": {
+                    "minimum_detections": 2
+                },
+                "position": {
+                    "x": 1180,
+                    "y": 100
+                },
+                "uuid": "op-mtaj8iez-ddna",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaj8iez-ddna",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaj8enn-gbrv",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "camera_pose_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 1920,
+                    "y": 100
+                },
+                "uuid": "op-mtaj8lpe-7f63",
+                "connections": []
+            },
+            {
+                "action_name": "detect_apriltags.py",
+                "action_params": {},
+                "position": {
+                    "x": 840,
+                    "y": 100
+                },
+                "uuid": "op-mtalo6q0-49d4",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalo6q0-49d4",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaj8iez-ddna",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "camera_pose",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 1920,
+                    "y": 200
+                },
+                "uuid": "op-mtaloeip-43e2",
+                "connections": []
+            }
+        ]
+    },
+    "object_detection_cpu": {
+        "name": "Object detection (CPU)",
+        "nodes": [
+            {
+                "action_name": "device_input.py",
+                "action_params": {},
+                "position": {
+                    "x": 100,
+                    "y": 100
+                },
+                "uuid": "op-mtali03u-e9zs",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtali03u-e9zs",
+                        "from_port": "frame",
+                        "to_uuid": "op-mtalnhxp-2i3v",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtali03u-e9zs",
+                        "from_port": "frame",
+                        "to_uuid": "op-mtalj7c2-kwlv",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "ground_plane_intersection.py",
+                "action_params": {},
+                "position": {
+                    "x": 740,
+                    "y": 260
+                },
+                "uuid": "op-mtalit4v-iwsm",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalit4v-iwsm",
+                        "from_port": "positions_3d",
+                        "to_uuid": "op-mtall2d1-21kj",
+                        "to_port": "detections",
+                        "data_type": "positions_3d",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtalit4v-iwsm",
+                        "from_port": "positions_3d",
+                        "to_uuid": "op-mtall72t-b833",
+                        "to_port": "data",
+                        "data_type": "positions_3d",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust.py",
+                "action_params": {},
+                "position": {
+                    "x": 740,
+                    "y": 100
+                },
+                "uuid": "op-mtalj7c2-kwlv",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalj7c2-kwlv",
+                        "from_port": "processed_frame",
+                        "to_uuid": "op-mtaljhnu-3w8x",
+                        "to_port": "frame",
+                        "data_type": "processed_frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detect_apriltags.py",
+                "action_params": {},
+                "position": {
+                    "x": 1160,
+                    "y": 100
+                },
+                "uuid": "op-mtaljhnu-3w8x",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljhnu-3w8x",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaljout-4zcp",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "minimum_apriltag_count.py",
+                "action_params": {},
+                "position": {
+                    "x": 1460,
+                    "y": 100
+                },
+                "uuid": "op-mtaljout-4zcp",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljout-4zcp",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaljtzs-dxy8",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "pnp_camera_localization.py",
+                "action_params": {},
+                "position": {
+                    "x": 1800,
+                    "y": 100
+                },
+                "uuid": "op-mtaljtzs-dxy8",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtalj7c2-kwlv",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": true,
+                        "custom_waypoints": [
+                            {
+                                "x": 2054.9061615077235,
+                                "y": 160.99997901119548
+                            },
+                            {
+                                "x": 2080,
+                                "y": 160.99997901119548
+                            },
+                            {
+                                "x": 2080,
+                                "y": 240
+                            },
+                            {
+                                "x": 700,
+                                "y": 240
+                            },
+                            {
+                                "x": 700,
+                                "y": 184.99998584624424
+                            },
+                            {
+                                "x": 732.0000005695874,
+                                "y": 184.99998584624424
+                            }
+                        ]
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtalit4v-iwsm",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": [
+                            {
+                                "x": 2054.906275670466,
+                                "y": 160.99997913927413
+                            },
+                            {
+                                "x": 2080,
+                                "y": 160.99997913927413
+                            },
+                            {
+                                "x": 2080,
+                                "y": 460
+                            },
+                            {
+                                "x": 700,
+                                "y": 460
+                            },
+                            {
+                                "x": 700,
+                                "y": 344.9999547264075
+                            },
+                            {
+                                "x": 731.9999839011796,
+                                "y": 344.9999547264075
+                            }
+                        ]
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtallssl-1n35",
+                        "to_port": "data",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtallptc-abt4",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detected_objects_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 1140,
+                    "y": 260
+                },
+                "uuid": "op-mtall2d1-21kj",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "detected_objects",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 1140,
+                    "y": 360
+                },
+                "uuid": "op-mtall72t-b833",
+                "connections": []
+            },
+            {
+                "action_name": "camera_pose_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 2180,
+                    "y": 40
+                },
+                "uuid": "op-mtallptc-abt4",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "camera_pose",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 2180,
+                    "y": 140
+                },
+                "uuid": "op-mtallssl-1n35",
+                "connections": []
+            },
+            {
+                "action_name": "object_detection.py",
+                "action_params": {},
+                "position": {
+                    "x": 400,
+                    "y": 260
+                },
+                "uuid": "op-mtalnhxp-2i3v",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalnhxp-2i3v",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtalit4v-iwsm",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            }
+        ]
+    },
+    "object_detection_mx3": {
+        "name": "Object detection (MX3)",
+        "nodes": [
+            {
+                "action_name": "device_input.py",
+                "action_params": {},
+                "position": {
+                    "x": 100,
+                    "y": 100
+                },
+                "uuid": "op-mtali03u-e9zs",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtali03u-e9zs",
+                        "from_port": "frame",
+                        "to_uuid": "op-mtali3bg-lf8e",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "mx3_async_object_detection.py",
+                "action_params": {},
+                "position": {
+                    "x": 340,
+                    "y": 100
+                },
+                "uuid": "op-mtali3bg-lf8e",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtali3bg-lf8e",
+                        "from_port": "frame",
+                        "to_uuid": "op-mtalj7c2-kwlv",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtali3bg-lf8e",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtalit4v-iwsm",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "ground_plane_intersection.py",
+                "action_params": {},
+                "position": {
+                    "x": 740,
+                    "y": 260
+                },
+                "uuid": "op-mtalit4v-iwsm",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalit4v-iwsm",
+                        "from_port": "positions_3d",
+                        "to_uuid": "op-mtall2d1-21kj",
+                        "to_port": "detections",
+                        "data_type": "positions_3d",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtalit4v-iwsm",
+                        "from_port": "positions_3d",
+                        "to_uuid": "op-mtall72t-b833",
+                        "to_port": "data",
+                        "data_type": "positions_3d",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "temporal_acceleration_preprocessor_rust.py",
+                "action_params": {},
+                "position": {
+                    "x": 740,
+                    "y": 100
+                },
+                "uuid": "op-mtalj7c2-kwlv",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtalj7c2-kwlv",
+                        "from_port": "processed_frame",
+                        "to_uuid": "op-mtaljhnu-3w8x",
+                        "to_port": "frame",
+                        "data_type": "processed_frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detect_apriltags.py",
+                "action_params": {},
+                "position": {
+                    "x": 1160,
+                    "y": 100
+                },
+                "uuid": "op-mtaljhnu-3w8x",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljhnu-3w8x",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaljout-4zcp",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "minimum_apriltag_count.py",
+                "action_params": {},
+                "position": {
+                    "x": 1460,
+                    "y": 100
+                },
+                "uuid": "op-mtaljout-4zcp",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljout-4zcp",
+                        "from_port": "detections",
+                        "to_uuid": "op-mtaljtzs-dxy8",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "pnp_camera_localization.py",
+                "action_params": {},
+                "position": {
+                    "x": 1800,
+                    "y": 100
+                },
+                "uuid": "op-mtaljtzs-dxy8",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtalj7c2-kwlv",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": true,
+                        "custom_waypoints": [
+                            {
+                                "x": 2054.9061615077235,
+                                "y": 160.99997901119548
+                            },
+                            {
+                                "x": 2080,
+                                "y": 160.99997901119548
+                            },
+                            {
+                                "x": 2080,
+                                "y": 240
+                            },
+                            {
+                                "x": 700,
+                                "y": 240
+                            },
+                            {
+                                "x": 700,
+                                "y": 184.99998584624424
+                            },
+                            {
+                                "x": 732.0000005695874,
+                                "y": 184.99998584624424
+                            }
+                        ]
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtalit4v-iwsm",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": [
+                            {
+                                "x": 2054.906275670466,
+                                "y": 160.99997913927413
+                            },
+                            {
+                                "x": 2080,
+                                "y": 160.99997913927413
+                            },
+                            {
+                                "x": 2080,
+                                "y": 460
+                            },
+                            {
+                                "x": 700,
+                                "y": 460
+                            },
+                            {
+                                "x": 700,
+                                "y": 344.9999547264075
+                            },
+                            {
+                                "x": 731.9999839011796,
+                                "y": 344.9999547264075
+                            }
+                        ]
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtallssl-1n35",
+                        "to_port": "data",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtaljtzs-dxy8",
+                        "from_port": "camera_pose",
+                        "to_uuid": "op-mtallptc-abt4",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detected_objects_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 1140,
+                    "y": 260
+                },
+                "uuid": "op-mtall2d1-21kj",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "detected_objects",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 1140,
+                    "y": 360
+                },
+                "uuid": "op-mtall72t-b833",
+                "connections": []
+            },
+            {
+                "action_name": "camera_pose_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 2180,
+                    "y": 40
+                },
+                "uuid": "op-mtallptc-abt4",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "camera_pose",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 2180,
+                    "y": 140
+                },
+                "uuid": "op-mtallssl-1n35",
+                "connections": []
+            }
+        ]
+    }
+}

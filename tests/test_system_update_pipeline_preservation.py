@@ -131,12 +131,12 @@ def test_failed_pull_still_restores_pipeline_configuration(tmp_path: Path) -> No
     assert _git(repo, "stash", "list") == ""
 
 
-def test_update_info_tracks_main_instead_of_current_branch() -> None:
+def test_update_info_tracks_current_branch() -> None:
     payload, status = _UpdateInfoHarness().system_update_info()
 
     assert status == 200
     assert payload["default_branch"] == "main"
     assert payload["current_branch"] == "feature/test"
     assert payload["current_sha"] == "1111111"
-    assert payload["remote_sha"] == "2222222"
-    assert payload["update_needed"] is True
+    assert payload["remote_sha"] == "1111111"
+    assert payload["update_needed"] is False
