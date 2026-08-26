@@ -52,7 +52,7 @@ Robot-side code for consuming EagleEye lives in [`library/`](library/), with ful
 [`library/README.md`](library/README.md).
 
 Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project, create a pipeline
-from the WebUI's "Robot localization" template, and feed your pose estimator:
+from the WebUI's "Basic localization" template, and feed your pose estimator:
 
 ```java
 public class Drive extends SubsystemBase {

@@ -26,10 +26,10 @@ def _config_def(action_name: str) -> dict[str, Any]:
     raise AssertionError(f"No config definition for {action_name}")
 
 
-def _template() -> list[dict[str, Any]]:
-    """Load the bundled robot-localization template."""
+def _template(template_id: str = "basic_localization") -> list[dict[str, Any]]:
+    """Load a bundled localization template."""
     templates = json.loads(TEMPLATES_PATH.read_text(encoding="utf-8"))
-    return templates["robot_localization"]["nodes"]
+    return templates[template_id]["nodes"]
 
 
 def test_template_ports_and_targets_resolve() -> None:
@@ -75,6 +75,21 @@ def test_template_publishes_the_contract_the_java_library_reads() -> None:
         for connection in operation["connections"]
     }
     assert publishers[pose_publisher["uuid"]] == "camera_to_robot_pose.py"
+
+
+def test_apriltag_template_publishes_robot_pose_and_meta() -> None:
+    """The accelerated template must publish the same robot-side contract."""
+    published = {
+        operation["action_params"].get("target_key"): operation["action_params"].get(
+            "schema"
+        )
+        for operation in _template("apriltag_localization")
+        if operation["action_name"] == "publish_to_networktables.py"
+    }
+    assert published == {
+        "localization/front/pose": "pose3d",
+        "localization/front/meta": "auto",
+    }
 
 
 def test_both_branches_keep_one_capture_timestamp() -> None:

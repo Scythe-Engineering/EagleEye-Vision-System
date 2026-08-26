@@ -6,7 +6,7 @@ for (const templateId of [
     "apriltag_localization",
     "object_detection_cpu",
     "object_detection_mx3",
-    "robot_localization",
+    "basic_localization",
 ]) {
     const first = getPipelineTemplate(templateId);
     const second = getPipelineTemplate(templateId);

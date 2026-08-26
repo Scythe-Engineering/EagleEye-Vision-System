@@ -42,7 +42,7 @@ repeated every `warningIntervalSeconds`, rather than failing silently.
 
 ## Wiring the coprocessor
 
-Create a pipeline in the WebUI using the bundled "Robot localization" template. Then set
+Create a pipeline in the WebUI using the bundled "Basic localization" template. Then set
 `camera_bus_id` on the three operations that take one and point `apriltag_map_path` at your field
 map.
 
