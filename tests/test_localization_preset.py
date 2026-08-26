@@ -1,4 +1,4 @@
-"""The shipped localization preset must stay wireable as operations change."""
+"""The bundled robot-localization template must stay wireable as operations change."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PRESET_PATH = PROJECT_ROOT / "library" / "localization_pipeline_preset.json"
+TEMPLATES_PATH = (
+    PROJECT_ROOT / "src" / "webui" / "js" / "pipeline" / "pipelineTemplates.json"
+)
 CONFIG_DEF_DIRS = (
     PROJECT_ROOT / "src" / "main_operations" / "definitions" / "config_data",
     PROJECT_ROOT / "src" / "secondary_operations" / "config_data",
@@ -24,16 +26,15 @@ def _config_def(action_name: str) -> dict[str, Any]:
     raise AssertionError(f"No config definition for {action_name}")
 
 
-def _preset() -> list[dict[str, Any]]:
-    """Load the localization operations from the shipped preset."""
-    pipelines = json.loads(PRESET_PATH.read_text(encoding="utf-8"))
-    assert list(pipelines) == ["localization"]
-    return pipelines["localization"]
+def _template() -> list[dict[str, Any]]:
+    """Load the bundled robot-localization template."""
+    templates = json.loads(TEMPLATES_PATH.read_text(encoding="utf-8"))
+    return templates["robot_localization"]["nodes"]
 
 
-def test_preset_ports_and_targets_resolve() -> None:
-    """Every preset connection must reference declared ports and operations."""
-    operations = _preset()
+def test_template_ports_and_targets_resolve() -> None:
+    """Every template connection must reference declared ports and operations."""
+    operations = _template()
     by_uuid = {operation["uuid"]: operation for operation in operations}
     assert len(by_uuid) == len(operations), "duplicate uuid in preset"
 
@@ -51,11 +52,11 @@ def test_preset_ports_and_targets_resolve() -> None:
             assert connection["to_port"] in target_inputs, connection
 
 
-def test_preset_publishes_the_contract_the_java_library_reads() -> None:
+def test_template_publishes_the_contract_the_java_library_reads() -> None:
     """EagleEyeCamera joins pose and meta by timestamp under one source subtable."""
     published = {
         operation["action_params"]["target_key"]: operation["action_params"]["schema"]
-        for operation in _preset()
+        for operation in _template()
         if operation["action_name"] == "publish_to_networktables.py"
     }
     assert published == {
@@ -65,12 +66,12 @@ def test_preset_publishes_the_contract_the_java_library_reads() -> None:
 
     pose_publisher = next(
         operation
-        for operation in _preset()
+        for operation in _template()
         if operation["action_params"].get("target_key") == "localization/front/pose"
     )
     publishers = {
         connection["to_uuid"]: operation["action_name"]
-        for operation in _preset()
+        for operation in _template()
         for connection in operation["connections"]
     }
     assert publishers[pose_publisher["uuid"]] == "camera_to_robot_pose.py"
@@ -83,7 +84,7 @@ def test_both_branches_keep_one_capture_timestamp() -> None:
     averages the timings of everything feeding it, which would leave the two branches carrying
     different timestamps and the robot silently dropping every sample.
     """
-    operations = _preset()
+    operations = _template()
     incoming: dict[str, int] = {operation["uuid"]: 0 for operation in operations}
     for operation in operations:
         for connection in operation["connections"]:

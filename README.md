@@ -51,9 +51,8 @@ For further instructions, please refer to the [wiki page](https://github.com/frc
 Robot-side code for consuming EagleEye lives in [`library/`](library/), with full usage notes in
 [`library/README.md`](library/README.md).
 
-Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project, paste
-`library/localization_pipeline_preset.json` into the WebUI's pipeline JSON editor, and feed your
-pose estimator:
+Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project, create a pipeline
+from the WebUI's "Robot localization" template, and feed your pose estimator:
 
 ```java
 public class Drive extends SubsystemBase {

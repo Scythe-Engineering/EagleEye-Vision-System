@@ -42,10 +42,9 @@ repeated every `warningIntervalSeconds`, rather than failing silently.
 
 ## Wiring the coprocessor
 
-`localization_pipeline_preset.json` is a working single-camera pipeline. Paste its contents into
-the pipeline JSON editor in the WebUI, or merge the `"localization"` key into
-`src/config/pipeline_config.json`, then set `camera_bus_id` on the three operations that take one
-and point `apriltag_map_path` at your field map.
+Create a pipeline in the WebUI using the bundled "Robot localization" template. Then set
+`camera_bus_id` on the three operations that take one and point `apriltag_map_path` at your field
+map.
 
 The chain is:
 
