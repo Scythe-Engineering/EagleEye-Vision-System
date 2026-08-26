@@ -1,4 +1,5 @@
-import pipelineTemplates from "../pipelineTemplates.json";
+import pipelineTemplates from "../pipelineTemplates.json" with { type: "json" };
+import { uid } from "../utils.js";
 import {
     closeOnBackdropClick,
     closeOnEscape,
@@ -191,8 +192,19 @@ export function newPipelineDialog() {
     });
 }
 
-/** Return a copy of a bundled pipeline template. */
+/** Return a copy of a bundled pipeline template with fresh node identifiers. */
 export function getPipelineTemplate(templateId) {
     const template = pipelineTemplates[templateId];
-    return template ? structuredClone(template.nodes) : null;
+    if (!template) return null;
+
+    const nodes = structuredClone(template.nodes);
+    const uuidMap = new Map(nodes.map((node) => [node.uuid, uid("op-")]));
+    nodes.forEach((node) => {
+        node.uuid = uuidMap.get(node.uuid);
+        node.connections?.forEach((connection) => {
+            connection.from_uuid = uuidMap.get(connection.from_uuid);
+            connection.to_uuid = uuidMap.get(connection.to_uuid);
+        });
+    });
+    return nodes;
 }
