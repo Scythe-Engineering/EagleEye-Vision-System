@@ -175,24 +175,45 @@ class CameraCalibrationMixin:
             return cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
         raise ValueError(f"Unsupported camera frame shape: {frame.shape}")
 
+    def _detector_parameters(self):
+        """Build detector parameters tuned for calibration coverage.
+
+        Two defaults work against a calibration workflow. ``minDistanceToBorder``
+        discards markers near the image edge, which is exactly where corner
+        coverage is needed to constrain the distortion model, and
+        ``cornerRefinementMethod`` is off, so marker corners land on contour
+        pixels and every ChArUco corner interpolated from them inherits that
+        error.
+        """
+        parameters = cv2.aruco.DetectorParameters()
+        parameters.minDistanceToBorder = 0
+        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        return parameters
+
     def _find_charuco(self, frame: np.ndarray, board: Any):
         gray = self._grayscale_frame(frame)
         dictionary = board.getDictionary()
-        corners, ids, rejected = cv2.aruco.detectMarkers(gray, dictionary)
+        parameters = self._detector_parameters()
+        corners, ids, rejected = cv2.aruco.detectMarkers(
+            gray, dictionary, parameters=parameters
+        )
         if ids is None or len(ids) == 0:
             return False, None, None, corners, ids, gray.shape[::-1]
         refined_corners, refined_ids = corners, ids
         try:
             refined_corners, refined_ids, _, _ = cv2.aruco.refineDetectedMarkers(
-                gray, board, corners, ids, rejected
+                gray, board, corners, ids, rejected, parameters=parameters
             )
         except cv2.error:
             # Some third-party/generated boards have marker placement that does
             # not match OpenCV's board object exactly. Keep raw marker detections
             # and still try ChArUco interpolation below.
             pass
+        # ``minMarkers=1`` keeps corners that only one decoded marker borders.
+        # The default of 2 silently drops the outer ring of board corners and
+        # any corner whose neighbour was clipped at the frame edge.
         _, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-            refined_corners, refined_ids, gray, board
+            refined_corners, refined_ids, gray, board, minMarkers=1
         )
         found = (
             charuco_ids is not None
