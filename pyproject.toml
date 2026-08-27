@@ -61,6 +61,15 @@ required-environments = [
     "sys_platform == 'linux'"
 ]
 
+# opencv-python (pulled in by ultralytics) and opencv-contrib-python both ship
+# the cv2 package; installing both clobbers cv2 files in nondeterministic
+# install order, and main-only cv2 lacks the legacy cv2.aruco functions this
+# project uses. Drop ultralytics' transitive opencv-python requirement so only
+# opencv-contrib-python is ever installed.
+override-dependencies = [
+    "opencv-python; sys_platform == 'never'",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
