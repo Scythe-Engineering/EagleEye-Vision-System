@@ -120,11 +120,16 @@ touch "$MNT/boot/firmware/ssh"
 echo "$IMAGE_USER:$(openssl passwd -6 "$IMAGE_PASSWORD")" > "$MNT/boot/firmware/userconf.txt"
 chroot "$MNT" /bin/bash -euxc "
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon openssh-server
+    DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon openssh-server rpi-usb-gadget
     systemctl enable ssh
     cloud-init clean --logs
     apt-get clean
 "
+cat > "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg" <<'EOF'
+rpi:
+  enable_usb_gadget: true
+enable_ssh: true
+EOF
 
 phase "Cleaning up inside image"
 rm -rf "$MNT/tmp/eagleeye-src"
@@ -141,6 +146,8 @@ test -L "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service"
 chroot "$MNT" test -x /usr/bin/cloud-init
 chroot "$MNT" test -x /usr/sbin/NetworkManager
 chroot "$MNT" test -x /usr/sbin/netplan
+chroot "$MNT" test -x /usr/bin/rpi-usb-gadget
+grep -Fxq '  enable_usb_gadget: true' "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
 phase "Unmounting and hashing image"
