@@ -7,6 +7,8 @@ on:
 
 jobs:
   pi-image:
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 330
     steps:
@@ -24,6 +26,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eagleeye-pi-image
-          path: eagleeye-*.img.xz
+          path: |
+            eagleeye-*.img.xz
+            eagleeye-*.rpi-imager-manifest
           if-no-files-found: error
           compression-level: 0
+
+      - name: Publish tagged image
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(eagleeye-*.img.xz eagleeye-*.rpi-imager-manifest)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          fi

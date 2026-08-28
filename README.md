@@ -33,9 +33,17 @@ uv, Node.js, and Rust, syncs the Python dependencies (including MemryX) and the
 frontend build, adds the user to the camera device groups, then installs,
 enables, and starts the `eagleeye` systemd service. It is tested on Raspberry Pi
 OS Lite 64-bit (Debian 12, arm64); other platforms warn and continue. It
-performs fresh installs only — if the target directory already exists it refuses
+performs fresh installs only. If the target directory already exists, it refuses
 and points you at **Settings -> System Update** in the Web UI
 (`http://<pi-address>:5001`).
+
+### Raspberry Pi image
+
+Tagged releases include an `.rpi-imager-manifest` asset. Open that file with the
+latest Raspberry Pi Imager, select EagleEye Vision System, and enter the Wi-Fi
+network or phone hotspot in OS customization before writing the card. The image
+starts SSH with username `eagleeye` and password `eagleeye`; change the password
+after the first login.
 
 A fresh install ships an intentionally incomplete `2026_apriltag_starter`
 pipeline (Device Input -> Detect AprilTags -> PnP Camera Localization ->

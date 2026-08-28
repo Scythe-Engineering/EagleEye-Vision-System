@@ -2,10 +2,23 @@
 # Build a flashable Raspberry Pi OS Lite image with EagleEye preinstalled.
 #
 # Runs as root on a native arm64 host (GitHub ubuntu-24.04-arm runner), so the
-# chroot needs no QEMU emulation. Produces eagleeye-<date>.img.xz in the
-# current directory.
+# chroot needs no QEMU emulation. Produces eagleeye-<date>.img.xz and, for
+# tagged builds, a Raspberry Pi Imager manifest in the current directory.
 
 set -euxo pipefail
+
+BUILD_STARTED=$SECONDS
+PHASE_STARTED=$SECONDS
+PHASE_NAME="startup"
+
+# Print the elapsed time for each build phase and start the next one.
+phase() {
+    local now=$SECONDS
+    printf '<== %s took %dm %ds\n' "$PHASE_NAME" "$(((now - PHASE_STARTED) / 60))" "$(((now - PHASE_STARTED) % 60))"
+    PHASE_NAME="$1"
+    PHASE_STARTED=$now
+    printf '==> %s\n' "$PHASE_NAME"
+}
 
 BASE_IMAGE_URL="${BASE_IMAGE_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}"
 IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-8G}"
@@ -14,6 +27,10 @@ IMAGE_PASSWORD="eagleeye"
 IMAGE_HOSTNAME="eagleeye"
 REPO_SRC="${REPO_SRC:-$(pwd)}"
 OUT_NAME="eagleeye-$(date +%Y-%m-%d).img"
+RELEASE_URL="${RELEASE_URL:-}"
+if [ -z "$RELEASE_URL" ] && [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+    RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${OUT_NAME}.xz"
+fi
 
 # Build outside the repo checkout (the repo gets copied into the image, and
 # the image must not contain itself). Prefer /mnt, the runner's larger disk.
@@ -41,17 +58,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Downloading base image"
+phase "Downloading base image"
 curl -fL "$BASE_IMAGE_URL" | xz -dc > "$OUT_IMG"
 
-echo "==> Growing image and root filesystem"
+phase "Growing image and root filesystem"
 truncate -s +"$IMAGE_GROW_BYTES" "$OUT_IMG"
 LOOP="$(losetup -fP --show "$OUT_IMG")"
 parted -s "$LOOP" resizepart 2 100%
 e2fsck -pf "${LOOP}p2"
 resize2fs "${LOOP}p2"
 
-echo "==> Mounting"
+phase "Mounting image"
 MNT="$(mktemp -d)"
 mount "${LOOP}p2" "$MNT"
 mount "${LOOP}p1" "$MNT/boot/firmware"
@@ -64,7 +81,7 @@ printf '#!/bin/sh\nexit 101\n' > "$MNT/usr/sbin/policy-rc.d"
 chmod +x "$MNT/usr/sbin/policy-rc.d"
 sed -i 's/^\([^#]\)/#\1/' "$MNT/etc/ld.so.preload" || true
 
-echo "==> Creating the $IMAGE_USER user"
+phase "Creating the $IMAGE_USER user"
 chroot "$MNT" /bin/bash -euxc "
     useradd -m -s /bin/bash '$IMAGE_USER'
     echo '$IMAGE_USER:$IMAGE_PASSWORD' | chpasswd
@@ -81,13 +98,13 @@ mkdir -p "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
 mount --bind "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
 chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
 
-echo "==> Copying repository into the image"
+phase "Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
 rsync -a --exclude='*.img' --exclude='*.img.xz' --exclude=node_modules \
     --exclude=.venv "$REPO_SRC/" "$MNT/tmp/eagleeye-src/"
 chroot "$MNT" chown -R "$IMAGE_USER:$IMAGE_USER" /tmp/eagleeye-src
 
-echo "==> Running the EagleEye installer inside the chroot"
+phase "Running the EagleEye installer inside the chroot"
 chroot "$MNT" su - "$IMAGE_USER" -c "
     git config --global --add safe.directory '*' 2>/dev/null || true
     export EAGLEEYE_IMAGE_BUILD=1
@@ -95,7 +112,7 @@ chroot "$MNT" su - "$IMAGE_USER" -c "
     bash /tmp/eagleeye-src/install.sh
 "
 
-echo "==> First-boot configuration"
+phase "Configuring first boot"
 echo "$IMAGE_HOSTNAME" > "$MNT/etc/hostname"
 sed -i "s/127.0.1.1.*/127.0.1.1\t$IMAGE_HOSTNAME/" "$MNT/etc/hosts" ||
     echo -e "127.0.1.1\t$IMAGE_HOSTNAME" >> "$MNT/etc/hosts"
@@ -103,27 +120,69 @@ touch "$MNT/boot/firmware/ssh"
 echo "$IMAGE_USER:$(openssl passwd -6 "$IMAGE_PASSWORD")" > "$MNT/boot/firmware/userconf.txt"
 chroot "$MNT" /bin/bash -euxc "
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon
+    DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon openssh-server
+    systemctl enable ssh
+    cloud-init clean --logs
     apt-get clean
 "
 
-echo "==> Cleanup inside image"
+phase "Cleaning up inside image"
 rm -rf "$MNT/tmp/eagleeye-src"
 rm -f "$MNT/usr/sbin/policy-rc.d" "$MNT/etc/resolv.conf"
 sed -i 's/^#//' "$MNT/etc/ld.so.preload" || true
 
-echo "==> Verifying image contents"
+phase "Verifying image contents"
 # The venv python is a symlink that only resolves inside the image root.
 chroot "$MNT" test -x "/home/$IMAGE_USER/EagleEye-Vision-System/.venv/bin/python"
 test -f "$MNT/home/$IMAGE_USER/EagleEye-Vision-System/src/webui/static/bundle.js"
 test -f "$MNT/etc/systemd/system/eagleeye.service"
 test -L "$MNT/etc/systemd/system/multi-user.target.wants/eagleeye.service"
+test -L "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service"
+chroot "$MNT" test -x /usr/bin/cloud-init
+chroot "$MNT" test -x /usr/sbin/NetworkManager
+chroot "$MNT" test -x /usr/sbin/netplan
+find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
-echo "==> Unmounting and compressing"
+phase "Unmounting and hashing image"
 cleanup
 trap - EXIT
 MNT=""
 LOOP=""
+EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
+EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
+phase "Compressing image"
 xz -T0 -3 "$OUT_IMG"
-ls -lh "$OUT_IMG.xz"
-mv "$OUT_IMG.xz" "${GITHUB_WORKSPACE:-$REPO_SRC}/"
+DOWNLOAD_SIZE="$(stat -c %s "$OUT_IMG.xz")"
+DOWNLOAD_SHA256="$(sha256sum "$OUT_IMG.xz" | cut -d' ' -f1)"
+OUTPUT_DIR="${GITHUB_WORKSPACE:-$REPO_SRC}"
+mv "$OUT_IMG.xz" "$OUTPUT_DIR/"
+
+if [ -n "$RELEASE_URL" ]; then
+    MANIFEST="$OUTPUT_DIR/${OUT_NAME%.img}.rpi-imager-manifest"
+    cat > "$MANIFEST" <<EOF
+{
+  "os_list": [
+    {
+      "name": "EagleEye Vision System",
+      "description": "Raspberry Pi OS Lite 64-bit with EagleEye preinstalled",
+      "icon": "https://downloads.raspberrypi.com/raspios_armhf/Raspberry_Pi_OS_(32-bit).png",
+      "url": "$RELEASE_URL",
+      "extract_size": $EXTRACT_SIZE,
+      "extract_sha256": "$EXTRACT_SHA256",
+      "image_download_size": $DOWNLOAD_SIZE,
+      "image_download_sha256": "$DOWNLOAD_SHA256",
+      "release_date": "$(date +%Y-%m-%d)",
+      "init_format": "cloudinit-rpi",
+      "architecture": "arm64",
+      "devices": ["pi5-64bit", "pi4-64bit", "pi3-64bit"],
+      "capabilities": []
+    }
+  ]
+}
+EOF
+    python3 -m json.tool "$MANIFEST" >/dev/null
+fi
+
+ls -lh "$OUTPUT_DIR/$OUT_NAME.xz" "$OUTPUT_DIR"/*.rpi-imager-manifest 2>/dev/null || true
+phase "Build complete"
+printf '<== Total build time: %dm %ds\n' "$(((SECONDS - BUILD_STARTED) / 60))" "$(((SECONDS - BUILD_STARTED) % 60))"
