@@ -442,10 +442,10 @@ class FirstBootMixin:
 
         parsed_cameras: list[dict[str, str]] = []
         seen_bus_ids: set[str] = set()
-        for item in camera_payloads:
+        for camera_payload in camera_payloads:
             try:
                 camera = _validated_camera_payload(
-                    item, available_by_bus_id, seen_bus_ids
+                    camera_payload, available_by_bus_id, seen_bus_ids
                 )
             except ValueError as error:
                 return {"error": str(error)}, 400

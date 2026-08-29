@@ -295,7 +295,9 @@ class SystemMonitorMixin:
             }, 400
 
         try:
-            current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            current_branch = self._run_git_command(
+                ["rev-parse", "--abbrev-ref", "HEAD"]
+            )
             current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
             current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
             remote_branches = self._list_remote_branches_with_shas()
@@ -430,9 +432,7 @@ class SystemMonitorMixin:
                 if remaining_seconds <= 0:
                     process.kill()
                     process.wait(timeout=5)
-                    raise RuntimeError(
-                        f"Update command timed out: {display_command}"
-                    )
+                    raise RuntimeError(f"Update command timed out: {display_command}")
 
                 ready = selector.select(timeout=min(remaining_seconds, 0.5))
                 if ready:
@@ -688,7 +688,9 @@ class SystemMonitorMixin:
         self._ensure_system_update_state()
         status_payload, _ = self.system_update_status()
         if not status_payload.get("available"):
-            return {"error": status_payload.get("reason", "WiFi internet required")}, 400
+            return {
+                "error": status_payload.get("reason", "WiFi internet required")
+            }, 400
 
         body = _request().get_json(silent=True) or {}
         requested_branch = body.get("branch")
@@ -871,7 +873,9 @@ class SystemMonitorMixin:
     def _read_cpu_temperature_c(self, psutil_module: Any) -> float | None:
         """Read CPU temperature in Celsius, preferring Linux thermal sensors."""
         try:
-            thermal_zones = sorted(Path("/sys/class/thermal").glob("thermal_zone*/temp"))
+            thermal_zones = sorted(
+                Path("/sys/class/thermal").glob("thermal_zone*/temp")
+            )
             temperatures: list[float] = []
             for temp_path in thermal_zones:
                 try:
@@ -897,7 +901,10 @@ class SystemMonitorMixin:
             for entries in readings.values():
                 for entry in entries:
                     current = getattr(entry, "current", None)
-                    if isinstance(current, (int, float)) and 0.0 < float(current) < 150.0:
+                    if (
+                        isinstance(current, (int, float))
+                        and 0.0 < float(current) < 150.0
+                    ):
                         label = str(getattr(entry, "label", "") or "").lower()
                         if "cpu" in label or "core" in label or not label:
                             temperatures.append(float(current))
@@ -1066,9 +1073,9 @@ class SystemMonitorMixin:
                     )
                 )
 
-                with _general_conf_path().open("w", encoding="utf-8") as f:
-                    json.dump(config, f, indent=4)
-                    f.write("\n")
+                with _general_conf_path().open("w", encoding="utf-8") as config_file:
+                    json.dump(config, config_file, indent=4)
+                    config_file.write("\n")
 
                 self.view_stream_downscale = config[VIEW_STREAM_DOWNSCALE_KEY]
 

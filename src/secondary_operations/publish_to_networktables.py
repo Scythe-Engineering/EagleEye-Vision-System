@@ -171,6 +171,11 @@ class PublishToNetworktables(OperationInstance):
         return data
 
     def update_config(self, json_config: dict) -> None:
+        """Apply live publisher configuration changes.
+
+        Args:
+            json_config: Updated operation configuration fields.
+        """
         if "target_key" in json_config:
             self.target_key = json_config["target_key"]
             self._publisher = None
