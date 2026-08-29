@@ -56,6 +56,7 @@ class ObjectDetectionDefinition(OperationInstance):
         self.max_detections = max_detections
         self.image_size = image_size
         self.delegate: ObjectDetectionImplementation | None = None
+        self._config_lock = Lock()
         self._next_model_check = 0.0
         self._empty_slot_ignored_ids = (
             self._compatible_model_ids() if not model_id else set()
@@ -77,7 +78,12 @@ class ObjectDetectionDefinition(OperationInstance):
         return compatible
 
     def _load_available_model(self) -> ObjectDetectionImplementation | None:
-        """Load the configured or newly compatible model when one is available."""
+        """Load a model without racing live configuration updates."""
+        with self._config_lock:
+            return self._load_available_model_locked()
+
+    def _load_available_model_locked(self) -> ObjectDetectionImplementation | None:
+        """Load the configured or newly compatible model under the config lock."""
         if self.delegate is not None:
             return self.delegate
         now = monotonic()
@@ -126,18 +132,19 @@ class ObjectDetectionDefinition(OperationInstance):
         Args:
             json_config: Configured parameters, possibly a partial subset.
         """
-        if self.delegate is not None:
-            self.delegate.update_live_settings(
-                confidence_threshold=json_config.get("confidence_threshold"),
-                iou_threshold=json_config.get("iou_threshold"),
-                max_detections=json_config.get("max_detections"),
-            )
-        if "confidence_threshold" in json_config:
-            self.confidence_threshold = json_config["confidence_threshold"]
-        if "iou_threshold" in json_config:
-            self.iou_threshold = json_config["iou_threshold"]
-        if "max_detections" in json_config:
-            self.max_detections = json_config["max_detections"]
+        with self._config_lock:
+            if self.delegate is not None:
+                self.delegate.update_live_settings(
+                    confidence_threshold=json_config.get("confidence_threshold"),
+                    iou_threshold=json_config.get("iou_threshold"),
+                    max_detections=json_config.get("max_detections"),
+                )
+            if "confidence_threshold" in json_config:
+                self.confidence_threshold = json_config["confidence_threshold"]
+            if "iou_threshold" in json_config:
+                self.iou_threshold = json_config["iou_threshold"]
+            if "max_detections" in json_config:
+                self.max_detections = json_config["max_detections"]
 
     def run(self, frame: np.ndarray) -> list[Detection]:
         """Run detection, or idle until a compatible model is uploaded.
