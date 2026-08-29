@@ -323,7 +323,6 @@ export class FlowchartRenderer {
 
         this.callbacks = {
             openOperationSettings: options.openOperationSettings || (() => {}),
-            updateRunButton: options.updateRunButton || (() => {}),
             removeFromPipeline: options.removeFromPipeline || (() => {}),
             onPipelineChange: options.onPipelineChange || (() => {}),
             autoSavePipeline: options.autoSavePipeline || (() => {}),
@@ -663,7 +662,6 @@ export class FlowchartRenderer {
                 this.minimap.updateNodes([]);
                 this.minimap.updateConnections([]);
             }
-            this.callbacks.updateRunButton();
             return;
         }
 
@@ -708,7 +706,7 @@ export class FlowchartRenderer {
     }
 
     /**
-     * Refreshes minimap, run button, and island overlays.
+     * Refreshes minimap and island overlays.
      */
     refreshLayoutChrome() {
         if (this.minimap) {
@@ -726,7 +724,6 @@ export class FlowchartRenderer {
             );
         }
         this.updateGridOperationPositions();
-        this.callbacks.updateRunButton();
         this.updateIslandBlocks();
     }
 
@@ -1613,7 +1610,6 @@ export class FlowchartRenderer {
         }
 
         this.cancelConnecting();
-        this.callbacks.updateRunButton();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
         this.updateIslandBlocks();
@@ -1698,7 +1694,6 @@ export class FlowchartRenderer {
         }
         this.syncAllDynamicNodes();
         this.updateDockingLayout();
-        this.callbacks.updateRunButton();
         this.callbacks.autoSavePipeline();
         this.updateCycleHighlights();
         this.updateIslandBlocks();

@@ -30,9 +30,7 @@ import {
     populatePipelineDropdown,
     refreshPipelineCreator,
     renderCurrentPipeline,
-    runPipeline,
     updateDeleteButtonVisibility,
-    updateRunButton,
 } from "./creator/pipelineActions.js";
 import {
     handleDragStartWithLogging,
@@ -114,11 +112,9 @@ export async function initPipelineCreator() {
                 handleFlowchartPipelineChange(changeEvent, {
                     autoSavePipeline,
                     renderCurrentPipeline: renderPipelineView,
-                    updateRunButton,
                     onCreatePipeline: createPipelineView,
                 }),
             autoSavePipeline,
-            updateRunButton,
             removeFromPipeline,
             centerView: options.centerView !== false,
         });
@@ -132,14 +128,12 @@ export async function initPipelineCreator() {
 
     const flowchartRenderer = initFlowchartRenderer({
         openOperationSettings,
-        updateRunButton,
         removeFromPipeline,
         autoSavePipeline,
         onPipelineChange: (changeEvent) =>
             handleFlowchartPipelineChange(changeEvent, {
                 autoSavePipeline,
                 renderCurrentPipeline: renderPipelineView,
-                updateRunButton,
                 onCreatePipeline: createPipelineView,
             }),
     });
@@ -185,7 +179,6 @@ export async function initPipelineCreator() {
     const deletePipelineCallbacks = {
         renderCurrentPipeline: renderPipelineView,
         updateDeleteButtonVisibility,
-        updateRunButton,
     };
 
     initializePipelineJsonEditor({
@@ -201,7 +194,6 @@ export async function initPipelineCreator() {
             loadPipelineIntoBuilder: loadPipelineIntoBuilderWithRender,
         });
     });
-    creatorContext.elements.runButton?.addEventListener("click", runPipeline);
     creatorContext.elements.newPipelineButton?.addEventListener("click", () => {
         createNewPipeline(createPipelineCallbacks);
     });

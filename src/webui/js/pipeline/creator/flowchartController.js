@@ -149,11 +149,10 @@ async function removeFromPipeline(instanceId) {
  * @param {object} [options={}] - Change handlers and callbacks.
  * @param {Function} [options.autoSavePipeline] - Saves the pipeline automatically.
  * @param {Function} [options.renderCurrentPipeline] - Unused rendering callback.
- * @param {Function} [options.updateRunButton] - Updates the run button state.
  * @param {Function} [options.onCreatePipeline] - Creates a pipeline when needed.
  * @returns {Promise<void>}
  */
-async function handleFlowchartPipelineChange(changeEvent, { autoSavePipeline, renderCurrentPipeline, updateRunButton, onCreatePipeline } = {}) {
+async function handleFlowchartPipelineChange(changeEvent, { autoSavePipeline, renderCurrentPipeline, onCreatePipeline } = {}) {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
         const shouldCreate = await confirmDialog({
@@ -191,7 +190,7 @@ async function handleFlowchartPipelineChange(changeEvent, { autoSavePipeline, re
  * @param {object} params - Renderer setup parameters.
  * @returns {FlowchartRenderer|null}
  */
-function initFlowchartRenderer({ openOperationSettings, updateRunButton, removeFromPipeline, autoSavePipeline, onPipelineChange }) {
+function initFlowchartRenderer({ openOperationSettings, removeFromPipeline, autoSavePipeline, onPipelineChange }) {
     const flowchartCanvas = creatorContext.elements.flowchartCanvas;
     if (!flowchartCanvas) {
         console.error("Flowchart canvas not found (#flowchartCanvas)");
@@ -204,7 +203,6 @@ function initFlowchartRenderer({ openOperationSettings, updateRunButton, removeF
         nodeSpacingX: 300,
         nodeSpacingY: 150,
         openOperationSettings,
-        updateRunButton,
         removeFromPipeline,
         onPipelineChange,
         autoSavePipeline,
