@@ -166,10 +166,17 @@ grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polki
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
 phase "Unmounting and hashing image"
-(cleanup)
-trap - EXIT
+sync
+umount "$MNT/home/$IMAGE_USER/.cache"
+for fs in run dev/pts dev sys proc; do umount "$MNT/$fs"; done
+umount "$MNT/boot/firmware"
+umount "$MNT"
+e2fsck -fn "${LOOP}p2"
+losetup -d "$LOOP"
+rmdir "$MNT"
 MNT=""
 LOOP=""
+trap - EXIT
 EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
 EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
 phase "Compressing image"
