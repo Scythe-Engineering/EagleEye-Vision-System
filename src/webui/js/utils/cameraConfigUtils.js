@@ -490,11 +490,13 @@ async function loadCameraConfig(cameraBusId) {
 
 /**
  * Saves the current extrinsics for the selected camera.
+ *
+ * @returns {Promise<boolean>} Whether the save succeeded.
  */
-async function saveExtrinsics() {
+export async function saveExtrinsics() {
     if (!currentCameraBusId) {
         showWarning("Select a camera first");
-        return;
+        return false;
     }
 
     try {
@@ -508,8 +510,10 @@ async function saveExtrinsics() {
         );
         showSuccess("Camera extrinsics saved");
         await loadCameraConfig(currentCameraBusId);
+        return true;
     } catch (error) {
         showDanger(`Failed to save extrinsics: ${error.message}`);
+        return false;
     }
 }
 
@@ -960,21 +964,18 @@ function setupDropzone() {
  * @returns {Promise<void>}
  */
 export async function selectCameraConfig(cameraBusId) {
+    const requestedCameraBusId = String(cameraBusId);
     initCameraConfigUtils();
-    currentCameraBusId = String(cameraBusId);
+    currentCameraBusId = requestedCameraBusId;
     await loadCameraList();
     const select = getElement("utilsCameraSelect");
     if (
         !select?.querySelector(
-            `option[value="${CSS.escape(currentCameraBusId)}"]`,
+            `option[value="${CSS.escape(requestedCameraBusId)}"]`,
         )
     ) {
         throw new Error("The selected camera is no longer active.");
     }
-    select.value = currentCameraBusId;
-    currentCalibrationStreamName =
-        select.selectedOptions?.[0]?.dataset?.streamName || "";
-    await loadCameraConfig(currentCameraBusId);
 }
 
 /**

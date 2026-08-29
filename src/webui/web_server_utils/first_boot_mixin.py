@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -26,6 +27,8 @@ _VERIFICATION_PENDING_KEY = "first_boot_wizard_verification_pending"
 _PIPELINES_KEY = "first_boot_pipeline_names"
 _VERIFICATION_KEYS_KEY = "first_boot_networktable_keys"
 _ALLOWED_MODES = frozenset({"localize", "detect", "both"})
+_NT_PUBLISH_ACTION = "publish_to_networktables.py"
+_PNP_ACTION = "pnp_camera_localization.py"
 
 
 def _source_slug(name: str, bus_id: str) -> str:
@@ -100,17 +103,14 @@ def build_first_boot_pipeline(
     for action_name in (
         "device_input.py",
         "temporal_acceleration_preprocessor_rust.py",
-        "pnp_camera_localization.py",
+        _PNP_ACTION,
         "ground_plane_intersection.py",
     ):
         node = nodes_by_action.get(action_name)
         if node is not None:
             node.setdefault("action_params", {})["camera_bus_id"] = camera_bus_id
 
-    for action_name in (
-        "temporal_acceleration_preprocessor_rust.py",
-        "pnp_camera_localization.py",
-    ):
+    for action_name in ("temporal_acceleration_preprocessor_rust.py", _PNP_ACTION):
         node = nodes_by_action[action_name]
         node["action_params"]["apriltag_map_path"] = _APRILTAG_MAP_PATH
 
@@ -118,7 +118,7 @@ def build_first_boot_pipeline(
     if detector is not None:
         detector["action_params"].update({"model_id": model_id, "device_id": "cpu"})
 
-    pnp_node = nodes_by_action["pnp_camera_localization.py"]
+    pnp_node = nodes_by_action[_PNP_ACTION]
     transform_node = nodes_by_action.pop("camera_pose_output.py")
     transform_node["action_name"] = "camera_to_robot_pose.py"
     transform_node["action_params"] = {"camera_bus_id": camera_bus_id}
@@ -136,7 +136,7 @@ def build_first_boot_pipeline(
     pose_publisher = next(
         node
         for node in nodes
-        if node["action_name"] == "publish_to_networktables.py"
+        if node["action_name"] == _NT_PUBLISH_ACTION
         and node.get("action_params", {}).get("target_key") == "camera_pose"
     )
     pose_key = f"localization/{source_name}"
@@ -181,7 +181,7 @@ def build_first_boot_pipeline(
         detection_publisher = next(
             node
             for node in nodes
-            if node["action_name"] == "publish_to_networktables.py"
+            if node["action_name"] == _NT_PUBLISH_ACTION
             and node.get("action_params", {}).get("target_key") == "detected_objects"
         )
         detection_key = f"detections/{source_name}"
@@ -193,6 +193,63 @@ def build_first_boot_pipeline(
         )
 
     return nodes, verification_keys
+
+
+def _unique_camera_sources(
+    available_by_bus_id: dict[str, dict[str, str]],
+    reserved_target_keys: set[str],
+) -> dict[str, str]:
+    """Assign unique NetworkTables source names for each active camera."""
+    grouped: dict[str, list[str]] = {}
+    for bus_id, camera in available_by_bus_id.items():
+        grouped.setdefault(_source_slug(camera["name"], bus_id), []).append(bus_id)
+
+    sources_by_bus_id: dict[str, str] = {}
+    used_sources: set[str] = set()
+    for base_source, grouped_bus_ids in grouped.items():
+        for bus_id in sorted(grouped_bus_ids):
+            source = (
+                f"{base_source}-{_source_slug('', bus_id)}"
+                if len(grouped_bus_ids) > 1
+                else base_source
+            )
+            candidate = source
+            suffix = 2
+            while (
+                candidate in used_sources
+                or f"localization/{candidate}" in reserved_target_keys
+                or f"detections/{candidate}" in reserved_target_keys
+            ):
+                candidate = f"{source}-{suffix}"
+                suffix += 1
+            sources_by_bus_id[bus_id] = candidate
+            used_sources.add(candidate)
+    return sources_by_bus_id
+
+
+def _validated_camera_payload(
+    item: Any,
+    available_by_bus_id: dict[str, dict[str, str]],
+    seen_bus_ids: set[str],
+) -> dict[str, str]:
+    """Return one validated camera record or raise ValueError."""
+    if not isinstance(item, dict) or set(item) - {"bus_id", "mode", "model_id"}:
+        raise ValueError("Each camera requires bus_id, mode, and optional model_id")
+    bus_id = item.get("bus_id")
+    mode = item.get("mode")
+    model_id = item.get("model_id", "")
+    if not isinstance(bus_id, str) or bus_id not in available_by_bus_id:
+        raise ValueError(f"Camera {bus_id!r} is not active")
+    if bus_id in seen_bus_ids:
+        raise ValueError(f"Camera {bus_id!r} was selected more than once")
+    if mode not in _ALLOWED_MODES:
+        raise ValueError(f"Unsupported camera mode: {mode!r}")
+    if not isinstance(model_id, str):
+        raise ValueError("model_id must be a string")
+    model_id = model_id.strip()
+    if mode == "detect" and not model_id:
+        raise ValueError("Detect-only pipelines require a CPU model")
+    return {"bus_id": bus_id, "mode": mode, "model_id": model_id}
 
 
 class FirstBootMixin:
@@ -220,9 +277,9 @@ class FirstBootMixin:
 
     def _save_first_boot_state(self, **updates: Any) -> dict[str, Any]:
         """Merge first-boot fields into persistent general configuration."""
-        config = self._read_general_conf()
-        config.update(updates)
         with self._general_conf_lock:
+            config = self._read_general_conf()
+            config.update(updates)
             self._write_general_conf(config)
         return config
 
@@ -334,6 +391,22 @@ class FirstBootMixin:
         if not isinstance(camera_payloads, list) or not camera_payloads:
             return {"error": "At least one camera is required"}, 400
 
+        lock = getattr(self, "_pipeline_settings_lock", None) or threading.RLock()
+        self._pipeline_settings_lock = lock
+        with lock:
+            return self._generate_first_boot_pipelines_locked(
+                address, camera_payloads
+            )
+
+    def _generate_first_boot_pipelines_locked(
+        self, address: str, camera_payloads: list[Any]
+    ) -> tuple[dict[str, Any], int]:
+        """Generate pipelines while holding the pipeline-config lock."""
+        registry = getattr(self, "camera_config_registry", None)
+        if registry is None:
+            return {"error": "Camera configuration is not ready yet"}, 503
+        library = getattr(self, "model_library", None)
+
         available_by_bus_id = {
             camera["bus_id"]: camera for camera in self._first_boot_camera_records()
         }
@@ -353,75 +426,42 @@ class FirstBootMixin:
             for operations in retained_pipelines.values()
             for operation in operations
             if isinstance(operation, dict)
-            and operation.get("action_name") == "publish_to_networktables.py"
+            and operation.get("action_name") == _NT_PUBLISH_ACTION
             and isinstance(operation.get("action_params"), dict)
             and isinstance(
                 target_key := operation["action_params"].get("target_key"), str
             )
         }
-        base_sources = {
-            available_bus_id: _source_slug(camera["name"], available_bus_id)
-            for available_bus_id, camera in available_by_bus_id.items()
-        }
-        source_groups: dict[str, list[str]] = {}
-        for available_bus_id, base_source in base_sources.items():
-            source_groups.setdefault(base_source, []).append(available_bus_id)
-        sources_by_bus_id: dict[str, str] = {}
-        used_sources: set[str] = set()
-        for base_source, grouped_bus_ids in source_groups.items():
-            for available_bus_id in sorted(grouped_bus_ids):
-                source = base_source
-                if len(grouped_bus_ids) > 1:
-                    source = f"{base_source}-{_source_slug('', available_bus_id)}"
-                suffix = 2
-                candidate = source
-                while (
-                    candidate in used_sources
-                    or f"localization/{candidate}" in reserved_target_keys
-                    or f"detections/{candidate}" in reserved_target_keys
-                ):
-                    candidate = f"{source}-{suffix}"
-                    suffix += 1
-                sources_by_bus_id[available_bus_id] = candidate
-                used_sources.add(candidate)
+        sources_by_bus_id = _unique_camera_sources(
+            available_by_bus_id, reserved_target_keys
+        )
 
         parsed_cameras: list[dict[str, str]] = []
         seen_bus_ids: set[str] = set()
         for item in camera_payloads:
-            if not isinstance(item, dict) or set(item) - {"bus_id", "mode", "model_id"}:
-                return {
-                    "error": "Each camera requires bus_id, mode, and optional model_id"
-                }, 400
-            bus_id = item.get("bus_id")
-            mode = item.get("mode")
-            model_id = item.get("model_id", "")
-            if not isinstance(bus_id, str) or bus_id not in available_by_bus_id:
-                return {"error": f"Camera {bus_id!r} is not active"}, 400
-            if bus_id in seen_bus_ids:
-                return {"error": f"Camera {bus_id!r} was selected more than once"}, 400
-            if mode not in _ALLOWED_MODES:
-                return {"error": f"Unsupported camera mode: {mode!r}"}, 400
-            if not isinstance(model_id, str):
-                return {"error": "model_id must be a string"}, 400
-            model_id = model_id.strip()
-            if mode == "detect" and not model_id:
-                return {"error": "Detect-only pipelines require a CPU model"}, 400
-            if model_id:
+            try:
+                camera = _validated_camera_payload(
+                    item, available_by_bus_id, seen_bus_ids
+                )
+            except ValueError as error:
+                return {"error": str(error)}, 400
+            if camera["model_id"]:
+                if library is None:
+                    return {"error": "Model library is not available"}, 503
                 try:
-                    self.model_library.resolve_artifact(model_id, "cpu")
+                    library.resolve_artifact(camera["model_id"], "cpu")
                 except ModelLibraryError as error:
                     return {"error": str(error)}, 400
-
-            camera_config = self.camera_config_registry.get_config(bus_id)
+            camera_config = registry.get_config(camera["bus_id"])
             if (
                 not camera_config.intrinsics_path
                 or not Path(camera_config.intrinsics_path).is_file()
             ):
-                return {"error": f"Camera {bus_id!r} needs intrinsics calibration"}, 400
-            parsed_cameras.append(
-                {"bus_id": bus_id, "mode": mode, "model_id": model_id}
-            )
-            seen_bus_ids.add(bus_id)
+                return {
+                    "error": f"Camera {camera['bus_id']!r} needs intrinsics calibration"
+                }, 400
+            parsed_cameras.append(camera)
+            seen_bus_ids.add(camera["bus_id"])
 
         templates = json.loads(_TEMPLATE_PATH.read_text(encoding="utf-8"))
         generated: dict[str, list[dict[str, Any]]] = {}

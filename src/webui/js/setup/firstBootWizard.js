@@ -1,9 +1,11 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { registerModelLibraryModal } from "../pipeline/modelLibraryModal.js";
-import { loadSettings } from "../settings/settingsHandler.js";
 import { activateAppView } from "../ui/sidebar.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
-import { selectCameraConfig } from "../utils/cameraConfigUtils.js";
+import {
+    saveExtrinsics,
+    selectCameraConfig,
+} from "../utils/cameraConfigUtils.js";
 import {
     WIZARD_STEP,
     buildGenerationPayload,
@@ -27,6 +29,9 @@ const state = {
     selectedModel: null,
     step: WIZARD_STEP.WELCOME,
     verificationTimer: null,
+    verificationInFlight: false,
+    guideToken: 0,
+    modelResolveToken: 0,
     guideTarget: null,
 };
 
@@ -413,15 +418,18 @@ function renderPurpose() {
         registerModelLibraryModal().open({
             selectedModelId: state.selectedModel?.id,
             onSelect: async (model) => {
+                const requestId = ++state.modelResolveToken;
                 modelStatus.textContent = "Checking CPU compatibility...";
                 try {
                     await fetchJson(
                         `/model-library/${encodeURIComponent(model.id)}/resolve?device_id=cpu`,
                     );
+                    if (requestId !== state.modelResolveToken) return;
                     state.selectedModel = model;
                     persistSession();
                     modelStatus.textContent = `Selected model: ${model.display_name || model.id}`;
                 } catch (error) {
+                    if (requestId !== state.modelResolveToken) return;
                     state.selectedModel = null;
                     persistSession();
                     modelStatus.textContent = `Model cannot run on CPU: ${error.message}`;
@@ -534,8 +542,9 @@ function renderCameraSummary() {
  * Show a guided overlay on an existing configuration page.
  *
  * @param {string} step - Guided wizard step.
+ * @param {number} token - Generation token for the current goToStep call.
  */
-async function showGuidedStep(step) {
+async function showGuidedStep(step, token) {
     const cameraName = state.currentCamera?.name || "this camera";
     const copy = guidedStepCopy(step, cameraName, state.setups.length + 1);
     activateAppView(wizardStepView(step));
@@ -548,6 +557,7 @@ async function showGuidedStep(step) {
         }
         try {
             await selectCameraConfig(state.currentCamera.bus_id);
+            if (state.guideToken !== token || state.step !== step) return;
             highlightGuideTarget(
                 document.getElementById(
                     step === WIZARD_STEP.CALIBRATION
@@ -556,12 +566,13 @@ async function showGuidedStep(step) {
                 ),
             );
         } catch (error) {
+            if (state.guideToken !== token || state.step !== step) return;
             setGuideStatus(error.message, true);
         }
         return;
     }
 
-    await loadSettings();
+    if (state.guideToken !== token || state.step !== step) return;
     highlightGuideTarget(document.getElementById("robotAddressInput"));
 }
 
@@ -572,9 +583,10 @@ async function showGuidedStep(step) {
  */
 function goToStep(step) {
     state.step = step;
+    const token = ++state.guideToken;
     persistSession();
     if (isGuidedStep(step)) {
-        void showGuidedStep(step);
+        void showGuidedStep(step, token);
         return;
     }
     hideGuide();
@@ -681,6 +693,10 @@ async function handleGuideContinue() {
         return;
     }
     if (state.step === WIZARD_STEP.EXTRINSICS) {
+        if (!(await saveExtrinsics())) {
+            setGuideStatus("Save extrinsics before continuing.");
+            return;
+        }
         goToStep(nextWizardStep(state.step));
         return;
     }
@@ -810,12 +826,23 @@ function renderVerification(status) {
  * Refresh the final live verification checks.
  */
 async function refreshVerification() {
+    const panel = document.getElementById("firstBootVerificationPanel");
+    if (!panel || panel.classList.contains("hidden")) {
+        clearInterval(state.verificationTimer);
+        state.verificationTimer = null;
+        return;
+    }
+    if (state.verificationInFlight) return;
+    state.verificationInFlight = true;
     try {
         const status = await fetchJson("/first-boot/status");
+        if (panel.classList.contains("hidden")) return;
         renderVerification(status);
     } catch (error) {
         document.getElementById("firstBootVerifyHint").textContent =
             error.message;
+    } finally {
+        state.verificationInFlight = false;
     }
 }
 

@@ -119,21 +119,25 @@ class ObjectDetectionDefinition(OperationInstance):
         Args:
             json_config: Configured parameters, possibly a partial subset.
         """
-        if "confidence_threshold" in json_config:
-            self.confidence_threshold = json_config["confidence_threshold"]
-        if "iou_threshold" in json_config:
-            self.iou_threshold = json_config["iou_threshold"]
-        if "max_detections" in json_config:
-            self.max_detections = json_config["max_detections"]
         if self.delegate is not None:
             self.delegate.update_live_settings(
                 confidence_threshold=json_config.get("confidence_threshold"),
                 iou_threshold=json_config.get("iou_threshold"),
                 max_detections=json_config.get("max_detections"),
             )
+        if "confidence_threshold" in json_config:
+            self.confidence_threshold = json_config["confidence_threshold"]
+        if "iou_threshold" in json_config:
+            self.iou_threshold = json_config["iou_threshold"]
+        if "max_detections" in json_config:
+            self.max_detections = json_config["max_detections"]
 
     def run(self, frame: np.ndarray) -> list[Detection]:
-        """Run detection, or idle until a compatible model is uploaded."""
+        """Run detection, or idle until a compatible model is uploaded.
+
+        Args:
+            frame: Camera image to infer on.
+        """
         delegate = self._load_available_model()
         detections = [] if delegate is None else delegate.run(frame)
         with self.last_detections_lock:

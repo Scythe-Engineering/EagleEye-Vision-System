@@ -105,6 +105,15 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
 
 
 def _coerce_wpilib(value: Any, schema: str) -> Any:
+    """Convert a pipeline value into a NetworkTables-compatible payload.
+
+    Args:
+        value: Raw pipeline value.
+        schema: Configured NetworkTables schema name.
+
+    Returns:
+        A typed NetworkTables value, or None when the value cannot be published.
+    """
     if schema == "json":
         try:
             return json.dumps(value, separators=(",", ":"), allow_nan=False)
@@ -167,6 +176,7 @@ class PublishToNetworktables(OperationInstance):
             self._publisher = None
         if "schema" in json_config:
             self.schema = json_config["schema"]
+            self._publisher = None
         if "data_path" in json_config:
             self.data_path_tokens = self._normalize_path(json_config["data_path"])
 

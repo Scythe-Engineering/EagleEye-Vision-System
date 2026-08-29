@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
 from copy import deepcopy
 from typing import Any
@@ -76,6 +77,15 @@ class PipelineConfigMixin:
         if not isinstance(content, str) or not isinstance(revision, str):
             return {"error": "Expected string fields 'content' and 'revision'"}, 400
 
+        lock = getattr(self, "_pipeline_settings_lock", None) or threading.RLock()
+        self._pipeline_settings_lock = lock
+        with lock:
+            return self._save_pipeline_config_json_locked(content, revision)
+
+    def _save_pipeline_config_json_locked(
+        self, content: str, revision: str
+    ) -> tuple[dict[str, Any], int]:
+        """Validate and write editor JSON while holding the pipeline-config lock."""
         with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
             current_content = config_file.read()
         if revision != self._pipeline_config_revision(current_content):

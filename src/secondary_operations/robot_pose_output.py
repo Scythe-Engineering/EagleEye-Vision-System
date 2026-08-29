@@ -18,7 +18,11 @@ class RobotPoseOutput(OperationInstance):
         self._last_sent_at = 0.0
 
     def run(self, pose: np.ndarray) -> np.ndarray | None:
-        """Output changed poses and periodic snapshots to the web interface."""
+        """Output changed poses and periodic snapshots to the web interface.
+
+        Args:
+            pose: Robot pose transformation matrix.
+        """
         now = monotonic()
         if (
             self._last_sent_pose is not None

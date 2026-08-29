@@ -1057,19 +1057,19 @@ class SystemMonitorMixin:
             if not isinstance(payload, dict):
                 return {"error": "Expected JSON object payload"}, 400
 
-            config = {**self._read_general_conf(), **payload}
-            config[VIEW_STREAM_DOWNSCALE_KEY] = self._parse_view_stream_downscale(
-                config.get(
-                    VIEW_STREAM_DOWNSCALE_KEY,
-                    DEFAULT_VIEW_STREAM_DOWNSCALE,
-                )
-            )
-
-            with _general_conf_path().open("w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4)
-                f.write("\n")
-
             with self._general_conf_lock:
+                config = {**self._read_general_conf(), **payload}
+                config[VIEW_STREAM_DOWNSCALE_KEY] = self._parse_view_stream_downscale(
+                    config.get(
+                        VIEW_STREAM_DOWNSCALE_KEY,
+                        DEFAULT_VIEW_STREAM_DOWNSCALE,
+                    )
+                )
+
+                with _general_conf_path().open("w", encoding="utf-8") as f:
+                    json.dump(config, f, indent=4)
+                    f.write("\n")
+
                 self.view_stream_downscale = config[VIEW_STREAM_DOWNSCALE_KEY]
 
             return {"message": "General configuration saved successfully"}, 200

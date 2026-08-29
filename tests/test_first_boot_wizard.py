@@ -14,7 +14,7 @@ import src.main_operations.definitions.object_detection as object_detection_modu
 import src.webui.web_server_utils.first_boot_mixin as first_boot_module
 from src.config.utils.port_validation import validate_pipeline_connections
 from src.main_operations.definitions.object_detection import ObjectDetectionDefinition
-from src.webui.web_server_utils.first_boot_mixin import FirstBootMixin
+from src.webui.web_server_utils.first_boot_mixin import FirstBootMixin, build_first_boot_pipeline
 
 
 class _Request:
@@ -271,3 +271,31 @@ def test_empty_detection_slot_loads_the_first_compatible_uploaded_model(
     library.models.append(SimpleNamespace(model_id="uploaded-model"))
     operation._next_model_check = 0.0
     assert operation.run(frame) == [{"class_name": "game-piece"}]
+
+
+def test_detect_mode_builds_a_detection_pipeline() -> None:
+    """Build a detect-only pipeline from the CPU object-detection template."""
+    templates = json.loads(
+        first_boot_module._TEMPLATE_PATH.read_text(encoding="utf-8")
+    )
+    nodes, keys = build_first_boot_pipeline(
+        templates,
+        camera_bus_id="3",
+        source_name="rear-camera",
+        mode="detect",
+        model_id="cpu-model",
+    )
+    validate_pipeline_connections(nodes)
+    detector = next(
+        operation
+        for operation in nodes
+        if operation["action_name"] == "object_detection.py"
+    )
+    publishers = {
+        operation["action_params"]["target_key"]
+        for operation in nodes
+        if operation["action_name"] == "publish_to_networktables.py"
+    }
+    assert detector["action_params"] == {"model_id": "cpu-model", "device_id": "cpu"}
+    assert publishers == {"detections/rear-camera"}
+    assert keys == [{"key": "detections/rear-camera", "required": True}]

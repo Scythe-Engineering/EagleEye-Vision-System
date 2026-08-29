@@ -117,7 +117,7 @@ window.onload = async () => {
 
     await populateFieldDropdown();
     setupSidebar();
-    await initializeFirstBootWizard();
+    void initializeFirstBootWizard();
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
     initializeTestVideoManager();
