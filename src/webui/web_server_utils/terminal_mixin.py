@@ -86,16 +86,24 @@ class TerminalMixin:
         if not isinstance(command, str) or not command.strip():
             return self._terminal_payload(error="Command is required", exit_code=1), 400
         command = command.strip()
+        password = body.get("sudo_password") if isinstance(body, dict) else None
+        if password is not None and not isinstance(password, str):
+            return self._terminal_payload(
+                error="sudo_password must be a string", exit_code=1
+            ), 400
 
         # ponytail: one lock for the whole process, the UI drives a single session.
         with _TERMINAL_LOCK:
-            return self._run_terminal_command(command)
+            return self._run_terminal_command(command, password)
 
-    def _run_terminal_command(self, command: str) -> tuple[dict[str, Any], int]:
+    def _run_terminal_command(
+        self, command: str, sudo_password: str | None = None
+    ) -> tuple[dict[str, Any], int]:
         """Run one command and carry any ``cd`` it performs over to the next call.
 
         Args:
             command: Shell command text to execute.
+            sudo_password: Password supplied to sudo through a temporary askpass helper.
 
         Returns:
             Tuple of response payload and HTTP status code.
@@ -111,17 +119,36 @@ class TerminalMixin:
             with (
                 tempfile.TemporaryFile() as stdout_file,
                 tempfile.TemporaryFile() as stderr_file,
+                tempfile.TemporaryDirectory(prefix="eagleeye-sudo-") as sudo_dir,
             ):
+                env = os.environ.copy()
+                shell_prefix = ""
+                if sudo_password is not None:
+                    password_file = Path(sudo_dir, "password")
+                    password_file.write_text(sudo_password, encoding="utf-8")
+                    password_file.chmod(0o600)
+                    askpass_file = Path(sudo_dir, "askpass")
+                    askpass_file.write_text(
+                        '#!/bin/sh\ncat "$EAGLEEYE_SUDO_PASSWORD_FILE"\n',
+                        encoding="utf-8",
+                    )
+                    askpass_file.chmod(0o700)
+                    env["SUDO_ASKPASS"] = str(askpass_file)
+                    env["EAGLEEYE_SUDO_PASSWORD_FILE"] = str(password_file)
+                    shell_prefix = 'sudo() { command sudo -A "$@"; }\n'
+
                 process = subprocess.Popen(
                     [
                         BASH_EXECUTABLE,
                         "-c",
-                        f"{command}\n"
+                        shell_prefix
+                        + f"{command}\n"
                         "__ee_status=$?\n"
                         f"pwd -P > {shlex.quote(cwd_file.name)}\n"
                         "exit $__ee_status\n",
                     ],
                     cwd=self._terminal_cwd,
+                    env=env,
                     stdout=stdout_file,
                     stderr=stderr_file,
                     start_new_session=True,

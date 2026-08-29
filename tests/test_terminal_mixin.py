@@ -21,12 +21,17 @@ class _TerminalHarness(TerminalMixin):
     pass
 
 
-def _queue_command(monkeypatch: Any, command: str) -> None:
+def _queue_command(
+    monkeypatch: Any, command: str, sudo_password: str | None = None
+) -> None:
     """Make the next execute_terminal_command call read this command."""
+    body = {"command": command}
+    if sudo_password is not None:
+        body["sudo_password"] = sudo_password
     monkeypatch.setattr(
         terminal_mixin,
         "request",
-        SimpleNamespace(get_json=lambda silent=True: {"command": command}),
+        SimpleNamespace(get_json=lambda silent=True: body),
     )
 
 
@@ -90,6 +95,36 @@ def test_non_object_payload_is_rejected(monkeypatch: Any) -> None:
 
     assert status == 400
     assert payload["error"] == "Command is required"
+
+
+def test_sudo_password_uses_askpass_without_echoing(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Pass a sudo password through askpass without including it in output."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_sudo = fake_bin / "sudo"
+    fake_sudo.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = "-A" ] || exit 90\n'
+        '[ "$("$SUDO_ASKPASS")" = "test-password" ] || exit 91\n'
+        'printf "password accepted\\n"\n',
+        encoding="utf-8",
+    )
+    fake_sudo.chmod(0o700)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ['PATH']}")
+
+    harness = _TerminalHarness()
+    harness._terminal_cwd = str(tmp_path)
+    _queue_command(monkeypatch, "sudo true", sudo_password="test-password")
+
+    payload, status = harness.execute_terminal_command()
+
+    assert status == 200
+    assert payload["success"] is True
+    assert payload["output"] == "password accepted"
+    assert "test-password" not in payload["output"]
+    assert "test-password" not in payload["error"]
 
 
 def test_deleted_working_directory_resets_to_home(

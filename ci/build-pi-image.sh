@@ -130,6 +130,16 @@ rpi:
   enable_usb_gadget: true
 enable_ssh: true
 EOF
+mkdir -p "$MNT/etc/polkit-1/rules.d"
+cat > "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules" <<EOF
+polkit.addRule(function(action, subject) {
+    if (subject.user == "$IMAGE_USER" &&
+        (action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
+        return polkit.Result.YES;
+    }
+});
+EOF
 
 phase "Cleaning up inside image"
 rm -rf "$MNT/tmp/eagleeye-src"
@@ -148,6 +158,8 @@ chroot "$MNT" test -x /usr/sbin/NetworkManager
 chroot "$MNT" test -x /usr/sbin/netplan
 chroot "$MNT" test -x /usr/bin/rpi-usb-gadget
 grep -Fxq '  enable_usb_gadget: true' "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg"
+grep -Fq 'org.freedesktop.NetworkManager.network-control' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
+grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
 phase "Unmounting and hashing image"
