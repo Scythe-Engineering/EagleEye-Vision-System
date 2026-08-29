@@ -113,6 +113,8 @@ chroot "$MNT" su - "$IMAGE_USER" -c "
     export EAGLEEYE_IMAGE_BUILD=1
     export EAGLEEYE_REPO_URL=/tmp/eagleeye-src
     bash /tmp/eagleeye-src/install.sh
+    git -C '/home/$IMAGE_USER/EagleEye-Vision-System' remote set-url origin \
+        https://github.com/Scythe-Engineering/EagleEye-Vision-System.git
 "
 
 phase "Configuring first boot"
@@ -162,6 +164,8 @@ phase "Verifying image contents"
 chroot "$MNT" test -x "/home/$IMAGE_USER/EagleEye-Vision-System/.venv/bin/python"
 test -f "$MNT/home/$IMAGE_USER/EagleEye-Vision-System/src/webui/static/bundle.js"
 test -f "$MNT/etc/systemd/system/eagleeye.service"
+test "$(chroot "$MNT" git -C "/home/$IMAGE_USER/EagleEye-Vision-System" remote get-url origin)" = \
+    "https://github.com/Scythe-Engineering/EagleEye-Vision-System.git"
 test -L "$MNT/etc/systemd/system/multi-user.target.wants/eagleeye.service"
 test -L "$MNT/etc/systemd/system/multi-user.target.wants/ssh.service"
 chroot "$MNT" test -x /usr/bin/cloud-init

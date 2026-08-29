@@ -21,18 +21,13 @@ class _UpdateInfoHarness(SystemMonitorMixin):
     def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
         del timeout
         responses = {
-            ("fetch", "origin", "--prune"): "",
             ("rev-parse", "--abbrev-ref", "HEAD"): "feature/test",
             ("rev-parse", "--short", "HEAD"): "1111111",
             ("rev-parse", "HEAD"): "1" * 40,
-            (
-                "for-each-ref",
-                "--format=%(refname:short) %(objectname:short) %(objectname)",
-                "refs/remotes/origin",
-            ): "\n".join(
+            ("ls-remote", "--heads", "origin"): "\n".join(
                 [
-                    f"origin/feature/test 1111111 {'1' * 40}",
-                    f"origin/main 2222222 {'2' * 40}",
+                    f"{'1' * 40}\trefs/heads/feature/test",
+                    f"{'2' * 40}\trefs/heads/main",
                 ]
             ),
         }

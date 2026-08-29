@@ -262,31 +262,21 @@ class SystemMonitorMixin:
         return normalized_branch_name
 
     def _list_remote_branches_with_shas(self) -> list[dict[str, str]]:
-        """List remote origin branches with short SHAs after a fetch.
+        """List remote origin branches without downloading repository objects.
 
         Returns:
             list[dict[str, str]]: Remote branches as ``{name, sha}`` entries.
         """
-        ref_output = self._run_git_command(
-            [
-                "for-each-ref",
-                "--format=%(refname:short) %(objectname:short) %(objectname)",
-                "refs/remotes/origin",
-            ]
-        )
+        ref_output = self._run_git_command(["ls-remote", "--heads", "origin"])
         remote_branches: list[dict[str, str]] = []
         for line in ref_output.splitlines():
             parts = line.split()
-            if len(parts) < 3:
+            if len(parts) != 2 or not parts[1].startswith("refs/heads/"):
                 continue
-            ref_name, short_sha, full_sha = parts[0], parts[1], parts[2]
-            if ref_name in {"origin", "origin/HEAD"}:
-                continue
-            branch_name = ref_name.removeprefix("origin/")
-            if not branch_name or branch_name == "HEAD":
-                continue
+            full_sha, ref_name = parts
+            branch_name = ref_name.removeprefix("refs/heads/")
             remote_branches.append(
-                {"name": branch_name, "sha": short_sha, "full_sha": full_sha}
+                {"name": branch_name, "sha": full_sha[:7], "full_sha": full_sha}
             )
         remote_branches.sort(key=lambda branch: branch["name"].lower())
         return remote_branches
@@ -305,7 +295,6 @@ class SystemMonitorMixin:
             }, 400
 
         try:
-            self._run_git_command(["fetch", "origin", "--prune"], timeout=60.0)
             current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
             current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
             current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
@@ -595,7 +584,13 @@ class SystemMonitorMixin:
 
         try:
             self._run_update_command_streaming(
-                ["git", "fetch", "origin", "--prune"],
+                [
+                    "git",
+                    "fetch",
+                    "--depth=1",
+                    "origin",
+                    f"+refs/heads/{target_branch}:refs/remotes/origin/{target_branch}",
+                ],
                 120.0,
                 phase="git_pull",
                 phase_index=0,
