@@ -81,6 +81,28 @@ def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
     assert table.values["RobotPose2D:timestamp"] == 123456
 
 
+def test_publish_supports_detection_json_with_capture_timestamp() -> None:
+    """Publish structured detections without inventing an incomplete WPILib struct."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections/front", schema="json")
+    timing = TimingMetadata(capture_nt_us=222333, capture_monotonic_ns=444)
+    detections = [
+        {
+            "class_name": "game-piece",
+            "confidence": 0.9,
+            "position_3d": [1.0, 2.0, 0.0],
+        }
+    ]
+
+    publisher.run(TimedValue(detections, timing))
+
+    assert table.values["detections/front"] == (
+        '[{"class_name":"game-piece","confidence":0.9,'
+        '"position_3d":[1.0,2.0,0.0]}]'
+    )
+    assert table.values["detections/front:timestamp"] == 222333
+
+
 def test_publish_supports_primitive_double_arrays() -> None:
     table = FakeNetworkTable()
     publisher = PublishToNetworktables(table, "values", schema="double_array")

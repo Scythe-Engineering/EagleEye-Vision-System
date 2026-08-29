@@ -1,18 +1,13 @@
-"""Tests for the curl-fetched installer script and its starter pipeline."""
+"""Tests for the curl-fetched installer script and fresh-install setup."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SCRIPT = PROJECT_ROOT / "install.sh"
 PIPELINE_CONFIG = PROJECT_ROOT / "src" / "config" / "pipeline_config.json"
-STARTER_PIPELINE_NAME = "2026_apriltag_starter"
 
 
 def _run_installer_function(script: str) -> subprocess.CompletedProcess[str]:
@@ -40,7 +35,10 @@ def _run_installer_function(script: str) -> subprocess.CompletedProcess[str]:
 def test_install_script_is_syntactically_valid() -> None:
     """Verify Bash accepts the installer syntax."""
     result = subprocess.run(
-        ["bash", "-n", str(INSTALL_SCRIPT)], capture_output=True, text=True
+        ["bash", "-n", str(INSTALL_SCRIPT)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -166,7 +164,7 @@ def test_os_release_value_reads_quoted_fields(tmp_path: Path) -> None:
 def test_render_service_unit_uses_the_current_user_and_path() -> None:
     """Verify the generated service uses only argument-derived identity and paths."""
     result = _run_installer_function(
-        'render_service_unit pilot /home/pilot /home/pilot/EagleEye-Vision-System'
+        "render_service_unit pilot /home/pilot /home/pilot/EagleEye-Vision-System"
     )
     unit = result.stdout
     assert "User=pilot\n" in unit
@@ -185,15 +183,12 @@ def test_render_service_unit_uses_the_current_user_and_path() -> None:
 
 def test_render_sudoers_policy_allows_only_backend_commands() -> None:
     """Verify the sudoers policy grants only required backend commands."""
-    result = _run_installer_function('render_sudoers_policy pilot 1001')
+    result = _run_installer_function("render_sudoers_policy pilot 1001")
     policy = result.stdout
     assert result.returncode == 0, result.stderr
     assert "#1001 ALL=(root) NOPASSWD:" in policy
     assert "/usr/bin/apt update" in policy
-    assert (
-        "/usr/bin/env DEBIAN_FRONTEND=noninteractive apt upgrade -y"
-        in policy
-    )
+    assert "/usr/bin/env DEBIAN_FRONTEND=noninteractive apt upgrade -y" in policy
     assert "/usr/bin/systemctl restart eagleeye" in policy
     assert "/usr/sbin/reboot" in policy
     assert "ALL=(ALL" not in policy
@@ -207,11 +202,14 @@ def test_repository_url_can_be_overridden_for_pre_release_testing() -> None:
         [
             "bash",
             "-c",
-            f'EAGLEEYE_REPO_URL="file:///tmp/eagleeye.git" '
-            f'EAGLEEYE_INSTALL_LIB_ONLY=1 . "{INSTALL_SCRIPT}"; echo "$REPO_URL"',
+            (
+                f'EAGLEEYE_REPO_URL="file:///tmp/eagleeye.git" '
+                f'EAGLEEYE_INSTALL_LIB_ONLY=1 . "{INSTALL_SCRIPT}"; echo "$REPO_URL"'
+            ),
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.stdout.strip() == "file:///tmp/eagleeye.git"
 
@@ -232,7 +230,7 @@ def test_failed_install_cleanup_removes_only_its_staging_and_target(
     (target / "partial").write_text("target", encoding="utf-8")
     result = _run_installer_function(
         f'staging_dir="{staging}"; install_dir="{target}"; '
-        'install_dir_created=1; cleanup_failed_install 1'
+        "install_dir_created=1; cleanup_failed_install 1"
     )
     assert result.returncode == 1
     assert not staging.exists()
@@ -242,9 +240,9 @@ def test_failed_install_cleanup_removes_only_its_staging_and_target(
 def test_web_readiness_failure_prints_the_service_journal() -> None:
     """Verify readiness timeouts print actionable service logs."""
     result = _run_installer_function(
-        'WEB_SERVER_READY_TIMEOUT=0; '
-        'curl() { return 1; }; '
-        'date() { echo 0; }; '
+        "WEB_SERVER_READY_TIMEOUT=0; "
+        "curl() { return 1; }; "
+        "date() { echo 0; }; "
         'sudo() { printf "sudo:%s\\n" "$*"; }; '
         'wait_for_web_server; echo "EXIT=$?"'
     )
@@ -261,14 +259,14 @@ def test_failed_verification_preserves_completed_install(tmp_path: Path) -> None
     """
     result = _run_installer_function(
         f'HOME="{tmp_path}"; '
-        'check_user() { :; }; check_platform() { :; }; '
-        'check_not_already_installed() { :; }; check_no_system_artifacts() { :; }; '
-        'install_apt_packages() { :; }; install_uv() { :; }; install_node() { :; }; '
-        'install_rust() { :; }; clone_repository() { :; }; '
-        'install_python_dependencies() { :; }; install_frontend() { :; }; '
-        'configure_camera_permissions() { :; }; install_sudoers_policy() { :; }; '
-        'install_service() { :; }; verify_install() { return 1; }; '
-        'main; status=$?; '
+        "check_user() { :; }; check_platform() { :; }; "
+        "check_not_already_installed() { :; }; check_no_system_artifacts() { :; }; "
+        "install_apt_packages() { :; }; install_uv() { :; }; install_node() { :; }; "
+        "install_rust() { :; }; clone_repository() { :; }; "
+        "install_python_dependencies() { :; }; install_frontend() { :; }; "
+        "configure_camera_permissions() { :; }; install_sudoers_policy() { :; }; "
+        "install_service() { :; }; verify_install() { return 1; }; "
+        "main; status=$?; "
         'printf "STATUS=%s FLAGS=%s,%s,%s TARGET=%s\\n" "$status" '
         '"$install_dir_created" "$service_installed" "$sudoers_installed" '
         '"$(test -d "$install_dir" && echo present || echo missing)"'
@@ -277,133 +275,7 @@ def test_failed_verification_preserves_completed_install(tmp_path: Path) -> None
     assert f"Remove {tmp_path}/EagleEye-Vision-System before retrying" in result.stderr
 
 
-@pytest.fixture(name="starter_pipeline")
-def starter_pipeline_fixture() -> list[dict[str, Any]]:
-    """Load the shipped starter pipeline.
-
-    Returns:
-        Ordered starter operation dictionaries.
-    """
+def test_fresh_install_has_no_preconfigured_pipelines() -> None:
+    """Verify the wizard is the only fresh-install pipeline setup path."""
     with PIPELINE_CONFIG.open("r", encoding="utf-8") as handle:
-        config = json.load(handle)
-    assert STARTER_PIPELINE_NAME in config
-    return config[STARTER_PIPELINE_NAME]
-
-
-def test_starter_pipeline_chains_the_expected_operations(
-    starter_pipeline: list[dict[str, Any]],
-) -> None:
-    """Verify the starter contains the required ordered operation chain.
-
-    Args:
-        starter_pipeline: Shipped starter operation dictionaries.
-    """
-    assert [operation["action_name"] for operation in starter_pipeline] == [
-        "device_input.py",
-        "detect_apriltags.py",
-        "pnp_camera_localization.py",
-        "camera_to_robot_pose.py",
-        "robot_pose_output.py",
-    ]
-
-    by_uuid = {operation["uuid"]: operation for operation in starter_pipeline}
-    edges = [
-        (
-            by_uuid[connection["from_uuid"]]["action_name"],
-            connection["from_port"],
-            by_uuid[connection["to_uuid"]]["action_name"],
-            connection["to_port"],
-        )
-        for operation in starter_pipeline
-        for connection in operation["connections"]
-    ]
-    assert edges == [
-        ("device_input.py", "frame", "detect_apriltags.py", "frame"),
-        ("detect_apriltags.py", "detections", "pnp_camera_localization.py", "detections"),
-        (
-            "pnp_camera_localization.py",
-            "camera_pose",
-            "camera_to_robot_pose.py",
-            "camera_pose",
-        ),
-        ("camera_to_robot_pose.py", "robot_pose", "robot_pose_output.py", "pose"),
-    ]
-
-
-def test_starter_pipeline_ports_match_operation_definitions(
-    starter_pipeline: list[dict[str, Any]],
-) -> None:
-    """Verify starter ports and parameters match operation definitions.
-
-    Args:
-        starter_pipeline: Shipped starter operation dictionaries.
-    """
-    config_dirs = (
-        PROJECT_ROOT / "src" / "secondary_operations" / "config_data",
-        PROJECT_ROOT / "src" / "main_operations" / "definitions" / "config_data",
-    )
-
-    for operation in starter_pipeline:
-        action_name = operation["action_name"].removesuffix(".py")
-        definition_paths = [
-            directory / f"{action_name}_config_def.json" for directory in config_dirs
-        ]
-        definition_path = next(
-            (path for path in definition_paths if path.exists()), None
-        )
-        assert definition_path is not None, (
-            f"No config definition for {action_name!r}; searched {definition_paths}"
-        )
-        with definition_path.open("r", encoding="utf-8") as handle:
-            definition = json.load(handle)
-
-        outputs = set(definition["output_nodes"])
-        inputs = {node["name"] for node in definition["input_nodes"]}
-        parameters = set(definition["parameters"])
-
-        assert set(operation["action_params"]) <= parameters
-        for connection in operation["connections"]:
-            assert connection["from_port"] in outputs
-
-        incoming = [
-            connection
-            for other in starter_pipeline
-            for connection in other["connections"]
-            if connection["to_uuid"] == operation["uuid"]
-        ]
-        for connection in incoming:
-            assert connection["to_port"] in inputs
-
-
-def test_starter_pipeline_passes_runtime_port_validation(
-    starter_pipeline: list[dict[str, Any]],
-) -> None:
-    """Verify the starter is incomplete only by parameters.
-
-    Args:
-        starter_pipeline: Shipped starter operation dictionaries.
-    """
-    from src.config.utils.port_validation import validate_pipeline_connections
-
-    ports = validate_pipeline_connections(starter_pipeline)
-    assert set(ports) == {operation["uuid"] for operation in starter_pipeline}
-
-
-def test_starter_pipeline_leaves_camera_specific_values_unset(
-    starter_pipeline: list[dict[str, Any]],
-) -> None:
-    """Verify the starter does not guess hardware-specific values.
-
-    Args:
-        starter_pipeline: Shipped starter operation dictionaries.
-    """
-    unset_keys = ("camera_bus_id", "apriltag_map_path")
-    seen_unset_keys: set[str] = set()
-
-    for operation in starter_pipeline:
-        for key, value in operation["action_params"].items():
-            if key in unset_keys:
-                assert value == "", f"{operation['action_name']}.{key} must stay unset"
-                seen_unset_keys.add(key)
-
-    assert seen_unset_keys == set(unset_keys)
+        assert handle.read().strip() == "{}"

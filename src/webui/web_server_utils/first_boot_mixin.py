@@ -1,0 +1,469 @@
+"""First-boot state, pipeline generation, and verification endpoints."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import tempfile
+import uuid
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+from flask import request
+
+from src.utils.model_library import ModelLibraryError
+from src.webui.web_server_utils.constants import GENERAL_CONF_PATH, SRC_DIR
+
+_TEMPLATE_PATH = Path(SRC_DIR) / "webui" / "js" / "pipeline" / "pipelineTemplates.json"
+_APRILTAG_MAP_PATH = (
+    "{project_root}/src/webui/assets/fields/2026/apriltag_maps/"
+    "FE-2026-_REBUILTTM_Playing_Field.fmap"
+)
+_COMPLETED_KEY = "first_boot_wizard_completed"
+_VERIFICATION_PENDING_KEY = "first_boot_wizard_verification_pending"
+_PIPELINES_KEY = "first_boot_pipeline_names"
+_VERIFICATION_KEYS_KEY = "first_boot_networktable_keys"
+_ALLOWED_MODES = frozenset({"localize", "detect", "both"})
+
+
+def _source_slug(name: str, bus_id: str) -> str:
+    """Return a stable NetworkTables-safe camera source segment."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    if slug:
+        return slug
+    fallback = re.sub(r"[^a-zA-Z0-9]+", "-", bus_id).strip("-").lower()
+    return fallback or "camera"
+
+
+def _fresh_template_nodes(template: dict[str, Any]) -> list[dict[str, Any]]:
+    """Clone template nodes and replace every node and connection UUID."""
+    nodes = deepcopy(template["nodes"])
+    uuid_map = {node["uuid"]: f"op-{uuid.uuid4().hex}" for node in nodes}
+    for node in nodes:
+        node["uuid"] = uuid_map[node["uuid"]]
+        for connection in node.get("connections", []):
+            connection["from_uuid"] = uuid_map[connection["from_uuid"]]
+            connection["to_uuid"] = uuid_map[connection["to_uuid"]]
+    return nodes
+
+
+def _connection(
+    from_uuid: str,
+    from_port: str,
+    to_uuid: str,
+    to_port: str,
+    data_type: str,
+) -> dict[str, Any]:
+    """Build one standard pipeline connection record."""
+    return {
+        "from_uuid": from_uuid,
+        "from_port": from_port,
+        "to_uuid": to_uuid,
+        "to_port": to_port,
+        "data_type": data_type,
+        "is_default": False,
+        "custom_waypoints": None,
+    }
+
+
+def build_first_boot_pipeline(
+    templates: dict[str, Any],
+    *,
+    camera_bus_id: str,
+    source_name: str,
+    mode: str,
+    model_id: str = "",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build one runnable camera pipeline and its verification key records.
+
+    Args:
+        templates: Parsed bundled pipeline templates.
+        camera_bus_id: Stable camera bus identifier.
+        source_name: Unique source segment used in NetworkTables keys.
+        mode: One of ``localize``, ``detect``, or ``both``.
+        model_id: Optional managed CPU model ID. An empty value leaves detection idle.
+
+    Returns:
+        Generated operation list and expected NetworkTables key records.
+    """
+    if mode not in _ALLOWED_MODES:
+        raise ValueError(f"Unsupported camera mode: {mode!r}")
+
+    template_id = (
+        "apriltag_localization" if mode == "localize" else "object_detection_cpu"
+    )
+    nodes = _fresh_template_nodes(templates[template_id])
+    nodes_by_action = {node["action_name"]: node for node in nodes}
+
+    for action_name in (
+        "device_input.py",
+        "temporal_acceleration_preprocessor_rust.py",
+        "pnp_camera_localization.py",
+        "ground_plane_intersection.py",
+    ):
+        node = nodes_by_action.get(action_name)
+        if node is not None:
+            node.setdefault("action_params", {})["camera_bus_id"] = camera_bus_id
+
+    for action_name in (
+        "temporal_acceleration_preprocessor_rust.py",
+        "pnp_camera_localization.py",
+    ):
+        node = nodes_by_action[action_name]
+        node["action_params"]["apriltag_map_path"] = _APRILTAG_MAP_PATH
+
+    detector = nodes_by_action.get("object_detection.py")
+    if detector is not None:
+        detector["action_params"].update({"model_id": model_id, "device_id": "cpu"})
+
+    pnp_node = nodes_by_action["pnp_camera_localization.py"]
+    transform_node = nodes_by_action.pop("camera_pose_output.py")
+    transform_node["action_name"] = "camera_to_robot_pose.py"
+    transform_node["action_params"] = {"camera_bus_id": camera_bus_id}
+    robot_output: dict[str, Any] = {
+        "action_name": "robot_pose_output.py",
+        "action_params": {},
+        "position": {
+            "x": transform_node.get("position", {}).get("x", 1920) + 340,
+            "y": transform_node.get("position", {}).get("y", 100),
+        },
+        "uuid": f"op-{uuid.uuid4().hex}",
+        "connections": [],
+    }
+
+    pose_publisher = next(
+        node
+        for node in nodes
+        if node["action_name"] == "publish_to_networktables.py"
+        and node.get("action_params", {}).get("target_key") == "camera_pose"
+    )
+    pose_key = f"localization/{source_name}"
+    pose_publisher["action_params"].update(
+        {"target_key": pose_key, "schema": "pose3d", "data_path": []}
+    )
+    pnp_node["connections"] = [
+        item
+        for item in pnp_node["connections"]
+        if item["to_uuid"] != pose_publisher["uuid"]
+    ]
+    transform_node["connections"] = [
+        _connection(
+            transform_node["uuid"],
+            "robot_pose",
+            robot_output["uuid"],
+            "pose",
+            "robot_pose",
+        ),
+        _connection(
+            transform_node["uuid"],
+            "robot_pose",
+            pose_publisher["uuid"],
+            "data",
+            "robot_pose",
+        ),
+    ]
+    nodes.append(robot_output)
+
+    verification_keys: list[dict[str, Any]] = []
+    if mode == "detect":
+        nodes = [node for node in nodes if node["uuid"] != pose_publisher["uuid"]]
+        transform_node["connections"] = [
+            item
+            for item in transform_node["connections"]
+            if item["to_uuid"] != pose_publisher["uuid"]
+        ]
+    else:
+        verification_keys.append({"key": pose_key, "required": True})
+
+    if mode != "localize":
+        detection_publisher = next(
+            node
+            for node in nodes
+            if node["action_name"] == "publish_to_networktables.py"
+            and node.get("action_params", {}).get("target_key") == "detected_objects"
+        )
+        detection_key = f"detections/{source_name}"
+        detection_publisher["action_params"].update(
+            {"target_key": detection_key, "schema": "json", "data_path": []}
+        )
+        verification_keys.append(
+            {"key": detection_key, "required": mode == "detect" or bool(model_id)}
+        )
+
+    return nodes, verification_keys
+
+
+class FirstBootMixin:
+    """Expose the guided first-boot setup contract to the WebUI."""
+
+    def _write_general_conf(self, config: dict[str, Any]) -> None:
+        """Atomically persist the complete general configuration."""
+        GENERAL_CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_descriptor, temporary_name = tempfile.mkstemp(
+            dir=GENERAL_CONF_PATH.parent,
+            prefix=".general_conf.",
+            suffix=".tmp",
+            text=True,
+        )
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as stream:
+                json.dump(config, stream, indent=4)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_name, GENERAL_CONF_PATH)
+        finally:
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+
+    def _save_first_boot_state(self, **updates: Any) -> dict[str, Any]:
+        """Merge first-boot fields into persistent general configuration."""
+        config = self._read_general_conf()
+        config.update(updates)
+        with self._general_conf_lock:
+            self._write_general_conf(config)
+        return config
+
+    def _first_boot_camera_records(self) -> list[dict[str, str]]:
+        """Return active cameras in the wizard's stable public shape."""
+        cameras: list[dict[str, str]] = []
+        for camera_name, camera_info in self.available_cameras.items():
+            if not isinstance(camera_info, dict):
+                continue
+            bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
+            if not bus_id:
+                continue
+            cameras.append(
+                {
+                    "name": str(camera_name),
+                    "bus_id": bus_id,
+                    "stream_name": str(camera_info.get("name") or camera_name),
+                }
+            )
+        return sorted(cameras, key=lambda camera: (camera["name"], camera["bus_id"]))
+
+    def _networktable_topic_names(self) -> set[str]:
+        """Return currently announced NetworkTables topic names without table prefix."""
+        instance = getattr(self, "network_table_instance", None)
+        if instance is None:
+            return set()
+        try:
+            names = {str(topic.getName()) for topic in instance.getTopics()}
+        except (AttributeError, RuntimeError) as error:
+            self.log(
+                f"Failed reading NetworkTables topics for setup verification: {error}"
+            )
+            return set()
+        return {
+            name.removeprefix("/EagleEye/").removeprefix("EagleEye/") for name in names
+        }
+
+    def get_first_boot_status(self) -> tuple[dict[str, Any], int]:
+        """Return first-boot state plus live pipeline and NetworkTables checks."""
+        config = self._read_general_conf()
+        completed = config.get(_COMPLETED_KEY) is True
+        verification_pending = config.get(_VERIFICATION_PENDING_KEY) is True
+        pipeline_config = self._load_pipeline_config_file()
+        required = not completed and not verification_pending and not pipeline_config
+        pipeline_names = [
+            str(name)
+            for name in config.get(_PIPELINES_KEY, [])
+            if isinstance(name, str)
+        ]
+        pipeline_objects = self.pipeline_objects_callback()
+        pipelines = []
+        for pipeline_name in pipeline_names:
+            pipeline = pipeline_objects.get(pipeline_name)
+            try:
+                active = pipeline is not None and bool(pipeline.is_active())
+            except (AttributeError, RuntimeError):
+                active = False
+            pipelines.append({"name": pipeline_name, "active": active})
+
+        topic_names = self._networktable_topic_names()
+        expected_keys = [
+            item
+            for item in config.get(_VERIFICATION_KEYS_KEY, [])
+            if isinstance(item, dict) and isinstance(item.get("key"), str)
+        ]
+        return {
+            "required": required,
+            "completed": completed,
+            "verification_pending": verification_pending,
+            "cameras": self._first_boot_camera_records(),
+            "pipelines": pipelines,
+            "network_table": self._build_network_table_status(),
+            "networktable_keys": [
+                {
+                    "key": item["key"],
+                    "required": item.get("required") is True,
+                    "present": item["key"] in topic_names,
+                }
+                for item in expected_keys
+            ],
+        }, 200
+
+    def skip_first_boot(self) -> tuple[dict[str, bool], int]:
+        """Persist that the user skipped automatic first-boot display."""
+        self._save_first_boot_state(
+            **{_COMPLETED_KEY: True, _VERIFICATION_PENDING_KEY: False}
+        )
+        return {"completed": True, "skipped": True}, 200
+
+    def finish_first_boot(self) -> tuple[dict[str, bool], int]:
+        """Persist that the user reached and accepted live verification."""
+        self._save_first_boot_state(
+            **{_COMPLETED_KEY: True, _VERIFICATION_PENDING_KEY: False}
+        )
+        return {"completed": True, "verification_pending": False}, 200
+
+    def generate_first_boot_pipelines(self) -> tuple[dict[str, Any], int]:
+        """Validate wizard input and persist template-generated camera pipelines."""
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return {"error": "Expected JSON object payload"}, 400
+        if set(payload) - {"network_table_address", "cameras"}:
+            return {"error": "Unexpected setup fields"}, 400
+
+        address = payload.get("network_table_address")
+        camera_payloads = payload.get("cameras")
+        if not isinstance(address, str) or not address.strip():
+            return {"error": "NetworkTables address is required"}, 400
+        if not isinstance(camera_payloads, list) or not camera_payloads:
+            return {"error": "At least one camera is required"}, 400
+
+        available_by_bus_id = {
+            camera["bus_id"]: camera for camera in self._first_boot_camera_records()
+        }
+        config = self._read_general_conf()
+        current_pipelines = self._load_pipeline_config_file()
+        old_pipeline_names = {
+            name for name in config.get(_PIPELINES_KEY, []) if isinstance(name, str)
+        }
+        retained_pipelines = {
+            name: operations
+            for name, operations in current_pipelines.items()
+            if name not in old_pipeline_names
+        }
+        reserved_pipeline_names = set(retained_pipelines)
+        reserved_target_keys = {
+            target_key
+            for operations in retained_pipelines.values()
+            for operation in operations
+            if isinstance(operation, dict)
+            and operation.get("action_name") == "publish_to_networktables.py"
+            and isinstance(operation.get("action_params"), dict)
+            and isinstance(
+                target_key := operation["action_params"].get("target_key"), str
+            )
+        }
+        base_sources = {
+            available_bus_id: _source_slug(camera["name"], available_bus_id)
+            for available_bus_id, camera in available_by_bus_id.items()
+        }
+        source_groups: dict[str, list[str]] = {}
+        for available_bus_id, base_source in base_sources.items():
+            source_groups.setdefault(base_source, []).append(available_bus_id)
+        sources_by_bus_id: dict[str, str] = {}
+        used_sources: set[str] = set()
+        for base_source, grouped_bus_ids in source_groups.items():
+            for available_bus_id in sorted(grouped_bus_ids):
+                source = base_source
+                if len(grouped_bus_ids) > 1:
+                    source = f"{base_source}-{_source_slug('', available_bus_id)}"
+                suffix = 2
+                candidate = source
+                while (
+                    candidate in used_sources
+                    or f"localization/{candidate}" in reserved_target_keys
+                    or f"detections/{candidate}" in reserved_target_keys
+                ):
+                    candidate = f"{source}-{suffix}"
+                    suffix += 1
+                sources_by_bus_id[available_bus_id] = candidate
+                used_sources.add(candidate)
+
+        parsed_cameras: list[dict[str, str]] = []
+        seen_bus_ids: set[str] = set()
+        for item in camera_payloads:
+            if not isinstance(item, dict) or set(item) - {"bus_id", "mode", "model_id"}:
+                return {
+                    "error": "Each camera requires bus_id, mode, and optional model_id"
+                }, 400
+            bus_id = item.get("bus_id")
+            mode = item.get("mode")
+            model_id = item.get("model_id", "")
+            if not isinstance(bus_id, str) or bus_id not in available_by_bus_id:
+                return {"error": f"Camera {bus_id!r} is not active"}, 400
+            if bus_id in seen_bus_ids:
+                return {"error": f"Camera {bus_id!r} was selected more than once"}, 400
+            if mode not in _ALLOWED_MODES:
+                return {"error": f"Unsupported camera mode: {mode!r}"}, 400
+            if not isinstance(model_id, str):
+                return {"error": "model_id must be a string"}, 400
+            model_id = model_id.strip()
+            if mode == "detect" and not model_id:
+                return {"error": "Detect-only pipelines require a CPU model"}, 400
+            if model_id:
+                try:
+                    self.model_library.resolve_artifact(model_id, "cpu")
+                except ModelLibraryError as error:
+                    return {"error": str(error)}, 400
+
+            camera_config = self.camera_config_registry.get_config(bus_id)
+            if (
+                not camera_config.intrinsics_path
+                or not Path(camera_config.intrinsics_path).is_file()
+            ):
+                return {"error": f"Camera {bus_id!r} needs intrinsics calibration"}, 400
+            parsed_cameras.append(
+                {"bus_id": bus_id, "mode": mode, "model_id": model_id}
+            )
+            seen_bus_ids.add(bus_id)
+
+        templates = json.loads(_TEMPLATE_PATH.read_text(encoding="utf-8"))
+        generated: dict[str, list[dict[str, Any]]] = {}
+        verification_keys: list[dict[str, Any]] = []
+        for camera in parsed_cameras:
+            source_name = sources_by_bus_id[camera["bus_id"]]
+            pipeline_name = f"wizard-{source_name}-{camera['mode']}"
+            suffix = 2
+            while (
+                pipeline_name in reserved_pipeline_names or pipeline_name in generated
+            ):
+                pipeline_name = f"wizard-{source_name}-{camera['mode']}-{suffix}"
+                suffix += 1
+            nodes, expected_keys = build_first_boot_pipeline(
+                templates,
+                camera_bus_id=camera["bus_id"],
+                source_name=source_name,
+                mode=camera["mode"],
+                model_id=camera["model_id"],
+            )
+            generated[pipeline_name] = nodes
+            verification_keys.extend(expected_keys)
+
+        for old_name in old_pipeline_names:
+            current_pipelines.pop(old_name, None)
+        current_pipelines.update(generated)
+        self._write_pipeline_config_file(current_pipelines)
+        self._save_first_boot_state(
+            network_table_address=address.strip(),
+            **{
+                _COMPLETED_KEY: False,
+                _VERIFICATION_PENDING_KEY: True,
+                _PIPELINES_KEY: list(generated),
+                _VERIFICATION_KEYS_KEY: verification_keys,
+            },
+        )
+        self.restart_required_for_config = True
+        return {
+            "completed": False,
+            "verification_pending": True,
+            "pipelines": list(generated),
+            "networktable_keys": verification_keys,
+            "restart_required": True,
+            "runtime_id": getattr(self, "runtime_id", ""),
+        }, 200

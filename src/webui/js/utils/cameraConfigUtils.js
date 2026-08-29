@@ -954,6 +954,31 @@ function setupDropzone() {
 }
 
 /**
+ * Open the existing intrinsics calibration flow for a selected camera.
+ *
+ * @param {string} cameraBusId - Stable camera bus identifier.
+ * @returns {Promise<void>}
+ */
+export async function openCameraCalibration(cameraBusId) {
+    initCameraConfigUtils();
+    currentCameraBusId = String(cameraBusId);
+    await loadCameraList();
+    const select = getElement("utilsCameraSelect");
+    if (
+        !select?.querySelector(
+            `option[value="${CSS.escape(currentCameraBusId)}"]`,
+        )
+    ) {
+        throw new Error("The selected camera is no longer active.");
+    }
+    select.value = currentCameraBusId;
+    currentCalibrationStreamName =
+        select.selectedOptions?.[0]?.dataset?.streamName || "";
+    await loadCameraConfig(currentCameraBusId);
+    await openCalibrationModal();
+}
+
+/**
  * Initializes the camera configuration utilities UI.
  */
 export function initCameraConfigUtils() {

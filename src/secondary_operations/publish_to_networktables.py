@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
 from typing import Any
@@ -104,6 +105,11 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
 
 
 def _coerce_wpilib(value: Any, schema: str) -> Any:
+    if schema == "json":
+        try:
+            return json.dumps(value, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError):
+            return None
     if schema in {"double", "float", "number"} and isinstance(value, int | float):
         return float(value)
     if schema in {"boolean", "bool"} and isinstance(value, bool):

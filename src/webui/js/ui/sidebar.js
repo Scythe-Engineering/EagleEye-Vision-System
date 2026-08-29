@@ -21,7 +21,11 @@ const VIEWS = {
     PIPELINE: "view-pipeline",
     SYSTEM: "view-system",
     UTILS: "view-utils",
+    FIRST_BOOT: "view-first-boot",
 };
+
+let activeViewManager = null;
+let activeUrlManager = null;
 
 const FIELD_ASSETS = {
     FIELD_2025_DEFAULT:
@@ -127,7 +131,8 @@ class ViewManager {
                             gamePieceUrls: fieldModel?.gamePieceUrls,
                             aprilTagMapUrl: fieldModel?.aprilTagMapUrl,
                             fieldScale: fieldModel?.fieldScale,
-                            fieldRotationOffset: fieldModel?.fieldRotationOffset,
+                            fieldRotationOffset:
+                                fieldModel?.fieldRotationOffset,
                             fieldYear: fieldModel?.fieldYear,
                             fieldFilename: fieldModel?.fieldFilename,
                         },
@@ -188,11 +193,24 @@ class URLManager {
 }
 
 /**
+ * Activate a mounted application view and synchronize the URL.
+ *
+ * @param {string} viewId - Mounted view element ID.
+ */
+export function activateAppView(viewId) {
+    if (!document.getElementById(viewId)) return;
+    activeViewManager?.activateView(viewId);
+    activeUrlManager?.updateTab(viewId);
+}
+
+/**
  * Wire up sidebar click handling and initialize the default or URL-selected view.
  */
 export function setupSidebar() {
     const viewManager = new ViewManager();
     const urlManager = new URLManager();
+    activeViewManager = viewManager;
+    activeUrlManager = urlManager;
     const sidebarItems = document.querySelectorAll(".sidebar li");
 
     /**
@@ -204,8 +222,7 @@ export function setupSidebar() {
         if (!targetViewId) {
             return;
         }
-        viewManager.activateView(targetViewId);
-        urlManager.updateTab(targetViewId);
+        activateAppView(targetViewId);
     }
 
     for (const item of sidebarItems) {

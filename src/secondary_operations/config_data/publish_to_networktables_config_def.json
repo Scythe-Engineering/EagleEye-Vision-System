@@ -22,7 +22,7 @@
         },
         "schema": {
             "type": "str",
-            "description": "WPILib struct type: 'auto' detects from value shape, 'pose3d' forces Pose3d, 'pose2d' projects to Pose2d",
+            "description": "Published value schema: 'auto' detects WPILib types, 'pose3d' forces Pose3d, 'pose2d' projects to Pose2d, and 'json' publishes objects as a compact JSON string",
             "default": "auto",
             "required": false,
             "restart_for_change": false
