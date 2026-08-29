@@ -86,16 +86,28 @@ class TerminalMixin:
         if not isinstance(command, str) or not command.strip():
             return self._terminal_payload(error="Command is required", exit_code=1), 400
         command = command.strip()
+        password = body.get("sudo_password") if isinstance(body, dict) else None
+        if password is not None and not isinstance(password, str):
+            return self._terminal_payload(
+                error="sudo_password must be a string", exit_code=1
+            ), 400
+        if password is not None and len(password.encode()) > 4096:
+            return self._terminal_payload(
+                error="sudo_password is too long", exit_code=1
+            ), 400
 
         # ponytail: one lock for the whole process, the UI drives a single session.
         with _TERMINAL_LOCK:
-            return self._run_terminal_command(command)
+            return self._run_terminal_command(command, password)
 
-    def _run_terminal_command(self, command: str) -> tuple[dict[str, Any], int]:
+    def _run_terminal_command(
+        self, command: str, sudo_password: str | None = None
+    ) -> tuple[dict[str, Any], int]:
         """Run one command and carry any ``cd`` it performs over to the next call.
 
         Args:
             command: Shell command text to execute.
+            sudo_password: Password supplied to sudo through standard input.
 
         Returns:
             Tuple of response payload and HTTP status code.
@@ -112,20 +124,29 @@ class TerminalMixin:
                 tempfile.TemporaryFile() as stdout_file,
                 tempfile.TemporaryFile() as stderr_file,
             ):
+                shell_prefix = ""
+                if sudo_password is not None:
+                    shell_prefix = 'sudo() { command sudo -S -p "" "$@"; }\n'
+
                 process = subprocess.Popen(
                     [
                         BASH_EXECUTABLE,
                         "-c",
-                        f"{command}\n"
+                        shell_prefix
+                        + f"{command}\n"
                         "__ee_status=$?\n"
                         f"pwd -P > {shlex.quote(cwd_file.name)}\n"
                         "exit $__ee_status\n",
                     ],
                     cwd=self._terminal_cwd,
+                    stdin=subprocess.PIPE if sudo_password is not None else None,
                     stdout=stdout_file,
                     stderr=stderr_file,
                     start_new_session=True,
                 )
+                if process.stdin is not None and sudo_password is not None:
+                    process.stdin.write((sudo_password + "\n").encode())
+                    process.stdin.close()
                 try:
                     exit_code = process.wait(timeout=TERMINAL_TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:

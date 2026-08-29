@@ -10,6 +10,7 @@ let terminalHistoryIndex = -1;
 let terminalDraftCommand = "";
 let terminalCommandInFlight = false;
 let terminalPromptRevision = 0;
+let pendingSudoCommand = null;
 
 /**
  * Wire up terminal and log-related UI event handlers.
@@ -89,6 +90,10 @@ export function initializeTerminalHandlers() {
                     return;
                 }
 
+                if (terminalInput.type === "password") {
+                    return;
+                }
+
                 if (event.key === "ArrowUp") {
                     event.preventDefault();
                     navigateTerminalHistory(-1);
@@ -115,7 +120,9 @@ async function loadTerminalPrompt() {
         const response = await fetch(buildBackendUrl("/terminal/cwd"));
         const data = await response.json();
         if (!response.ok) {
-            throw new Error(data.error || data.message || `HTTP ${response.status}`);
+            throw new Error(
+                data.error || data.message || `HTTP ${response.status}`,
+            );
         }
         if (revision === terminalPromptRevision) {
             applyTerminalPrompt(data);
@@ -238,24 +245,41 @@ async function sendTerminalCommand() {
         return;
     }
 
-    const command = terminalInput.value.trim();
-    if (!command) {
-        return;
-    }
+    let command;
+    let sudoPassword;
+    if (pendingSudoCommand !== null) {
+        command = pendingSudoCommand;
+        sudoPassword = terminalInput.value;
+        pendingSudoCommand = null;
+        terminalInput.type = "text";
+        terminalInput.placeholder = "Enter command...";
+    } else {
+        command = terminalInput.value.trim();
+        if (!command) {
+            return;
+        }
 
-    if (command === "clear" || command === "cls") {
+        if (command === "clear" || command === "cls") {
+            pushTerminalHistory(command);
+            terminalInput.value = "";
+            clearTerminalDisplay();
+            return;
+        }
+
         pushTerminalHistory(command);
-        terminalInput.value = "";
-        clearTerminalDisplay();
-        return;
+        appendToTerminal(
+            terminalOutput,
+            `${terminalPromptText} ${command}`,
+            "command",
+        );
+        if (/^sudo(?:\s|$)/.test(command)) {
+            pendingSudoCommand = command;
+            terminalInput.value = "";
+            terminalInput.type = "password";
+            terminalInput.placeholder = "Enter sudo password...";
+            return;
+        }
     }
-
-    pushTerminalHistory(command);
-    appendToTerminal(
-        terminalOutput,
-        `${terminalPromptText} ${command}`,
-        "command",
-    );
     terminalInput.value = "";
     terminalCommandInFlight = true;
     setTerminalInputEnabled(false);
@@ -266,8 +290,9 @@ async function sendTerminalCommand() {
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ command }),
+            body: JSON.stringify({ command, sudo_password: sudoPassword }),
         });
+        sudoPassword = undefined;
         const data = await response.json();
         if (!response.ok && !data.error) {
             data.error = data.message || `HTTP ${response.status}`;
