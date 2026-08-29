@@ -272,7 +272,7 @@ async function sendTerminalCommand() {
             `${terminalPromptText} ${command}`,
             "command",
         );
-        if (/(^|[;&|]\s*)sudo(?:\s|$)/.test(command)) {
+        if (/^sudo(?:\s|$)/.test(command)) {
             pendingSudoCommand = command;
             terminalInput.value = "";
             terminalInput.type = "password";

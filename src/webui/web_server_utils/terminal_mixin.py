@@ -91,6 +91,10 @@ class TerminalMixin:
             return self._terminal_payload(
                 error="sudo_password must be a string", exit_code=1
             ), 400
+        if password is not None and len(password) > 4096:
+            return self._terminal_payload(
+                error="sudo_password is too long", exit_code=1
+            ), 400
 
         # ponytail: one lock for the whole process, the UI drives a single session.
         with _TERMINAL_LOCK:
@@ -115,6 +119,7 @@ class TerminalMixin:
             mode="w", prefix="eagleeye-terminal-", suffix=".cwd", delete=False
         )
         cwd_file.close()
+        password_read_fd: int | None = None
         try:
             with (
                 tempfile.TemporaryFile() as stdout_file,
@@ -123,19 +128,24 @@ class TerminalMixin:
             ):
                 env = os.environ.copy()
                 shell_prefix = ""
+                pass_fds: tuple[int, ...] = ()
                 if sudo_password is not None:
-                    password_file = Path(sudo_dir, "password")
-                    password_file.write_text(sudo_password, encoding="utf-8")
-                    password_file.chmod(0o600)
+                    password_read_fd, password_write_fd = os.pipe()
+                    os.write(password_write_fd, sudo_password.encode())
+                    os.close(password_write_fd)
                     askpass_file = Path(sudo_dir, "askpass")
                     askpass_file.write_text(
-                        '#!/bin/sh\ncat "$EAGLEEYE_SUDO_PASSWORD_FILE"\n',
+                        '#!/bin/sh\ncat <&"$EAGLEEYE_SUDO_PASSWORD_FD"\n',
                         encoding="utf-8",
                     )
                     askpass_file.chmod(0o700)
                     env["SUDO_ASKPASS"] = str(askpass_file)
-                    env["EAGLEEYE_SUDO_PASSWORD_FILE"] = str(password_file)
-                    shell_prefix = 'sudo() { command sudo -A "$@"; }\n'
+                    env["EAGLEEYE_SUDO_PASSWORD_FD"] = str(password_read_fd)
+                    pass_fds = (password_read_fd,)
+                    shell_prefix = (
+                        'sudo() { command sudo -C "$((EAGLEEYE_SUDO_PASSWORD_FD + 1))" '
+                        '-A "$@"; }\n'
+                    )
 
                 process = subprocess.Popen(
                     [
@@ -149,6 +159,7 @@ class TerminalMixin:
                     ],
                     cwd=self._terminal_cwd,
                     env=env,
+                    pass_fds=pass_fds,
                     stdout=stdout_file,
                     stderr=stderr_file,
                     start_new_session=True,
@@ -187,6 +198,8 @@ class TerminalMixin:
                 error=f"Failed to execute command: {error}", exit_code=1
             ), 500
         finally:
+            if password_read_fd is not None:
+                os.close(password_read_fd)
             try:
                 os.unlink(cwd_file.name)
             except OSError:

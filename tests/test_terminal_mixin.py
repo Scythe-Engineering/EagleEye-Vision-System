@@ -24,7 +24,13 @@ class _TerminalHarness(TerminalMixin):
 def _queue_command(
     monkeypatch: Any, command: str, sudo_password: str | None = None
 ) -> None:
-    """Make the next execute_terminal_command call read this command."""
+    """Make the next execute_terminal_command call read this command.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace the request object.
+        command: Command supplied by the simulated request.
+        sudo_password: Optional password supplied by the simulated request.
+    """
     body = {"command": command}
     if sudo_password is not None:
         body["sudo_password"] = sudo_password
@@ -100,14 +106,21 @@ def test_non_object_payload_is_rejected(monkeypatch: Any) -> None:
 def test_sudo_password_uses_askpass_without_echoing(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Pass a sudo password through askpass without including it in output."""
+    """Pass a sudo password through askpass without including it in output.
+
+    Args:
+        tmp_path: Temporary directory used for the fake sudo executable.
+        monkeypatch: Pytest fixture used to configure the test environment.
+    """
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_sudo = fake_bin / "sudo"
     fake_sudo.write_text(
         "#!/bin/sh\n"
-        '[ "$1" = "-A" ] || exit 90\n'
-        '[ "$("$SUDO_ASKPASS")" = "test-password" ] || exit 91\n'
+        '[ "$1" = "-C" ] || exit 90\n'
+        "shift 2\n"
+        '[ "$1" = "-A" ] || exit 91\n'
+        '[ "$("$SUDO_ASKPASS")" = "test-password" ] || exit 92\n'
         'printf "password accepted\\n"\n',
         encoding="utf-8",
     )

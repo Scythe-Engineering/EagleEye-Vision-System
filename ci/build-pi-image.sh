@@ -65,7 +65,10 @@ phase "Growing image and root filesystem"
 truncate -s +"$IMAGE_GROW_BYTES" "$OUT_IMG"
 LOOP="$(losetup -fP --show "$OUT_IMG")"
 parted -s "$LOOP" resizepart 2 100%
-e2fsck -pf "${LOOP}p2"
+e2fsck -pf "${LOOP}p2" || {
+    status=$?
+    [[ $status == 1 || $status == 2 ]] || exit "$status"
+}
 resize2fs "${LOOP}p2"
 
 phase "Mounting image"
@@ -163,7 +166,7 @@ grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polki
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
 phase "Unmounting and hashing image"
-cleanup
+(cleanup)
 trap - EXIT
 MNT=""
 LOOP=""

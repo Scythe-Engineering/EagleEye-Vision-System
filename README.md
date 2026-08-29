@@ -43,10 +43,11 @@ Tagged releases include an `.rpi-imager-manifest` asset. Open that file with the
 latest Raspberry Pi Imager, select EagleEye Vision System, and enter the Wi-Fi
 network or phone hotspot in OS customization before writing the card. The image
 starts SSH with username `eagleeye` and password `eagleeye`; change the password
-after the first login. USB gadget networking is enabled on first boot. Connect the
-Pi's OTG USB port directly to the computer and use `ssh eagleeye@10.12.194.1` or
-`ssh eagleeye@eagleeye.local`. The first boot may restart once while it enables
-the gadget.
+after the first login. On models with USB OTG support, USB gadget networking is
+enabled on first boot. Connect the OTG port directly to the computer and use
+`ssh eagleeye@10.12.194.1` or `ssh eagleeye@eagleeye.local`. On Pi 3/3B+, connect
+over the configured Wi-Fi or Ethernet network instead. The first boot may restart
+once while it enables the gadget.
 
 A fresh install ships an intentionally incomplete `2026_apriltag_starter`
 pipeline (Device Input -> Detect AprilTags -> PnP Camera Localization ->
