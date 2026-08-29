@@ -103,10 +103,10 @@ def test_non_object_payload_is_rejected(monkeypatch: Any) -> None:
     assert payload["error"] == "Command is required"
 
 
-def test_sudo_password_uses_askpass_without_echoing(
+def test_sudo_password_uses_stdin_without_echoing(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Pass a sudo password through askpass without including it in output.
+    """Pass a sudo password through stdin without including it in output.
 
     Args:
         tmp_path: Temporary directory used for the fake sudo executable.
@@ -117,10 +117,12 @@ def test_sudo_password_uses_askpass_without_echoing(
     fake_sudo = fake_bin / "sudo"
     fake_sudo.write_text(
         "#!/bin/sh\n"
-        '[ "$1" = "-C" ] || exit 90\n'
+        '[ "$1" = "-S" ] || exit 90\n'
+        "shift\n"
+        '[ "$1" = "-p" ] || exit 91\n'
         "shift 2\n"
-        '[ "$1" = "-A" ] || exit 91\n'
-        '[ "$("$SUDO_ASKPASS")" = "test-password" ] || exit 92\n'
+        'IFS= read -r password || exit 92\n'
+        '[ "$password" = "test-password" ] || exit 93\n'
         'printf "password accepted\\n"\n',
         encoding="utf-8",
     )
