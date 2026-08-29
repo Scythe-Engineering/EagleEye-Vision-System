@@ -316,10 +316,8 @@ class SystemMonitorMixin:
             remote_sha_by_branch = {
                 branch["name"]: branch["sha"] for branch in remote_branches
             }
-            remote_sha = remote_sha_by_branch.get(SYSTEM_UPDATE_DEFAULT_BRANCH)
-            remote_full_sha = remote_full_sha_by_branch.get(
-                SYSTEM_UPDATE_DEFAULT_BRANCH
-            )
+            remote_sha = remote_sha_by_branch.get(current_branch)
+            remote_full_sha = remote_full_sha_by_branch.get(current_branch)
             update_needed = (
                 remote_full_sha is None or remote_full_sha != current_sha_full
             )
