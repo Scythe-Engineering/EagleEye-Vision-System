@@ -99,16 +99,21 @@ class ObjectDetectionDefinition(OperationInstance):
                 self.model_library.resolve_artifact(candidate_id, self.device_id)
             except ModelLibraryError:
                 continue
-            self.delegate = ObjectDetectionImplementation(
-                model_id=candidate_id,
-                device_id=self.device_id,
-                device_registry=self.device_registry,
-                model_library=self.model_library,
-                confidence_threshold=self.confidence_threshold,
-                iou_threshold=self.iou_threshold,
-                max_detections=self.max_detections,
-                image_size=self.image_size,
-            )
+            try:
+                self.delegate = ObjectDetectionImplementation(
+                    model_id=candidate_id,
+                    device_id=self.device_id,
+                    device_registry=self.device_registry,
+                    model_library=self.model_library,
+                    confidence_threshold=self.confidence_threshold,
+                    iou_threshold=self.iou_threshold,
+                    max_detections=self.max_detections,
+                    image_size=self.image_size,
+                )
+            except (RuntimeError, ValueError):
+                if self.model_id:
+                    raise
+                continue
             self.model_id = candidate_id
             return self.delegate
         return None

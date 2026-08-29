@@ -175,8 +175,10 @@ class PublishToNetworktables(OperationInstance):
             self.target_key = json_config["target_key"]
             self._publisher = None
         if "schema" in json_config:
-            self.schema = json_config["schema"]
-            self._publisher = None
+            schema = json_config["schema"]
+            if schema != self.schema:
+                self._publisher = None
+            self.schema = schema
         if "data_path" in json_config:
             self.data_path_tokens = self._normalize_path(json_config["data_path"])
 

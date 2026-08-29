@@ -6,7 +6,6 @@ import json
 import os
 import re
 import tempfile
-import threading
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -285,8 +284,10 @@ class FirstBootMixin:
 
     def _first_boot_camera_records(self) -> list[dict[str, str]]:
         """Return active cameras in the wizard's stable public shape."""
+        with self.frame_list_structure_lock:
+            available_cameras = list(self.available_cameras.items())
         cameras: list[dict[str, str]] = []
-        for camera_name, camera_info in self.available_cameras.items():
+        for camera_name, camera_info in available_cameras:
             if not isinstance(camera_info, dict):
                 continue
             bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
@@ -391,12 +392,8 @@ class FirstBootMixin:
         if not isinstance(camera_payloads, list) or not camera_payloads:
             return {"error": "At least one camera is required"}, 400
 
-        lock = getattr(self, "_pipeline_settings_lock", None) or threading.RLock()
-        self._pipeline_settings_lock = lock
-        with lock:
-            return self._generate_first_boot_pipelines_locked(
-                address, camera_payloads
-            )
+        with self._pipeline_settings_lock:
+            return self._generate_first_boot_pipelines_locked(address, camera_payloads)
 
     def _generate_first_boot_pipelines_locked(
         self, address: str, camera_payloads: list[Any]
@@ -412,6 +409,7 @@ class FirstBootMixin:
         }
         config = self._read_general_conf()
         current_pipelines = self._load_pipeline_config_file()
+        current_pipelines_before_update = deepcopy(current_pipelines)
         old_pipeline_names = {
             name for name in config.get(_PIPELINES_KEY, []) if isinstance(name, str)
         }
@@ -489,15 +487,22 @@ class FirstBootMixin:
             current_pipelines.pop(old_name, None)
         current_pipelines.update(generated)
         self._write_pipeline_config_file(current_pipelines)
-        self._save_first_boot_state(
-            network_table_address=address.strip(),
-            **{
-                _COMPLETED_KEY: False,
-                _VERIFICATION_PENDING_KEY: True,
-                _PIPELINES_KEY: list(generated),
-                _VERIFICATION_KEYS_KEY: verification_keys,
-            },
-        )
+        try:
+            self._save_first_boot_state(
+                network_table_address=address.strip(),
+                **{
+                    _COMPLETED_KEY: False,
+                    _VERIFICATION_PENDING_KEY: True,
+                    _PIPELINES_KEY: list(generated),
+                    _VERIFICATION_KEYS_KEY: verification_keys,
+                },
+            )
+        except Exception:
+            # Metadata determines whether the wizard is shown. If it cannot be
+            # persisted, restore the exact pipeline snapshot so an untracked
+            # wizard pipeline cannot suppress setup on the next status check.
+            self._write_pipeline_config_file(current_pipelines_before_update)
+            raise
         self.restart_required_for_config = True
         return {
             "completed": False,

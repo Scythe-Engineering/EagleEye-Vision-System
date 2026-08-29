@@ -693,8 +693,26 @@ async function handleGuideContinue() {
         return;
     }
     if (state.step === WIZARD_STEP.EXTRINSICS) {
-        if (!(await saveExtrinsics())) {
-            setGuideStatus("Save extrinsics before continuing.");
+        if (!state.currentCamera?.bus_id) {
+            setGuideStatus("Choose a camera before saving extrinsics.", true);
+            return;
+        }
+        try {
+            const selectedBusId =
+                document.getElementById("utilsCameraSelect")?.value;
+            if (selectedBusId !== state.currentCamera.bus_id) {
+                await selectCameraConfig(state.currentCamera.bus_id);
+                setGuideStatus(
+                    "The selected camera changed. Enter this camera's extrinsics before continuing.",
+                );
+                return;
+            }
+            if (!(await saveExtrinsics())) {
+                setGuideStatus("Save extrinsics before continuing.");
+                return;
+            }
+        } catch (error) {
+            setGuideStatus(error.message, true);
             return;
         }
         goToStep(nextWizardStep(state.step));
@@ -823,20 +841,41 @@ function renderVerification(status) {
 }
 
 /**
+ * Return whether the verification panel and its 3D host view are visible.
+ *
+ * @param {HTMLElement | null} panel - Verification panel element.
+ * @returns {boolean} Whether polling may continue.
+ */
+function isVerificationPanelVisible(panel) {
+    return Boolean(
+        panel &&
+        !panel.classList.contains("hidden") &&
+        !document.getElementById("view-3d")?.classList.contains("hidden"),
+    );
+}
+
+/**
+ * Stop verification polling without interrupting an in-flight refresh.
+ */
+function stopVerificationPolling() {
+    clearInterval(state.verificationTimer);
+    state.verificationTimer = null;
+}
+
+/**
  * Refresh the final live verification checks.
  */
 async function refreshVerification() {
     const panel = document.getElementById("firstBootVerificationPanel");
-    if (!panel || panel.classList.contains("hidden")) {
-        clearInterval(state.verificationTimer);
-        state.verificationTimer = null;
+    if (!isVerificationPanelVisible(panel)) {
+        stopVerificationPolling();
         return;
     }
     if (state.verificationInFlight) return;
     state.verificationInFlight = true;
     try {
         const status = await fetchJson("/first-boot/status");
-        if (panel.classList.contains("hidden")) return;
+        if (!isVerificationPanelVisible(panel)) return;
         renderVerification(status);
     } catch (error) {
         document.getElementById("firstBootVerifyHint").textContent =
@@ -850,7 +889,7 @@ async function refreshVerification() {
  * Open the final verification panel over the existing live 3D view.
  */
 function openVerification() {
-    clearInterval(state.verificationTimer);
+    stopVerificationPolling();
     hideGuide();
     activateAppView("view-3d");
     const panel = document.getElementById("firstBootVerificationPanel");
@@ -882,10 +921,14 @@ export async function initializeFirstBootWizard() {
     document
         .getElementById("firstBootVerifyRetryBtn")
         ?.addEventListener("click", () => void refreshVerification());
+    document.querySelector(".sidebar")?.addEventListener("click", () => {
+        const panel = document.getElementById("firstBootVerificationPanel");
+        if (!isVerificationPanelVisible(panel)) stopVerificationPolling();
+    });
     document
         .getElementById("firstBootVerifySetupBtn")
         ?.addEventListener("click", () => {
-            clearInterval(state.verificationTimer);
+            stopVerificationPolling();
             document
                 .getElementById("firstBootVerificationPanel")
                 .classList.add("hidden");
@@ -896,7 +939,7 @@ export async function initializeFirstBootWizard() {
         ?.addEventListener("click", async () => {
             try {
                 await fetchJson("/first-boot/finish", { method: "POST" });
-                clearInterval(state.verificationTimer);
+                stopVerificationPolling();
                 sessionStorage.removeItem(VERIFICATION_SESSION_KEY);
                 clearWizardSession();
                 document

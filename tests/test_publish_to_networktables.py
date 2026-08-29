@@ -112,3 +112,47 @@ def test_publish_supports_primitive_double_arrays() -> None:
 
     assert table.values["values"] == [1.0, 2.5]
     assert table.values["values:timestamp"] == 654321
+
+
+def test_schema_change_recreates_the_typed_publisher() -> None:
+    class _Publisher:
+        def __init__(self, publisher_type: str) -> None:
+            self.publisher_type = publisher_type
+            self.values: list[float | str] = []
+
+        def set(self, value: float | str) -> None:
+            self.values.append(value)
+
+    class _Topic:
+        def __init__(self, publisher_type: str, publishers: list[_Publisher]) -> None:
+            self.publisher_type = publisher_type
+            self.publishers = publishers
+
+        def publish(self) -> _Publisher:
+            publisher = _Publisher(self.publisher_type)
+            self.publishers.append(publisher)
+            return publisher
+
+    class _NetworkTable:
+        def __init__(self) -> None:
+            self.publishers: list[_Publisher] = []
+
+        def getDoubleTopic(self, _key: str) -> _Topic:
+            return _Topic("double", self.publishers)
+
+        def getStringTopic(self, _key: str) -> _Topic:
+            return _Topic("string", self.publishers)
+
+    table = _NetworkTable()
+    operation = PublishToNetworktables(table, "value", schema="double")
+
+    operation.run(1)
+    operation.update_config({"schema": "string"})
+    operation.run("updated")
+
+    assert [publisher.publisher_type for publisher in table.publishers] == [
+        "double",
+        "string",
+    ]
+    assert table.publishers[0].values == [1.0]
+    assert table.publishers[1].values == ["updated"]

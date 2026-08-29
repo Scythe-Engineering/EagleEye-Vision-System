@@ -14,7 +14,10 @@ import src.main_operations.definitions.object_detection as object_detection_modu
 import src.webui.web_server_utils.first_boot_mixin as first_boot_module
 from src.config.utils.port_validation import validate_pipeline_connections
 from src.main_operations.definitions.object_detection import ObjectDetectionDefinition
-from src.webui.web_server_utils.first_boot_mixin import FirstBootMixin, build_first_boot_pipeline
+from src.webui.web_server_utils.first_boot_mixin import (
+    FirstBootMixin,
+    build_first_boot_pipeline,
+)
 
 
 class _Request:
@@ -56,6 +59,8 @@ class _FirstBootHarness(FirstBootMixin):
         }
         self.camera_config_registry = _CameraRegistry(intrinsics_by_bus_id)
         self._general_conf_lock = threading.Lock()
+        self._pipeline_settings_lock = threading.RLock()
+        self.frame_list_structure_lock = threading.Lock()
         self.restart_required_for_config = False
         self.runtime_id = "runtime-1"
         self.network_table_instance = None
@@ -226,6 +231,74 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     assert final_general["first_boot_wizard_verification_pending"] is False
 
 
+def test_first_boot_model_library_unavailable_is_actionable(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Return a service response instead of dereferencing an unready library."""
+    pipeline_path = tmp_path / "pipeline_config.json"
+    general_conf_path = tmp_path / "general_conf.json"
+    intrinsics_path = tmp_path / "intrinsics.json"
+    pipeline_path.write_text("{}\n", encoding="utf-8")
+    intrinsics_path.write_text("{}", encoding="utf-8")
+    harness = _FirstBootHarness(
+        pipeline_path, general_conf_path, {"1": intrinsics_path}
+    )
+    monkeypatch.setattr(
+        first_boot_module,
+        "request",
+        _Request(
+            {
+                "network_table_address": "10.0.0.2",
+                "cameras": [{"bus_id": "1", "mode": "detect", "model_id": "model-1"}],
+            }
+        ),
+    )
+
+    payload, status = harness.generate_first_boot_pipelines()
+
+    assert status == 503
+    assert payload == {"error": "Model library is not available"}
+
+
+def test_first_boot_rolls_back_pipelines_when_metadata_save_fails(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Do not leave wizard pipelines without matching first-boot metadata."""
+    pipeline_path = tmp_path / "pipeline_config.json"
+    general_conf_path = tmp_path / "general_conf.json"
+    intrinsics_path = tmp_path / "intrinsics.json"
+    original = {"existing": []}
+    pipeline_path.write_text(json.dumps(original), encoding="utf-8")
+    intrinsics_path.write_text("{}", encoding="utf-8")
+    harness = _FirstBootHarness(
+        pipeline_path, general_conf_path, {"1": intrinsics_path}
+    )
+    monkeypatch.setattr(
+        first_boot_module,
+        "request",
+        _Request(
+            {
+                "network_table_address": "10.0.0.2",
+                "cameras": [{"bus_id": "1", "mode": "localize", "model_id": ""}],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        harness,
+        "_save_first_boot_state",
+        lambda **_updates: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    try:
+        harness.generate_first_boot_pipelines()
+    except OSError as error:
+        assert str(error) == "disk full"
+    else:
+        raise AssertionError("metadata failure was not propagated")
+
+    assert json.loads(pipeline_path.read_text(encoding="utf-8")) == original
+
+
 def test_empty_detection_slot_loads_the_first_compatible_uploaded_model(
     monkeypatch: Any,
 ) -> None:
@@ -275,9 +348,7 @@ def test_empty_detection_slot_loads_the_first_compatible_uploaded_model(
 
 def test_detect_mode_builds_a_detection_pipeline() -> None:
     """Build a detect-only pipeline from the CPU object-detection template."""
-    templates = json.loads(
-        first_boot_module._TEMPLATE_PATH.read_text(encoding="utf-8")
-    )
+    templates = json.loads(first_boot_module._TEMPLATE_PATH.read_text(encoding="utf-8"))
     nodes, keys = build_first_boot_pipeline(
         templates,
         camera_bus_id="3",
