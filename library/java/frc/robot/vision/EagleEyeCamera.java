@@ -10,20 +10,23 @@ import edu.wpi.first.networktables.DoubleArraySubscriber;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
+import edu.wpi.first.networktables.StringArraySubscriber;
 import edu.wpi.first.networktables.StructSubscriber;
 import edu.wpi.first.networktables.TimestampedDoubleArray;
 import edu.wpi.first.networktables.TimestampedObject;
+import edu.wpi.first.networktables.TimestampedStringArray;
 import edu.wpi.first.wpilibj.DriverStation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * One EagleEye localization source: a pose topic and the metrics topic that weights it.
+ * One EagleEye localization source: pose, quality metrics, and field-space detections.
  *
- * <p>Both keys are supplied by robot code and are relative to the {@code EagleEye} table, so they
+ * <p>Keys are supplied by robot code and are relative to the {@code EagleEye} table, so they
  * must match the {@code target_key} on the matching {@code publish_to_networktables} operation in
  * the WebUI character for character. A key that nothing publishes produces a Driver Station
  * warning rather than silence.
@@ -57,6 +60,11 @@ public class EagleEyeCamera {
       int tagCount,
       double meanTagDistanceMeters,
       double reprojectionErrorPixels) {}
+
+  /** One detected game piece at a field-space position. */
+  public record GamePiece(String className, double xMeters, double yMeters, double zMeters) {}
+
+  private record CapturedPose(long timestampMicros, Pose2d pose) {}
 
   /** Receives a weighted measurement; pass {@code poseEstimator::addVisionMeasurement}. */
   @FunctionalInterface
@@ -102,27 +110,35 @@ public class EagleEyeCamera {
 
   private final String poseKey;
   private final String metaKey;
+  private final String detectionsKey;
   private final StructSubscriber<Pose3d> poseSubscriber;
   private final DoubleArraySubscriber metaSubscriber;
+  private final StringArraySubscriber detectionsSubscriber;
   private long lastWarningMicros;
+  private long latestDetectionsTimestamp;
+  private Pose2d latestDetectionPose = new Pose2d();
+  private List<GamePiece> latestDetections = List.of();
 
   // A pose and its metrics come from two separate NetworkTables publishers, so a network flush can
   // land between them and split one frame across two poll cycles. Carrying the leftovers for a
   // cycle removes that race; anything genuinely orphaned ages out below.
   private final List<TimestampedObject<Pose3d>> carriedPoses = new ArrayList<>();
   private final List<TimestampedDoubleArray> carriedMetas = new ArrayList<>();
+  private final List<TimestampedStringArray> carriedDetections = new ArrayList<>();
+  private final List<CapturedPose> recentPoses = new ArrayList<>();
 
   /**
    * Subscribe to a source that follows the shipped preset's naming.
    *
-   * <p>Equivalent to {@code new EagleEyeCamera(source + "/pose", source + "/meta")}. Use the
-   * two-key constructor when the pipeline publishes somewhere else.
+   * <p>Subscribes to {@code /pose}, {@code /meta}, and {@code /detections} below the source. Use
+   * the three-key constructor when the pipeline publishes somewhere else.
    *
    * @param source key prefix shared by both topics, such as {@code "localization/front"}.
    * @return a camera reading the source's {@code /pose} and {@code /meta} keys.
    */
   public static EagleEyeCamera forSource(String source) {
-    return new EagleEyeCamera(source + "/pose", source + "/meta");
+    return new EagleEyeCamera(
+        source + "/pose", source + "/meta", source + "/detections");
   }
 
   /**
@@ -137,8 +153,20 @@ public class EagleEyeCamera {
    *     "localization/front/meta"}.
    */
   public EagleEyeCamera(String poseKey, String metaKey) {
+    this(poseKey, metaKey, null);
+  }
+
+  /**
+   * Subscribe to localization and field-space detections by their exact keys.
+   *
+   * @param poseKey key of the {@code Pose3d} struct topic.
+   * @param metaKey key of the {@code double[3]} metrics topic.
+   * @param detectionsKey key of the flattened {@code String[]} detections topic.
+   */
+  public EagleEyeCamera(String poseKey, String metaKey, String detectionsKey) {
     this.poseKey = poseKey;
     this.metaKey = metaKey;
+    this.detectionsKey = detectionsKey;
     var table = NetworkTableInstance.getDefault().getTable(TABLE);
     // sendAll and keepDuplicates stop the server from coalescing frames the estimator wants: at
     // 90 fps against a 50 Hz loop, a plain subscription throws away most of the measurements.
@@ -150,6 +178,10 @@ public class EagleEyeCamera {
         };
     poseSubscriber = table.getStructTopic(poseKey, Pose3d.struct).subscribe(new Pose3d(), options);
     metaSubscriber = table.getDoubleArrayTopic(metaKey).subscribe(new double[0], options);
+    detectionsSubscriber =
+        detectionsKey == null
+            ? null
+            : table.getStringArrayTopic(detectionsKey).subscribe(new String[0], options);
   }
 
   /**
@@ -164,6 +196,9 @@ public class EagleEyeCamera {
   public List<Observation> poll() {
     carriedPoses.addAll(Arrays.asList(poseSubscriber.readQueue()));
     carriedMetas.addAll(Arrays.asList(metaSubscriber.readQueue()));
+    if (detectionsSubscriber != null) {
+      carriedDetections.addAll(Arrays.asList(detectionsSubscriber.readQueue()));
+    }
 
     long nowMicros = NetworkTablesJNI.now();
     warnIfKeysUnresolved(nowMicros);
@@ -185,13 +220,52 @@ public class EagleEyeCamera {
               sample.value.toPose2d(), sample.timestamp / 1e6, (int) meta[0], meta[1], meta[2]);
       if (isTrustworthy(observation)) {
         observations.add(observation);
+        recentPoses.add(new CapturedPose(sample.timestamp, observation.pose()));
       }
     }
 
     carriedPoses.clear();
     carriedPoses.addAll(unmatched);
     carriedMetas.removeIf(meta -> (nowMicros - meta.timestamp) / 1e6 > maximumSampleAgeSeconds);
+    joinDetections(nowMicros);
+    recentPoses.removeIf(
+        pose -> (nowMicros - pose.timestampMicros()) / 1e6 > maximumSampleAgeSeconds);
     return observations;
+  }
+
+  /**
+   * Return the nearest game piece from the newest detection frame joined to an accepted pose.
+   *
+   * <p>Call {@link #poll()} directly or {@link #update(VisionConsumer, EagleEyeCamera...)} first in
+   * the current robot loop so queued NetworkTables samples are drained.
+   *
+   * @return the nearest field-space game piece, or empty before a joined detection frame arrives.
+   */
+  public Optional<GamePiece> nearestGamePiece() {
+    return nearestGamePiece(null);
+  }
+
+  /**
+   * Return the nearest game piece of one class from the newest joined detection frame.
+   *
+   * @param className exact model class name, or {@code null} to accept every class.
+   * @return the nearest matching field-space game piece, or empty when none is fresh.
+   */
+  public Optional<GamePiece> nearestGamePiece(String className) {
+    double ageSeconds = (NetworkTablesJNI.now() - latestDetectionsTimestamp) / 1e6;
+    if (latestDetectionsTimestamp == 0L
+        || ageSeconds < 0.0
+        || ageSeconds > maximumSampleAgeSeconds) {
+      return Optional.empty();
+    }
+    return latestDetections.stream()
+        .filter(piece -> className == null || piece.className().equals(className))
+        .min(
+            Comparator.comparingDouble(
+                piece ->
+                    Math.hypot(
+                        piece.xMeters() - latestDetectionPose.getX(),
+                        piece.yMeters() - latestDetectionPose.getY())));
   }
 
   /**
@@ -246,7 +320,9 @@ public class EagleEyeCamera {
   private void warnIfKeysUnresolved(long nowMicros) {
     boolean poseMissing = !poseSubscriber.getTopic().exists();
     boolean metaMissing = !metaSubscriber.getTopic().exists();
-    if (!poseMissing && !metaMissing) {
+    boolean detectionsMissing =
+        detectionsSubscriber != null && !detectionsSubscriber.getTopic().exists();
+    if (!poseMissing && !metaMissing && !detectionsMissing) {
       lastWarningMicros = 0L;
       return;
     }
@@ -255,11 +331,13 @@ public class EagleEyeCamera {
       return;
     }
     lastWarningMicros = nowMicros;
-    DriverStation.reportWarning(unresolvedKeyMessage(poseMissing, metaMissing), false);
+    DriverStation.reportWarning(
+        unresolvedKeyMessage(poseMissing, metaMissing, detectionsMissing), false);
   }
 
   /** Say which key is missing and what to compare it against. */
-  private String unresolvedKeyMessage(boolean poseMissing, boolean metaMissing) {
+  private String unresolvedKeyMessage(
+      boolean poseMissing, boolean metaMissing, boolean detectionsMissing) {
     String posePath = TABLE + "/" + poseKey;
     String metaPath = TABLE + "/" + metaKey;
     if (!NetworkTableInstance.getDefault().isConnected()) {
@@ -274,6 +352,13 @@ public class EagleEyeCamera {
           + metaPath
           + ". The keys passed to EagleEyeCamera must match the publish_to_networktables"
           + " target_key values in the WebUI exactly.";
+    }
+    if (detectionsMissing) {
+      return "EagleEye: localization publishes but "
+          + TABLE
+          + "/"
+          + detectionsKey
+          + " is missing. Check the detection publisher's target_key and detections schema.";
     }
     if (metaMissing) {
       return "EagleEye: "
@@ -296,6 +381,53 @@ public class EagleEyeCamera {
    * <p>Both topics are stamped from one {@code TimingMetadata}, so exact equality is the join key
    * rather than a nearest-match search.
    */
+  /** Join detection frames to trustworthy poses using their exact capture timestamps. */
+  private void joinDetections(long nowMicros) {
+    for (Iterator<TimestampedStringArray> iterator = carriedDetections.iterator();
+        iterator.hasNext(); ) {
+      TimestampedStringArray sample = iterator.next();
+      Pose2d pose = poseAt(sample.timestamp);
+      if (pose != null) {
+        iterator.remove();
+        if (sample.timestamp >= latestDetectionsTimestamp) {
+          latestDetectionsTimestamp = sample.timestamp;
+          latestDetectionPose = pose;
+          latestDetections = parseDetections(sample.value);
+        }
+      }
+    }
+    carriedDetections.removeIf(
+        sample -> (nowMicros - sample.timestamp) / 1e6 > maximumSampleAgeSeconds);
+  }
+
+  /** Find the accepted pose captured at an exact NetworkTables timestamp. */
+  private Pose2d poseAt(long timestamp) {
+    for (CapturedPose pose : recentPoses) {
+      if (pose.timestampMicros() == timestamp) {
+        return pose.pose();
+      }
+    }
+    return null;
+  }
+
+  /** Parse repeating class/x/y/z groups from the detections StringArray topic. */
+  private static List<GamePiece> parseDetections(String[] values) {
+    var detections = new ArrayList<GamePiece>(values.length / 4);
+    for (int index = 0; index + 3 < values.length; index += 4) {
+      try {
+        detections.add(
+            new GamePiece(
+                values[index],
+                Double.parseDouble(values[index + 1]),
+                Double.parseDouble(values[index + 2]),
+                Double.parseDouble(values[index + 3])));
+      } catch (NumberFormatException ignored) {
+        // Malformed detections are dropped without weakening the rest of the frame.
+      }
+    }
+    return List.copyOf(detections);
+  }
+
   private double[] takeMeta(long timestamp) {
     for (Iterator<TimestampedDoubleArray> iterator = carriedMetas.iterator();
         iterator.hasNext(); ) {

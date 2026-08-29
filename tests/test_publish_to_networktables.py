@@ -81,6 +81,39 @@ def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
     assert table.values["RobotPose2D:timestamp"] == 123456
 
 
+def test_publish_serializes_field_detections_with_capture_timestamp() -> None:
+    """Detection groups contain class and field x/y/z under the frame timestamp."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+    timing = TimingMetadata(capture_nt_us=246810, capture_monotonic_ns=987)
+
+    publisher.run(
+        TimedValue(
+            [
+                {
+                    "class_name": "coral",
+                    "position_3d": [1.25, 2.5, 0.0],
+                    "confidence": 0.9,
+                }
+            ],
+            timing,
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.25", "2.5", "0.0"]
+    assert table.values["detections:timestamp"] == 246810
+
+
+def test_publish_supports_empty_detection_frames() -> None:
+    """An empty localized frame must clear stale robot-side detections."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run([])
+
+    assert table.values["detections"] == []
+
+
 def test_publish_supports_primitive_double_arrays() -> None:
     table = FakeNetworkTable()
     publisher = PublishToNetworktables(table, "values", schema="double_array")

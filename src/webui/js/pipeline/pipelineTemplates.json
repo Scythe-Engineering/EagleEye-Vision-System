@@ -424,18 +424,18 @@
                     {
                         "from_uuid": "op-mtaljtzs-dxy8",
                         "from_port": "camera_pose",
-                        "to_uuid": "op-mtallssl-1n35",
-                        "to_port": "data",
+                        "to_uuid": "op-object_detection_cpu-camera-to-robot",
+                        "to_port": "camera_pose",
                         "data_type": "camera_pose",
                         "is_default": false,
                         "custom_waypoints": null
                     },
                     {
                         "from_uuid": "op-mtaljtzs-dxy8",
-                        "from_port": "camera_pose",
-                        "to_uuid": "op-mtallptc-abt4",
-                        "to_port": "camera_pose",
-                        "data_type": "camera_pose",
+                        "from_port": "pose_meta",
+                        "to_uuid": "op-object_detection_cpu-meta-publisher",
+                        "to_port": "data",
+                        "data_type": "pose_meta",
                         "is_default": false,
                         "custom_waypoints": null
                     }
@@ -454,8 +454,8 @@
             {
                 "action_name": "publish_to_networktables.py",
                 "action_params": {
-                    "target_key": "detected_objects",
-                    "schema": "auto",
+                    "target_key": "localization/front/detections",
+                    "schema": "detections",
                     "data_path": []
                 },
                 "position": {
@@ -478,8 +478,8 @@
             {
                 "action_name": "publish_to_networktables.py",
                 "action_params": {
-                    "target_key": "camera_pose",
-                    "schema": "auto",
+                    "target_key": "localization/front/pose",
+                    "schema": "pose3d",
                     "data_path": []
                 },
                 "position": {
@@ -508,6 +508,49 @@
                         "custom_waypoints": null
                     }
                 ]
+            },
+            {
+                "action_name": "camera_to_robot_pose.py",
+                "action_params": {},
+                "position": {
+                    "x": 2100,
+                    "y": 260
+                },
+                "uuid": "op-object_detection_cpu-camera-to-robot",
+                "connections": [
+                    {
+                        "from_uuid": "op-object_detection_cpu-camera-to-robot",
+                        "from_port": "robot_pose",
+                        "to_uuid": "op-mtallptc-abt4",
+                        "to_port": "camera_pose",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-object_detection_cpu-camera-to-robot",
+                        "from_port": "robot_pose",
+                        "to_uuid": "op-mtallssl-1n35",
+                        "to_port": "data",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "localization/front/meta",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 2180,
+                    "y": 360
+                },
+                "uuid": "op-object_detection_cpu-meta-publisher",
+                "connections": []
             }
         ]
     },
@@ -732,18 +775,18 @@
                     {
                         "from_uuid": "op-mtaljtzs-dxy8",
                         "from_port": "camera_pose",
-                        "to_uuid": "op-mtallssl-1n35",
-                        "to_port": "data",
+                        "to_uuid": "op-object_detection_mx3-camera-to-robot",
+                        "to_port": "camera_pose",
                         "data_type": "camera_pose",
                         "is_default": false,
                         "custom_waypoints": null
                     },
                     {
                         "from_uuid": "op-mtaljtzs-dxy8",
-                        "from_port": "camera_pose",
-                        "to_uuid": "op-mtallptc-abt4",
-                        "to_port": "camera_pose",
-                        "data_type": "camera_pose",
+                        "from_port": "pose_meta",
+                        "to_uuid": "op-object_detection_mx3-meta-publisher",
+                        "to_port": "data",
+                        "data_type": "pose_meta",
                         "is_default": false,
                         "custom_waypoints": null
                     }
@@ -762,8 +805,8 @@
             {
                 "action_name": "publish_to_networktables.py",
                 "action_params": {
-                    "target_key": "detected_objects",
-                    "schema": "auto",
+                    "target_key": "localization/front/detections",
+                    "schema": "detections",
                     "data_path": []
                 },
                 "position": {
@@ -786,8 +829,8 @@
             {
                 "action_name": "publish_to_networktables.py",
                 "action_params": {
-                    "target_key": "camera_pose",
-                    "schema": "auto",
+                    "target_key": "localization/front/pose",
+                    "schema": "pose3d",
                     "data_path": []
                 },
                 "position": {
@@ -795,6 +838,49 @@
                     "y": 140
                 },
                 "uuid": "op-mtallssl-1n35",
+                "connections": []
+            },
+            {
+                "action_name": "camera_to_robot_pose.py",
+                "action_params": {},
+                "position": {
+                    "x": 2100,
+                    "y": 260
+                },
+                "uuid": "op-object_detection_mx3-camera-to-robot",
+                "connections": [
+                    {
+                        "from_uuid": "op-object_detection_mx3-camera-to-robot",
+                        "from_port": "robot_pose",
+                        "to_uuid": "op-mtallptc-abt4",
+                        "to_port": "camera_pose",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-object_detection_mx3-camera-to-robot",
+                        "from_port": "robot_pose",
+                        "to_uuid": "op-mtallssl-1n35",
+                        "to_port": "data",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "localization/front/meta",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 2180,
+                    "y": 360
+                },
+                "uuid": "op-object_detection_mx3-meta-publisher",
                 "connections": []
             }
         ]

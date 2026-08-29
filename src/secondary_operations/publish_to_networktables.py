@@ -103,7 +103,33 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
     return None
 
 
+def _coerce_detections(value: Any) -> list[str] | None:
+    """Flatten field-space detections into class/x/y/z string groups."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return None
+    flattened: list[str] = []
+    for detection in value:
+        if not isinstance(detection, dict):
+            continue
+        position = detection.get("position_3d")
+        if not isinstance(position, Sequence) or len(position) != 3:
+            continue
+        try:
+            coordinates = [str(float(coordinate)) for coordinate in position]
+        except (TypeError, ValueError):
+            continue
+        class_name = detection.get(
+            "class_name", detection.get("color_name", detection.get("class_id"))
+        )
+        if class_name is None:
+            continue
+        flattened.extend((str(class_name), *coordinates))
+    return flattened
+
+
 def _coerce_wpilib(value: Any, schema: str) -> Any:
+    if schema == "detections":
+        return _coerce_detections(value)
     if schema in {"double", "float", "number"} and isinstance(value, int | float):
         return float(value)
     if schema in {"boolean", "bool"} and isinstance(value, bool):
@@ -182,6 +208,8 @@ class PublishToNetworktables(OperationInstance):
     def _create_publisher(self, wpi_value: Any) -> Any:
         if isinstance(wpi_value, list):
             if not wpi_value:
+                if self.schema == "detections":
+                    return self.network_table.getStringArrayTopic(self.target_key).publish()
                 return None
             first = wpi_value[0]
             if isinstance(first, bool):

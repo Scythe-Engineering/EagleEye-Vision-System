@@ -9,9 +9,7 @@
             "has_default": false
         }
     ],
-    "output_nodes": [
-        "data"
-    ],
+    "output_nodes": ["data"],
     "parameters": {
         "target_key": {
             "type": "str",
@@ -22,7 +20,7 @@
         },
         "schema": {
             "type": "str",
-            "description": "WPILib struct type: 'auto' detects from value shape, 'pose3d' forces Pose3d, 'pose2d' projects to Pose2d",
+            "description": "WPILib type: 'auto' detects from value shape, 'pose3d' and 'pose2d' publish poses, 'detections' publishes repeating class/x/y/z string groups",
             "default": "auto",
             "required": false,
             "restart_for_change": false

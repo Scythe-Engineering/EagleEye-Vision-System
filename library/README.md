@@ -12,15 +12,17 @@ robot thinks it is.
 ## The NetworkTables contract
 
 EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each localization source
-publishes two topics under its own subtable:
+publishes three topics under its own subtable:
 
 | Topic | Type | Contents |
 | --- | --- | --- |
 | `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
+| `EagleEye/localization/<source>/detections` | `String[]` | Repeating `[className, fieldX, fieldY, fieldZ]` groups |
 
-Both come from one solver output on one frame, so both carry the identical capture timestamp.
-`EagleEyeCamera` joins them on exact timestamp equality rather than searching for a near match.
+All three carry the identical capture timestamp. `EagleEyeCamera` joins detections to an accepted
+pose by exact timestamp equality rather than searching for a near match. Detection publishers sit
+downstream of valid PnP, so an unlocalized frame publishes no field coordinates.
 
 `<source>` is yours to name — `front`, `back`, `left`. Use one per camera.
 
@@ -34,7 +36,10 @@ the one fixed part: the coprocessor hands every publish operation that same root
 EagleEyeCamera.forSource("localization/front");
 
 // Any other layout: pass both keys.
-new EagleEyeCamera("vision/left_cam/robot_pose", "vision/left_cam/quality");
+new EagleEyeCamera(
+    "vision/left_cam/robot_pose",
+    "vision/left_cam/quality",
+    "vision/left_cam/detections");
 ```
 
 A key nothing publishes raises a Driver Station warning naming the key and pointing at the WebUI,
@@ -81,9 +86,14 @@ public class Drive extends SubsystemBase {
   public void periodic() {
     poseEstimator.update(gyro.getRotation2d(), modulePositions);
     EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+    cameras[0].nearestGamePiece().ifPresent(piece -> intake.track(piece.xMeters(), piece.yMeters()));
   }
 }
 ```
+
+`nearestGamePiece()` uses the robot pose captured with the detection frame, not the robot's current
+pose. It returns empty until a detection sample joins an accepted localization sample, and returns
+empty again when the newest localized frame has no game pieces.
 
 Call it from a subsystem's `periodic()`, not from a NetworkTables listener thread —
 `SwerveDrivePoseEstimator` is not thread safe.
