@@ -954,12 +954,12 @@ function setupDropzone() {
 }
 
 /**
- * Open the existing intrinsics calibration flow for a selected camera.
+ * Select a camera in Camera Config Utils without opening a nested modal.
  *
  * @param {string} cameraBusId - Stable camera bus identifier.
  * @returns {Promise<void>}
  */
-export async function openCameraCalibration(cameraBusId) {
+export async function selectCameraConfig(cameraBusId) {
     initCameraConfigUtils();
     currentCameraBusId = String(cameraBusId);
     await loadCameraList();
@@ -975,6 +975,16 @@ export async function openCameraCalibration(cameraBusId) {
     currentCalibrationStreamName =
         select.selectedOptions?.[0]?.dataset?.streamName || "";
     await loadCameraConfig(currentCameraBusId);
+}
+
+/**
+ * Open the existing intrinsics calibration flow for a selected camera.
+ *
+ * @param {string} cameraBusId - Stable camera bus identifier.
+ * @returns {Promise<void>}
+ */
+export async function openCameraCalibration(cameraBusId) {
+    await selectCameraConfig(cameraBusId);
     await openCalibrationModal();
 }
 

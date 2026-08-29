@@ -1,19 +1,23 @@
 import { BACKEND_BASE_URL } from "../config.js";
 import { registerModelLibraryModal } from "../pipeline/modelLibraryModal.js";
+import { loadSettings } from "../settings/settingsHandler.js";
 import { activateAppView } from "../ui/sidebar.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
-import { openCameraCalibration } from "../utils/cameraConfigUtils.js";
-import { buildGenerationPayload, upsertCameraSetup } from "./wizardState.js";
+import { selectCameraConfig } from "../utils/cameraConfigUtils.js";
+import {
+    WIZARD_STEP,
+    buildGenerationPayload,
+    guidedStepCopy,
+    isGuidedStep,
+    nextWizardStep,
+    previousWizardStep,
+    upsertCameraSetup,
+    wizardStepView,
+} from "./wizardState.js";
 
 const VERIFICATION_SESSION_KEY = "eagleeye-first-boot-verification";
-const EXTRINSICS_FIELDS = [
-    ["pitch", "Pitch (degrees)"],
-    ["yaw", "Yaw (degrees)"],
-    ["roll", "Roll (degrees)"],
-    ["x_offset", "Forward offset (m)"],
-    ["y_offset", "Left offset (m)"],
-    ["z_offset", "Height offset (m)"],
-];
+const WIZARD_SESSION_KEY = "eagleeye-first-boot-wizard";
+const GUIDE_HIGHLIGHT = "0 0 0 2px #f9c845";
 
 const state = {
     status: null,
@@ -21,7 +25,9 @@ const state = {
     setups: [],
     currentCamera: null,
     selectedModel: null,
+    step: WIZARD_STEP.WELCOME,
     verificationTimer: null,
+    guideTarget: null,
 };
 
 /**
@@ -110,6 +116,114 @@ function actionButton(label, onClick, primary = false) {
 }
 
 /**
+ * Persist in-progress wizard state for this browser tab.
+ */
+function persistSession() {
+    sessionStorage.setItem(
+        WIZARD_SESSION_KEY,
+        JSON.stringify({
+            setups: state.setups,
+            currentCamera: state.currentCamera,
+            selectedModel: state.selectedModel,
+            step: state.step,
+        }),
+    );
+}
+
+/**
+ * Clear persisted wizard and verification session keys.
+ */
+function clearWizardSession() {
+    sessionStorage.removeItem(WIZARD_SESSION_KEY);
+}
+
+/**
+ * Restore in-progress wizard state if this tab still has a run.
+ *
+ * @returns {string | null} Saved step, if any.
+ */
+function restoreSession() {
+    try {
+        const raw = sessionStorage.getItem(WIZARD_SESSION_KEY);
+        if (!raw) return null;
+        const saved = JSON.parse(raw);
+        if (!saved?.step) return null;
+        state.setups = Array.isArray(saved.setups) ? saved.setups : [];
+        state.currentCamera = saved.currentCamera || null;
+        state.selectedModel = saved.selectedModel || null;
+        return saved.step;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Remove the visual highlight from the last guided target.
+ */
+function clearGuideTarget() {
+    if (state.guideTarget) {
+        state.guideTarget.style.boxShadow = "";
+        state.guideTarget = null;
+    }
+}
+
+/**
+ * Highlight the control the user should use on the current app page.
+ *
+ * @param {HTMLElement | null} target - Element to emphasize.
+ */
+function highlightGuideTarget(target) {
+    clearGuideTarget();
+    if (!target) return;
+    state.guideTarget = target;
+    target.style.boxShadow = GUIDE_HIGHLIGHT;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+/**
+ * Hide the persistent first-boot guide overlay.
+ */
+function hideGuide() {
+    clearGuideTarget();
+    const panel = document.getElementById("firstBootGuidePanel");
+    panel?.classList.add("hidden");
+    const continueButton = document.getElementById("firstBootGuideContinueBtn");
+    if (continueButton) continueButton.disabled = false;
+}
+
+/**
+ * Show a status line inside the guide overlay.
+ *
+ * @param {string} message - Status text.
+ * @param {boolean} [isError=false] - Whether to style the message as an error.
+ */
+function setGuideStatus(message, isError = false) {
+    const status = document.getElementById("firstBootGuideStatus");
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle("hidden", !message);
+    status.classList.toggle("text-red-300", isError);
+    status.classList.toggle("text-[#ac8a2f]", !isError);
+}
+
+/**
+ * Fill and reveal the persistent guide overlay.
+ *
+ * @param {{progress: string, title: string, instructions: string}} copy - Overlay copy.
+ */
+function showGuide(copy) {
+    document.getElementById("firstBootGuideProgress").textContent =
+        copy.progress;
+    document.getElementById("firstBootGuideTitle").textContent = copy.title;
+    document.getElementById("firstBootGuideInstructions").textContent =
+        copy.instructions;
+    setGuideStatus("");
+    const panel = document.getElementById("firstBootGuidePanel");
+    panel.classList.remove("hidden");
+    panel.focus();
+}
+
+/**
  * Render the first wizard screen.
  */
 function renderWelcome() {
@@ -120,13 +234,17 @@ function renderWelcome() {
             className: "mb-3 text-xl font-bold text-white",
         }),
         element("p", {
-            text: "The wizard repeats calibration and pipeline choices for each camera, then restarts EagleEye once to run them.",
+            text: "Choose each camera here, then the wizard opens the existing Camera Config and Settings pages for calibration, mounting, and NetworkTables. A guide stays on screen with Cancel and Continue.",
             className: "mb-5 max-w-2xl text-gray-300",
         }),
     );
     const actions = element("div", { className: "flex flex-wrap gap-3" });
     actions.append(
-        actionButton("Start setup", renderCameraSelection, true),
+        actionButton(
+            "Start setup",
+            () => goToStep(WIZARD_STEP.CAMERA_SELECT),
+            true,
+        ),
         actionButton("Skip for now", () => void skipWizard()),
     );
     content.append(actions);
@@ -173,7 +291,13 @@ function renderCameraSelection() {
             ),
         );
         if (state.setups.length) {
-            actions.append(actionButton("Continue", renderNetworkTables, true));
+            actions.append(
+                actionButton(
+                    "Continue",
+                    () => goToStep(WIZARD_STEP.CAMERA_SUMMARY),
+                    true,
+                ),
+            );
         }
         content.append(actions);
         return;
@@ -194,6 +318,12 @@ function renderCameraSelection() {
         option.textContent = `${camera.name} (${camera.bus_id})`;
         select.appendChild(option);
     });
+    if (
+        state.currentCamera &&
+        cameras.some((camera) => camera.bus_id === state.currentCamera.bus_id)
+    ) {
+        select.value = state.currentCamera.bus_id;
+    }
     content.append(label, select);
     content.append(
         actionButton(
@@ -203,7 +333,7 @@ function renderCameraSelection() {
                     (camera) => camera.bus_id === select.value,
                 );
                 state.selectedModel = null;
-                void renderCalibration();
+                goToStep(WIZARD_STEP.CALIBRATION);
             },
             true,
         ),
@@ -211,155 +341,21 @@ function renderCameraSelection() {
 }
 
 /**
- * Render and refresh the intrinsics calibration step.
- */
-async function renderCalibration() {
-    const content = beginStep(
-        `Camera ${state.setups.length + 1}: intrinsics calibration`,
-    );
-    content.append(
-        element("h2", {
-            text: `${state.currentCamera.name}: camera calibration`,
-            className: "mb-3 text-xl font-bold text-white",
-        }),
-        element("p", {
-            text: "Capture a ChArUco board across the whole image. EagleEye needs saved intrinsics before it can generate this pipeline.",
-            className: "mb-4 max-w-2xl text-gray-300",
-        }),
-    );
-    const status = element("p", {
-        text: "Checking calibration...",
-        className: "mb-4 text-[#ac8a2f]",
-    });
-    const continueButton = actionButton(
-        "Continue to camera position",
-        renderExtrinsics,
-        true,
-    );
-    continueButton.disabled = true;
-    const refresh = async () => {
-        try {
-            const cameraConfig = await fetchJson(
-                `/camera-config/${encodeURIComponent(state.currentCamera.bus_id)}`,
-            );
-            continueButton.disabled = !cameraConfig.intrinsics_exists;
-            status.textContent = cameraConfig.intrinsics_exists
-                ? "Intrinsics saved."
-                : "Calibration is still required.";
-        } catch (error) {
-            status.textContent = error.message;
-        }
-    };
-    const actions = element("div", { className: "flex flex-wrap gap-3" });
-    actions.append(
-        actionButton("Open calibration", async () => {
-            try {
-                await openCameraCalibration(state.currentCamera.bus_id);
-            } catch (error) {
-                showDanger(error.message);
-            }
-        }),
-        actionButton("Refresh status", () => void refresh()),
-        continueButton,
-    );
-    content.append(status, actions);
-    await refresh();
-}
-
-/**
- * Render and save camera mounting extrinsics.
- */
-async function renderExtrinsics() {
-    const content = beginStep(
-        `Camera ${state.setups.length + 1}: camera position`,
-    );
-    content.append(
-        element("h2", {
-            text: `${state.currentCamera.name}: position on robot`,
-            className: "mb-3 text-xl font-bold text-white",
-        }),
-        element("p", {
-            text: "Measure from the robot origin to the camera lens. Rotations are in degrees and offsets are in meters.",
-            className: "mb-4 max-w-2xl text-gray-300",
-        }),
-    );
-    const form = element("form", {
-        className: "grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2",
-    });
-    const inputs = {};
-    EXTRINSICS_FIELDS.forEach(([name, labelText]) => {
-        const wrapper = element("label", {
-            text: labelText,
-            className: "block text-sm font-semibold text-[#f9c845]",
-        });
-        const input = element("input", {
-            className:
-                "mt-1 w-full rounded-md border border-[#414141] bg-[#232323] px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
-        });
-        input.type = "number";
-        input.step = "0.01";
-        input.required = true;
-        wrapper.appendChild(input);
-        form.appendChild(wrapper);
-        inputs[name] = input;
-    });
-    content.append(form);
-
-    try {
-        const cameraConfig = await fetchJson(
-            `/camera-config/${encodeURIComponent(state.currentCamera.bus_id)}`,
-        );
-        EXTRINSICS_FIELDS.forEach(([name]) => {
-            inputs[name].value = String(cameraConfig.extrinsics?.[name] ?? 0);
-        });
-    } catch (error) {
-        showDanger(error.message);
-        return;
-    }
-
-    const saveButton = actionButton(
-        "Save camera position",
-        async () => {
-            if (!form.reportValidity()) return;
-            const extrinsics = Object.fromEntries(
-                EXTRINSICS_FIELDS.map(([name]) => [
-                    name,
-                    Number.parseFloat(inputs[name].value),
-                ]),
-            );
-            saveButton.disabled = true;
-            try {
-                await fetchJson(
-                    `/camera-config/${encodeURIComponent(state.currentCamera.bus_id)}/extrinsics`,
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(extrinsics),
-                    },
-                );
-                renderPurpose();
-            } catch (error) {
-                showDanger(error.message);
-                saveButton.disabled = false;
-            }
-        },
-        true,
-    );
-    saveButton.classList.add("mt-5");
-    content.append(saveButton);
-}
-
-/**
- * Render localization/detection choices and the reusable model-library prompt.
+ * Ask what the selected camera should do, including an optional detection model.
  */
 function renderPurpose() {
+    const cameraName = state.currentCamera?.name || "this camera";
     const content = beginStep(
         `Camera ${state.setups.length + 1}: pipeline purpose`,
     );
     content.append(
         element("h2", {
-            text: `${state.currentCamera.name}: choose what it does`,
+            text: `What should ${cameraName} do?`,
             className: "mb-3 text-xl font-bold text-white",
+        }),
+        element("p", {
+            text: "Calibration and mounting are done on Camera Config Utils. Choose the pipeline this camera should run.",
+            className: "mb-4 max-w-2xl text-gray-300",
         }),
     );
     const fieldset = element("fieldset", { className: "mb-5 space-y-3" });
@@ -378,7 +374,11 @@ function renderPurpose() {
         ["detect", "Detect", "Game pieces in field space"],
         ["both", "Both", "Robot pose and game-piece detection together"],
     ];
-    choices.forEach(([value, title, description], index) => {
+    const existing = state.setups.find(
+        (setup) => setup.bus_id === state.currentCamera?.bus_id,
+    );
+    const selectedMode = existing?.mode || "both";
+    choices.forEach(([value, title, description]) => {
         const label = element("label", {
             className:
                 "flex cursor-pointer items-start gap-3 rounded-md border border-[#414141] p-3 hover:border-[#f9c845]",
@@ -387,7 +387,7 @@ function renderPurpose() {
         radio.type = "radio";
         radio.name = "firstBootPurpose";
         radio.value = value;
-        radio.checked = index === 2;
+        radio.checked = value === selectedMode;
         radio.className = "mt-1 accent-[#f9c845]";
         const copy = element("span");
         copy.append(
@@ -419,9 +419,11 @@ function renderPurpose() {
                         `/model-library/${encodeURIComponent(model.id)}/resolve?device_id=cpu`,
                     );
                     state.selectedModel = model;
+                    persistSession();
                     modelStatus.textContent = `Selected model: ${model.display_name || model.id}`;
                 } catch (error) {
                     state.selectedModel = null;
+                    persistSession();
                     modelStatus.textContent = `Model cannot run on CPU: ${error.message}`;
                 }
             },
@@ -444,12 +446,14 @@ function renderPurpose() {
         const mode = fieldset.querySelector("input:checked")?.value;
         modelPanel.classList.toggle("hidden", mode === "localize");
         purposeStatus.textContent = "";
-        if (!state.selectedModel) {
-            modelStatus.textContent =
-                mode === "detect"
-                    ? "Detect-only requires a compatible CPU model."
-                    : "No model selected. A Both pipeline idles until a compatible model reaches the library.";
+        if (state.selectedModel) {
+            modelStatus.textContent = `Selected model: ${state.selectedModel.display_name || state.selectedModel.id}`;
+            return;
         }
+        modelStatus.textContent =
+            mode === "detect"
+                ? "Detect-only requires a compatible CPU model."
+                : "No model selected. A Both pipeline idles until a compatible model reaches the library.";
     };
     fieldset.addEventListener("change", updateModelVisibility);
     updateModelVisibility();
@@ -475,7 +479,7 @@ function renderPurpose() {
                             ? ""
                             : state.selectedModel?.id || "",
                 });
-                renderCameraSummary();
+                goToStep(WIZARD_STEP.CAMERA_SUMMARY);
             },
             true,
         ),
@@ -492,6 +496,10 @@ function renderCameraSummary() {
             text: "Configured cameras",
             className: "mb-3 text-xl font-bold text-white",
         }),
+        element("p", {
+            text: "Add another camera, or continue to Settings to set the NetworkTables address.",
+            className: "mb-4 max-w-2xl text-gray-300",
+        }),
     );
     const list = element("ul", { className: "mb-5 space-y-2" });
     state.setups.forEach((setup) => {
@@ -505,84 +513,85 @@ function renderCameraSummary() {
     const actions = element("div", { className: "flex flex-wrap gap-3" });
     if (remainingCameras().length) {
         actions.append(
-            actionButton("Add another camera", renderCameraSelection),
+            actionButton("Add another camera", () => {
+                state.currentCamera = null;
+                state.selectedModel = null;
+                goToStep(WIZARD_STEP.CAMERA_SELECT);
+            }),
         );
     }
     actions.append(
-        actionButton("Continue to NetworkTables", renderNetworkTables, true),
+        actionButton(
+            "Continue to NetworkTables",
+            () => goToStep(WIZARD_STEP.NETWORK_TABLES),
+            true,
+        ),
     );
     content.append(list, actions);
 }
 
 /**
- * Render the global NetworkTables address and final generation action.
+ * Show a guided overlay on an existing configuration page.
+ *
+ * @param {string} step - Guided wizard step.
  */
-async function renderNetworkTables() {
-    const content = beginStep("NetworkTables and generation");
-    content.append(
-        element("h2", {
-            text: "Connect to the robot",
-            className: "mb-3 text-xl font-bold text-white",
-        }),
-        element("p", {
-            text: "Enter the roboRIO or simulation server address. EagleEye restarts once after it saves the generated pipelines.",
-            className: "mb-4 max-w-2xl text-gray-300",
-        }),
-    );
-    const label = element("label", {
-        text: "NetworkTables address",
-        className: "block max-w-xl font-semibold text-[#f9c845]",
-    });
-    const input = element("input", {
-        className:
-            "mt-1 w-full rounded-md border border-[#414141] bg-[#232323] px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
-    });
-    input.type = "text";
-    input.required = true;
-    input.autocomplete = "off";
-    try {
-        const config = await fetchJson("/get-general-conf");
-        input.value = config.network_table_address || "";
-    } catch {
-        input.value = "";
+async function showGuidedStep(step) {
+    const cameraName = state.currentCamera?.name || "this camera";
+    const copy = guidedStepCopy(step, cameraName, state.setups.length + 1);
+    activateAppView(wizardStepView(step));
+    showGuide(copy);
+
+    if (step === WIZARD_STEP.CALIBRATION || step === WIZARD_STEP.EXTRINSICS) {
+        if (!state.currentCamera?.bus_id) {
+            goToStep(WIZARD_STEP.CAMERA_SELECT);
+            return;
+        }
+        try {
+            await selectCameraConfig(state.currentCamera.bus_id);
+            highlightGuideTarget(
+                document.getElementById(
+                    step === WIZARD_STEP.CALIBRATION
+                        ? "utilsCalibrateIntrinsicsBtn"
+                        : "utilsSaveExtrinsicsBtn",
+                ),
+            );
+        } catch (error) {
+            setGuideStatus(error.message, true);
+        }
+        return;
     }
-    label.appendChild(input);
-    content.append(label);
-    const status = element("p", {
-        className: "mt-4 text-sm text-[#ac8a2f]",
-    });
-    const generateButton = actionButton(
-        "Generate and start pipelines",
-        async () => {
-            let requestBody;
-            try {
-                requestBody = buildGenerationPayload(state.setups, input.value);
-            } catch (error) {
-                status.textContent = error.message;
-                return;
-            }
-            generateButton.disabled = true;
-            status.textContent = "Generating pipelines...";
-            try {
-                const generated = await fetchJson("/first-boot/generate", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(requestBody),
-                });
-                sessionStorage.setItem(VERIFICATION_SESSION_KEY, "1");
-                status.textContent =
-                    "Restarting EagleEye to start pipelines...";
-                await restartAndReload(generated.runtime_id);
-            } catch (error) {
-                showDanger(error.message);
-                status.textContent = error.message;
-                generateButton.disabled = false;
-            }
-        },
-        true,
-    );
-    generateButton.classList.add("mt-5");
-    content.append(generateButton, status);
+
+    await loadSettings();
+    highlightGuideTarget(document.getElementById("robotAddressInput"));
+}
+
+/**
+ * Route the wizard to a dedicated page or a guided app view.
+ *
+ * @param {string} step - Wizard step identifier.
+ */
+function goToStep(step) {
+    state.step = step;
+    persistSession();
+    if (isGuidedStep(step)) {
+        void showGuidedStep(step);
+        return;
+    }
+    hideGuide();
+    activateAppView("view-first-boot");
+    switch (step) {
+        case WIZARD_STEP.CAMERA_SELECT:
+            renderCameraSelection();
+            break;
+        case WIZARD_STEP.PURPOSE:
+            renderPurpose();
+            break;
+        case WIZARD_STEP.CAMERA_SUMMARY:
+            renderCameraSummary();
+            break;
+        default:
+            renderWelcome();
+    }
 }
 
 /**
@@ -618,12 +627,84 @@ async function restartAndReload(previousRuntimeId) {
 }
 
 /**
+ * Generate pipelines from the Settings page address and restart EagleEye.
+ */
+async function generatePipelines() {
+    const continueButton = document.getElementById("firstBootGuideContinueBtn");
+    const address = document.getElementById("robotAddressInput")?.value || "";
+    let requestBody;
+    try {
+        requestBody = buildGenerationPayload(state.setups, address);
+    } catch (error) {
+        setGuideStatus(error.message, true);
+        return;
+    }
+    if (continueButton) continueButton.disabled = true;
+    setGuideStatus("Generating pipelines...");
+    try {
+        const generated = await fetchJson("/first-boot/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+        });
+        sessionStorage.setItem(VERIFICATION_SESSION_KEY, "1");
+        clearWizardSession();
+        setGuideStatus("Restarting EagleEye to start pipelines...");
+        await restartAndReload(generated.runtime_id);
+    } catch (error) {
+        showDanger(error.message);
+        setGuideStatus(error.message, true);
+        if (continueButton) continueButton.disabled = false;
+    }
+}
+
+/**
+ * Advance from a guided overlay, validating the current page when needed.
+ */
+async function handleGuideContinue() {
+    if (state.step === WIZARD_STEP.CALIBRATION) {
+        try {
+            const cameraConfig = await fetchJson(
+                `/camera-config/${encodeURIComponent(state.currentCamera.bus_id)}`,
+            );
+            if (!cameraConfig.intrinsics_exists) {
+                setGuideStatus(
+                    "Calibration is still required. Capture frames and click Calibrate & Save, or upload an intrinsics file.",
+                );
+                return;
+            }
+        } catch (error) {
+            setGuideStatus(error.message, true);
+            return;
+        }
+        goToStep(nextWizardStep(state.step));
+        return;
+    }
+    if (state.step === WIZARD_STEP.EXTRINSICS) {
+        goToStep(nextWizardStep(state.step));
+        return;
+    }
+    if (state.step === WIZARD_STEP.NETWORK_TABLES) {
+        await generatePipelines();
+    }
+}
+
+/**
+ * Leave a guided page and return to the previous wizard-owned screen.
+ */
+function handleGuideCancel() {
+    goToStep(previousWizardStep(state.step));
+}
+
+/**
  * Persist first-boot skip and return to the camera view.
  */
 async function skipWizard() {
     try {
         await fetchJson("/first-boot/skip", { method: "POST" });
         state.status.required = false;
+        clearWizardSession();
+        hideGuide();
         activateAppView("view-views");
         showSuccess("First-boot setup skipped. Reopen it from Settings.");
     } catch (error) {
@@ -655,8 +736,8 @@ async function openWizard() {
         state.setups = [];
         state.currentCamera = null;
         state.selectedModel = null;
-        activateAppView("view-first-boot");
-        renderWelcome();
+        clearWizardSession();
+        goToStep(WIZARD_STEP.WELCOME);
     } catch (error) {
         showDanger(`Unable to open setup: ${error.message}`);
     }
@@ -743,6 +824,7 @@ async function refreshVerification() {
  */
 function openVerification() {
     clearInterval(state.verificationTimer);
+    hideGuide();
     activateAppView("view-3d");
     const panel = document.getElementById("firstBootVerificationPanel");
     panel.classList.remove("hidden");
@@ -761,8 +843,15 @@ export async function initializeFirstBootWizard() {
     document
         .getElementById("firstBootCloseBtn")
         ?.addEventListener("click", () => {
+            hideGuide();
             activateAppView("view-settings");
         });
+    document
+        .getElementById("firstBootGuideCancelBtn")
+        ?.addEventListener("click", handleGuideCancel);
+    document
+        .getElementById("firstBootGuideContinueBtn")
+        ?.addEventListener("click", () => void handleGuideContinue());
     document
         .getElementById("firstBootVerifyRetryBtn")
         ?.addEventListener("click", () => void refreshVerification());
@@ -782,6 +871,7 @@ export async function initializeFirstBootWizard() {
                 await fetchJson("/first-boot/finish", { method: "POST" });
                 clearInterval(state.verificationTimer);
                 sessionStorage.removeItem(VERIFICATION_SESSION_KEY);
+                clearWizardSession();
                 document
                     .getElementById("firstBootVerificationPanel")
                     .classList.add("hidden");
@@ -805,8 +895,8 @@ export async function initializeFirstBootWizard() {
             new URL(globalThis.location.href).searchParams.get("tab") ===
                 "view-first-boot"
         ) {
-            activateAppView("view-first-boot");
-            renderWelcome();
+            const savedStep = restoreSession();
+            goToStep(savedStep || WIZARD_STEP.WELCOME);
         }
     } catch (error) {
         console.error("Unable to load first-boot state:", error);
