@@ -98,6 +98,8 @@ class ObjectDetectionDefinition(OperationInstance):
             try:
                 self.model_library.resolve_artifact(candidate_id, self.device_id)
             except ModelLibraryError:
+                if self.model_id:
+                    raise
                 continue
             try:
                 self.delegate = ObjectDetectionImplementation(

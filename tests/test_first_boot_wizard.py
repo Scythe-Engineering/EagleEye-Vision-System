@@ -231,6 +231,32 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     assert final_general["first_boot_wizard_verification_pending"] is False
 
 
+def test_first_boot_status_ignores_malformed_persisted_lists(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Render status when persisted wizard list fields have invalid types."""
+    pipeline_path = tmp_path / "pipeline_config.json"
+    general_conf_path = tmp_path / "general_conf.json"
+    pipeline_path.write_text("{}\n", encoding="utf-8")
+    general_conf_path.write_text(
+        json.dumps(
+            {
+                "first_boot_pipeline_names": None,
+                "first_boot_networktable_keys": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    harness = _FirstBootHarness(pipeline_path, general_conf_path, {})
+    monkeypatch.setattr(first_boot_module, "GENERAL_CONF_PATH", general_conf_path)
+
+    payload, status = harness.get_first_boot_status()
+
+    assert status == 200
+    assert payload["pipelines"] == []
+    assert payload["networktable_keys"] == []
+
+
 def test_first_boot_model_library_unavailable_is_actionable(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

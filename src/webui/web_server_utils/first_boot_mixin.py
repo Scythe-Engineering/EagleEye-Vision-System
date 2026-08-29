@@ -325,11 +325,12 @@ class FirstBootMixin:
         verification_pending = config.get(_VERIFICATION_PENDING_KEY) is True
         pipeline_config = self._load_pipeline_config_file()
         required = not completed and not verification_pending and not pipeline_config
-        pipeline_names = [
-            str(name)
-            for name in config.get(_PIPELINES_KEY, [])
-            if isinstance(name, str)
-        ]
+        raw_pipeline_names = config.get(_PIPELINES_KEY, [])
+        pipeline_names = (
+            [name for name in raw_pipeline_names if isinstance(name, str)]
+            if isinstance(raw_pipeline_names, list)
+            else []
+        )
         pipeline_objects = self.pipeline_objects_callback()
         pipelines = []
         for pipeline_name in pipeline_names:
@@ -341,11 +342,16 @@ class FirstBootMixin:
             pipelines.append({"name": pipeline_name, "active": active})
 
         topic_names = self._networktable_topic_names()
-        expected_keys = [
-            item
-            for item in config.get(_VERIFICATION_KEYS_KEY, [])
-            if isinstance(item, dict) and isinstance(item.get("key"), str)
-        ]
+        raw_expected_keys = config.get(_VERIFICATION_KEYS_KEY, [])
+        expected_keys = (
+            [
+                item
+                for item in raw_expected_keys
+                if isinstance(item, dict) and isinstance(item.get("key"), str)
+            ]
+            if isinstance(raw_expected_keys, list)
+            else []
+        )
         return {
             "required": required,
             "completed": completed,

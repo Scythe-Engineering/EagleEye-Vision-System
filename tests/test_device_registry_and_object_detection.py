@@ -21,6 +21,7 @@ from src.utils.device_registry import (
 from src.utils.model_library import (
     ArtifactError,
     ModelLibrary,
+    ModelLibraryError,
     ModelReferencedError,
 )
 
@@ -241,11 +242,14 @@ def test_empty_model_slot_skips_unloadable_candidates(
     class _Library:
         def __init__(self) -> None:
             self.models: tuple[SimpleNamespace, ...] = ()
+            self.missing: set[str] = set()
 
         def list_models(self) -> tuple[SimpleNamespace, ...]:
             return self.models
 
         def resolve_artifact(self, model_id: str, _device_id: str) -> object:
+            if model_id in self.missing:
+                raise ModelLibraryError("artifact unavailable")
             return object()
 
     class _Implementation:
@@ -276,6 +280,15 @@ def test_empty_model_slot_skips_unloadable_candidates(
     with pytest.raises(RuntimeError, match="model load failed"):
         object_detection.ObjectDetectionDefinition(
             model_id="unloadable",
+            device_id="cpu",
+            device_registry=SimpleNamespace(),
+            model_library=library,
+        )
+
+    library.missing.add("missing")
+    with pytest.raises(ModelLibraryError, match="artifact unavailable"):
+        object_detection.ObjectDetectionDefinition(
+            model_id="missing",
             device_id="cpu",
             device_registry=SimpleNamespace(),
             model_library=library,
