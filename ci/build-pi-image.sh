@@ -133,12 +133,20 @@ rpi:
   enable_usb_gadget: true
 enable_ssh: true
 EOF
-mkdir -p "$MNT/etc/polkit-1/rules.d"
+mkdir -p "$MNT/etc/polkit-1/rules.d" "$MNT/var/lib/NetworkManager"
+cat > "$MNT/var/lib/NetworkManager/NetworkManager.state" <<'EOF'
+[main]
+NetworkingEnabled=true
+WirelessEnabled=true
+WWANEnabled=true
+EOF
 cat > "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules" <<EOF
 polkit.addRule(function(action, subject) {
     if (subject.user == "$IMAGE_USER" &&
-        (action.id == "org.freedesktop.NetworkManager.network-control" ||
-         action.id == "org.freedesktop.NetworkManager.settings.modify.system")) {
+        (action.id == "org.freedesktop.NetworkManager.enable-disable-wifi" ||
+         action.id == "org.freedesktop.NetworkManager.network-control" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.wifi.scan")) {
         return polkit.Result.YES;
     }
 });
@@ -161,8 +169,11 @@ chroot "$MNT" test -x /usr/sbin/NetworkManager
 chroot "$MNT" test -x /usr/sbin/netplan
 chroot "$MNT" test -x /usr/bin/rpi-usb-gadget
 grep -Fxq '  enable_usb_gadget: true' "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg"
+grep -Fxq 'WirelessEnabled=true' "$MNT/var/lib/NetworkManager/NetworkManager.state"
+grep -Fq 'org.freedesktop.NetworkManager.enable-disable-wifi' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 grep -Fq 'org.freedesktop.NetworkManager.network-control' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
+grep -Fq 'org.freedesktop.NetworkManager.wifi.scan' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
 phase "Unmounting and hashing image"
