@@ -563,18 +563,18 @@ async function uploadIntrinsicsFile(file) {
 function calibrationPayload() {
     return {
         squares_x: Number.parseInt(
-            getElement("utilsCalibrationSquaresX")?.value || "11",
+            getElement("utilsCalibrationSquaresX")?.value || "13",
             10,
         ),
         squares_y: Number.parseInt(
-            getElement("utilsCalibrationSquaresY")?.value || "8",
+            getElement("utilsCalibrationSquaresY")?.value || "10",
             10,
         ),
         square_size: Number.parseFloat(
-            getElement("utilsCalibrationSquareSize")?.value || "0.015",
+            getElement("utilsCalibrationSquareSize")?.value || "0.020",
         ),
         marker_size: Number.parseFloat(
-            getElement("utilsCalibrationMarkerSize")?.value || "0.011",
+            getElement("utilsCalibrationMarkerSize")?.value || "0.015",
         ),
     };
 }
