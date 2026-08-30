@@ -205,10 +205,17 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
         )["action_params"]["schema"]
         == "json"
     )
-    assert any(
-        operation["action_name"] == "robot_pose_output.py"
+    robot_output = next(
+        operation
         for operation in first_operations
+        if operation["action_name"] == "robot_pose_output.py"
     )
+    pose_publisher = next(
+        operation
+        for operation in publisher_operations
+        if operation["action_params"]["target_key"] == "localization/front-camera-1-2"
+    )
+    assert pose_publisher["position"]["x"] == robot_output["position"]["x"]
 
     saved_general = json.loads(general_conf_path.read_text(encoding="utf-8"))
     assert saved_general["first_boot_wizard_completed"] is False

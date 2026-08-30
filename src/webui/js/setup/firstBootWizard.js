@@ -395,7 +395,7 @@ function renderPurpose() {
     const existing = state.setups.find(
         (setup) => setup.bus_id === state.currentCamera?.bus_id,
     );
-    const selectedMode = existing?.mode || "both";
+    const selectedMode = existing?.mode || "localize";
     choices.forEach(([value, title, description]) => {
         const label = element("label", {
             className:
@@ -524,12 +524,21 @@ function renderCameraSummary() {
     );
     const list = element("ul", { className: "mb-5 space-y-2" });
     state.setups.forEach((setup) => {
-        list.appendChild(
-            element("li", {
+        const camera = element("li", {
+            className:
+                "flex items-center justify-between gap-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2",
+        });
+        camera.append(
+            element("span", {
                 text: `${setup.name}: ${setup.mode}${setup.model_id ? " with model" : setup.mode === "localize" ? "" : " (model slot empty)"}`,
-                className: "rounded-md border border-[#414141] px-3 py-2",
+            }),
+            element("span", {
+                text: "Set up",
+                className:
+                    "shrink-0 rounded-full bg-emerald-400/15 px-2 py-1 text-xs font-semibold text-emerald-300",
             }),
         );
+        list.appendChild(camera);
     });
     const actions = element("div", { className: "flex flex-wrap gap-3" });
     if (remainingCameras().length) {

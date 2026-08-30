@@ -142,6 +142,7 @@ def build_first_boot_pipeline(
     pose_publisher["action_params"].update(
         {"target_key": pose_key, "schema": "pose3d", "data_path": []}
     )
+    pose_publisher["position"]["x"] = robot_output["position"]["x"]
     pnp_node["connections"] = [
         item
         for item in pnp_node["connections"]
