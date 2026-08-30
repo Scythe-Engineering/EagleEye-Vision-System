@@ -142,6 +142,11 @@ async function loadNetworks() {
 async function connectNetwork(network, usernameInput, passwordInput) {
     const username = usernameInput?.value.trim() || "";
     const password = passwordInput?.value || "";
+    if (networkNeedsUsername(network) && !username) {
+        showWarning("Username is required for this WiFi network.");
+        return;
+    }
+
     activeRequestSsid = network.ssid;
     render();
 

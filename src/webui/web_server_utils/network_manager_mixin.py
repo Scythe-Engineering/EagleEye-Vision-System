@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import uuid
 from typing import Any
 
 
@@ -201,9 +202,7 @@ class NetworkManagerMixin:
         try:
             if username:
                 connection_name = f"EagleEye-{ssid}"
-                self._run_nmcli(
-                    ["connection", "delete", connection_name], timeout=10.0
-                )
+                temporary_name = f"{connection_name}-{uuid.uuid4()}"
                 result = self._run_nmcli(
                     [
                         "connection",
@@ -213,7 +212,7 @@ class NetworkManagerMixin:
                         "ifname",
                         "*",
                         "con-name",
-                        connection_name,
+                        temporary_name,
                         "ssid",
                         ssid,
                     ],
@@ -222,7 +221,7 @@ class NetworkManagerMixin:
                 args = [
                     "connection",
                     "modify",
-                    connection_name,
+                    temporary_name,
                     "wifi-sec.key-mgmt",
                     "wpa-eap",
                     "802-1x.eap",
@@ -238,7 +237,21 @@ class NetworkManagerMixin:
                     result = self._run_nmcli(args, timeout=15.0)
                 if result.returncode == 0:
                     result = self._run_nmcli(
-                        ["connection", "up", connection_name], timeout=30.0
+                        ["connection", "up", temporary_name], timeout=30.0
+                    )
+                if result.returncode == 0:
+                    self._run_nmcli(
+                        ["connection", "delete", connection_name], timeout=10.0
+                    )
+                    self._run_nmcli(
+                        [
+                            "connection",
+                            "modify",
+                            temporary_name,
+                            "connection.id",
+                            connection_name,
+                        ],
+                        timeout=15.0,
                     )
             else:
                 args = ["device", "wifi", "connect", ssid]

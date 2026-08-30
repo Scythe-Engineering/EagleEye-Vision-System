@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from types import SimpleNamespace
 
+import pytest
+
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 
 
@@ -122,13 +124,17 @@ def test_disconnect_active_wifi_devices_discovers_connected_wifi_device() -> Non
     ]
 
 
-def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
+def test_connect_enterprise_wifi_configures_peap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configure and activate a PEAP connection before replacing its profile."""
     manager = SequencedNetworkManager(
         [
-            subprocess.CompletedProcess(["nmcli"], 10, stdout="", stderr="missing"),
             subprocess.CompletedProcess(["nmcli"], 0, stdout="created", stderr=""),
             subprocess.CompletedProcess(["nmcli"], 0, stdout="modified", stderr=""),
             subprocess.CompletedProcess(["nmcli"], 0, stdout="connected", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="deleted", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="renamed", stderr=""),
         ]
     )
     request = SimpleNamespace(
@@ -147,8 +153,9 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
 
     assert status == 200
     assert payload["ssid"] == "EnterpriseNet"
+    temporary_name = manager.calls[0][0][7]
+    assert temporary_name.startswith("EagleEye-EnterpriseNet-")
     assert manager.calls == [
-        (["connection", "delete", "EagleEye-EnterpriseNet"], 10.0),
         (
             [
                 "connection",
@@ -158,7 +165,7 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
                 "ifname",
                 "*",
                 "con-name",
-                "EagleEye-EnterpriseNet",
+                temporary_name,
                 "ssid",
                 "EnterpriseNet",
             ],
@@ -168,7 +175,7 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
             [
                 "connection",
                 "modify",
-                "EagleEye-EnterpriseNet",
+                temporary_name,
                 "wifi-sec.key-mgmt",
                 "wpa-eap",
                 "802-1x.eap",
@@ -182,7 +189,18 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
             ],
             15.0,
         ),
-        (["connection", "up", "EagleEye-EnterpriseNet"], 30.0),
+        (["connection", "up", temporary_name], 30.0),
+        (["connection", "delete", "EagleEye-EnterpriseNet"], 10.0),
+        (
+            [
+                "connection",
+                "modify",
+                temporary_name,
+                "connection.id",
+                "EagleEye-EnterpriseNet",
+            ],
+            15.0,
+        ),
     ]
 
 
