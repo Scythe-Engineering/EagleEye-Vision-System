@@ -192,6 +192,7 @@ function highlightGuideTarget(target) {
 function hideGuide() {
     clearGuideTarget();
     const panel = document.getElementById("firstBootGuidePanel");
+    panel?.classList.remove("first-boot-guide-panel--calibration");
     panel?.classList.add("hidden");
     const continueButton = document.getElementById("firstBootGuideContinueBtn");
     if (continueButton) continueButton.disabled = false;
@@ -216,8 +217,9 @@ function setGuideStatus(message, isError = false) {
  * Fill and reveal the persistent guide overlay.
  *
  * @param {{progress: string, title: string, instructions: string}} copy - Overlay copy.
+ * @param {string} step - Current guided wizard step.
  */
-function showGuide(copy) {
+function showGuide(copy, step) {
     document.getElementById("firstBootGuideProgress").textContent =
         copy.progress;
     document.getElementById("firstBootGuideTitle").textContent = copy.title;
@@ -225,7 +227,15 @@ function showGuide(copy) {
         copy.instructions;
     setGuideStatus("");
     const panel = document.getElementById("firstBootGuidePanel");
+    panel.classList.remove("first-boot-guide-panel--calibration");
     panel.classList.remove("hidden");
+    if (step === WIZARD_STEP.CALIBRATION) {
+        requestAnimationFrame(() => {
+            if (state.step === WIZARD_STEP.CALIBRATION) {
+                panel.classList.add("first-boot-guide-panel--calibration");
+            }
+        });
+    }
     panel.focus();
 }
 
@@ -549,7 +559,7 @@ async function showGuidedStep(step, token) {
     const cameraName = state.currentCamera?.name || "this camera";
     const copy = guidedStepCopy(step, cameraName, state.setups.length + 1);
     activateAppView(wizardStepView(step));
-    showGuide(copy);
+    showGuide(copy, step);
 
     if (step === WIZARD_STEP.CALIBRATION || step === WIZARD_STEP.EXTRINSICS) {
         if (!state.currentCamera?.bus_id) {

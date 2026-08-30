@@ -357,10 +357,25 @@ input[type="checkbox"]:checked:disabled {
     }
 }
 
+#firstBootGuidePanel {
+    transition:
+        top 250ms ease,
+        transform 250ms ease;
+}
+
+#firstBootGuidePanel.first-boot-guide-panel--calibration {
+    top: calc(100% - 0.75rem);
+    transform: translateY(-100%);
+}
+
 @media (prefers-reduced-motion: reduce) {
     .first-boot-guide-target {
         animation: none;
         box-shadow: 0 0 0 0.2rem rgb(249 200 69 / 0.8);
+    }
+
+    #firstBootGuidePanel {
+        transition: none;
     }
 }
 
