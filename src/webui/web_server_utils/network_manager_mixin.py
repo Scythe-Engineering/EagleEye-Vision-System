@@ -240,10 +240,11 @@ class NetworkManagerMixin:
                         ["connection", "up", temporary_name], timeout=30.0
                     )
                 if result.returncode == 0:
-                    self._run_nmcli(
+                    result = self._run_nmcli(
                         ["connection", "delete", connection_name], timeout=10.0
                     )
-                    self._run_nmcli(
+                if result.returncode == 0:
+                    result = self._run_nmcli(
                         [
                             "connection",
                             "modify",

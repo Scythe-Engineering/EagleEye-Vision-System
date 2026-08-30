@@ -204,6 +204,41 @@ def test_connect_enterprise_wifi_configures_peap(
     ]
 
 
+def test_connect_enterprise_wifi_reports_profile_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report a failure when the old profile cannot be removed."""
+    manager = SequencedNetworkManager(
+        [
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="created", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="modified", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="connected", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 10, stdout="", stderr="delete failed"),
+        ]
+    )
+    request = SimpleNamespace(
+        get_json=lambda silent=True: {
+            "ssid": "EnterpriseNet",
+            "username": "student",
+            "password": "secret",
+        }
+    )
+    monkeypatch.setattr(
+        "src.webui.web_server_utils.network_manager_mixin._request",
+        lambda: request,
+    )
+
+    payload, status = manager.connect_wifi_network()
+
+    assert status == 400
+    assert payload["error"] == "delete failed"
+    assert len(manager.calls) == 4
+    assert manager.calls[-1] == (
+        ["connection", "delete", "EagleEye-EnterpriseNet"],
+        10.0,
+    )
+
+
 def test_network_manager_status_requires_linux(monkeypatch) -> None:
     manager = DummyNetworkManager()
 
