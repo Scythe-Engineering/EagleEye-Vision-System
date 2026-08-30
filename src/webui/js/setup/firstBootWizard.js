@@ -325,7 +325,7 @@ function renderCameraSelection() {
     });
     const select = element("select", {
         className:
-            "mb-5 w-full max-w-xl rounded-md border border-[#414141] bg-[#232323] px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
+            "min-w-64 flex-1 rounded-md border border-[#414141] bg-[#232323] px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
     });
     select.setAttribute("aria-label", "Active camera");
     cameras.forEach((camera) => {
@@ -340,8 +340,9 @@ function renderCameraSelection() {
     ) {
         select.value = state.currentCamera.bus_id;
     }
-    content.append(label, select);
-    content.append(
+    const actions = element("div", { className: "flex flex-wrap gap-3" });
+    actions.append(
+        select,
         actionButton(
             "Continue to calibration",
             () => {
@@ -354,6 +355,7 @@ function renderCameraSelection() {
             true,
         ),
     );
+    content.append(label, actions);
 }
 
 /**
