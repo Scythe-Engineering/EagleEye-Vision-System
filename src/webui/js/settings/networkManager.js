@@ -95,6 +95,16 @@ function networkNeedsPassword(network) {
 }
 
 /**
+ * Returns whether NetworkManager reports enterprise authentication support.
+ * @param {object} network The target network.
+ * @returns {boolean} True for EAP or 802.1X networks.
+ */
+function networkNeedsUsername(network) {
+    const security = String(network.security || "").toLowerCase();
+    return security.includes("802.1x") || security.includes("eap");
+}
+
+/**
  * Loads the current WiFi network list from the backend.
  *
  * @returns {Promise<void>}
@@ -125,10 +135,12 @@ async function loadNetworks() {
  * Connects to a selected WiFi network.
  *
  * @param {object} network The target network.
+ * @param {HTMLInputElement|undefined} usernameInput The username input element.
  * @param {HTMLInputElement|undefined} passwordInput The password input element.
  * @returns {Promise<void>}
  */
-async function connectNetwork(network, passwordInput) {
+async function connectNetwork(network, usernameInput, passwordInput) {
+    const username = usernameInput?.value.trim() || "";
     const password = passwordInput?.value || "";
     activeRequestSsid = network.ssid;
     render();
@@ -139,6 +151,7 @@ async function connectNetwork(network, passwordInput) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 ssid: network.ssid,
+                username,
                 password,
             }),
         });
@@ -220,6 +233,17 @@ function renderNetworkRows(container) {
     }
 
     networks.forEach((network) => {
+        const usernameInput = createElement("input", {
+            type: "email",
+            placeholder: "uniqname@umich.edu",
+            autocomplete: "username",
+            className:
+                "w-48 bg-[#101010] text-white text-sm px-3 py-2 rounded border border-[#414141] focus:border-[#f9c845] focus:outline-none disabled:opacity-50",
+        });
+        usernameInput.disabled =
+            network.connected || !networkNeedsUsername(network);
+        usernameInput.hidden = !networkNeedsUsername(network);
+
         const passwordInput = createElement("input", {
             type: "password",
             placeholder: "Password",
@@ -246,7 +270,8 @@ function renderNetworkRows(container) {
                       "w-28 px-3 py-2 bg-[#2a2a2a] text-[#f9c845] rounded-md border border-[#414141] hover:bg-[#3a3a3a] hover:border-[#f9c845] text-sm disabled:opacity-60",
                   text: isBusy ? "Working..." : "Connect",
                   disabled: isBusy ? "disabled" : undefined,
-                  onclick: () => connectNetwork(network, passwordInput),
+                  onclick: () =>
+                      connectNetwork(network, usernameInput, passwordInput),
               });
 
         const statusBadge = createElement("span", {
@@ -274,7 +299,7 @@ function renderNetworkRows(container) {
                 className:
                     "flex flex-wrap items-center justify-end gap-2 shrink-0",
             },
-            [statusBadge, passwordInput, actionButton],
+            [statusBadge, usernameInput, passwordInput, actionButton],
         );
 
         container.appendChild(

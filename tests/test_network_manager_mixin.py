@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from types import SimpleNamespace
 
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 
@@ -118,6 +119,72 @@ def test_disconnect_active_wifi_devices_discovers_connected_wifi_device() -> Non
     assert manager.calls == [
         (["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], 10.0),
         (["device", "disconnect", "wlan0"], 15.0),
+    ]
+
+
+def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
+    manager = SequencedNetworkManager(
+        [
+            subprocess.CompletedProcess(["nmcli"], 10, stdout="", stderr="missing"),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="created", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="modified", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="connected", stderr=""),
+        ]
+    )
+    request = SimpleNamespace(
+        get_json=lambda silent=True: {
+            "ssid": "MWireless",
+            "username": "student@umich.edu",
+            "password": "secret",
+        }
+    )
+    monkeypatch.setattr(
+        "src.webui.web_server_utils.network_manager_mixin._request",
+        lambda: request,
+    )
+
+    payload, status = manager.connect_wifi_network()
+
+    assert status == 200
+    assert payload["ssid"] == "MWireless"
+    assert manager.calls == [
+        (["connection", "delete", "EagleEye-MWireless"], 10.0),
+        (
+            [
+                "connection",
+                "add",
+                "type",
+                "wifi",
+                "ifname",
+                "*",
+                "con-name",
+                "EagleEye-MWireless",
+                "ssid",
+                "MWireless",
+            ],
+            15.0,
+        ),
+        (
+            [
+                "connection",
+                "modify",
+                "EagleEye-MWireless",
+                "wifi-sec.key-mgmt",
+                "wpa-eap",
+                "802-1x.eap",
+                "peap",
+                "802-1x.phase2-auth",
+                "mschapv2",
+                "802-1x.identity",
+                "student@umich.edu",
+                "802-1x.password",
+                "secret",
+                "802-1x.domain-suffix-match",
+                "radius.umnet.umich.edu",
+            ],
+            15.0,
+        ),
+        (["connection", "up", "EagleEye-MWireless"], 30.0),
     ]
 
 
