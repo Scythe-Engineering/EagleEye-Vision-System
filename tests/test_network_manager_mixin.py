@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+from types import SimpleNamespace
+
+import pytest
 
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 
@@ -119,6 +122,121 @@ def test_disconnect_active_wifi_devices_discovers_connected_wifi_device() -> Non
         (["-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], 10.0),
         (["device", "disconnect", "wlan0"], 15.0),
     ]
+
+
+def test_connect_enterprise_wifi_configures_peap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configure and activate a PEAP connection before replacing its profile."""
+    manager = SequencedNetworkManager(
+        [
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="created", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="modified", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="connected", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="deleted", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="renamed", stderr=""),
+        ]
+    )
+    request = SimpleNamespace(
+        get_json=lambda silent=True: {
+            "ssid": "EnterpriseNet",
+            "username": "student",
+            "password": "secret",
+        }
+    )
+    monkeypatch.setattr(
+        "src.webui.web_server_utils.network_manager_mixin._request",
+        lambda: request,
+    )
+
+    payload, status = manager.connect_wifi_network()
+
+    assert status == 200
+    assert payload["ssid"] == "EnterpriseNet"
+    temporary_name = manager.calls[0][0][7]
+    assert temporary_name.startswith("EagleEye-EnterpriseNet-")
+    assert manager.calls == [
+        (
+            [
+                "connection",
+                "add",
+                "type",
+                "wifi",
+                "ifname",
+                "*",
+                "con-name",
+                temporary_name,
+                "ssid",
+                "EnterpriseNet",
+            ],
+            15.0,
+        ),
+        (
+            [
+                "connection",
+                "modify",
+                temporary_name,
+                "wifi-sec.key-mgmt",
+                "wpa-eap",
+                "802-1x.eap",
+                "peap",
+                "802-1x.phase2-auth",
+                "mschapv2",
+                "802-1x.identity",
+                "student",
+                "802-1x.password",
+                "secret",
+            ],
+            15.0,
+        ),
+        (["connection", "up", temporary_name], 30.0),
+        (["connection", "delete", "EagleEye-EnterpriseNet"], 10.0),
+        (
+            [
+                "connection",
+                "modify",
+                temporary_name,
+                "connection.id",
+                "EagleEye-EnterpriseNet",
+            ],
+            15.0,
+        ),
+    ]
+
+
+def test_connect_enterprise_wifi_reports_profile_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report a failure when the old profile cannot be removed."""
+    manager = SequencedNetworkManager(
+        [
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="created", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="modified", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 0, stdout="connected", stderr=""),
+            subprocess.CompletedProcess(["nmcli"], 10, stdout="", stderr="delete failed"),
+        ]
+    )
+    request = SimpleNamespace(
+        get_json=lambda silent=True: {
+            "ssid": "EnterpriseNet",
+            "username": "student",
+            "password": "secret",
+        }
+    )
+    monkeypatch.setattr(
+        "src.webui.web_server_utils.network_manager_mixin._request",
+        lambda: request,
+    )
+
+    payload, status = manager.connect_wifi_network()
+
+    assert status == 400
+    assert payload["error"] == "delete failed"
+    assert len(manager.calls) == 4
+    assert manager.calls[-1] == (
+        ["connection", "delete", "EagleEye-EnterpriseNet"],
+        10.0,
+    )
 
 
 def test_network_manager_status_requires_linux(monkeypatch) -> None:
