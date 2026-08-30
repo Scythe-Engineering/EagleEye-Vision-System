@@ -19,7 +19,6 @@ import {
 
 const VERIFICATION_SESSION_KEY = "eagleeye-first-boot-verification";
 const WIZARD_SESSION_KEY = "eagleeye-first-boot-wizard";
-const GUIDE_HIGHLIGHT = "0 0 0 2px #f9c845";
 
 const state = {
     status: null,
@@ -167,7 +166,8 @@ function restoreSession() {
  */
 function clearGuideTarget() {
     if (state.guideTarget) {
-        state.guideTarget.style.boxShadow = "";
+        state.guideTarget.classList.remove("first-boot-guide-target");
+        state.guideTarget.removeAttribute("data-wizard-hint");
         state.guideTarget = null;
     }
 }
@@ -181,7 +181,8 @@ function highlightGuideTarget(target) {
     clearGuideTarget();
     if (!target) return;
     state.guideTarget = target;
-    target.style.boxShadow = GUIDE_HIGHLIGHT;
+    target.classList.add("first-boot-guide-target");
+    target.dataset.wizardHint = "Press me!";
     target.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
@@ -573,7 +574,7 @@ async function showGuidedStep(step, token) {
     }
 
     if (state.guideToken !== token || state.step !== step) return;
-    highlightGuideTarget(document.getElementById("robotAddressInput"));
+    highlightGuideTarget(document.getElementById("saveSettingsBtn"));
 }
 
 /**
