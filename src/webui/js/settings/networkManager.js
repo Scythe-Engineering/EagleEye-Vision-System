@@ -234,8 +234,8 @@ function renderNetworkRows(container) {
 
     networks.forEach((network) => {
         const usernameInput = createElement("input", {
-            type: "email",
-            placeholder: "uniqname@umich.edu",
+            type: "text",
+            placeholder: "Username",
             autocomplete: "username",
             className:
                 "w-48 bg-[#101010] text-white text-sm px-3 py-2 rounded border border-[#414141] focus:border-[#f9c845] focus:outline-none disabled:opacity-50",

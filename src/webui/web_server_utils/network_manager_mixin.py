@@ -233,8 +233,6 @@ class NetworkManagerMixin:
                     username,
                     "802-1x.password",
                     password,
-                    "802-1x.domain-suffix-match",
-                    "radius.umnet.umich.edu",
                 ]
                 if result.returncode == 0:
                     result = self._run_nmcli(args, timeout=15.0)

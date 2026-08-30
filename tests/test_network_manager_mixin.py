@@ -133,8 +133,8 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
     )
     request = SimpleNamespace(
         get_json=lambda silent=True: {
-            "ssid": "MWireless",
-            "username": "student@umich.edu",
+            "ssid": "EnterpriseNet",
+            "username": "student",
             "password": "secret",
         }
     )
@@ -146,9 +146,9 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
     payload, status = manager.connect_wifi_network()
 
     assert status == 200
-    assert payload["ssid"] == "MWireless"
+    assert payload["ssid"] == "EnterpriseNet"
     assert manager.calls == [
-        (["connection", "delete", "EagleEye-MWireless"], 10.0),
+        (["connection", "delete", "EagleEye-EnterpriseNet"], 10.0),
         (
             [
                 "connection",
@@ -158,9 +158,9 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
                 "ifname",
                 "*",
                 "con-name",
-                "EagleEye-MWireless",
+                "EagleEye-EnterpriseNet",
                 "ssid",
-                "MWireless",
+                "EnterpriseNet",
             ],
             15.0,
         ),
@@ -168,7 +168,7 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
             [
                 "connection",
                 "modify",
-                "EagleEye-MWireless",
+                "EagleEye-EnterpriseNet",
                 "wifi-sec.key-mgmt",
                 "wpa-eap",
                 "802-1x.eap",
@@ -176,15 +176,13 @@ def test_connect_enterprise_wifi_configures_peap(monkeypatch) -> None:
                 "802-1x.phase2-auth",
                 "mschapv2",
                 "802-1x.identity",
-                "student@umich.edu",
+                "student",
                 "802-1x.password",
                 "secret",
-                "802-1x.domain-suffix-match",
-                "radius.umnet.umich.edu",
             ],
             15.0,
         ),
-        (["connection", "up", "EagleEye-MWireless"], 30.0),
+        (["connection", "up", "EagleEye-EnterpriseNet"], 30.0),
     ]
 
 
