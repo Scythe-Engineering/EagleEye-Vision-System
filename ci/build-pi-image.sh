@@ -22,6 +22,8 @@ phase() {
 
 BASE_IMAGE_URL="${BASE_IMAGE_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}"
 IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-8G}"
+IMAGE_FREE_BYTES="${IMAGE_FREE_BYTES:-268435456}"
+XZ_PRESET="${XZ_PRESET:-9}"
 IMAGE_USER="eagleeye"
 IMAGE_PASSWORD="eagleeye"
 IMAGE_HOSTNAME="eagleeye"
@@ -39,8 +41,10 @@ if [ -d /mnt ] && [ -w /mnt ]; then
 else
     BUILD_DIR="$(mktemp -d)"
 fi
-mkdir -p "$BUILD_DIR"
+BUILD_CACHE_DIR="${BUILD_CACHE_DIR:-$BUILD_DIR/cache}"
+mkdir -p "$BUILD_DIR" "$BUILD_CACHE_DIR"
 OUT_IMG="$BUILD_DIR/$OUT_NAME"
+BASE_IMAGE_CACHE="$BUILD_CACHE_DIR/raspios-lite-arm64.img.xz"
 
 MNT=""
 LOOP=""
@@ -48,7 +52,9 @@ LOOP=""
 cleanup() {
     set +e
     if [ -n "$MNT" ]; then
+        umount "$MNT/home/$IMAGE_USER/.npm" 2>/dev/null
         umount "$MNT/home/$IMAGE_USER/.cache" 2>/dev/null
+        umount "$MNT/var/cache/apt/archives" 2>/dev/null
         for fs in run dev/pts dev sys proc; do umount "$MNT/$fs" 2>/dev/null; done
         umount "$MNT/boot/firmware" 2>/dev/null
         umount "$MNT" 2>/dev/null
@@ -59,7 +65,9 @@ cleanup() {
 trap cleanup EXIT
 
 phase "Downloading base image"
-curl -fL "$BASE_IMAGE_URL" | xz -dc > "$OUT_IMG"
+curl -fL --etag-save "$BASE_IMAGE_CACHE.etag" --etag-compare "$BASE_IMAGE_CACHE.etag" \
+    -o "$BASE_IMAGE_CACHE" "$BASE_IMAGE_URL"
+xz -dc "$BASE_IMAGE_CACHE" > "$OUT_IMG"
 
 phase "Growing image and root filesystem"
 truncate -s +"$IMAGE_GROW_BYTES" "$OUT_IMG"
@@ -96,10 +104,13 @@ chroot "$MNT" /bin/bash -euxc "
     chmod 440 /etc/sudoers.d/010_${IMAGE_USER}-nopasswd
 "
 
-# Keep package-manager caches (uv/npm/pip) on the host disk, not in the image.
-mkdir -p "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-mount --bind "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
+# Keep package-manager caches on the host disk, not in the image.
+mkdir -p "$BUILD_CACHE_DIR/user-cache" "$BUILD_CACHE_DIR/npm" "$BUILD_CACHE_DIR/apt-archives/partial"
+mkdir -p "$MNT/home/$IMAGE_USER/.cache" "$MNT/home/$IMAGE_USER/.npm"
+mount --bind "$BUILD_CACHE_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
+mount --bind "$BUILD_CACHE_DIR/npm" "$MNT/home/$IMAGE_USER/.npm"
+mount --bind "$BUILD_CACHE_DIR/apt-archives" "$MNT/var/cache/apt/archives"
+chroot "$MNT" chown -R "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache" "/home/$IMAGE_USER/.npm"
 
 phase "Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
@@ -128,7 +139,6 @@ chroot "$MNT" /bin/bash -euxc "
     DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon openssh-server rpi-usb-gadget
     systemctl enable ssh
     cloud-init clean --logs
-    apt-get clean
 "
 cat > "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg" <<'EOF'
 rpi:
@@ -180,22 +190,40 @@ grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polki
 grep -Fq 'org.freedesktop.NetworkManager.wifi.scan' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
-phase "Unmounting and hashing image"
+phase "Unmounting image"
 sync
+umount "$MNT/home/$IMAGE_USER/.npm"
 umount "$MNT/home/$IMAGE_USER/.cache"
+umount "$MNT/var/cache/apt/archives"
 for fs in run dev/pts dev sys proc; do umount "$MNT/$fs"; done
 umount "$MNT/boot/firmware"
 umount "$MNT"
-e2fsck -fn "${LOOP}p2"
-losetup -d "$LOOP"
 rmdir "$MNT"
 MNT=""
+
+phase "Shrinking image"
+e2fsck -fy "${LOOP}p2" || {
+    status=$?
+    [[ "$status" -le 2 ]] || exit "$status"
+}
+resize2fs -M "${LOOP}p2"
+BLOCK_SIZE="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block size/{gsub(/ /, "", $2); print $2}')"
+BLOCK_COUNT="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block count/{gsub(/ /, "", $2); print $2}')"
+TARGET_BLOCKS="$((BLOCK_COUNT + (IMAGE_FREE_BYTES + BLOCK_SIZE - 1) / BLOCK_SIZE))"
+resize2fs "${LOOP}p2" "$TARGET_BLOCKS"
+SECTOR_SIZE="$(blockdev --getss "$LOOP")"
+PARTITION_START="$(parted -ms "$LOOP" unit s print | awk -F: '$1 == "2" {gsub(/s/, "", $2); print $2}')"
+PARTITION_SECTORS="$(((TARGET_BLOCKS * BLOCK_SIZE + SECTOR_SIZE - 1) / SECTOR_SIZE))"
+IMAGE_SECTORS="$((PARTITION_START + PARTITION_SECTORS))"
+printf 'Yes\n' | parted ---pretend-input-tty "$LOOP" unit s resizepart 2 "$((IMAGE_SECTORS - 1))s"
+losetup -d "$LOOP"
 LOOP=""
+truncate -s "$((IMAGE_SECTORS * SECTOR_SIZE))" "$OUT_IMG"
 trap - EXIT
 EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
 EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
 phase "Compressing image"
-xz -T0 -9 "$OUT_IMG"
+xz -T0 "-$XZ_PRESET" "$OUT_IMG"
 DOWNLOAD_SIZE="$(stat -c %s "$OUT_IMG.xz")"
 DOWNLOAD_SHA256="$(sha256sum "$OUT_IMG.xz" | cut -d' ' -f1)"
 OUTPUT_DIR="${GITHUB_WORKSPACE:-$REPO_SRC}"
