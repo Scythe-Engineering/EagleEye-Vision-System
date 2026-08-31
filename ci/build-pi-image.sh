@@ -22,6 +22,7 @@ phase() {
 
 BASE_IMAGE_URL="${BASE_IMAGE_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}"
 IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-8G}"
+XZ_PRESET="${XZ_PRESET:-9}"
 IMAGE_USER="eagleeye"
 IMAGE_PASSWORD="eagleeye"
 IMAGE_HOSTNAME="eagleeye"
@@ -206,7 +207,7 @@ trap - EXIT
 EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
 EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
 phase "Compressing image"
-xz -T0 -9 "$OUT_IMG"
+xz -T0 "-$XZ_PRESET" "$OUT_IMG"
 DOWNLOAD_SIZE="$(stat -c %s "$OUT_IMG.xz")"
 DOWNLOAD_SHA256="$(sha256sum "$OUT_IMG.xz" | cut -d' ' -f1)"
 OUTPUT_DIR="${GITHUB_WORKSPACE:-$REPO_SRC}"

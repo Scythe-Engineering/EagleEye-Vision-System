@@ -25,6 +25,7 @@ jobs:
       - name: Build image
         env:
           BUILD_CACHE_DIR: ${{ github.workspace }}/.image-cache
+          XZ_PRESET: 7
         run: sudo -E bash ci/build-pi-image.sh
 
       - name: Upload image
