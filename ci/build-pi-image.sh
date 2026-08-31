@@ -139,7 +139,6 @@ chroot "$MNT" /bin/bash -euxc "
     DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-daemon openssh-server rpi-usb-gadget
     systemctl enable ssh
     cloud-init clean --logs
-    apt-get clean
 "
 cat > "$MNT/etc/cloud/cloud.cfg.d/90-eagleeye-usb-gadget.cfg" <<'EOF'
 rpi:
@@ -203,7 +202,10 @@ rmdir "$MNT"
 MNT=""
 
 phase "Shrinking image"
-e2fsck -fy "${LOOP}p2"
+e2fsck -fy "${LOOP}p2" || {
+    status=$?
+    [ "$status" -le 2 ] || exit "$status"
+}
 resize2fs -M "${LOOP}p2"
 BLOCK_SIZE="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block size/{gsub(/ /, "", $2); print $2}')"
 BLOCK_COUNT="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block count/{gsub(/ /, "", $2); print $2}')"
@@ -213,7 +215,7 @@ SECTOR_SIZE="$(blockdev --getss "$LOOP")"
 PARTITION_START="$(parted -ms "$LOOP" unit s print | awk -F: '$1 == "2" {gsub(/s/, "", $2); print $2}')"
 PARTITION_SECTORS="$(((TARGET_BLOCKS * BLOCK_SIZE + SECTOR_SIZE - 1) / SECTOR_SIZE))"
 IMAGE_SECTORS="$((PARTITION_START + PARTITION_SECTORS))"
-parted -s "$LOOP" unit s resizepart 2 "$((IMAGE_SECTORS - 1))s"
+parted ---pretend-input-tty "$LOOP" unit s resizepart 2 Yes "$((IMAGE_SECTORS - 1))s"
 losetup -d "$LOOP"
 LOOP=""
 truncate -s "$((IMAGE_SECTORS * SECTOR_SIZE))" "$OUT_IMG"
