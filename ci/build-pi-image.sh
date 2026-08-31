@@ -195,7 +195,7 @@ trap - EXIT
 EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
 EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
 phase "Compressing image"
-xz -T0 -3 "$OUT_IMG"
+xz -T0 -9 "$OUT_IMG"
 DOWNLOAD_SIZE="$(stat -c %s "$OUT_IMG.xz")"
 DOWNLOAD_SHA256="$(sha256sum "$OUT_IMG.xz" | cut -d' ' -f1)"
 OUTPUT_DIR="${GITHUB_WORKSPACE:-$REPO_SRC}"
