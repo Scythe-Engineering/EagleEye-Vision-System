@@ -14,12 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
-          df -h /
+      - name: Restore image build cache
+        uses: actions/cache@v4
+        with:
+          path: .image-cache
+          key: pi-image-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock', 'package-lock.json', 'install.sh') }}
+          restore-keys: |
+            pi-image-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build image
+        env:
+          BUILD_CACHE_DIR: ${{ github.workspace }}/.image-cache
         run: sudo -E bash ci/build-pi-image.sh
 
       - name: Upload image

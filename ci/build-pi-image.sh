@@ -39,8 +39,10 @@ if [ -d /mnt ] && [ -w /mnt ]; then
 else
     BUILD_DIR="$(mktemp -d)"
 fi
-mkdir -p "$BUILD_DIR"
+BUILD_CACHE_DIR="${BUILD_CACHE_DIR:-$BUILD_DIR/cache}"
+mkdir -p "$BUILD_DIR" "$BUILD_CACHE_DIR"
 OUT_IMG="$BUILD_DIR/$OUT_NAME"
+BASE_IMAGE_CACHE="$BUILD_CACHE_DIR/raspios-lite-arm64.img.xz"
 
 MNT=""
 LOOP=""
@@ -48,7 +50,9 @@ LOOP=""
 cleanup() {
     set +e
     if [ -n "$MNT" ]; then
+        umount "$MNT/home/$IMAGE_USER/.npm" 2>/dev/null
         umount "$MNT/home/$IMAGE_USER/.cache" 2>/dev/null
+        umount "$MNT/var/cache/apt/archives" 2>/dev/null
         for fs in run dev/pts dev sys proc; do umount "$MNT/$fs" 2>/dev/null; done
         umount "$MNT/boot/firmware" 2>/dev/null
         umount "$MNT" 2>/dev/null
@@ -59,7 +63,9 @@ cleanup() {
 trap cleanup EXIT
 
 phase "Downloading base image"
-curl -fL "$BASE_IMAGE_URL" | xz -dc > "$OUT_IMG"
+curl -fL --etag-save "$BASE_IMAGE_CACHE.etag" --etag-compare "$BASE_IMAGE_CACHE.etag" \
+    -o "$BASE_IMAGE_CACHE" "$BASE_IMAGE_URL"
+xz -dc "$BASE_IMAGE_CACHE" > "$OUT_IMG"
 
 phase "Growing image and root filesystem"
 truncate -s +"$IMAGE_GROW_BYTES" "$OUT_IMG"
@@ -96,10 +102,13 @@ chroot "$MNT" /bin/bash -euxc "
     chmod 440 /etc/sudoers.d/010_${IMAGE_USER}-nopasswd
 "
 
-# Keep package-manager caches (uv/npm/pip) on the host disk, not in the image.
-mkdir -p "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-mount --bind "$BUILD_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
-chroot "$MNT" chown "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache"
+# Keep package-manager caches on the host disk, not in the image.
+mkdir -p "$BUILD_CACHE_DIR/user-cache" "$BUILD_CACHE_DIR/npm" "$BUILD_CACHE_DIR/apt-archives/partial"
+mkdir -p "$MNT/home/$IMAGE_USER/.cache" "$MNT/home/$IMAGE_USER/.npm"
+mount --bind "$BUILD_CACHE_DIR/user-cache" "$MNT/home/$IMAGE_USER/.cache"
+mount --bind "$BUILD_CACHE_DIR/npm" "$MNT/home/$IMAGE_USER/.npm"
+mount --bind "$BUILD_CACHE_DIR/apt-archives" "$MNT/var/cache/apt/archives"
+chroot "$MNT" chown -R "$IMAGE_USER:$IMAGE_USER" "/home/$IMAGE_USER/.cache" "/home/$IMAGE_USER/.npm"
 
 phase "Copying repository into the image"
 rm -rf "$MNT/tmp/eagleeye-src"
@@ -182,7 +191,9 @@ find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi
 
 phase "Unmounting and hashing image"
 sync
+umount "$MNT/home/$IMAGE_USER/.npm"
 umount "$MNT/home/$IMAGE_USER/.cache"
+umount "$MNT/var/cache/apt/archives"
 for fs in run dev/pts dev sys proc; do umount "$MNT/$fs"; done
 umount "$MNT/boot/firmware"
 umount "$MNT"
