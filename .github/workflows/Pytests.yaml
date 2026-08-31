@@ -42,7 +42,7 @@ jobs:
                   workspaces: src/rust_implementations/modules
 
             - name: Install dependencies
-              run: uv sync
+              run: uv sync --locked
 
             - name: Build WebUI assets
               run: |
