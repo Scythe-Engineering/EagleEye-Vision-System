@@ -204,7 +204,7 @@ MNT=""
 phase "Shrinking image"
 e2fsck -fy "${LOOP}p2" || {
     status=$?
-    [ "$status" -le 2 ] || exit "$status"
+    [[ "$status" -le 2 ]] || exit "$status"
 }
 resize2fs -M "${LOOP}p2"
 BLOCK_SIZE="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block size/{gsub(/ /, "", $2); print $2}')"
