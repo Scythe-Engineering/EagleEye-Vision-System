@@ -22,6 +22,7 @@ phase() {
 
 BASE_IMAGE_URL="${BASE_IMAGE_URL:-https://downloads.raspberrypi.com/raspios_lite_arm64_latest}"
 IMAGE_GROW_BYTES="${IMAGE_GROW_BYTES:-8G}"
+IMAGE_FREE_BYTES="${IMAGE_FREE_BYTES:-268435456}"
 XZ_PRESET="${XZ_PRESET:-9}"
 IMAGE_USER="eagleeye"
 IMAGE_PASSWORD="eagleeye"
@@ -190,7 +191,7 @@ grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polki
 grep -Fq 'org.freedesktop.NetworkManager.wifi.scan' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
-phase "Unmounting and hashing image"
+phase "Unmounting image"
 sync
 umount "$MNT/home/$IMAGE_USER/.npm"
 umount "$MNT/home/$IMAGE_USER/.cache"
@@ -198,11 +199,24 @@ umount "$MNT/var/cache/apt/archives"
 for fs in run dev/pts dev sys proc; do umount "$MNT/$fs"; done
 umount "$MNT/boot/firmware"
 umount "$MNT"
-e2fsck -fn "${LOOP}p2"
-losetup -d "$LOOP"
 rmdir "$MNT"
 MNT=""
+
+phase "Shrinking image"
+e2fsck -fy "${LOOP}p2"
+resize2fs -M "${LOOP}p2"
+BLOCK_SIZE="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block size/{gsub(/ /, "", $2); print $2}')"
+BLOCK_COUNT="$(dumpe2fs -h "${LOOP}p2" 2>/dev/null | awk -F: '/Block count/{gsub(/ /, "", $2); print $2}')"
+TARGET_BLOCKS="$((BLOCK_COUNT + (IMAGE_FREE_BYTES + BLOCK_SIZE - 1) / BLOCK_SIZE))"
+resize2fs "${LOOP}p2" "$TARGET_BLOCKS"
+SECTOR_SIZE="$(blockdev --getss "$LOOP")"
+PARTITION_START="$(parted -ms "$LOOP" unit s print | awk -F: '$1 == "2" {gsub(/s/, "", $2); print $2}')"
+PARTITION_SECTORS="$(((TARGET_BLOCKS * BLOCK_SIZE + SECTOR_SIZE - 1) / SECTOR_SIZE))"
+IMAGE_SECTORS="$((PARTITION_START + PARTITION_SECTORS))"
+parted -s "$LOOP" unit s resizepart 2 "$((IMAGE_SECTORS - 1))s"
+losetup -d "$LOOP"
 LOOP=""
+truncate -s "$((IMAGE_SECTORS * SECTOR_SIZE))" "$OUT_IMG"
 trap - EXIT
 EXTRACT_SIZE="$(stat -c %s "$OUT_IMG")"
 EXTRACT_SHA256="$(sha256sum "$OUT_IMG" | cut -d' ' -f1)"
