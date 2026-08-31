@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from src.webui.web_server_utils.pipeline_config_mixin import PipelineConfigMixin
 class _PipelineConfigHarness(PipelineConfigMixin):
     def __init__(self, config_path: Path) -> None:
         self.config_path = config_path
+        self._pipeline_settings_lock = threading.RLock()
         self.restart_required_for_config = False
         self.runtime_id = "test-runtime"
 

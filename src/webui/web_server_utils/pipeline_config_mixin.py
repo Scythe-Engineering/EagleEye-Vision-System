@@ -76,6 +76,13 @@ class PipelineConfigMixin:
         if not isinstance(content, str) or not isinstance(revision, str):
             return {"error": "Expected string fields 'content' and 'revision'"}, 400
 
+        with self._pipeline_settings_lock:
+            return self._save_pipeline_config_json_locked(content, revision)
+
+    def _save_pipeline_config_json_locked(
+        self, content: str, revision: str
+    ) -> tuple[dict[str, Any], int]:
+        """Validate and write editor JSON while holding the pipeline-config lock."""
         with open(self._pipeline_config_path(), "r", encoding="utf-8") as config_file:
             current_content = config_file.read()
         if revision != self._pipeline_config_revision(current_content):
@@ -181,15 +188,14 @@ class PipelineConfigMixin:
         return self._reorder_pipeline_config(pipeline_config)
 
     def save_pipeline_config_by_name(self, pipeline_name: str) -> tuple[dict, int]:
-        """
-        Save the pipeline config by pipeline name.
+        """Save one pipeline while excluding other config mutation paths."""
+        with self._pipeline_settings_lock:
+            return self._save_pipeline_config_by_name_locked(pipeline_name)
 
-        Args:
-            pipeline_name (str): The name of the pipeline.
-
-        Returns:
-            tuple[dict, int]: A success or failure message.
-        """
+    def _save_pipeline_config_by_name_locked(
+        self, pipeline_name: str
+    ) -> tuple[dict, int]:
+        """Save one pipeline while holding the shared pipeline-config lock."""
         current_config = self._load_pipeline_config_file()
         new_data = request.get_json()
         if not isinstance(new_data, list):
@@ -280,12 +286,12 @@ class PipelineConfigMixin:
         }, 200
 
     def delete_pipeline_by_name(self, pipeline_name: str) -> tuple[dict, int]:
-        """
-        Delete a pipeline by name.
+        """Delete one pipeline while excluding other config mutation paths."""
+        with self._pipeline_settings_lock:
+            return self._delete_pipeline_by_name_locked(pipeline_name)
 
-        Args:
-            pipeline_name (str): The name of the pipeline.
-        """
+    def _delete_pipeline_by_name_locked(self, pipeline_name: str) -> tuple[dict, int]:
+        """Delete one pipeline while holding the shared pipeline-config lock."""
         current_config = self._load_pipeline_config_file()
         if pipeline_name in current_config:
             del current_config[pipeline_name]

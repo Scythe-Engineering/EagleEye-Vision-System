@@ -3,6 +3,7 @@
  */
 import { populateFieldDropdown } from "./dropdown/fieldDropdown.js";
 import { setupSidebar } from "./ui/sidebar.js";
+import { initializeFirstBootWizard } from "./setup/firstBootWizard.js";
 import { setupCameraFeedHandlers } from "./feeds/cameraFeedHandlers.js";
 import {
     saveSettings,
@@ -116,6 +117,7 @@ window.onload = async () => {
 
     await populateFieldDropdown();
     setupSidebar();
+    void initializeFirstBootWizard();
     setupCameraFeedHandlers();
     initializeTerminalHandlers();
     initializeTestVideoManager();
@@ -373,7 +375,10 @@ window.onload = async () => {
             const data = JSON.parse(e.data);
             handleSystemUpdateProgress(data);
         } catch (err) {
-            console.warn("Failed to parse SSE system_update_progress event", err);
+            console.warn(
+                "Failed to parse SSE system_update_progress event",
+                err,
+            );
         }
     });
 
@@ -416,7 +421,8 @@ window.onload = async () => {
     es.addEventListener("pipeline_operation_errors", (e) => {
         try {
             const data = JSON.parse(e.data);
-            const handler = globalThis.pipelineCreator?.handleOperationErrorUpdate;
+            const handler =
+                globalThis.pipelineCreator?.handleOperationErrorUpdate;
             if (typeof handler === "function") {
                 handler(data);
             } else {
@@ -444,11 +450,11 @@ window.onload = async () => {
     const recentProfilingUpdateKeys = new Map();
     const PROFILING_DEDUPE_WINDOW_MS = 1000;
 
-/**
- * Validates, deduplicates, and forwards profiling update payloads.
- *
- * @param {string|object} data - Raw profiling update payload.
- */
+    /**
+     * Validates, deduplicates, and forwards profiling update payloads.
+     *
+     * @param {string|object} data - Raw profiling update payload.
+     */
     const handleProfilingUpdatePayload = (data) => {
         try {
             const parsedData =
@@ -486,11 +492,11 @@ window.onload = async () => {
         }
     };
 
-/**
- * Handles profiling updates received via SSE.
- *
- * @param {MessageEvent} e - The SSE message event.
- */
+    /**
+     * Handles profiling updates received via SSE.
+     *
+     * @param {MessageEvent} e - The SSE message event.
+     */
     const handleProfilingUpdateFromSse = (e) => {
         handleProfilingUpdatePayload(e?.data);
     };
@@ -498,11 +504,11 @@ window.onload = async () => {
     es.addEventListener("profiling_update", handleProfilingUpdateFromSse);
     globalThis.profilingUpdateSseHandler = handleProfilingUpdateFromSse;
 
-/**
- * Handles profiling updates received via Socket.IO.
- *
- * @param {unknown} data - The socket payload.
- */
+    /**
+     * Handles profiling updates received via Socket.IO.
+     *
+     * @param {unknown} data - The socket payload.
+     */
     const handleProfilingUpdateFromSocket = (data) => {
         handleProfilingUpdatePayload(data);
     };

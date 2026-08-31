@@ -74,10 +74,10 @@ class CameraCalibrationMixin:
     def _charuco_params_from_request(self) -> tuple[int, int, float, float, int]:
         data = request.get_json(silent=True) if request.method == "POST" else None
         source = data if isinstance(data, dict) else request.args
-        squares_x = int(source.get("squares_x", source.get("cols", 11)))
-        squares_y = int(source.get("squares_y", source.get("rows", 8)))
-        square_size = float(source.get("square_size", 0.015))
-        marker_size = float(source.get("marker_size", 0.011))
+        squares_x = int(source.get("squares_x", source.get("cols", 13)))
+        squares_y = int(source.get("squares_y", source.get("rows", 10)))
+        square_size = float(source.get("square_size", 0.020))
+        marker_size = float(source.get("marker_size", 0.015))
         dictionary_id = int(source.get("dictionary_id", cv2.aruco.DICT_4X4_50))
         if squares_x <= 1 or squares_y <= 1:
             raise ValueError("ChArUco square counts must be greater than 1")
@@ -359,7 +359,7 @@ class CameraCalibrationMixin:
             params = self._charuco_params_from_request()
             live_width, live_height = self._live_view_resolution_from_request()
         except ValueError:
-            params = (11, 8, 0.015, 0.011, cv2.aruco.DICT_4X4_50)
+            params = (13, 10, 0.020, 0.015, cv2.aruco.DICT_4X4_50)
             live_width, live_height = None, None
         return Response(
             self._calibration_feed_generator(
@@ -633,7 +633,7 @@ class CameraCalibrationMixin:
         try:
             params = self._charuco_params_from_request()
         except ValueError:
-            params = (11, 8, 0.015, 0.011, cv2.aruco.DICT_4X4_50)
+            params = (13, 10, 0.020, 0.015, cv2.aruco.DICT_4X4_50)
         with self._calibration_lock():
             frames = (
                 self._calibration_sessions()

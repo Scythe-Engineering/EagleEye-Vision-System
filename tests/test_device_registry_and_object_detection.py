@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from src.main_operations.definitions import object_detection
 from src.main_operations.modules.object_detection.yolo_detection.implementation import (
     ObjectDetectionImplementation,
 )
@@ -20,6 +21,7 @@ from src.utils.device_registry import (
 from src.utils.model_library import (
     ArtifactError,
     ModelLibrary,
+    ModelLibraryError,
     ModelReferencedError,
 )
 
@@ -231,6 +233,65 @@ def test_synchronous_detector_rejects_legacy_mx3(tmp_path: Path) -> None:
             device_registry=registry,
             model_library=library,
             model_factory=lambda _path, **_kwargs: _FakeModel(),
+        )
+
+
+def test_empty_model_slot_skips_unloadable_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Library:
+        def __init__(self) -> None:
+            self.models: tuple[SimpleNamespace, ...] = ()
+            self.missing: set[str] = set()
+
+        def list_models(self) -> tuple[SimpleNamespace, ...]:
+            return self.models
+
+        def resolve_artifact(self, model_id: str, _device_id: str) -> object:
+            if model_id in self.missing:
+                raise ModelLibraryError("artifact unavailable")
+            return object()
+
+    class _Implementation:
+        def __init__(self, *, model_id: str, **_kwargs: Any) -> None:
+            if model_id == "unloadable":
+                raise RuntimeError("model load failed")
+            self.model_id = model_id
+
+    library = _Library()
+    monkeypatch.setattr(
+        object_detection, "ObjectDetectionImplementation", _Implementation
+    )
+    detector = object_detection.ObjectDetectionDefinition(
+        model_id="",
+        device_id="cpu",
+        device_registry=SimpleNamespace(),
+        model_library=library,
+    )
+    library.models = (
+        SimpleNamespace(model_id="unloadable"),
+        SimpleNamespace(model_id="usable"),
+    )
+    detector._next_model_check = 0
+
+    assert detector._load_available_model() is not None
+    assert detector.model_id == "usable"
+
+    with pytest.raises(RuntimeError, match="model load failed"):
+        object_detection.ObjectDetectionDefinition(
+            model_id="unloadable",
+            device_id="cpu",
+            device_registry=SimpleNamespace(),
+            model_library=library,
+        )
+
+    library.missing.add("missing")
+    with pytest.raises(ModelLibraryError, match="artifact unavailable"):
+        object_detection.ObjectDetectionDefinition(
+            model_id="missing",
+            device_id="cpu",
+            device_registry=SimpleNamespace(),
+            model_library=library,
         )
 
 

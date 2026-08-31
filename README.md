@@ -49,11 +49,8 @@ enabled on first boot. Connect the OTG port directly to the computer and use
 over the configured Wi-Fi or Ethernet network instead. The first boot may restart
 once while it enables the gadget.
 
-A fresh install ships an intentionally incomplete `2026_apriltag_starter`
-pipeline (Device Input -> Detect AprilTags -> PnP Camera Localization ->
-Camera to Robot Pose -> Robot Pose Output). Fill in the camera bus ID,
-calibration, extrinsics, and 2026 AprilTag map path in the Web UI before it will
-run; until then it stays inactive.
+A fresh install opens the first-boot wizard. It configures each camera and
+creates the selected localization and detection pipelines after calibration.
 
 For further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
 

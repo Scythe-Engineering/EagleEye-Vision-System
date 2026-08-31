@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
+import pytest
 
+import src.webui.web_server_utils.camera_calibration_mixin as camera_calibration_module
 from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
 
 
@@ -31,6 +34,25 @@ class _CalibrationHarness(CameraCalibrationMixin):
         self.frame_locks = {
             camera_name: threading.Lock() for camera_name in self.frame_list
         }
+
+
+def test_charuco_request_defaults_match_the_recommended_board(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _CalibrationHarness()
+    monkeypatch.setattr(
+        camera_calibration_module,
+        "request",
+        SimpleNamespace(method="GET", args={}),
+    )
+
+    assert harness._charuco_params_from_request() == (
+        13,
+        10,
+        0.020,
+        0.015,
+        cv2.aruco.DICT_4X4_50,
+    )
 
 
 def test_latest_camera_frame_resolves_selected_camera_by_bus_id() -> None:
