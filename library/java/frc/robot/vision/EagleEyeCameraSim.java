@@ -121,6 +121,9 @@ public class EagleEyeCameraSim {
   public void update(Pose2d groundTruth) {
     double[] meta = visibleTagMetrics(groundTruth);
     if (meta == null) {
+      // Consume the pending detections even when nothing publishes, so they cannot
+      // resurface later stamped with an unrelated pose.
+      nextDetections = new String[0];
       return;
     }
     double noise =

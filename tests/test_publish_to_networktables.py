@@ -142,6 +142,24 @@ def test_publish_drops_non_finite_detection_coordinates() -> None:
     assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
 
 
+def test_publish_rejects_string_position_3d() -> None:
+    """A string is a Sequence too; '123' must not become coordinates (1.0, 2.0, 3.0)."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "stringy", "position_3d": "123"},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=357, capture_monotonic_ns=3),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+
+
 def test_publish_supports_empty_detection_frames() -> None:
     """An empty localized frame must clear stale robot-side detections."""
     table = FakeNetworkTable()

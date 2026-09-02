@@ -113,7 +113,11 @@ def _coerce_detections(value: Any) -> list[str] | None:
         if not isinstance(detection, dict):
             continue
         position = detection.get("position_3d")
-        if not isinstance(position, Sequence) or len(position) != 3:
+        if (
+            not isinstance(position, Sequence)
+            or isinstance(position, (str, bytes, bytearray))
+            or len(position) != 3
+        ):
             continue
         try:
             coordinates = [float(coordinate) for coordinate in position]
