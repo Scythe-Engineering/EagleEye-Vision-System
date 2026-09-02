@@ -104,9 +104,18 @@
                     {
                         "from_uuid": "op-mtaj8enn-gbrv",
                         "from_port": "camera_pose",
-                        "to_uuid": "op-mtaloeip-43e2",
-                        "to_port": "data",
+                        "to_uuid": "op-mtan560l-cvgm",
+                        "to_port": "camera_pose",
                         "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "op-mtaj8enn-gbrv",
+                        "from_port": "pose_meta",
+                        "to_uuid": "op-mtanmeta-1frc",
+                        "to_port": "data",
+                        "data_type": "pose_meta",
                         "is_default": false,
                         "custom_waypoints": null
                     }
@@ -167,15 +176,49 @@
             {
                 "action_name": "publish_to_networktables.py",
                 "action_params": {
-                    "target_key": "camera_pose",
+                    "target_key": "localization/front/pose",
+                    "schema": "pose3d",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 2280,
+                    "y": 200
+                },
+                "uuid": "op-mtaloeip-43e2",
+                "connections": []
+            },
+            {
+                "action_name": "camera_to_robot_pose.py",
+                "action_params": {},
+                "position": {
+                    "x": 1920,
+                    "y": 200
+                },
+                "uuid": "op-mtan560l-cvgm",
+                "connections": [
+                    {
+                        "from_uuid": "op-mtan560l-cvgm",
+                        "from_port": "robot_pose",
+                        "to_uuid": "op-mtaloeip-43e2",
+                        "to_port": "data",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "localization/front/meta",
                     "schema": "auto",
                     "data_path": []
                 },
                 "position": {
                     "x": 1920,
-                    "y": 200
+                    "y": 300
                 },
-                "uuid": "op-mtaloeip-43e2",
+                "uuid": "op-mtanmeta-1frc",
                 "connections": []
             }
         ]
@@ -752,6 +795,171 @@
                     "y": 140
                 },
                 "uuid": "op-mtallssl-1n35",
+                "connections": []
+            }
+        ]
+    },
+    "basic_localization": {
+        "name": "Basic localization",
+        "nodes": [
+            {
+                "action_name": "device_input.py",
+                "action_params": {
+                    "frame_rotation": 0
+                },
+                "position": {
+                    "x": -200,
+                    "y": -80
+                },
+                "uuid": "ee-loc-input",
+                "connections": [
+                    {
+                        "from_uuid": "ee-loc-input",
+                        "from_port": "frame",
+                        "to_uuid": "ee-loc-apriltags",
+                        "to_port": "frame",
+                        "data_type": "frame",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "detect_apriltags.py",
+                "action_params": {},
+                "position": {
+                    "x": 140,
+                    "y": -80
+                },
+                "uuid": "ee-loc-apriltags",
+                "connections": [
+                    {
+                        "from_uuid": "ee-loc-apriltags",
+                        "from_port": "detections",
+                        "to_uuid": "ee-loc-gate",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "minimum_apriltag_count.py",
+                "action_params": {
+                    "minimum_detections": 2
+                },
+                "position": {
+                    "x": 460,
+                    "y": -80
+                },
+                "uuid": "ee-loc-gate",
+                "connections": [
+                    {
+                        "from_uuid": "ee-loc-gate",
+                        "from_port": "detections",
+                        "to_uuid": "ee-loc-pnp",
+                        "to_port": "detections",
+                        "data_type": "detections",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "pnp_camera_localization.py",
+                "action_params": {},
+                "position": {
+                    "x": 700,
+                    "y": -80
+                },
+                "uuid": "ee-loc-pnp",
+                "connections": [
+                    {
+                        "from_uuid": "ee-loc-pnp",
+                        "from_port": "camera_pose",
+                        "to_uuid": "ee-loc-robot-pose",
+                        "to_port": "camera_pose",
+                        "data_type": "camera_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "ee-loc-pnp",
+                        "from_port": "pose_meta",
+                        "to_uuid": "ee-loc-publish-meta",
+                        "to_port": "data",
+                        "data_type": "pose_meta",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "camera_to_robot_pose.py",
+                "action_params": {},
+                "position": {
+                    "x": 1020,
+                    "y": -140
+                },
+                "uuid": "ee-loc-robot-pose",
+                "connections": [
+                    {
+                        "from_uuid": "ee-loc-robot-pose",
+                        "from_port": "robot_pose",
+                        "to_uuid": "ee-loc-view",
+                        "to_port": "pose",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    },
+                    {
+                        "from_uuid": "ee-loc-robot-pose",
+                        "from_port": "robot_pose",
+                        "to_uuid": "ee-loc-publish-pose",
+                        "to_port": "data",
+                        "data_type": "robot_pose",
+                        "is_default": false,
+                        "custom_waypoints": null
+                    }
+                ]
+            },
+            {
+                "action_name": "robot_pose_output.py",
+                "action_params": {},
+                "position": {
+                    "x": 1300,
+                    "y": -140
+                },
+                "uuid": "ee-loc-view",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "localization/front/pose",
+                    "schema": "pose3d",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 1580,
+                    "y": -140
+                },
+                "uuid": "ee-loc-publish-pose",
+                "connections": []
+            },
+            {
+                "action_name": "publish_to_networktables.py",
+                "action_params": {
+                    "target_key": "localization/front/meta",
+                    "schema": "auto",
+                    "data_path": []
+                },
+                "position": {
+                    "x": 1580,
+                    "y": 40
+                },
+                "uuid": "ee-loc-publish-meta",
                 "connections": []
             }
         ]

@@ -9,6 +9,7 @@
 ## Table of Contents
 - [Introduction](#introduction)
 - [Installation](#installation)
+- [Robot library](#robot-library)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -53,6 +54,43 @@ A fresh install opens the first-boot wizard. It configures each camera and
 creates the selected localization and detection pipelines after calibration.
 
 For further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
+
+## Robot library
+
+Robot-side code for consuming EagleEye lives in [`library/`](library/), with full usage notes in
+[`library/README.md`](library/README.md).
+
+Copy `library/java/frc/robot/vision/EagleEyeCamera.java` into your robot project, create a pipeline
+from the WebUI's "Basic localization" template, and feed your pose estimator:
+
+```java
+public class Drive extends SubsystemBase {
+  private final EagleEyeCamera[] cameras = {EagleEyeCamera.forSource("localization/front")};
+
+  @Override
+  public void periodic() {
+    poseEstimator.update(gyro.getRotation2d(), modulePositions);
+    EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+  }
+}
+```
+
+Robot code supplies the NetworkTables keys, so any pipeline layout works — pass both keys
+explicitly with `new EagleEyeCamera(poseKey, metaKey)` when they do not follow the preset. Keys
+must match the `target_key` set in the WebUI; one that nothing publishes raises a Driver Station
+warning naming the key instead of failing silently.
+
+Each localization source publishes two NetworkTables topics that share one capture timestamp:
+
+| Topic | Type | Contents |
+| --- | --- | --- |
+| `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
+| `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
+
+Poses are stamped with the camera's kernel-level exposure timestamp and translated into roboRIO
+FPGA time by ntcore, so robot code passes the received timestamp straight to
+`addVisionMeasurement`. There is no latency to subtract. The metrics topic is what the library
+derives its standard deviations from.
 
 ## Contributing
 We welcome contributions to improve EagleEye Object Detection. To contribute:

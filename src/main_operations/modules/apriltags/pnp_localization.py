@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -82,18 +82,68 @@ class PnpLocalization:
         R += s * K + (1.0 - c) * K2
         return R
 
+    def _solution_quality(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        rotation_vector: np.ndarray,
+        rotation_matrix: np.ndarray,
+        translation_vector: np.ndarray,
+        tag_count: int,
+    ) -> List[float]:
+        """Measure how much a solved pose can be trusted.
+
+        The robot-side pose estimator needs standard deviations, and these three
+        numbers are what it derives them from. Cost is one ``projectPoints`` call
+        over at most a few dozen points, which is noise next to tag detection.
+
+        Args:
+            object_points: Stacked field-space tag corners, shape (4 * tags, 3).
+            image_points: Matching image-space corners, shape (4 * tags, 2).
+            rotation_vector: Rodrigues rotation from ``solvePnP``.
+            rotation_matrix: Same rotation as a 3x3 matrix.
+            translation_vector: Translation from ``solvePnP``.
+            tag_count: Number of mapped tags that contributed to the solve.
+
+        Returns:
+            ``[tag_count, mean_tag_distance_m, mean_reprojection_error_px]``.
+        """
+        reprojected, _ = cv2.projectPoints(
+            object_points,
+            rotation_vector,
+            translation_vector,
+            self.camera_matrix,
+            self.distortion_coefficients,
+        )
+        reprojection_error = float(
+            np.mean(
+                np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1)
+            )
+        )
+
+        tag_centers = object_points.reshape(-1, 4, 3).mean(axis=1)
+        camera_space_centers = (
+            tag_centers @ rotation_matrix.T + translation_vector.reshape(3)
+        )
+        mean_distance = float(
+            np.mean(np.linalg.norm(camera_space_centers, axis=1))
+        )
+
+        return [float(tag_count), mean_distance, reprojection_error]
+
     def estimate_pose_from_detections(
         self,
         detections: List[Detection],
-    ) -> Optional[np.ndarray]:
+    ) -> Optional[Tuple[np.ndarray, List[float]]]:
         """Estimate camera pose from AprilTag detections.
 
         Args:
             detections: List of AprilTag detections.
 
         Returns:
-            4x4 transformation matrix representing camera pose in field
-            coordinates, or None if pose estimation failed.
+            The 4x4 camera pose in field coordinates paired with its quality
+            metrics ``[tag_count, mean_tag_distance_m, reprojection_error_px]``,
+            or None if pose estimation failed.
         """
         image_points_list = []
         object_points_list = []
@@ -162,4 +212,12 @@ class PnpLocalization:
             )
             return None
 
-        return global_camera_transform
+        quality = self._solution_quality(
+            object_points,
+            image_points,
+            rotation_vector,
+            rotation_matrix,
+            translation_vector,
+            valid_tags_found,
+        )
+        return global_camera_transform, quality
