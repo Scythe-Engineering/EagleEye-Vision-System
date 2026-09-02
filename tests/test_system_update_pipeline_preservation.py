@@ -183,6 +183,16 @@ def test_ref_name_validation_enforces_git_refname_rules(tmp_path: Path) -> None:
             updater._normalize_git_ref_name(name)
 
 
+def test_github_remote_pattern_accepts_ssh_port() -> None:
+    """Recognize GitHub SSH remotes that use an explicit port."""
+    from src.webui.web_server_utils.system_monitor_mixin import _GITHUB_REMOTE_PATTERN
+
+    match = _GITHUB_REMOTE_PATTERN.search("ssh://git@github.com:443/owner/repo.git")
+
+    assert match is not None
+    assert match.group("repository") == "owner/repo"
+
+
 def test_update_info_defaults_to_latest_release() -> None:
     payload, status = _UpdateInfoHarness().system_update_info()
 

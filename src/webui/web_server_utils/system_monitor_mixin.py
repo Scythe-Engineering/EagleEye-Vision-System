@@ -46,7 +46,7 @@ SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
 SYSTEM_UPDATE_DEFAULT_TARGET = "release"
 _GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-+]+$")
 _GITHUB_REMOTE_PATTERN = re.compile(
-    r"(?:github\.com[/:])(?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?$"
+    r"(?:github\.com(?::\d+)?[/:])(?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?$"
 )
 
 
