@@ -256,6 +256,18 @@ class SystemMonitorMixin:
             raise ValueError("Git ref name cannot start with '-'.")
         if not _GIT_REF_NAME_PATTERN.fullmatch(normalized_ref_name):
             raise ValueError("Git ref name contains invalid characters.")
+        # The character class above is not enough: names such as 'foo..bar' or
+        # 'topic.' pass it but violate Git's refname rules and would fail later
+        # during fetch/checkout. Delegate the structural rules to Git itself.
+        try:
+            self._run_git_command(
+                ["check-ref-format", "--allow-onelevel", normalized_ref_name],
+                timeout=5.0,
+            )
+        except RuntimeError as error:
+            raise ValueError(
+                f"Git ref name is not a valid refname: {normalized_ref_name!r}"
+            ) from error
         return normalized_ref_name
 
     def _latest_github_release(self) -> dict[str, str]:

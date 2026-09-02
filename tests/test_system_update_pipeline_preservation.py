@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from src.webui.web_server_utils.system_monitor_mixin import SystemMonitorMixin
 
 
@@ -165,11 +167,20 @@ def test_release_checkout_fetches_tag_and_stays_detached(tmp_path: Path) -> None
     ]
 
 
-def test_ref_name_validation_accepts_semver_build_metadata() -> None:
+def test_ref_name_validation_accepts_semver_build_metadata(tmp_path: Path) -> None:
     """Tags like v1.2.3+build.4 are valid Git refs and must resolve."""
-    updater = _ReleaseCheckoutHarness(Path("."))
+    updater = _UpdateHarness(tmp_path)
 
     assert updater._normalize_git_ref_name("v1.2.3+build.4") == "v1.2.3+build.4"
+
+
+def test_ref_name_validation_enforces_git_refname_rules(tmp_path: Path) -> None:
+    """Names the character class accepts but Git rejects must fail validation."""
+    updater = _UpdateHarness(tmp_path)
+
+    for name in ("foo..bar", "topic.", ".hidden", "x.lock", "a//b", "x@{y}"):
+        with pytest.raises(ValueError):
+            updater._normalize_git_ref_name(name)
 
 
 def test_update_info_defaults_to_latest_release() -> None:
