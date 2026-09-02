@@ -117,7 +117,7 @@ def _coerce_detections(value: Any) -> list[str] | None:
             continue
         try:
             coordinates = [str(float(coordinate)) for coordinate in position]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         class_name = detection.get(
             "class_name", detection.get("color_name", detection.get("class_id"))

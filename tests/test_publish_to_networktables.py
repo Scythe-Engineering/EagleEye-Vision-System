@@ -104,6 +104,25 @@ def test_publish_serializes_field_detections_with_capture_timestamp() -> None:
     assert table.values["detections:timestamp"] == 246810
 
 
+def test_publish_drops_detections_with_unconvertible_coordinates() -> None:
+    """A coordinate that overflows float() drops its detection, not the cycle."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "broken", "position_3d": [10**10000, 0.0, 0.0]},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=13579, capture_monotonic_ns=11),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+    assert table.values["detections:timestamp"] == 13579
+
+
 def test_publish_supports_empty_detection_frames() -> None:
     """An empty localized frame must clear stale robot-side detections."""
     table = FakeNetworkTable()

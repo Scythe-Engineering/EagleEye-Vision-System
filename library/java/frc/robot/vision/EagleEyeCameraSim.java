@@ -10,6 +10,7 @@ import edu.wpi.first.networktables.DoubleArrayPublisher;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
+import edu.wpi.first.networktables.StringArrayPublisher;
 import edu.wpi.first.networktables.StructPublisher;
 import java.util.Random;
 
@@ -17,9 +18,14 @@ import java.util.Random;
  * Publishes what a real EagleEye coprocessor would, from a simulated robot pose, so robot code can
  * be developed and tested with no camera and no coprocessor.
  *
- * <p>Because it publishes the same two topics with the same shared timestamp, the consuming {@link
+ * <p>Because it publishes the same three topics with the same shared timestamp, the consuming {@link
  * EagleEyeCamera} is byte-for-byte identical between simulation and a real field: nothing in robot
  * code changes between the two.
+ *
+ * <p>The simulator publishes no game pieces by default. Set {@link #nextDetections} to exercise
+ * {@link EagleEyeCamera#nearestGamePiece()} in simulation; the array is published once on the next
+ * {@link #update} and cleared, matching a coprocessor that reports detections only when it sees
+ * them.
  *
  * <p>Typical use, alongside the real subscriber in the drive subsystem:
  *
@@ -64,8 +70,12 @@ public class EagleEyeCameraSim {
   /** Mean tag distance reported when no field layout was supplied, in meters. */
   public static double fixedMeanTagDistanceMeters = 3.0;
 
+  /** Flattened class/x/y/z groups published once by the next {@link #update}, then cleared. */
+  public String[] nextDetections = new String[0];
+
   private final StructPublisher<Pose3d> posePublisher;
   private final DoubleArrayPublisher metaPublisher;
+  private final StringArrayPublisher detectionsPublisher;
   private final Transform3d robotToCamera;
   private final AprilTagFieldLayout layout;
   private final Random random = new Random();
@@ -96,6 +106,7 @@ public class EagleEyeCameraSim {
     posePublisher =
         table.getStructTopic(source + "/pose", Pose3d.struct).publish(options);
     metaPublisher = table.getDoubleArrayTopic(source + "/meta").publish(options);
+    detectionsPublisher = table.getStringArrayTopic(source + "/detections").publish(options);
   }
 
   /**
@@ -123,6 +134,8 @@ public class EagleEyeCameraSim {
     posePublisher.set(new Pose3d(noisy), now);
     metaPublisher.set(
         new double[] {meta[0], meta[1], reportedReprojectionErrorPixels}, now);
+    detectionsPublisher.set(nextDetections, now);
+    nextDetections = new String[0];
   }
 
   /**
@@ -132,7 +145,11 @@ public class EagleEyeCameraSim {
    */
   private double[] visibleTagMetrics(Pose2d groundTruth) {
     if (layout == null) {
-      return new double[] {fixedTagCount, fixedMeanTagDistanceMeters};
+      // Clamp to the consumer's minimum so the documented always-visible mode still produces
+      // accepted measurements when tests raise EagleEyeCamera.minimumTagCount.
+      return new double[] {
+        Math.max(fixedTagCount, EagleEyeCamera.minimumTagCount), fixedMeanTagDistanceMeters
+      };
     }
     var cameraPose =
         new Pose3d(groundTruth).transformBy(robotToCamera);

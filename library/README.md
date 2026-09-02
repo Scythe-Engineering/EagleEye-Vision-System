@@ -73,20 +73,19 @@ source name. Insert `temporal_acceleration_preprocessor_rust` between `device_in
 
 ## Robot code
 
-Keys live at the call site, in whichever subsystem owns the pose estimator:
+Keys live at the call site, in whichever subsystem owns the pose estimator. The Basic localization
+template publishes pose and meta only, so its cameras take the two-key constructor:
 
 ```java
 public class Drive extends SubsystemBase {
   private final EagleEyeCamera[] cameras = {
-    EagleEyeCamera.forSource("localization/front"),
-    EagleEyeCamera.forSource("localization/back"),
+    new EagleEyeCamera("localization/front/pose", "localization/front/meta")
   };
 
   @Override
   public void periodic() {
     poseEstimator.update(gyro.getRotation2d(), modulePositions);
     EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
-    cameras[0].nearestGamePiece().ifPresent(piece -> intake.track(piece.xMeters(), piece.yMeters()));
   }
 }
 ```
@@ -94,6 +93,19 @@ public class Drive extends SubsystemBase {
 `nearestGamePiece()` uses the robot pose captured with the detection frame, not the robot's current
 pose. It returns empty until a detection sample joins an accepted localization sample, and returns
 empty again when the newest localized frame has no game pieces.
+
+Game pieces need a pipeline from a detection template, which also publishes
+`localization/<source>/detections`. Build those cameras with `EagleEyeCamera.forSource(...)`, which
+subscribes to all three topics, and consume them in the same `periodic()`:
+
+```java
+  @Override
+  public void periodic() {
+    poseEstimator.update(gyro.getRotation2d(), modulePositions);
+    EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+    cameras[0].nearestGamePiece().ifPresent(piece -> intake.track(piece.xMeters(), piece.yMeters()));
+  }
+```
 
 Call it from a subsystem's `periodic()`, not from a NetworkTables listener thread —
 `SwerveDrivePoseEstimator` is not thread safe.
@@ -103,7 +115,7 @@ filtering; it returns them in capture order with the quality metrics attached.
 
 ## Simulation
 
-`EagleEyeCameraSim` publishes the same two topics with the same shared timestamp from a simulated
+`EagleEyeCameraSim` publishes the same three topics with the same shared timestamp from a simulated
 robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unchanged in WPILib
 simulation with no camera and no coprocessor.
 
@@ -117,6 +129,10 @@ EagleEyeCameraSim frontSim =
 
 // simulationPeriodic, with ground truth from your drive sim:
 frontSim.update(driveSim.getPose());
+
+// Optional game pieces for nearestGamePiece(): published once on the next
+// update, then cleared, like a coprocessor that only reports what it sees.
+frontSim.nextDetections = new String[] {"coral", "3.2", "1.1", "0.5"};
 ```
 
 Given a tag layout, a tag counts as visible when it is inside `cameraFovDegrees` and within

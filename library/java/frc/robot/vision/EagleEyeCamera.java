@@ -226,7 +226,11 @@ public class EagleEyeCamera {
 
     carriedPoses.clear();
     carriedPoses.addAll(unmatched);
-    carriedMetas.removeIf(meta -> (nowMicros - meta.timestamp) / 1e6 > maximumSampleAgeSeconds);
+    // Samples dated more than the age limit in either direction can never join a pose the poller
+    // would accept, so drop them; without the future bound a skewed publisher grows these lists
+    // forever.
+    carriedMetas.removeIf(
+        meta -> Math.abs(nowMicros - meta.timestamp) / 1e6 > maximumSampleAgeSeconds);
     joinDetections(nowMicros);
     recentPoses.removeIf(
         pose -> (nowMicros - pose.timestampMicros()) / 1e6 > maximumSampleAgeSeconds);
@@ -397,7 +401,7 @@ public class EagleEyeCamera {
       }
     }
     carriedDetections.removeIf(
-        sample -> (nowMicros - sample.timestamp) / 1e6 > maximumSampleAgeSeconds);
+        sample -> Math.abs(nowMicros - sample.timestamp) / 1e6 > maximumSampleAgeSeconds);
   }
 
   /** Find the accepted pose captured at an exact NetworkTables timestamp. */
