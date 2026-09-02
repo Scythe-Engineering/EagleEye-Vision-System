@@ -123,6 +123,25 @@ def test_publish_drops_detections_with_unconvertible_coordinates() -> None:
     assert table.values["detections:timestamp"] == 13579
 
 
+def test_publish_drops_non_finite_detection_coordinates() -> None:
+    """NaN and Infinity parse as floats but are unusable field coordinates."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "broken", "position_3d": [float("nan"), 0.0, 0.0]},
+                {"class_name": "far", "position_3d": [1.0, float("inf"), 0.0]},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=2468, capture_monotonic_ns=12),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+
+
 def test_publish_supports_empty_detection_frames() -> None:
     """An empty localized frame must clear stale robot-side detections."""
     table = FakeNetworkTable()

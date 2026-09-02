@@ -116,15 +116,17 @@ def _coerce_detections(value: Any) -> list[str] | None:
         if not isinstance(position, Sequence) or len(position) != 3:
             continue
         try:
-            coordinates = [str(float(coordinate)) for coordinate in position]
+            coordinates = [float(coordinate) for coordinate in position]
         except (TypeError, ValueError, OverflowError):
+            continue
+        if not all(math.isfinite(coordinate) for coordinate in coordinates):
             continue
         class_name = detection.get(
             "class_name", detection.get("color_name", detection.get("class_id"))
         )
         if class_name is None:
             continue
-        flattened.extend((str(class_name), *coordinates))
+        flattened.extend((str(class_name), *(str(coordinate) for coordinate in coordinates)))
     return flattened
 
 

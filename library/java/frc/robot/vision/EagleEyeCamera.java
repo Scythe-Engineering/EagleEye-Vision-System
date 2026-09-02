@@ -419,12 +419,14 @@ public class EagleEyeCamera {
     var detections = new ArrayList<GamePiece>(values.length / 4);
     for (int index = 0; index + 3 < values.length; index += 4) {
       try {
-        detections.add(
-            new GamePiece(
-                values[index],
-                Double.parseDouble(values[index + 1]),
-                Double.parseDouble(values[index + 2]),
-                Double.parseDouble(values[index + 3])));
+        double x = Double.parseDouble(values[index + 1]);
+        double y = Double.parseDouble(values[index + 2]);
+        double z = Double.parseDouble(values[index + 3]);
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+          // "NaN" and "Infinity" parse fine but are unusable field coordinates.
+          continue;
+        }
+        detections.add(new GamePiece(values[index], x, y, z));
       } catch (NumberFormatException ignored) {
         // Malformed detections are dropped without weakening the rest of the frame.
       }
