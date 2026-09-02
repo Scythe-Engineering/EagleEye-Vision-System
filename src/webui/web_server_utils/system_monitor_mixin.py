@@ -44,7 +44,7 @@ SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
 SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
 SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
 SYSTEM_UPDATE_DEFAULT_TARGET = "release"
-_GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
+_GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-+]+$")
 _GITHUB_REMOTE_PATTERN = re.compile(
     r"(?:github\.com[/:])(?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?$"
 )

@@ -165,6 +165,13 @@ def test_release_checkout_fetches_tag_and_stays_detached(tmp_path: Path) -> None
     ]
 
 
+def test_ref_name_validation_accepts_semver_build_metadata() -> None:
+    """Tags like v1.2.3+build.4 are valid Git refs and must resolve."""
+    updater = _ReleaseCheckoutHarness(Path("."))
+
+    assert updater._normalize_git_ref_name("v1.2.3+build.4") == "v1.2.3+build.4"
+
+
 def test_update_info_defaults_to_latest_release() -> None:
     payload, status = _UpdateInfoHarness().system_update_info()
 
