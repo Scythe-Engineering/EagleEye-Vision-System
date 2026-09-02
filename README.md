@@ -34,15 +34,24 @@ uv, Node.js, and Rust, syncs the Python dependencies (including MemryX) and the
 frontend build, adds the user to the camera device groups, then installs,
 enables, and starts the `eagleeye` systemd service. It is tested on Raspberry Pi
 OS Lite 64-bit (Debian 12, arm64); other platforms warn and continue. It
-performs fresh installs only — if the target directory already exists it refuses
+performs fresh installs only. If the target directory already exists, it refuses
 and points you at **Settings -> System Update** in the Web UI
 (`http://<pi-address>:5001`).
 
-A fresh install ships an intentionally incomplete `2026_apriltag_starter`
-pipeline (Device Input -> Detect AprilTags -> PnP Camera Localization ->
-Camera to Robot Pose -> Robot Pose Output). Fill in the camera bus ID,
-calibration, extrinsics, and 2026 AprilTag map path in the Web UI before it will
-run; until then it stays inactive.
+### Raspberry Pi image
+
+Tagged releases include an `.rpi-imager-manifest` asset. Open that file with the
+latest Raspberry Pi Imager, select EagleEye Vision System, and enter the Wi-Fi
+network or phone hotspot in OS customization before writing the card. The image
+starts SSH with username `eagleeye` and password `eagleeye`; change the password
+after the first login. On models with USB OTG support, USB gadget networking is
+enabled on first boot. Connect the OTG port directly to the computer and use
+`ssh eagleeye@10.12.194.1` or `ssh eagleeye@eagleeye.local`. On Pi 3/3B+, connect
+over the configured Wi-Fi or Ethernet network instead. The first boot may restart
+once while it enables the gadget.
+
+A fresh install opens the first-boot wizard. It configures each camera and
+creates the selected localization and detection pipelines after calibration.
 
 For further instructions, please refer to the [wiki page](https://github.com/frc3322/EagleEye-Object-Detection/wiki).
 
@@ -108,7 +117,13 @@ this check; protected-branch CI should remain required as the authoritative
 gate.
 
 ## License
-EagleEye Framework © 2025 by ScytheEngineering is licensed under CC BY-NC 4.0. See the [LICENSE](LICENSE) file for details.
+EagleEye Vision System © 2025-2026 ScytheEngineering, licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+See the [LICENSE](LICENSE) file for the full terms.
+
+In plain language: every FIRST team, student, school, and hobbyist can use, modify, and
+share EagleEye for free, forever — noncommercial use is unrestricted. Commercial use
+requires a separate commercial license: contact darkedenc9@gmail.com first.
 <img width="1606" height="979" alt="image" src="https://github.com/user-attachments/assets/00b03576-f924-415a-a8c5-8559e4f1a509" />
 
 

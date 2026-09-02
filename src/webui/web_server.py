@@ -69,6 +69,7 @@ from src.webui.web_server_utils.asset_manager_mixin import AssetManagerMixin
 from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
+from src.webui.web_server_utils.first_boot_mixin import FirstBootMixin
 from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
 from src.webui.web_server_utils.network_manager_mixin import NetworkManagerMixin
 from src.webui.web_server_utils.model_library_mixin import ModelLibraryMixin
@@ -89,6 +90,7 @@ class EagleEyeInterface(
     CameraCalibrationMixin,
     CameraConfigMixin,
     CameraStreamMixin,
+    FirstBootMixin,
     LineProfilingMixin,
     NetworkManagerMixin,
     ModelLibraryMixin,
@@ -411,6 +413,30 @@ class EagleEyeInterface(
             "get_camera_config_cameras",
             self.get_camera_config_cameras,
             methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/first-boot/status",
+            "get_first_boot_status",
+            self.get_first_boot_status,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/first-boot/skip",
+            "skip_first_boot",
+            self.skip_first_boot,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/first-boot/finish",
+            "finish_first_boot",
+            self.finish_first_boot,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/first-boot/generate",
+            "generate_first_boot_pipelines",
+            self.generate_first_boot_pipelines,
+            methods=["POST"],
         )
         self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>",

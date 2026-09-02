@@ -15,9 +15,9 @@
     "parameters": {
         "model_id": {
             "type": "str",
-            "description": "Managed model",
+            "description": "Managed model; leave empty to idle until a compatible model is uploaded",
             "default": "",
-            "required": true,
+            "required": false,
             "restart_for_change": true,
             "ui_hint": "model_library",
             "device_param": "device_id"

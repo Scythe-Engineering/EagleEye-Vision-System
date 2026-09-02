@@ -324,6 +324,61 @@ input[type="checkbox"]:checked:disabled {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23d4d4d4' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.25' d='m3.25 8.25 3 3 6.5-6.5'/%3E%3C/svg%3E");
 }
 
+/* First-boot setup directs the user to one existing action at a time. */
+.first-boot-guide-target {
+    position: relative;
+    z-index: 1;
+    animation: first-boot-guide-pulse 1.4s ease-in-out infinite;
+}
+
+.first-boot-guide-target::after {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.5rem);
+    content: attr(data-wizard-hint);
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background: #f9c845;
+    color: #171717;
+    font-size: 0.75rem;
+    font-weight: 700;
+    pointer-events: none;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+@keyframes first-boot-guide-pulse {
+    50% {
+        box-shadow: 0 0 0 0.45rem rgb(249 200 69 / 0);
+    }
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgb(249 200 69 / 0.8);
+    }
+}
+
+#firstBootGuidePanel {
+    transition:
+        top 250ms ease,
+        transform 250ms ease;
+}
+
+#firstBootGuidePanel.first-boot-guide-panel--calibration {
+    top: calc(100% - 0.75rem);
+    transform: translateY(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .first-boot-guide-target {
+        animation: none;
+        box-shadow: 0 0 0 0.2rem rgb(249 200 69 / 0.8);
+    }
+
+    #firstBootGuidePanel {
+        transition: none;
+    }
+}
+
 /* Backend state warning styling */
 .backend-state-warning {
     animation: pulse-warning 2s infinite;

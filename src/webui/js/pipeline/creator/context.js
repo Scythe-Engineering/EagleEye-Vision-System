@@ -8,7 +8,6 @@ export const creatorContext = {
         pipelineArea: null,
         pipelinePlaceholder: null,
         operationsList: null,
-        runButton: null,
         pipelineSelect: null,
         pipelineCameraNote: null,
         newPipelineButton: null,

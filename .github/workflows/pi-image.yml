@@ -1,0 +1,51 @@
+name: Build Raspberry Pi image
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pi-image:
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore image build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/eagleeye-image-cache
+          key: pi-image-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock', 'package-lock.json', 'install.sh') }}
+          restore-keys: |
+            pi-image-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build image
+        env:
+          BUILD_CACHE_DIR: ${{ runner.temp }}/eagleeye-image-cache
+          XZ_PRESET: 7
+        run: sudo -E bash ci/build-pi-image.sh
+
+      - name: Upload image
+        uses: actions/upload-artifact@v4
+        with:
+          name: eagleeye-pi-image
+          path: |
+            eagleeye-*.img.xz
+            eagleeye-*.rpi-imager-manifest
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish tagged image
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(eagleeye-*.img.xz eagleeye-*.rpi-imager-manifest)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          fi

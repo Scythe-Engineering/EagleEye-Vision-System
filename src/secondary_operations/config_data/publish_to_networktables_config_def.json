@@ -20,7 +20,7 @@
         },
         "schema": {
             "type": "str",
-            "description": "WPILib type: 'auto' detects from value shape, 'pose3d' and 'pose2d' publish poses, 'detections' publishes repeating class/x/y/z string groups",
+            "description": "Published value schema: 'auto' detects from value shape, 'pose3d' and 'pose2d' publish poses, 'detections' publishes repeating class/x/y/z string groups, 'json' publishes objects as a compact JSON string",
             "default": "auto",
             "required": false,
             "restart_for_change": false

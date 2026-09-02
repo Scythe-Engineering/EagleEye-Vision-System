@@ -262,31 +262,21 @@ class SystemMonitorMixin:
         return normalized_branch_name
 
     def _list_remote_branches_with_shas(self) -> list[dict[str, str]]:
-        """List remote origin branches with short SHAs after a fetch.
+        """List remote origin branches without downloading repository objects.
 
         Returns:
             list[dict[str, str]]: Remote branches as ``{name, sha}`` entries.
         """
-        ref_output = self._run_git_command(
-            [
-                "for-each-ref",
-                "--format=%(refname:short) %(objectname:short) %(objectname)",
-                "refs/remotes/origin",
-            ]
-        )
+        ref_output = self._run_git_command(["ls-remote", "--heads", "origin"])
         remote_branches: list[dict[str, str]] = []
         for line in ref_output.splitlines():
             parts = line.split()
-            if len(parts) < 3:
+            if len(parts) != 2 or not parts[1].startswith("refs/heads/"):
                 continue
-            ref_name, short_sha, full_sha = parts[0], parts[1], parts[2]
-            if ref_name in {"origin", "origin/HEAD"}:
-                continue
-            branch_name = ref_name.removeprefix("origin/")
-            if not branch_name or branch_name == "HEAD":
-                continue
+            full_sha, ref_name = parts
+            branch_name = ref_name.removeprefix("refs/heads/")
             remote_branches.append(
-                {"name": branch_name, "sha": short_sha, "full_sha": full_sha}
+                {"name": branch_name, "sha": full_sha[:7], "full_sha": full_sha}
             )
         remote_branches.sort(key=lambda branch: branch["name"].lower())
         return remote_branches
@@ -305,8 +295,9 @@ class SystemMonitorMixin:
             }, 400
 
         try:
-            self._run_git_command(["fetch", "origin", "--prune"], timeout=60.0)
-            current_branch = self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
+            current_branch = self._run_git_command(
+                ["rev-parse", "--abbrev-ref", "HEAD"]
+            )
             current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
             current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
             remote_branches = self._list_remote_branches_with_shas()
@@ -441,9 +432,7 @@ class SystemMonitorMixin:
                 if remaining_seconds <= 0:
                     process.kill()
                     process.wait(timeout=5)
-                    raise RuntimeError(
-                        f"Update command timed out: {display_command}"
-                    )
+                    raise RuntimeError(f"Update command timed out: {display_command}")
 
                 ready = selector.select(timeout=min(remaining_seconds, 0.5))
                 if ready:
@@ -595,7 +584,13 @@ class SystemMonitorMixin:
 
         try:
             self._run_update_command_streaming(
-                ["git", "fetch", "origin", "--prune"],
+                [
+                    "git",
+                    "fetch",
+                    "--depth=1",
+                    "origin",
+                    f"+refs/heads/{target_branch}:refs/remotes/origin/{target_branch}",
+                ],
                 120.0,
                 phase="git_pull",
                 phase_index=0,
@@ -693,7 +688,9 @@ class SystemMonitorMixin:
         self._ensure_system_update_state()
         status_payload, _ = self.system_update_status()
         if not status_payload.get("available"):
-            return {"error": status_payload.get("reason", "WiFi internet required")}, 400
+            return {
+                "error": status_payload.get("reason", "WiFi internet required")
+            }, 400
 
         body = _request().get_json(silent=True) or {}
         requested_branch = body.get("branch")
@@ -876,7 +873,9 @@ class SystemMonitorMixin:
     def _read_cpu_temperature_c(self, psutil_module: Any) -> float | None:
         """Read CPU temperature in Celsius, preferring Linux thermal sensors."""
         try:
-            thermal_zones = sorted(Path("/sys/class/thermal").glob("thermal_zone*/temp"))
+            thermal_zones = sorted(
+                Path("/sys/class/thermal").glob("thermal_zone*/temp")
+            )
             temperatures: list[float] = []
             for temp_path in thermal_zones:
                 try:
@@ -902,7 +901,10 @@ class SystemMonitorMixin:
             for entries in readings.values():
                 for entry in entries:
                     current = getattr(entry, "current", None)
-                    if isinstance(current, (int, float)) and 0.0 < float(current) < 150.0:
+                    if (
+                        isinstance(current, (int, float))
+                        and 0.0 < float(current) < 150.0
+                    ):
                         label = str(getattr(entry, "label", "") or "").lower()
                         if "cpu" in label or "core" in label or not label:
                             temperatures.append(float(current))
@@ -1062,19 +1064,19 @@ class SystemMonitorMixin:
             if not isinstance(payload, dict):
                 return {"error": "Expected JSON object payload"}, 400
 
-            config = {**self._read_general_conf(), **payload}
-            config[VIEW_STREAM_DOWNSCALE_KEY] = self._parse_view_stream_downscale(
-                config.get(
-                    VIEW_STREAM_DOWNSCALE_KEY,
-                    DEFAULT_VIEW_STREAM_DOWNSCALE,
-                )
-            )
-
-            with _general_conf_path().open("w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4)
-                f.write("\n")
-
             with self._general_conf_lock:
+                config = {**self._read_general_conf(), **payload}
+                config[VIEW_STREAM_DOWNSCALE_KEY] = self._parse_view_stream_downscale(
+                    config.get(
+                        VIEW_STREAM_DOWNSCALE_KEY,
+                        DEFAULT_VIEW_STREAM_DOWNSCALE,
+                    )
+                )
+
+                with _general_conf_path().open("w", encoding="utf-8") as config_file:
+                    json.dump(config, config_file, indent=4)
+                    config_file.write("\n")
+
                 self.view_stream_downscale = config[VIEW_STREAM_DOWNSCALE_KEY]
 
             return {"message": "General configuration saved successfully"}, 200

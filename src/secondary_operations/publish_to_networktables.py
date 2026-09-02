@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
 from typing import Any
@@ -128,8 +129,24 @@ def _coerce_detections(value: Any) -> list[str] | None:
 
 
 def _coerce_wpilib(value: Any, schema: str) -> Any:
+    """Convert a pipeline value into a NetworkTables-compatible payload.
+
+    Args:
+        value: Raw pipeline value.
+        schema: Configured NetworkTables schema name.
+
+    Returns:
+        A typed NetworkTables value, or None when the value cannot be published.
+    """
     if schema == "detections":
         return _coerce_detections(value)
+    if schema == "json":
+        # Legacy schema kept for pipelines written before detections had
+        # their own string-array format.
+        try:
+            return json.dumps(value, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError):
+            return None
     if schema in {"double", "float", "number"} and isinstance(value, int | float):
         return float(value)
     if schema in {"boolean", "bool"} and isinstance(value, bool):
@@ -182,11 +199,19 @@ class PublishToNetworktables(OperationInstance):
         return data
 
     def update_config(self, json_config: dict) -> None:
+        """Apply live publisher configuration changes.
+
+        Args:
+            json_config: Updated operation configuration fields.
+        """
         if "target_key" in json_config:
             self.target_key = json_config["target_key"]
             self._publisher = None
         if "schema" in json_config:
-            self.schema = json_config["schema"]
+            schema = json_config["schema"]
+            if schema != self.schema:
+                self._publisher = None
+            self.schema = schema
         if "data_path" in json_config:
             self.data_path_tokens = self._normalize_path(json_config["data_path"])
 

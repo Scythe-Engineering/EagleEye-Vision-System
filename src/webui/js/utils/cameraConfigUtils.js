@@ -490,11 +490,13 @@ async function loadCameraConfig(cameraBusId) {
 
 /**
  * Saves the current extrinsics for the selected camera.
+ *
+ * @returns {Promise<boolean>} Whether the save succeeded.
  */
-async function saveExtrinsics() {
+export async function saveExtrinsics() {
     if (!currentCameraBusId) {
         showWarning("Select a camera first");
-        return;
+        return false;
     }
 
     try {
@@ -508,8 +510,10 @@ async function saveExtrinsics() {
         );
         showSuccess("Camera extrinsics saved");
         await loadCameraConfig(currentCameraBusId);
+        return true;
     } catch (error) {
         showDanger(`Failed to save extrinsics: ${error.message}`);
+        return false;
     }
 }
 
@@ -559,18 +563,18 @@ async function uploadIntrinsicsFile(file) {
 function calibrationPayload() {
     return {
         squares_x: Number.parseInt(
-            getElement("utilsCalibrationSquaresX")?.value || "11",
+            getElement("utilsCalibrationSquaresX")?.value || "13",
             10,
         ),
         squares_y: Number.parseInt(
-            getElement("utilsCalibrationSquaresY")?.value || "8",
+            getElement("utilsCalibrationSquaresY")?.value || "10",
             10,
         ),
         square_size: Number.parseFloat(
-            getElement("utilsCalibrationSquareSize")?.value || "0.015",
+            getElement("utilsCalibrationSquareSize")?.value || "0.020",
         ),
         marker_size: Number.parseFloat(
-            getElement("utilsCalibrationMarkerSize")?.value || "0.011",
+            getElement("utilsCalibrationMarkerSize")?.value || "0.015",
         ),
     };
 }
@@ -951,6 +955,38 @@ function setupDropzone() {
             void uploadIntrinsicsFile(file);
         }
     });
+}
+
+/**
+ * Select a camera in Camera Config Utils without opening a nested modal.
+ *
+ * @param {string} cameraBusId - Stable camera bus identifier.
+ * @returns {Promise<void>}
+ */
+export async function selectCameraConfig(cameraBusId) {
+    const requestedCameraBusId = String(cameraBusId);
+    initCameraConfigUtils();
+    currentCameraBusId = requestedCameraBusId;
+    await loadCameraList();
+    const select = getElement("utilsCameraSelect");
+    if (
+        !select?.querySelector(
+            `option[value="${CSS.escape(requestedCameraBusId)}"]`,
+        )
+    ) {
+        throw new Error("The selected camera is no longer active.");
+    }
+}
+
+/**
+ * Open the existing intrinsics calibration flow for a selected camera.
+ *
+ * @param {string} cameraBusId - Stable camera bus identifier.
+ * @returns {Promise<void>}
+ */
+export async function openCameraCalibration(cameraBusId) {
+    await selectCameraConfig(cameraBusId);
+    await openCalibrationModal();
 }
 
 /**

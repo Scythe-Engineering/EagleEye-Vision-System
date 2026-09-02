@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import uuid
 from typing import Any
 
 
@@ -190,17 +191,74 @@ class NetworkManagerMixin:
         """Connect to a visible WiFi network by SSID."""
         body = _request().get_json(silent=True) or {}
         ssid = str(body.get("ssid", "")).strip()
+        username = str(body.get("username", "")).strip()
         password = str(body.get("password", ""))
 
         if not ssid:
             return {"error": "SSID is required"}, 400
-
-        args = ["device", "wifi", "connect", ssid]
-        if password:
-            args.extend(["password", password])
+        if username and not password:
+            return {"error": "Password is required for enterprise WiFi"}, 400
 
         try:
-            result = self._run_nmcli(args, timeout=30.0)
+            if username:
+                connection_name = f"EagleEye-{ssid}"
+                temporary_name = f"{connection_name}-{uuid.uuid4()}"
+                result = self._run_nmcli(
+                    [
+                        "connection",
+                        "add",
+                        "type",
+                        "wifi",
+                        "ifname",
+                        "*",
+                        "con-name",
+                        temporary_name,
+                        "ssid",
+                        ssid,
+                    ],
+                    timeout=15.0,
+                )
+                args = [
+                    "connection",
+                    "modify",
+                    temporary_name,
+                    "wifi-sec.key-mgmt",
+                    "wpa-eap",
+                    "802-1x.eap",
+                    "peap",
+                    "802-1x.phase2-auth",
+                    "mschapv2",
+                    "802-1x.identity",
+                    username,
+                    "802-1x.password",
+                    password,
+                ]
+                if result.returncode == 0:
+                    result = self._run_nmcli(args, timeout=15.0)
+                if result.returncode == 0:
+                    result = self._run_nmcli(
+                        ["connection", "up", temporary_name], timeout=30.0
+                    )
+                if result.returncode == 0:
+                    result = self._run_nmcli(
+                        ["connection", "delete", connection_name], timeout=10.0
+                    )
+                if result.returncode == 0:
+                    result = self._run_nmcli(
+                        [
+                            "connection",
+                            "modify",
+                            temporary_name,
+                            "connection.id",
+                            connection_name,
+                        ],
+                        timeout=15.0,
+                    )
+            else:
+                args = ["device", "wifi", "connect", ssid]
+                if password:
+                    args.extend(["password", password])
+                result = self._run_nmcli(args, timeout=30.0)
             if result.returncode != 0:
                 return {
                     "error": result.stderr.strip() or "Failed to connect to WiFi network",

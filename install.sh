@@ -269,6 +269,14 @@ install_service() {
     log_step "Installing the ${SERVICE_NAME} systemd service"
     render_service_unit "$service_user" "$service_home" "$install_dir" |
         sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" >/dev/null
+    if [ -n "${EAGLEEYE_IMAGE_BUILD:-}" ]; then
+        # Building an SD image in a chroot: no running systemd, so enable the
+        # unit by symlink and let it start on the image's first boot.
+        sudo mkdir -p /etc/systemd/system/multi-user.target.wants
+        sudo ln -sf "/etc/systemd/system/${SERVICE_NAME}.service" \
+            "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
+        return 0
+    fi
     sudo systemctl daemon-reload
     sudo systemctl enable "${SERVICE_NAME}.service"
     sudo systemctl restart "${SERVICE_NAME}.service"
@@ -346,11 +354,8 @@ print_summary() {
     printf 'Service      : sudo systemctl status %s\n' "$SERVICE_NAME"
     printf 'Logs         : journalctl -u %s -f\n\n' "$SERVICE_NAME"
     printf 'Next steps in the Web UI:\n'
-    printf '  1. Calibrate your camera and note its bus ID.\n'
-    printf '  2. Open the "2026_apriltag_starter" pipeline and fill in the camera bus ID,\n'
-    printf '     intrinsics, extrinsics, and the 2026 AprilTag map path. It is intentionally\n'
-    printf '     incomplete and will stay inactive until you finish it.\n'
-    printf '  3. Use Settings -> System Update for future updates; do not rerun this installer.\n\n'
+    printf '  1. Open the Web UI and complete or skip the first-boot wizard.\n'
+    printf '  2. Use Settings -> System Update for future updates; do not rerun this installer.\n\n'
     printf 'Note: your current shell does not yet have the new camera groups.\n'
     printf 'Log out and back in (or reboot) before running EagleEye tools by hand.\n'
 }
@@ -401,6 +406,16 @@ main() {
     install_dir_created=1
     service_installed=1
     install_service "$service_user" "$service_home" "$install_dir"
+
+    if [ -n "${EAGLEEYE_IMAGE_BUILD:-}" ]; then
+        log_step "Image build: prebuilding Rust modules (best effort)"
+        (cd "$install_dir" && .venv/bin/python -m src.rust_implementations.build) ||
+            log_warn "Rust prebuild failed; modules will build on first boot instead."
+        log_info "Image build mode: skipping service start and runtime verification."
+        install_dir_created=0
+        trap - EXIT
+        return 0
+    fi
 
     if verify_install "$install_dir"; then
         print_summary "$install_dir"

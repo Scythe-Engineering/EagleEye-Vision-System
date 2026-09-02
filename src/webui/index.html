@@ -39,7 +39,7 @@
             <div
                 id="notification-container"
                 class="relative pointer-events-auto"
-                style="min-width: 320px;"
+                style="min-width: 320px"
             ></div>
         </div>
 
@@ -58,12 +58,56 @@
                 <!-- LEFT CONTENT -->
                 <div class="Left-Content flex-col flex-1 flex relative">
                     {{> camera_views_tab_content}} {{> 3d_tab_content}} {{>
-                    pipeline_tab_content}} {{> settings_tab_content}} {{>
-                    system_status_tab_content}} {{> utils_tab_content}}
+                    pipeline_tab_content}} {{> first_boot_tab_content}} {{>
+                    settings_tab_content}} {{> system_status_tab_content}} {{>
+                    utils_tab_content}}
+
+                    <aside
+                        id="firstBootGuidePanel"
+                        class="absolute right-3 top-3 z-[70] hidden w-80 rounded-lg border border-[#f9c845]/50 bg-[#171717]/95 p-4 text-sm text-gray-200 shadow-xl"
+                        aria-labelledby="firstBootGuideTitle"
+                        role="dialog"
+                        aria-modal="false"
+                        tabindex="-1"
+                    >
+                        <p
+                            id="firstBootGuideProgress"
+                            class="mb-1 text-xs font-semibold text-[#ac8a2f]"
+                        ></p>
+                        <h2
+                            id="firstBootGuideTitle"
+                            class="mb-2 text-lg font-bold text-[#f9c845]"
+                        ></h2>
+                        <p
+                            id="firstBootGuideInstructions"
+                            class="mb-3 text-xs text-gray-300"
+                        ></p>
+                        <p
+                            id="firstBootGuideStatus"
+                            class="mb-3 hidden text-xs text-[#ac8a2f]"
+                            aria-live="polite"
+                        ></p>
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                id="firstBootGuideCancelBtn"
+                                type="button"
+                                class="rounded-md border border-[#414141] px-3 py-2 hover:border-[#f9c845] focus:outline-none focus:ring-2 focus:ring-[#f9c845]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                id="firstBootGuideContinueBtn"
+                                type="button"
+                                class="rounded-md bg-[#f9c845] px-3 py-2 font-semibold text-black hover:bg-[#d4a83a] focus:outline-none focus:ring-2 focus:ring-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Continue
+                            </button>
+                        </div>
+                    </aside>
                 </div>
 
                 <!-- SIDEBAR -->
-                <nav class="sidebar p-0 w-[200px] bg-[#1b1b1b] overflow-y-auto">
+                <nav class="sidebar relative p-0 w-[200px] bg-[#1b1b1b] overflow-y-auto">
                     <ul class="list-none">
                         <li class="active" data-view="view-views">Views</li>
                         <li data-view="view-3d">3D View</li>
