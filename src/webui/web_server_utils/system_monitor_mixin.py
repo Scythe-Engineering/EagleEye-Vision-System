@@ -741,7 +741,7 @@ class SystemMonitorMixin:
 
         body = _request().get_json(silent=True) or {}
         target_type = body.get("target_type", SYSTEM_UPDATE_DEFAULT_TARGET)
-        if target_type not in {"release", "branch"}:
+        if not isinstance(target_type, str) or target_type not in {"release", "branch"}:
             return {"error": "Target type must be 'release' or 'branch'."}, 400
         try:
             if target_type == "release":
