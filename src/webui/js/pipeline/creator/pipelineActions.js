@@ -139,7 +139,6 @@ async function loadPipelineIntoBuilder(
 
         await pipelineStore.loadPipelineData(pipelineConfig, allConnections);
         await renderCurrentPipeline?.({ centerView });
-        updateRunButton();
         updatePipelineCameraNote();
     } catch (error) {
         showDanger("Failed to load pipeline");
@@ -190,18 +189,6 @@ async function checkAndTriggerAutoFill({ loadPipelineIntoBuilder }) {
         await loadPipelineIntoBuilder?.(pipelineObj.name);
     } catch (error) {
         console.error("Error during auto-fill check:", error);
-    }
-}
-
-/**
- * Update the run button enabled state based on graph and docking validity.
- */
-function updateRunButton() {
-    const runButton = creatorContext.elements.runButton;
-    if (runButton) {
-        runButton.disabled =
-            pipelineStore.getNodes().length === 0 ||
-            !pipelineStore.validateDocking().valid;
     }
 }
 
@@ -389,7 +376,6 @@ async function createNewPipeline({
             }
         }
         await renderCurrentPipeline?.();
-        updateRunButton();
         updateDeleteButtonVisibility?.();
         await autoSavePipeline?.();
     } catch (error) {
@@ -403,12 +389,11 @@ async function createNewPipeline({
 /**
  * Delete the currently selected pipeline after confirmation.
  *
- * @param {{renderCurrentPipeline?: Function, updateDeleteButtonVisibility?: Function, updateRunButton?: Function}} options - Deletion callbacks.
+ * @param {{renderCurrentPipeline?: Function, updateDeleteButtonVisibility?: Function}} options - Deletion callbacks.
  */
 async function deleteCurrentPipeline({
     renderCurrentPipeline,
     updateDeleteButtonVisibility,
-    updateRunButton,
 }) {
     const selectedPipeline = getSelectedPipeline();
     if (!selectedPipeline) {
@@ -439,7 +424,6 @@ async function deleteCurrentPipeline({
         pipelineStore.setCurrentPipeline(null);
         populatePipelineDropdown();
         await renderCurrentPipeline?.();
-        updateRunButton?.();
         updateDeleteButtonVisibility?.();
     } catch (error) {
         console.error("Failed to delete pipeline:", error);
@@ -508,20 +492,6 @@ async function refreshPipelineCreator({
     }
 }
 
-/**
- * Trigger the pipeline run action for the current configuration.
- */
-function runPipeline() {
-    const dockingValidation = pipelineStore.validateDocking();
-    if (!dockingValidation.valid) {
-        showDanger(`Cannot start: ${dockingValidation.errors[0].message}`);
-        updateRunButton();
-        return;
-    }
-    console.log("Running pipeline:", getPipeline());
-    alert("Pipeline run! Check console for details.");
-}
-
 export {
     autoSavePipeline,
     autoSavePipelineImpl,
@@ -534,7 +504,5 @@ export {
     populatePipelineDropdown,
     refreshPipelineCreator,
     renderCurrentPipeline,
-    runPipeline,
     updateDeleteButtonVisibility,
-    updateRunButton,
 };

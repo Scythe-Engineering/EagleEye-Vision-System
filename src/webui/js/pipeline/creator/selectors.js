@@ -14,7 +14,6 @@ export function cachePipelineCreatorElements() {
         "pipelinePlaceholder",
     );
     elements.operationsList = document.getElementById("operationsList");
-    elements.runButton = document.getElementById("runButton");
     elements.pipelineSelect = document.getElementById("pipelineSelect");
     elements.pipelineCameraNote = document.getElementById("pipelineCameraNote");
     elements.newPipelineButton = document.getElementById("newPipelineButton");
