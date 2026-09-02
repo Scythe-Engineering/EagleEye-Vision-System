@@ -14,7 +14,6 @@ const OVERLAY_ID = "systemUpdateOverlay";
 const MODAL_ID = "systemUpdateModal";
 const CONFIRM_OVERLAY_ID = "systemUpdateConfirmOverlay";
 const CONFIRM_MODAL_ID = "systemUpdateConfirmModal";
-const DEFAULT_UPDATE_BRANCH = "main";
 
 const PHASE_LABELS = {
     starting: "Starting update...",
@@ -46,7 +45,7 @@ let progressLabel = null;
 let terminalElement = null;
 /** @type {Text[]} */
 let terminalLineNodes = [];
-/** @type {((result: { confirmed: boolean, branch: string | null }) => void) | null} */
+/** @type {((result: { confirmed: boolean, targetType: string | null, target: string | null }) => void) | null} */
 let activeConfirmResolve = null;
 
 /**
@@ -114,7 +113,7 @@ function close() {
 
 /**
  * Resolves and closes the confirmation dialog.
- * @param {{ confirmed: boolean, branch: string | null }} result
+ * @param {{ confirmed: boolean, targetType: string | null, target: string | null }} result
  */
 function resolveConfirmDialog(result) {
     if (activeConfirmResolve) {
@@ -293,122 +292,71 @@ function renderConfirmContent(infoPayload) {
             .map((branch) => [branch.name, branch.sha]),
     );
 
-    const defaultBranch =
-        typeof infoPayload.default_branch === "string" &&
-        infoPayload.default_branch
-            ? infoPayload.default_branch
-            : DEFAULT_UPDATE_BRANCH;
-    const currentBranch =
-        typeof infoPayload.current_branch === "string" &&
-        infoPayload.current_branch &&
-        infoPayload.current_branch !== "HEAD"
-            ? infoPayload.current_branch
-            : defaultBranch;
-    let selectedBranch = currentBranch;
-
-    if (!branchShaByName.has(selectedBranch) && selectedBranch) {
-        remoteBranches.unshift({
-            name: selectedBranch,
-            sha:
-                typeof infoPayload.remote_sha === "string"
-                    ? infoPayload.remote_sha
-                    : "",
-        });
-        if (
-            typeof infoPayload.remote_sha === "string" &&
-            infoPayload.remote_sha
-        ) {
-            branchShaByName.set(selectedBranch, infoPayload.remote_sha);
-        }
-    }
+    const latestRelease = infoPayload.latest_release;
+    const releaseTag =
+        latestRelease && typeof latestRelease.tag === "string"
+            ? latestRelease.tag
+            : "";
+    const releaseSha =
+        latestRelease && typeof latestRelease.sha === "string"
+            ? latestRelease.sha
+            : null;
+    let selectedTargetType = "release";
+    let selectedTarget = releaseTag;
 
     const versionSummaryHost = createElement("div", { className: "w-full" });
 
-    /**
-     * Refreshes the version summary for the selected branch.
-     */
+    /** Refreshes the version summary for the selected update target. */
     function refreshVersionSummary() {
-        const remoteSha = branchShaByName.get(selectedBranch) || null;
-        const updateNeeded = !remoteSha || remoteSha !== currentSha;
+        const remoteSha =
+            selectedTargetType === "release"
+                ? releaseSha
+                : branchShaByName.get(selectedTarget) || null;
         versionSummaryHost.replaceChildren(
-            buildVersionSummary(currentSha, remoteSha, updateNeeded),
+            buildVersionSummary(
+                currentSha,
+                remoteSha,
+                !remoteSha || remoteSha !== currentSha,
+            ),
         );
     }
 
-    const otherBranches = remoteBranches.filter(
-        (branch) => branch.name !== currentBranch,
-    );
-    const branchOptions =
-        otherBranches.length > 0
-            ? otherBranches.map((branch) =>
-                  createElement("option", {
-                      value: branch.name,
-                      text: branch.name,
-                  }),
-              )
-            : [
-                  createElement("option", {
-                      value: "",
-                      text: "No other remote branches",
-                      selected: "selected",
-                      disabled: "disabled",
-                  }),
-              ];
-
-    const branchSelect = createElement(
+    const targetOptions = [
+        createElement("option", {
+            value: `release:${releaseTag}`,
+            text: `Latest release (${releaseTag})`,
+        }),
+        ...remoteBranches.map((branch) =>
+            createElement("option", {
+                value: `branch:${branch.name}`,
+                text: `Branch: ${branch.name}`,
+            }),
+        ),
+    ];
+    const targetSelect = createElement(
         "select",
         {
             className:
                 "w-full rounded-md border border-[#414141] bg-[#242424] px-3 py-2 text-sm text-gray-100 focus:border-[#f9c845] focus:outline-none",
-            ...(otherBranches.length === 0 ? { disabled: "disabled" } : {}),
             onchange: (event) => {
-                selectedBranch = event.target.value;
+                [selectedTargetType, selectedTarget] = event.target.value.split(
+                    ":",
+                    2,
+                );
                 refreshVersionSummary();
-                trackingBranchLabel.textContent = `Tracking branch: ${selectedBranch}`;
             },
         },
-        branchOptions,
+        targetOptions,
     );
 
-    const branchPicker = createElement(
-        "div",
-        {
-            className: "mt-2 hidden",
-        },
-        [
-            createElement("label", {
-                className:
-                    "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400",
-                text: "Other branch",
-            }),
-            branchSelect,
-        ],
-    );
-    const trackingBranchLabel = createElement("span", {
-        className: "font-mono text-sm text-gray-200",
-        text: `Tracking branch: ${currentBranch}`,
-    });
-    const selectOtherBranchButton = createElement("button", {
-        type: "button",
-        className:
-            "rounded-md border border-[#414141] bg-[#242424] px-3 py-2 text-sm font-semibold text-[#f9c845] transition-colors hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-50",
-        text: "Select other branch",
-        ...(otherBranches.length === 0 ? { disabled: "disabled" } : {}),
-        onclick: () => {
-            const isHidden = branchPicker.classList.contains("hidden");
-            if (isHidden) {
-                branchPicker.classList.remove("hidden");
-                selectedBranch = branchSelect.value;
-                selectOtherBranchButton.textContent = `Track ${currentBranch}`;
-            } else {
-                branchPicker.classList.add("hidden");
-                selectedBranch = currentBranch;
-                selectOtherBranchButton.textContent = "Select other branch";
-            }
-            trackingBranchLabel.textContent = `Tracking branch: ${selectedBranch}`;
-            refreshVersionSummary();
-        },
-    });
+    const targetPicker = createElement("div", { className: "mt-3" }, [
+        createElement("label", {
+            className:
+                "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400",
+            text: "Update channel",
+        }),
+        targetSelect,
+    ]);
 
     refreshVersionSummary();
 
@@ -434,18 +382,10 @@ function renderConfirmContent(infoPayload) {
                         createElement("p", {
                             className:
                                 "mt-1.5 text-sm leading-relaxed text-gray-400",
-                            text: "The backend will checkout the selected branch, run apt update, and non-interactive apt upgrade before restarting.",
+                            text: "The backend will checkout the selected release or branch, run apt update, and non-interactive apt upgrade before restarting.",
                         }),
                         versionSummaryHost,
-                        createElement(
-                            "div",
-                            {
-                                className:
-                                    "mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#414141] bg-[#141414] px-3 py-2.5",
-                            },
-                            [trackingBranchLabel, selectOtherBranchButton],
-                        ),
-                        branchPicker,
+                        targetPicker,
                     ]),
                 ]),
             ]),
@@ -464,7 +404,8 @@ function renderConfirmContent(infoPayload) {
                         onclick: () =>
                             resolveConfirmDialog({
                                 confirmed: false,
-                                branch: null,
+                                targetType: null,
+                                target: null,
                             }),
                     }),
                     createElement("button", {
@@ -475,7 +416,8 @@ function renderConfirmContent(infoPayload) {
                         onclick: () =>
                             resolveConfirmDialog({
                                 confirmed: true,
-                                branch: selectedBranch || null,
+                                targetType: selectedTargetType,
+                                target: selectedTarget || null,
                             }),
                     }),
                 ],
@@ -523,7 +465,8 @@ function renderConfirmPlaceholder(state, message = "") {
                                   onclick: () =>
                                       resolveConfirmDialog({
                                           confirmed: false,
-                                          branch: null,
+                                          targetType: null,
+                                          target: null,
                                       }),
                               }),
                           ],
@@ -540,7 +483,11 @@ function renderConfirmPlaceholder(state, message = "") {
  */
 async function renderConfirm() {
     if (activeConfirmResolve) {
-        resolveConfirmDialog({ confirmed: false, branch: null });
+        resolveConfirmDialog({
+            confirmed: false,
+            targetType: null,
+            target: null,
+        });
     }
 
     renderConfirmPlaceholder("loading");
@@ -567,8 +514,8 @@ async function renderConfirm() {
     }
 
     const result = await confirmPromise;
-    if (result.confirmed && result.branch) {
-        runUpdate(result.branch);
+    if (result.confirmed && result.targetType && result.target) {
+        runUpdate(result.targetType, result.target);
     }
 }
 
@@ -818,9 +765,10 @@ function applyCachedUpdateProgress(latestProgress, updateId = null) {
 
 /**
  * Runs the system update sequence and waits for SSE progress events.
- * @param {string} targetBranch
+ * @param {string} targetType
+ * @param {string} target
  */
-async function runUpdate(targetBranch) {
+async function runUpdate(targetType, target) {
     updating = true;
     currentUpdateId = null;
     setButtonState();
@@ -834,13 +782,13 @@ async function runUpdate(targetBranch) {
             );
         }
 
-        appendTerminalLine(`Target branch: ${targetBranch}`);
+        appendTerminalLine(`Target ${targetType}: ${target}`);
         appendTerminalLine("Checking WiFi internet access... OK");
         setProgress(2, "Starting update...");
         const startResult = await fetchJson("/system-update/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ branch: targetBranch }),
+            body: JSON.stringify({ target_type: targetType, target }),
         });
         if (typeof startResult.update_id === "string") {
             currentUpdateId = startResult.update_id;
@@ -883,10 +831,18 @@ export function initializeSystemUpdateManager() {
 
     const { overlay: confirmOverlay } = getConfirmOverlayElements();
     closeOnBackdropClick(confirmOverlay, () =>
-        resolveConfirmDialog({ confirmed: false, branch: null }),
+        resolveConfirmDialog({
+            confirmed: false,
+            targetType: null,
+            target: null,
+        }),
     );
     closeOnEscape(confirmOverlay, () =>
-        resolveConfirmDialog({ confirmed: false, branch: null }),
+        resolveConfirmDialog({
+            confirmed: false,
+            targetType: null,
+            target: null,
+        }),
     );
 
     setButtonState();

@@ -181,7 +181,8 @@ class EagleEyeInterface(
         self._system_update_in_progress = False
         self._system_update_id = None
         self._latest_system_update_progress = None
-        self._system_update_target_branch = None
+        self._system_update_target = None
+        self._system_update_target_type = "release"
         self._last_mx3_compilation_publish = 0.0
         self._system_status_interval = 1.5
         self._system_status_error_logged = False

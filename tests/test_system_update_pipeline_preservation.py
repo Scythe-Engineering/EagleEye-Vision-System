@@ -14,6 +14,25 @@ class _UpdateHarness(SystemMonitorMixin):
         return self.repo_root
 
 
+class _ReleaseCheckoutHarness(SystemMonitorMixin):
+    def __init__(self, repo_root: Path) -> None:
+        self.repo_root = repo_root
+        self.commands: list[list[str]] = []
+
+    def _repo_root(self) -> Path:
+        return self.repo_root
+
+    def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
+        del args, timeout
+        return ""
+
+    def _run_update_command_streaming(
+        self, command: list[str], *args, **kwargs
+    ) -> None:
+        del args, kwargs
+        self.commands.append(command)
+
+
 class _UpdateInfoHarness(SystemMonitorMixin):
     def system_update_status(self) -> tuple[dict, int]:
         return {"available": True}, 200
@@ -32,6 +51,9 @@ class _UpdateInfoHarness(SystemMonitorMixin):
             ),
         }
         return responses[tuple(args)]
+
+    def _latest_github_release(self) -> dict[str, str]:
+        return {"tag": "v1.2.3", "sha": "2222222", "full_sha": "2" * 40}
 
     def log(self, _message: str) -> None:
         return None
@@ -96,9 +118,7 @@ def test_git_pull_restores_local_pipeline_configuration(tmp_path: Path) -> None:
     assert working_pipeline.read_bytes() == local_pipeline
     assert (working / "version.txt").read_text(encoding="utf-8") == "v2\n"
     assert _git(working, "stash", "list") == ""
-    assert "src/config/pipeline_config.json" in _git(
-        working, "status", "--porcelain"
-    )
+    assert "src/config/pipeline_config.json" in _git(working, "status", "--porcelain")
 
 
 def test_failed_pull_still_restores_pipeline_configuration(tmp_path: Path) -> None:
@@ -126,12 +146,33 @@ def test_failed_pull_still_restores_pipeline_configuration(tmp_path: Path) -> No
     assert _git(repo, "stash", "list") == ""
 
 
-def test_update_info_tracks_current_branch() -> None:
+def test_release_checkout_fetches_tag_and_stays_detached(tmp_path: Path) -> None:
+    updater = _ReleaseCheckoutHarness(tmp_path)
+
+    updater._checkout_ref_preserving_pipeline_config(
+        "v1.2.3", target_type="release", phase_count=3
+    )
+
+    assert updater.commands == [
+        [
+            "git",
+            "fetch",
+            "--depth=1",
+            "origin",
+            "+refs/tags/v1.2.3:refs/tags/v1.2.3",
+        ],
+        ["git", "checkout", "--detach", "refs/tags/v1.2.3"],
+    ]
+
+
+def test_update_info_defaults_to_latest_release() -> None:
     payload, status = _UpdateInfoHarness().system_update_info()
 
     assert status == 200
+    assert payload["default_target"] == "release"
     assert payload["default_branch"] == "main"
+    assert payload["latest_release"] == {"tag": "v1.2.3", "sha": "2222222"}
     assert payload["current_branch"] == "feature/test"
     assert payload["current_sha"] == "1111111"
-    assert payload["remote_sha"] == "1111111"
-    assert payload["update_needed"] is False
+    assert payload["remote_sha"] == "2222222"
+    assert payload["update_needed"] is True

@@ -12,6 +12,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 import numpy as np
 
@@ -42,7 +43,11 @@ SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
 
 SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
 SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
-_GIT_BRANCH_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
+SYSTEM_UPDATE_DEFAULT_TARGET = "release"
+_GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-]+$")
+_GITHUB_REMOTE_PATTERN = re.compile(
+    r"(?:github\.com[/:])(?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?$"
+)
 
 
 def _request():
@@ -209,8 +214,10 @@ class SystemMonitorMixin:
             self._system_update_id: str | None = None
         if not hasattr(self, "_latest_system_update_progress"):
             self._latest_system_update_progress: dict[str, Any] | None = None
-        if not hasattr(self, "_system_update_target_branch"):
-            self._system_update_target_branch: str | None = None
+        if not hasattr(self, "_system_update_target"):
+            self._system_update_target: str | None = None
+        if not hasattr(self, "_system_update_target_type"):
+            self._system_update_target_type = SYSTEM_UPDATE_DEFAULT_TARGET
 
     def _run_git_command(self, args: list[str], timeout: float = 30.0) -> str:
         """Run a git command in the repository root and return stdout.
@@ -240,26 +247,58 @@ class SystemMonitorMixin:
             raise RuntimeError(output or f"git {' '.join(args)} failed")
         return result.stdout.strip()
 
-    def _normalize_git_branch_name(self, branch_name: str) -> str:
-        """Validate and normalize a git branch name for update targeting.
+    def _normalize_git_ref_name(self, ref_name: str) -> str:
+        """Validate and normalize a Git branch or tag name."""
+        normalized_ref_name = ref_name.strip()
+        if not normalized_ref_name:
+            raise ValueError("Git ref name is required.")
+        if normalized_ref_name.startswith("-"):
+            raise ValueError("Git ref name cannot start with '-'.")
+        if not _GIT_REF_NAME_PATTERN.fullmatch(normalized_ref_name):
+            raise ValueError("Git ref name contains invalid characters.")
+        return normalized_ref_name
 
-        Args:
-            branch_name: Requested branch name from the client.
+    def _latest_github_release(self) -> dict[str, str]:
+        """Return the latest GitHub Release tag and its resolved commit SHA."""
+        remote_url = self._run_git_command(["remote", "get-url", "origin"])
+        match = _GITHUB_REMOTE_PATTERN.search(remote_url)
+        if match is None:
+            raise RuntimeError("The origin remote is not a GitHub repository.")
 
-        Returns:
-            str: Normalized branch name.
-
-        Raises:
-            ValueError: If the branch name is empty or unsafe.
-        """
-        normalized_branch_name = branch_name.strip()
-        if not normalized_branch_name:
-            raise ValueError("Branch name is required.")
-        if normalized_branch_name.startswith("-"):
-            raise ValueError("Branch name cannot start with '-'.")
-        if not _GIT_BRANCH_NAME_PATTERN.fullmatch(normalized_branch_name):
-            raise ValueError("Branch name contains invalid characters.")
-        return normalized_branch_name
+        repository = match.group("repository")
+        request = Request(
+            f"https://api.github.com/repos/{repository}/releases/latest",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "EagleEye-Updater",
+            },
+        )
+        with urlopen(request, timeout=15) as response:
+            release = json.load(response)
+        tag_name = self._normalize_git_ref_name(release.get("tag_name", ""))
+        refs = self._run_git_command(
+            [
+                "ls-remote",
+                "--tags",
+                "origin",
+                f"refs/tags/{tag_name}",
+                f"refs/tags/{tag_name}^{{}}",
+            ]
+        )
+        shas = {
+            ref: sha
+            for line in refs.splitlines()
+            if len(parts := line.split()) == 2
+            for sha, ref in [parts]
+        }
+        full_sha = shas.get(f"refs/tags/{tag_name}^{{}}") or shas.get(
+            f"refs/tags/{tag_name}"
+        )
+        if full_sha is None:
+            raise RuntimeError(
+                f"Latest release tag '{tag_name}' was not found on origin."
+            )
+        return {"tag": tag_name, "sha": full_sha[:7], "full_sha": full_sha}
 
     def _list_remote_branches_with_shas(self) -> list[dict[str, str]]:
         """List remote origin branches without downloading repository objects.
@@ -301,20 +340,17 @@ class SystemMonitorMixin:
             current_sha = self._run_git_command(["rev-parse", "--short", "HEAD"])
             current_sha_full = self._run_git_command(["rev-parse", "HEAD"])
             remote_branches = self._list_remote_branches_with_shas()
-            remote_full_sha_by_branch = {
-                branch["name"]: branch["full_sha"] for branch in remote_branches
-            }
-            remote_sha_by_branch = {
-                branch["name"]: branch["sha"] for branch in remote_branches
-            }
-            remote_sha = remote_sha_by_branch.get(current_branch)
-            remote_full_sha = remote_full_sha_by_branch.get(current_branch)
-            update_needed = (
-                remote_full_sha is None or remote_full_sha != current_sha_full
-            )
+            latest_release = self._latest_github_release()
+            remote_sha = latest_release["sha"]
+            update_needed = latest_release["full_sha"] != current_sha_full
             return {
                 "available": True,
+                "default_target": SYSTEM_UPDATE_DEFAULT_TARGET,
                 "default_branch": SYSTEM_UPDATE_DEFAULT_BRANCH,
+                "latest_release": {
+                    "tag": latest_release["tag"],
+                    "sha": latest_release["sha"],
+                },
                 "current_branch": current_branch,
                 "current_sha": current_sha,
                 "remote_sha": remote_sha,
@@ -487,12 +523,12 @@ class SystemMonitorMixin:
     def _execute_system_update(self) -> None:
         """Run the full system update sequence and publish SSE progress."""
         phase_count = SYSTEM_UPDATE_PHASE_COUNT
-        target_branch = (
-            self._system_update_target_branch or SYSTEM_UPDATE_DEFAULT_BRANCH
-        )
+        target = self._system_update_target or SYSTEM_UPDATE_DEFAULT_BRANCH
+        target_type = self._system_update_target_type
         try:
-            self._checkout_branch_preserving_pipeline_config(
-                target_branch,
+            self._checkout_ref_preserving_pipeline_config(
+                target,
+                target_type=target_type,
                 phase_count=phase_count,
             )
 
@@ -538,18 +574,14 @@ class SystemMonitorMixin:
             with self._system_update_lock:
                 self._system_update_in_progress = False
 
-    def _checkout_branch_preserving_pipeline_config(
+    def _checkout_ref_preserving_pipeline_config(
         self,
-        target_branch: str,
+        target: str,
         *,
+        target_type: str,
         phase_count: int,
     ) -> None:
-        """Fetch and checkout a branch while restoring local pipeline configuration.
-
-        Args:
-            target_branch: Remote branch name to check out.
-            phase_count: Total update phase count for progress reporting.
-        """
+        """Fetch and checkout a branch or immutable release tag."""
         repo_root = self._repo_root()
         pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
         relative_path = pipeline_path.relative_to(repo_root).as_posix()
@@ -583,14 +615,18 @@ class SystemMonitorMixin:
             )
 
         try:
+            remote_ref = (
+                f"refs/tags/{target}"
+                if target_type == "release"
+                else f"refs/heads/{target}"
+            )
+            local_ref = (
+                f"refs/tags/{target}"
+                if target_type == "release"
+                else f"refs/remotes/origin/{target}"
+            )
             self._run_update_command_streaming(
-                [
-                    "git",
-                    "fetch",
-                    "--depth=1",
-                    "origin",
-                    f"+refs/heads/{target_branch}:refs/remotes/origin/{target_branch}",
-                ],
+                ["git", "fetch", "--depth=1", "origin", f"+{remote_ref}:{local_ref}"],
                 120.0,
                 phase="git_pull",
                 phase_index=0,
@@ -598,14 +634,13 @@ class SystemMonitorMixin:
                 percent_start=0,
                 percent_end=15,
             )
+            checkout_command = (
+                ["git", "checkout", "--detach", f"refs/tags/{target}"]
+                if target_type == "release"
+                else ["git", "checkout", "-B", target, f"origin/{target}"]
+            )
             self._run_update_command_streaming(
-                [
-                    "git",
-                    "checkout",
-                    "-B",
-                    target_branch,
-                    f"origin/{target_branch}",
-                ],
+                checkout_command,
                 60.0,
                 phase="git_pull",
                 phase_index=0,
@@ -693,16 +728,21 @@ class SystemMonitorMixin:
             }, 400
 
         body = _request().get_json(silent=True) or {}
-        requested_branch = body.get("branch")
+        target_type = body.get("target_type", SYSTEM_UPDATE_DEFAULT_TARGET)
+        if target_type not in {"release", "branch"}:
+            return {"error": "Target type must be 'release' or 'branch'."}, 400
         try:
-            if isinstance(requested_branch, str) and requested_branch.strip():
-                target_branch = self._normalize_git_branch_name(requested_branch)
+            if target_type == "release":
+                target = self._latest_github_release()["tag"]
             else:
-                target_branch = SYSTEM_UPDATE_DEFAULT_BRANCH
+                requested_target = body.get("target", SYSTEM_UPDATE_DEFAULT_BRANCH)
+                if not isinstance(requested_target, str):
+                    raise ValueError("Branch name is required.")
+                target = self._normalize_git_ref_name(requested_target)
         except ValueError as error:
             return {"error": str(error)}, 400
         except Exception as error:
-            return {"error": f"Unable to resolve target branch: {error}"}, 500
+            return {"error": f"Unable to resolve update target: {error}"}, 500
 
         update_id = str(uuid.uuid4())
         with self._system_update_lock:
@@ -710,7 +750,8 @@ class SystemMonitorMixin:
                 return {"error": "A system update is already in progress."}, 409
             self._system_update_in_progress = True
             self._system_update_id = update_id
-            self._system_update_target_branch = target_branch
+            self._system_update_target = target
+            self._system_update_target_type = target_type
             self._latest_system_update_progress = None
 
         phase_count = SYSTEM_UPDATE_PHASE_COUNT
@@ -719,7 +760,7 @@ class SystemMonitorMixin:
             phase_index=0,
             phase_count=phase_count,
             percent=0,
-            line=f"Starting system update on branch '{target_branch}'...",
+            line=f"Starting system update on {target_type} '{target}'...",
         )
         update_thread = threading.Thread(
             target=self._execute_system_update,
@@ -731,7 +772,8 @@ class SystemMonitorMixin:
             "started": True,
             "message": "System update started",
             "update_id": update_id,
-            "branch": target_branch,
+            "target_type": target_type,
+            "target": target,
         }, 202
 
     def get_log_messages(self) -> tuple[dict, int]:
