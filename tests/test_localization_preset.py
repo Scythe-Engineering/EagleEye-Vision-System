@@ -33,23 +33,30 @@ def _template(template_id: str = "basic_localization") -> list[dict[str, Any]]:
 
 
 def test_template_ports_and_targets_resolve() -> None:
-    """Every template connection must reference declared ports and operations."""
-    operations = _template()
-    by_uuid = {operation["uuid"]: operation for operation in operations}
-    assert len(by_uuid) == len(operations), "duplicate uuid in preset"
+    """Every localization-capable template connection must reference declared ports."""
+    for template_id in (
+        "basic_localization",
+        "apriltag_localization",
+        "object_detection_cpu",
+        "object_detection_mx3",
+    ):
+        operations = _template(template_id)
+        by_uuid = {operation["uuid"]: operation for operation in operations}
+        assert len(by_uuid) == len(operations), "duplicate uuid in preset"
 
-    for operation in operations:
-        definition = _config_def(operation["action_name"])
-        outputs = set(definition.get("output_nodes", []))
-        for connection in operation["connections"]:
-            assert connection["from_uuid"] == operation["uuid"]
-            assert connection["from_port"] in outputs, connection
-            target = by_uuid.get(connection["to_uuid"])
-            assert target is not None, connection
-            target_inputs = {
-                node["name"] for node in _config_def(target["action_name"])["input_nodes"]
-            }
-            assert connection["to_port"] in target_inputs, connection
+        for operation in operations:
+            definition = _config_def(operation["action_name"])
+            outputs = set(definition.get("output_nodes", []))
+            for connection in operation["connections"]:
+                assert connection["from_uuid"] == operation["uuid"]
+                assert connection["from_port"] in outputs, connection
+                target = by_uuid.get(connection["to_uuid"])
+                assert target is not None, connection
+                target_inputs = {
+                    node["name"]
+                    for node in _config_def(target["action_name"])["input_nodes"]
+                }
+                assert connection["to_port"] in target_inputs, connection
 
 
 def test_template_publishes_the_contract_the_java_library_reads() -> None:
@@ -90,6 +97,40 @@ def test_apriltag_template_publishes_robot_pose_and_meta() -> None:
         "localization/front/pose": "pose3d",
         "localization/front/meta": "auto",
     }
+
+
+def test_combined_templates_publish_robot_side_contract() -> None:
+    """CPU and MX3 templates publish joined pose, meta, and field detections."""
+    for template_id in ("object_detection_cpu", "object_detection_mx3"):
+        operations = _template(template_id)
+        publishers = {
+            operation["action_params"]["target_key"]: operation
+            for operation in operations
+            if operation["action_name"] == "publish_to_networktables.py"
+        }
+        assert {
+            key: publisher["action_params"]["schema"]
+            for key, publisher in publishers.items()
+        } == {
+            "localization/front/pose": "pose3d",
+            "localization/front/meta": "auto",
+            "localization/front/detections": "detections",
+        }
+
+        incoming = {
+            connection["to_uuid"]: operation["action_name"]
+            for operation in operations
+            for connection in operation["connections"]
+        }
+        assert incoming[publishers["localization/front/pose"]["uuid"]] == (
+            "camera_to_robot_pose.py"
+        )
+        assert incoming[publishers["localization/front/meta"]["uuid"]] == (
+            "pnp_camera_localization.py"
+        )
+        assert incoming[publishers["localization/front/detections"]["uuid"]] == (
+            "ground_plane_intersection.py"
+        )
 
 
 def test_both_branches_keep_one_capture_timestamp() -> None:

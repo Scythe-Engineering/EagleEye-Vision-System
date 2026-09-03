@@ -195,6 +195,7 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     assert detector["action_params"] == {"model_id": "", "device_id": "cpu"}
     assert publishers == {
         "localization/front-camera-1-2/pose",
+        "localization/front-camera-1-2/meta",
         "localization/front-camera-1-2/detections",
     }
     assert (
@@ -204,7 +205,7 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
             if operation["action_params"]["target_key"]
             == "localization/front-camera-1-2/detections"
         )["action_params"]["schema"]
-        == "json"
+        == "detections"
     )
     transform = next(
         operation
@@ -246,6 +247,7 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     assert saved_general["network_table_address"] == "10.0.0.2"
     assert saved_general["first_boot_networktable_keys"] == [
         {"key": "localization/front-camera-1-2/pose", "required": True},
+        {"key": "localization/front-camera-1-2/meta", "required": False},
         {"key": "localization/front-camera-1-2/detections", "required": False},
         {"key": "localization/front-camera-2/pose", "required": True},
         {"key": "localization/front-camera-2/meta", "required": False},

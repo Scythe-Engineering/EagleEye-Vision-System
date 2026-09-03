@@ -65,7 +65,10 @@ from the WebUI's "Basic localization" template, and feed your pose estimator:
 
 ```java
 public class Drive extends SubsystemBase {
-  private final EagleEyeCamera[] cameras = {EagleEyeCamera.forSource("localization/front")};
+  // Basic localization publishes pose and meta; forSource would also expect detections.
+  private final EagleEyeCamera[] cameras = {
+    new EagleEyeCamera("localization/front/pose", "localization/front/meta")
+  };
 
   @Override
   public void periodic() {
@@ -75,17 +78,20 @@ public class Drive extends SubsystemBase {
 }
 ```
 
-Robot code supplies the NetworkTables keys, so any pipeline layout works — pass both keys
-explicitly with `new EagleEyeCamera(poseKey, metaKey)` when they do not follow the preset. Keys
-must match the `target_key` set in the WebUI; one that nothing publishes raises a Driver Station
-warning naming the key instead of failing silently.
+Robot code supplies the NetworkTables keys, so any pipeline layout works. Pipelines from a
+detection template also publish `localization/<source>/detections`; for those sources build the
+camera with `EagleEyeCamera.forSource("localization/front")`, which subscribes to all three topics.
+Keys must match the `target_key` set in the WebUI; one that nothing publishes raises a Driver
+Station warning naming the key instead of failing silently.
 
-Each localization source publishes two NetworkTables topics that share one capture timestamp:
+Each localization source publishes `pose` and `meta` with one capture timestamp. Detection templates
+also publish `detections` with that timestamp:
 
 | Topic | Type | Contents |
 | --- | --- | --- |
 | `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
+| `EagleEye/localization/<source>/detections` | `String[]` | Repeating `[className, fieldX, fieldY, fieldZ]` groups (detection templates only) |
 
 Poses are stamped with the camera's kernel-level exposure timestamp and translated into roboRIO
 FPGA time by ntcore, so robot code passes the received timestamp straight to

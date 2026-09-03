@@ -104,6 +104,43 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
     return None
 
 
+def _coerce_detections(value: Any) -> list[str] | None:
+    """Flatten field-space detections into class/x/y/z string groups.
+
+    Args:
+        value: Detection records containing a class and finite ``position_3d``.
+
+    Returns:
+        Flattened detection groups, or None for a non-sequence input.
+    """
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return None
+    flattened: list[str] = []
+    for detection in value:
+        if not isinstance(detection, dict):
+            continue
+        position = detection.get("position_3d")
+        if (
+            not isinstance(position, Sequence)
+            or isinstance(position, (str, bytes, bytearray))
+            or len(position) != 3
+        ):
+            continue
+        try:
+            coordinates = [float(coordinate) for coordinate in position]
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not all(math.isfinite(coordinate) for coordinate in coordinates):
+            continue
+        class_name = detection.get(
+            "class_name", detection.get("color_name", detection.get("class_id"))
+        )
+        if class_name is None:
+            continue
+        flattened.extend((str(class_name), *(str(coordinate) for coordinate in coordinates)))
+    return flattened
+
+
 def _coerce_wpilib(value: Any, schema: str) -> Any:
     """Convert a pipeline value into a NetworkTables-compatible payload.
 
@@ -114,7 +151,11 @@ def _coerce_wpilib(value: Any, schema: str) -> Any:
     Returns:
         A typed NetworkTables value, or None when the value cannot be published.
     """
+    if schema == "detections":
+        return _coerce_detections(value)
     if schema == "json":
+        # Legacy schema kept for pipelines written before detections had
+        # their own string-array format.
         try:
             return json.dumps(value, separators=(",", ":"), allow_nan=False)
         except (TypeError, ValueError):
@@ -205,6 +246,8 @@ class PublishToNetworktables(OperationInstance):
     def _create_publisher(self, wpi_value: Any) -> Any:
         if isinstance(wpi_value, list):
             if not wpi_value:
+                if self.schema == "detections":
+                    return self.network_table.getStringArrayTopic(self.target_key).publish()
                 return None
             first = wpi_value[0]
             if isinstance(first, bool):
