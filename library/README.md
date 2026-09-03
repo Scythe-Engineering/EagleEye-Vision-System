@@ -11,30 +11,36 @@ robot thinks it is.
 
 ## The NetworkTables contract
 
-EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each localization source
-publishes two topics under its own subtable:
+EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each detection-enabled
+localization source publishes three topics under its own subtable. The Basic localization template
+publishes only `pose` and `meta`:
 
 | Topic | Type | Contents |
 | --- | --- | --- |
 | `EagleEye/localization/<source>/pose` | `Pose3d` struct | Robot pose in field coordinates |
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
+| `EagleEye/localization/<source>/detections` | `String[]` | Repeating `[className, fieldX, fieldY, fieldZ]` groups |
 
-Both come from one solver output on one frame, so both carry the identical capture timestamp.
-`EagleEyeCamera` joins them on exact timestamp equality rather than searching for a near match.
+Every published topic carries the same capture timestamp. `EagleEyeCamera` joins detections to an
+accepted pose by exact timestamp equality rather than searching for a near match. Detection
+publishers sit downstream of valid PnP, so an unlocalized frame publishes no field coordinates.
 
 `<source>` is yours to name — `front`, `back`, `left`. Use one per camera.
 
-Nothing about those names is baked into the library. Robot code supplies both keys, relative to
-the `EagleEye` table, and they must match the `target_key` on the matching
-`publish_to_networktables` operation in the WebUI character for character. `EagleEye` itself is
-the one fixed part: the coprocessor hands every publish operation that same root table.
+Nothing about those names is baked into the library. Robot code supplies the pose, meta, and
+optional detections keys relative to the `EagleEye` table, and they must match the `target_key` on
+the matching `publish_to_networktables` operation in the WebUI character for character. `EagleEye`
+itself is the one fixed part: the coprocessor hands every publish operation that same root table.
 
 ```java
-// Follows the shipped preset: localization/front/pose and localization/front/meta.
+// Detection template: subscribes to pose, meta, and detections.
 EagleEyeCamera.forSource("localization/front");
 
-// Any other layout: pass both keys.
-new EagleEyeCamera("vision/left_cam/robot_pose", "vision/left_cam/quality");
+// Any custom detection layout: pass all three keys.
+new EagleEyeCamera(
+    "vision/left_cam/robot_pose",
+    "vision/left_cam/quality",
+    "vision/left_cam/detections");
 ```
 
 A key nothing publishes raises a Driver Station warning naming the key and pointing at the WebUI,
@@ -68,13 +74,13 @@ source name. Insert `temporal_acceleration_preprocessor_rust` between `device_in
 
 ## Robot code
 
-Keys live at the call site, in whichever subsystem owns the pose estimator:
+Keys live at the call site, in whichever subsystem owns the pose estimator. The Basic localization
+template publishes pose and meta only, so its cameras take the two-key constructor:
 
 ```java
 public class Drive extends SubsystemBase {
   private final EagleEyeCamera[] cameras = {
-    EagleEyeCamera.forSource("localization/front"),
-    EagleEyeCamera.forSource("localization/back"),
+    new EagleEyeCamera("localization/front/pose", "localization/front/meta")
   };
 
   @Override
@@ -85,6 +91,23 @@ public class Drive extends SubsystemBase {
 }
 ```
 
+`nearestGamePiece()` uses the robot pose captured with the detection frame, not the robot's current
+pose. It returns empty until a detection sample joins an accepted localization sample, and returns
+empty again when the newest localized frame has no game pieces.
+
+Game pieces need a pipeline from a detection template, which also publishes
+`localization/<source>/detections`. Build those cameras with `EagleEyeCamera.forSource(...)`, which
+subscribes to all three topics, and consume them in the same `periodic()`:
+
+```java
+  @Override
+  public void periodic() {
+    poseEstimator.update(gyro.getRotation2d(), modulePositions);
+    EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+    cameras[0].nearestGamePiece().ifPresent(piece -> intake.track(piece.xMeters(), piece.yMeters()));
+  }
+```
+
 Call it from a subsystem's `periodic()`, not from a NetworkTables listener thread —
 `SwerveDrivePoseEstimator` is not thread safe.
 
@@ -93,7 +116,7 @@ filtering; it returns them in capture order with the quality metrics attached.
 
 ## Simulation
 
-`EagleEyeCameraSim` publishes the same two topics with the same shared timestamp from a simulated
+`EagleEyeCameraSim` publishes the same three topics with the same shared timestamp from a simulated
 robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unchanged in WPILib
 simulation with no camera and no coprocessor.
 
@@ -107,6 +130,10 @@ EagleEyeCameraSim frontSim =
 
 // simulationPeriodic, with ground truth from your drive sim:
 frontSim.update(driveSim.getPose());
+
+// Optional game pieces for nearestGamePiece(): published once on the next
+// update, then cleared, like a coprocessor that only reports what it sees.
+frontSim.nextDetections = new String[] {"coral", "3.2", "1.1", "0.5"};
 ```
 
 Given a tag layout, a tag counts as visible when it is inside `cameraFovDegrees` and within

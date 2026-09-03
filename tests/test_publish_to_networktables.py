@@ -81,8 +81,97 @@ def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
     assert table.values["RobotPose2D:timestamp"] == 123456
 
 
+def test_publish_serializes_field_detections_with_capture_timestamp() -> None:
+    """Detection groups contain class and field x/y/z under the frame timestamp."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+    timing = TimingMetadata(capture_nt_us=246810, capture_monotonic_ns=987)
+
+    publisher.run(
+        TimedValue(
+            [
+                {
+                    "class_name": "coral",
+                    "position_3d": [1.25, 2.5, 0.0],
+                    "confidence": 0.9,
+                }
+            ],
+            timing,
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.25", "2.5", "0.0"]
+    assert table.values["detections:timestamp"] == 246810
+
+
+def test_publish_drops_detections_with_unconvertible_coordinates() -> None:
+    """A coordinate that overflows float() drops its detection, not the cycle."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "broken", "position_3d": [10**10000, 0.0, 0.0]},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=13579, capture_monotonic_ns=11),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+    assert table.values["detections:timestamp"] == 13579
+
+
+def test_publish_drops_non_finite_detection_coordinates() -> None:
+    """NaN and Infinity parse as floats but are unusable field coordinates."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "broken", "position_3d": [float("nan"), 0.0, 0.0]},
+                {"class_name": "far", "position_3d": [1.0, float("inf"), 0.0]},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=2468, capture_monotonic_ns=12),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+
+
+def test_publish_rejects_string_position_3d() -> None:
+    """A string is a Sequence too; '123' must not become coordinates (1.0, 2.0, 3.0)."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run(
+        TimedValue(
+            [
+                {"class_name": "stringy", "position_3d": "123"},
+                {"class_name": "coral", "position_3d": [1.0, 2.0, 0.0]},
+            ],
+            TimingMetadata(capture_nt_us=357, capture_monotonic_ns=3),
+        )
+    )
+
+    assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
+
+
+def test_publish_supports_empty_detection_frames() -> None:
+    """An empty localized frame must clear stale robot-side detections."""
+    table = FakeNetworkTable()
+    publisher = PublishToNetworktables(table, "detections", schema="detections")
+
+    publisher.run([])
+
+    assert table.values["detections"] == []
+
+
 def test_publish_supports_detection_json_with_capture_timestamp() -> None:
-    """Publish structured detections without inventing an incomplete WPILib struct."""
+    """Legacy json schema still publishes structured detections."""
     table = FakeNetworkTable()
     publisher = PublishToNetworktables(table, "detections/front", schema="json")
     timing = TimingMetadata(capture_nt_us=222333, capture_monotonic_ns=444)
