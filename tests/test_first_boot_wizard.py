@@ -194,17 +194,24 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     }
     assert detector["action_params"] == {"model_id": "", "device_id": "cpu"}
     assert publishers == {
-        "localization/front-camera-1-2",
-        "detections/front-camera-1-2",
+        "localization/front-camera-1-2/pose",
+        "localization/front-camera-1-2/detections",
     }
     assert (
         next(
             operation
             for operation in publisher_operations
-            if operation["action_params"]["target_key"] == "detections/front-camera-1-2"
+            if operation["action_params"]["target_key"]
+            == "localization/front-camera-1-2/detections"
         )["action_params"]["schema"]
         == "json"
     )
+    transform = next(
+        operation
+        for operation in first_operations
+        if operation["action_name"] == "camera_to_robot_pose.py"
+    )
+    assert transform["action_params"] == {"camera_bus_id": "1"}
     robot_output = next(
         operation
         for operation in first_operations
@@ -213,18 +220,35 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
     pose_publisher = next(
         operation
         for operation in publisher_operations
-        if operation["action_params"]["target_key"] == "localization/front-camera-1-2"
+        if operation["action_params"]["target_key"]
+        == "localization/front-camera-1-2/pose"
     )
-    assert pose_publisher["position"]["x"] == robot_output["position"]["x"]
+    transform_feeds = {
+        connection["to_uuid"]: connection["from_uuid"]
+        for connection in transform["connections"]
+    }
+    assert transform_feeds[pose_publisher["uuid"]] == transform["uuid"]
+    assert transform_feeds[robot_output["uuid"]] == transform["uuid"]
+
+    localize_operations = pipelines["wizard-front-camera-2-localize"]
+    assert {
+        operation["action_params"]["target_key"]
+        for operation in localize_operations
+        if operation["action_name"] == "publish_to_networktables.py"
+    } == {
+        "localization/front-camera-2/pose",
+        "localization/front-camera-2/meta",
+    }
 
     saved_general = json.loads(general_conf_path.read_text(encoding="utf-8"))
     assert saved_general["first_boot_wizard_completed"] is False
     assert saved_general["first_boot_wizard_verification_pending"] is True
     assert saved_general["network_table_address"] == "10.0.0.2"
     assert saved_general["first_boot_networktable_keys"] == [
-        {"key": "localization/front-camera-1-2", "required": True},
-        {"key": "detections/front-camera-1-2", "required": False},
-        {"key": "localization/front-camera-2", "required": True},
+        {"key": "localization/front-camera-1-2/pose", "required": True},
+        {"key": "localization/front-camera-1-2/detections", "required": False},
+        {"key": "localization/front-camera-2/pose", "required": True},
+        {"key": "localization/front-camera-2/meta", "required": False},
     ]
     pending_status, _ = harness.get_first_boot_status()
     assert pending_status["required"] is False
@@ -401,5 +425,9 @@ def test_detect_mode_builds_a_detection_pipeline() -> None:
         if operation["action_name"] == "publish_to_networktables.py"
     }
     assert detector["action_params"] == {"model_id": "cpu-model", "device_id": "cpu"}
-    assert publishers == {"detections/rear-camera"}
-    assert keys == [{"key": "detections/rear-camera", "required": True}]
+    assert publishers == {"localization/rear-camera/detections"}
+    assert not any(
+        operation["action_name"] in {"camera_to_robot_pose.py", "camera_pose_output.py"}
+        for operation in nodes
+    )
+    assert keys == [{"key": "localization/rear-camera/detections", "required": True}]

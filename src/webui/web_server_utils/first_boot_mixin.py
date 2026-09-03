@@ -30,6 +30,29 @@ _NT_PUBLISH_ACTION = "publish_to_networktables.py"
 _PNP_ACTION = "pnp_camera_localization.py"
 
 
+def _template_publishers(
+    nodes: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    """Return the template's pose, meta, and detections publisher nodes.
+
+    Matches both the legacy single-key layout (``camera_pose`` /
+    ``detected_objects``) and the per-source layout
+    (``localization/<source>/pose`` and friends).
+    """
+    pose = meta = detections = None
+    for node in nodes:
+        if node["action_name"] != _NT_PUBLISH_ACTION:
+            continue
+        key = node.get("action_params", {}).get("target_key", "")
+        if key == "camera_pose" or key.endswith("/pose"):
+            pose = node
+        elif key.endswith("/meta"):
+            meta = node
+        elif key == "detected_objects" or key.endswith("/detections"):
+            detections = node
+    return pose, meta, detections
+
+
 def _source_slug(name: str, bus_id: str) -> str:
     """Return a stable NetworkTables-safe camera source segment."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
@@ -117,10 +140,92 @@ def build_first_boot_pipeline(
     if detector is not None:
         detector["action_params"].update({"model_id": model_id, "device_id": "cpu"})
 
+    transform_node = nodes_by_action.get("camera_to_robot_pose.py")
+    if transform_node is None:
+        # Older detection templates ship no transform node; repurpose the
+        # camera pose output node so every mode publishes a robot-frame pose.
+        transform_node = nodes_by_action.pop("camera_pose_output.py")
+        transform_node["action_name"] = "camera_to_robot_pose.py"
+    transform_node.setdefault("action_params", {})["camera_bus_id"] = camera_bus_id
+
+    pose_publisher, meta_publisher, detections_publisher = _template_publishers(nodes)
+    if pose_publisher is None:
+        raise ValueError(f"Template {template_id!r} has no pose publisher")
+
+    detections_key: str | None = None
+    if detections_publisher is not None:
+        # Field detections need the localization chain, so the detections
+        # publisher survives in every mode; only its key and schema differ.
+        detection_schema = (
+            "detections"
+            if detections_publisher["action_params"]
+            .get("target_key", "")
+            .endswith("/detections")
+            else "json"
+        )
+        detections_key = f"localization/{source_name}/detections"
+        detections_publisher["action_params"].update(
+            {"target_key": detections_key, "schema": detection_schema, "data_path": []}
+        )
+
+    if mode == "detect":
+        removed = {pose_publisher["uuid"]}
+        for node in (
+            meta_publisher,
+            transform_node,
+            nodes_by_action.get("camera_pose_output.py"),
+        ):
+            if node is not None:
+                removed.add(node["uuid"])
+        nodes = [node for node in nodes if node["uuid"] not in removed]
+        for node in nodes:
+            node["connections"] = [
+                connection
+                for connection in node.get("connections", [])
+                if connection["to_uuid"] not in removed
+            ]
+        verification_keys = (
+            [{"key": detections_key, "required": True}]
+            if detections_key is not None
+            else []
+        )
+        return nodes, verification_keys
+
+    pose_key = f"localization/{source_name}/pose"
+    pose_publisher["action_params"].update(
+        {"target_key": pose_key, "schema": "pose3d", "data_path": []}
+    )
+    if meta_publisher is not None:
+        meta_publisher["action_params"].update(
+            {
+                "target_key": f"localization/{source_name}/meta",
+                "schema": "auto",
+                "data_path": [],
+            }
+        )
+
+    # The pose publisher must carry the robot-frame pose from the transform,
+    # never the raw camera pose straight from the solver.
     pnp_node = nodes_by_action[_PNP_ACTION]
-    transform_node = nodes_by_action.pop("camera_pose_output.py")
-    transform_node["action_name"] = "camera_to_robot_pose.py"
-    transform_node["action_params"] = {"camera_bus_id": camera_bus_id}
+    pnp_node["connections"] = [
+        connection
+        for connection in pnp_node["connections"]
+        if connection["to_uuid"] != pose_publisher["uuid"]
+    ]
+    if not any(
+        connection["to_uuid"] == pose_publisher["uuid"]
+        for connection in transform_node["connections"]
+    ):
+        transform_node["connections"].append(
+            _connection(
+                transform_node["uuid"],
+                "robot_pose",
+                pose_publisher["uuid"],
+                "data",
+                "robot_pose",
+            )
+        )
+
     robot_output: dict[str, Any] = {
         "action_name": "robot_pose_output.py",
         "action_params": {},
@@ -131,68 +236,37 @@ def build_first_boot_pipeline(
         "uuid": f"op-{uuid.uuid4().hex}",
         "connections": [],
     }
-
-    pose_publisher = next(
-        node
-        for node in nodes
-        if node["action_name"] == _NT_PUBLISH_ACTION
-        and node.get("action_params", {}).get("target_key") == "camera_pose"
-    )
-    pose_key = f"localization/{source_name}"
-    pose_publisher["action_params"].update(
-        {"target_key": pose_key, "schema": "pose3d", "data_path": []}
-    )
-    pose_publisher["position"]["x"] = robot_output["position"]["x"]
-    pnp_node["connections"] = [
-        item
-        for item in pnp_node["connections"]
-        if item["to_uuid"] != pose_publisher["uuid"]
-    ]
-    transform_node["connections"] = [
+    transform_node["connections"].append(
         _connection(
             transform_node["uuid"],
             "robot_pose",
             robot_output["uuid"],
             "pose",
             "robot_pose",
-        ),
-        _connection(
-            transform_node["uuid"],
-            "robot_pose",
-            pose_publisher["uuid"],
-            "data",
-            "robot_pose",
-        ),
-    ]
+        )
+    )
     nodes.append(robot_output)
 
-    verification_keys: list[dict[str, Any]] = []
-    if mode == "detect":
-        nodes = [node for node in nodes if node["uuid"] != pose_publisher["uuid"]]
-        transform_node["connections"] = [
-            item
-            for item in transform_node["connections"]
-            if item["to_uuid"] != pose_publisher["uuid"]
-        ]
-    else:
-        verification_keys.append({"key": pose_key, "required": True})
-
-    if mode != "localize":
-        detection_publisher = next(
-            node
-            for node in nodes
-            if node["action_name"] == _NT_PUBLISH_ACTION
-            and node.get("action_params", {}).get("target_key") == "detected_objects"
-        )
-        detection_key = f"detections/{source_name}"
-        detection_publisher["action_params"].update(
-            {"target_key": detection_key, "schema": "json", "data_path": []}
-        )
+    verification_keys = [{"key": pose_key, "required": True}]
+    if meta_publisher is not None:
         verification_keys.append(
-            {"key": detection_key, "required": mode == "detect" or bool(model_id)}
+            {"key": f"localization/{source_name}/meta", "required": False}
         )
+    if detections_key is not None:
+        verification_keys.append({"key": detections_key, "required": bool(model_id)})
 
     return nodes, verification_keys
+
+
+def _source_target_taken(candidate: str, reserved_target_keys: set[str]) -> bool:
+    """Return whether a candidate source collides with reserved publisher keys."""
+    localization_prefix = f"localization/{candidate}"
+    return any(
+        key == localization_prefix
+        or key.startswith(f"{localization_prefix}/")
+        or key == f"detections/{candidate}"
+        for key in reserved_target_keys
+    )
 
 
 def _unique_camera_sources(
@@ -215,10 +289,8 @@ def _unique_camera_sources(
             )
             candidate = source
             suffix = 2
-            while (
-                candidate in used_sources
-                or f"localization/{candidate}" in reserved_target_keys
-                or f"detections/{candidate}" in reserved_target_keys
+            while candidate in used_sources or _source_target_taken(
+                candidate, reserved_target_keys
             ):
                 candidate = f"{source}-{suffix}"
                 suffix += 1
