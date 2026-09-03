@@ -133,8 +133,9 @@ public class EagleEyeCamera {
    * <p>Subscribes to {@code /pose}, {@code /meta}, and {@code /detections} below the source. Use
    * the three-key constructor when the pipeline publishes somewhere else.
    *
-   * @param source key prefix shared by both topics, such as {@code "localization/front"}.
-   * @return a camera reading the source's {@code /pose} and {@code /meta} keys.
+   * @param source key prefix shared by the {@code /pose}, {@code /meta}, and {@code /detections}
+   *     topics, such as {@code "localization/front"}.
+   * @return a camera reading all three source topics.
    */
   public static EagleEyeCamera forSource(String source) {
     return new EagleEyeCamera(

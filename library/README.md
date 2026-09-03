@@ -11,8 +11,9 @@ robot thinks it is.
 
 ## The NetworkTables contract
 
-EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each localization source
-publishes three topics under its own subtable:
+EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each detection-enabled
+localization source publishes three topics under its own subtable. The Basic localization template
+publishes only `pose` and `meta`:
 
 | Topic | Type | Contents |
 | --- | --- | --- |
@@ -20,22 +21,22 @@ publishes three topics under its own subtable:
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
 | `EagleEye/localization/<source>/detections` | `String[]` | Repeating `[className, fieldX, fieldY, fieldZ]` groups |
 
-All three carry the identical capture timestamp. `EagleEyeCamera` joins detections to an accepted
-pose by exact timestamp equality rather than searching for a near match. Detection publishers sit
-downstream of valid PnP, so an unlocalized frame publishes no field coordinates.
+Every published topic carries the same capture timestamp. `EagleEyeCamera` joins detections to an
+accepted pose by exact timestamp equality rather than searching for a near match. Detection
+publishers sit downstream of valid PnP, so an unlocalized frame publishes no field coordinates.
 
 `<source>` is yours to name — `front`, `back`, `left`. Use one per camera.
 
-Nothing about those names is baked into the library. Robot code supplies both keys, relative to
-the `EagleEye` table, and they must match the `target_key` on the matching
-`publish_to_networktables` operation in the WebUI character for character. `EagleEye` itself is
-the one fixed part: the coprocessor hands every publish operation that same root table.
+Nothing about those names is baked into the library. Robot code supplies the pose, meta, and
+optional detections keys relative to the `EagleEye` table, and they must match the `target_key` on
+the matching `publish_to_networktables` operation in the WebUI character for character. `EagleEye`
+itself is the one fixed part: the coprocessor hands every publish operation that same root table.
 
 ```java
-// Follows the shipped preset: localization/front/pose and localization/front/meta.
+// Detection template: subscribes to pose, meta, and detections.
 EagleEyeCamera.forSource("localization/front");
 
-// Any other layout: pass both keys.
+// Any custom detection layout: pass all three keys.
 new EagleEyeCamera(
     "vision/left_cam/robot_pose",
     "vision/left_cam/quality",

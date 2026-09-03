@@ -84,7 +84,8 @@ camera with `EagleEyeCamera.forSource("localization/front")`, which subscribes t
 Keys must match the `target_key` set in the WebUI; one that nothing publishes raises a Driver
 Station warning naming the key instead of failing silently.
 
-Each localization source publishes two NetworkTables topics that share one capture timestamp:
+Each localization source publishes `pose` and `meta` with one capture timestamp. Detection templates
+also publish `detections` with that timestamp:
 
 | Topic | Type | Contents |
 | --- | --- | --- |

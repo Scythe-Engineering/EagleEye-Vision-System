@@ -105,7 +105,14 @@ def _dict_to_wpilib(value: dict, schema: str = "auto") -> Any:
 
 
 def _coerce_detections(value: Any) -> list[str] | None:
-    """Flatten field-space detections into class/x/y/z string groups."""
+    """Flatten field-space detections into class/x/y/z string groups.
+
+    Args:
+        value: Detection records containing a class and finite ``position_3d``.
+
+    Returns:
+        Flattened detection groups, or None for a non-sequence input.
+    """
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         return None
     flattened: list[str] = []
