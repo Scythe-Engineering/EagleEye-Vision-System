@@ -217,7 +217,7 @@ def test_schema_change_recreates_the_typed_publisher() -> None:
             self.publisher_type = publisher_type
             self.publishers = publishers
 
-        def publish(self) -> _Publisher:
+        def publish(self, *_options) -> _Publisher:
             publisher = _Publisher(self.publisher_type)
             self.publishers.append(publisher)
             return publisher
@@ -245,3 +245,26 @@ def test_schema_change_recreates_the_typed_publisher() -> None:
     ]
     assert table.publishers[0].values == [1.0]
     assert table.publishers[1].values == ["updated"]
+
+
+def test_repeated_frame_values_keep_distinct_capture_timestamps() -> None:
+    """A stationary camera still needs pose/meta for every capture, using real ntcore."""
+    import ntcore
+    from wpimath.geometry import Pose3d
+    instance = ntcore.NetworkTableInstance.create()
+    instance.startLocal()
+    try:
+        table = instance.getTable('contract')
+        opts = ntcore.PubSubOptions(keepDuplicates=True, sendAll=True, pollStorage=20)
+        poses = table.getStructTopic('pose', Pose3d).subscribe(Pose3d(), opts)
+        metas = table.getDoubleArrayTopic('meta').subscribe([], opts)
+        posepub = PublishToNetworktables(table, 'pose', 'pose3d')
+        metapub = PublishToNetworktables(table, 'meta', 'auto')
+        for timestamp in (10000, 20000, 30000):
+            timing = TimingMetadata(timestamp, timestamp * 1000)
+            posepub.run(TimedValue(np.eye(4), timing))
+            metapub.run(TimedValue([2., 3., .5], timing))
+        assert [sample.time for sample in poses.readQueue()] == [10000, 20000, 30000]
+        assert [sample.time for sample in metas.readQueue()] == [10000, 20000, 30000]
+    finally:
+        instance.stopLocal()

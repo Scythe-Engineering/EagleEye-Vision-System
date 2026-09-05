@@ -4,7 +4,9 @@ import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
-from src.utils.quaternion_utils import euler_to_rotation_matrix
+from src.utils.camera_utils.camera_coordinate_transforms import (
+    _CAMERA_TO_ROBOT_BASIS, build_robot_from_camera_transform,
+)
 
 
 class CameraToRobotPose(OperationInstance):
@@ -28,6 +30,7 @@ class CameraToRobotPose(OperationInstance):
         self.camera_bus_id = str(camera_bus_id)
         self.camera_config_registry = camera_config_registry
         self._cached_camera_from_robot_transform: np.ndarray | None = None
+        self._cached_extrinsics: tuple[float, ...] | None = None
 
     @staticmethod
     def _fast_se3_inverse(transform: np.ndarray) -> np.ndarray:
@@ -64,23 +67,12 @@ class CameraToRobotPose(OperationInstance):
         if self.camera_config_registry is None:
             return np.eye(4, dtype=float)
 
-        camera_config = self.camera_config_registry.get_config(self.camera_bus_id)
-        extrinsics = camera_config.extrinsics
-
-        # stuff in strange order because of coordinate system conversion for both frontend and wpilib/robot
-        transform = euler_to_rotation_matrix(
-            pitch=float(-extrinsics.yaw),
-            yaw=float(-extrinsics.pitch),
-            roll=float(extrinsics.roll),
-        )
-        transform[:3, 3] = np.array(
-            [
-                float(extrinsics.y_offset),
-                float(-extrinsics.z_offset),
-                float(extrinsics.x_offset),
-            ],
-            dtype=float,
-        )
+        extrinsics = self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
+        # Both pipeline poses retain EDN local axes, while their translation is
+        # already in the field's NWU frame. Change the mounting transform's
+        # output basis only; the publisher converts the final local axes to NWU.
+        transform = build_robot_from_camera_transform(extrinsics)
+        transform[:3, :] = _CAMERA_TO_ROBOT_BASIS.T @ transform[:3, :]
         return transform
 
     def _build_inverse_transform(self) -> np.ndarray:
@@ -98,7 +90,13 @@ class CameraToRobotPose(OperationInstance):
         Returns:
             Cached or newly built 4x4 inverse extrinsics transform.
         """
-        if self._cached_camera_from_robot_transform is None:
+        signature = None
+        if self.camera_config_registry is not None:
+            extrinsics = self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
+            signature = tuple(float(getattr(extrinsics, key)) for key in
+                              ("pitch", "yaw", "roll", "x_offset", "y_offset", "z_offset"))
+        if self._cached_camera_from_robot_transform is None or signature != self._cached_extrinsics:
+            self._cached_extrinsics = signature
             self._cached_camera_from_robot_transform = self._build_inverse_transform()
         return self._cached_camera_from_robot_transform
 

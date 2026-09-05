@@ -246,7 +246,7 @@ def test_failed_advertised_fps_negotiation_uses_fallbacks() -> None:
 
     backend = RejectingBackend()
 
-    assert camera._negotiate_frame_rate(backend) == DEFAULT_FPS
+    assert camera._negotiate_frame_rate(backend, []) == DEFAULT_FPS
     assert len(backend.requests) > 1
 
 
@@ -279,12 +279,12 @@ def test_camera_negotiates_frame_rate_before_streaming() -> None:
     camera.log = lambda _message: None
     camera.camera_ready = False
     camera.backend = None
-    camera.get_available_fps_for_resolution = lambda: [100]
-    camera._open_backend = lambda: Backend()
+    camera.get_available_fps_for_resolution = lambda: (events.append("query") or [100])
+    camera._open_backend = lambda: (events.append("open") or Backend())
 
     camera._start_camera()
 
-    assert events == ["fps:100", "start", "control"]
+    assert events == ["query", "open", "fps:100", "start", "control"]
     assert camera.achieved_fps == 100
 
 

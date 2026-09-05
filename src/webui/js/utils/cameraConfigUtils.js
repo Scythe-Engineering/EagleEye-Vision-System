@@ -1,3 +1,4 @@
+import { mountingPoseToViewMatrix } from "./fieldSpaceTransforms.js";
 // Utilities for camera configuration UI, including intrinsics, extrinsics, and calibration flows.
 import { BACKEND_BASE_URL } from "../config.js";
 import {
@@ -272,50 +273,9 @@ function updateCameraPoseVisualization() {
         return;
     }
 
-    const xOffset = Number.parseFloat(
-        getElement("utils-x-offset")?.value ?? "0",
-    );
-    const yOffset = Number.parseFloat(
-        getElement("utils-y-offset")?.value ?? "0",
-    );
-    const zOffset = Number.parseFloat(
-        getElement("utils-z-offset")?.value ?? "0",
-    );
-    const yawDegrees = Number.parseFloat(getElement("utils-yaw")?.value ?? "0");
-    const pitchDegrees = Number.parseFloat(
-        getElement("utils-pitch")?.value ?? "0",
-    );
-    const rollDegrees = Number.parseFloat(
-        getElement("utils-roll")?.value ?? "0",
-    );
-
-    const x = Number.isFinite(xOffset) ? xOffset : 0;
-    const y = Number.isFinite(yOffset) ? yOffset : 0;
-    const z = Number.isFinite(zOffset) ? zOffset : 0;
-    const yaw = (Number.isFinite(yawDegrees) ? yawDegrees : 0) * DEG_TO_RAD;
-    const pitch =
-        (Number.isFinite(pitchDegrees) ? pitchDegrees : 0) * DEG_TO_RAD;
-    const roll = (Number.isFinite(rollDegrees) ? rollDegrees : 0) * DEG_TO_RAD;
-
-    // Map robot convention (x forward, y left, z up) -> Three.js (x right, y up, z depth).
-    poseVizState.cameraMarkerGroup.position.set(x, z, y);
-
-    const qRoll = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(1, 0, 0),
-        roll,
-    );
-    const qPitch = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 0, 1),
-        pitch,
-    );
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        yaw,
-    );
-    const orientation = new THREE.Quaternion();
-    orientation.multiplyQuaternions(qYaw, qPitch);
-    orientation.multiply(qRoll);
-    poseVizState.cameraMarkerGroup.quaternion.copy(orientation);
+    const matrix = mountingPoseToViewMatrix(getExtrinsicsPayload());
+    matrix.decompose(poseVizState.cameraMarkerGroup.position,
+        poseVizState.cameraMarkerGroup.quaternion, poseVizState.cameraMarkerGroup.scale);
 }
 
 /**

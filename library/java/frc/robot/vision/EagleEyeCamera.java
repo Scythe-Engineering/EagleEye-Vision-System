@@ -31,7 +31,8 @@ import java.util.Optional;
  * the WebUI character for character. A key that nothing publishes produces a Driver Station
  * warning rather than silence.
  *
- * <p>EagleEye stamps every published pose with the kernel's V4L2 exposure timestamp, and ntcore
+ * <p>EagleEye stamps poses with source capture time (V4L2 exposure time when supported,
+ * otherwise delivery time), and ntcore
  * translates that into roboRIO FPGA time on arrival. The timestamp on a received sample is
  * therefore already in the domain {@code addVisionMeasurement} expects: do not subtract a latency,
  * and do not use {@code Timer.getFPGATimestamp()} as the measurement time.
@@ -41,8 +42,8 @@ import java.util.Optional;
  * <pre>
  * public class Drive extends SubsystemBase {
  *   private final EagleEyeCamera[] cameras = {
- *     EagleEyeCamera.forSource("localization/front"),
- *     EagleEyeCamera.forSource("localization/back"),
+ *     new EagleEyeCamera("localization/front/pose", "localization/front/meta"),
+ *     new EagleEyeCamera("localization/back/pose", "localization/back/meta"),
  *   };
  *
  *   public void periodic() {
@@ -216,6 +217,11 @@ public class EagleEyeCamera {
         unmatched.add(sample);
         continue;
       }
+      if (!Double.isFinite(meta[0]) || meta[0] != Math.rint(meta[0])
+          || meta[0] < 0 || meta[0] > Integer.MAX_VALUE
+          || !Double.isFinite(sample.value.getZ())) {
+        continue;
+      }
       var observation =
           new Observation(
               sample.value.toPose2d(), sample.timestamp / 1e6, (int) meta[0], meta[1], meta[2]);
@@ -235,6 +241,7 @@ public class EagleEyeCamera {
     joinDetections(nowMicros);
     recentPoses.removeIf(
         pose -> (nowMicros - pose.timestampMicros()) / 1e6 > maximumSampleAgeSeconds);
+    observations.sort(Comparator.comparingDouble(Observation::timestampSeconds));
     return observations;
   }
 
@@ -311,7 +318,14 @@ public class EagleEyeCamera {
   }
 
   private static boolean isTrustworthy(Observation observation) {
-    return observation.tagCount() >= minimumTagCount
+    return Double.isFinite(observation.pose().getX())
+        && Double.isFinite(observation.pose().getY())
+        && Double.isFinite(observation.pose().getRotation().getRadians())
+        && Double.isFinite(observation.meanTagDistanceMeters())
+        && Double.isFinite(observation.reprojectionErrorPixels())
+        && observation.meanTagDistanceMeters() >= 0.0
+        && observation.reprojectionErrorPixels() >= 0.0
+        && observation.tagCount() >= minimumTagCount
         && observation.meanTagDistanceMeters() <= maximumTagDistanceMeters
         && observation.reprojectionErrorPixels() <= maximumReprojectionErrorPixels;
   }

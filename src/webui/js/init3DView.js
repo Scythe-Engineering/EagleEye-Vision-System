@@ -84,20 +84,10 @@ const robotFinalMatrix = new Matrix4();
 const robotPoseRotationMatrix = new Matrix4();
 const robotPoseTranslationMatrix = new Matrix4();
 const robotPosePosition = new Vector3();
-// The pose comes in robot-space, then gets converted into the Three.js visual
-// basis. Keep the basis swap separate from the visual roll steps:
-// - Y-axis swap: matches the robot object's axis convention
-// - X rotation: the original fixed visual tilt
-// - Z rotation: the extra 90° roll that would otherwise read like yaw here
+// Robot GLB assets use WPILib NWU axes (X forward, Y left, Z up).
+// Convert the asset once into the Y-up visual basis; pose rotations are
+// already in that basis and must never be conjugated by model corrections.
 const visualOrientationMatrix = new Matrix4().makeRotationX(-Math.PI / 2);
-const extraVisualRollMatrix = new Matrix4().makeRotationZ(-Math.PI / 2);
-// Robot-only pitch correction. Keep this separate from the shared visual basis
-// so camera markers continue using the same transform chain.
-const robotPitchUpMatrix = new Matrix4().makeRotationY(Math.PI / 2);
-const robotActualPitchMatrix = new Matrix4().makeRotationX(-Math.PI / 2);
-const robotPitchRollSwap = new Matrix4().makeRotationY(Math.PI / 2);
-const robotPitchRollSwapInverse = new Matrix4().makeRotationY(-Math.PI / 2);
-const robotCorrectedRotation = new Matrix4();
 const cameraCorrectedRotation = new Matrix4();
 const detectionCylinderRadius = 150;
 const detectionCylinderHeight = 400;
@@ -200,24 +190,13 @@ function refreshRobotMatrix() {
         robotPosePosition.setFromMatrixPosition(lastRobotTransformMatrix);
         robotPoseTranslationMatrix.identity().setPosition(robotPosePosition);
 
-        robotCorrectedRotation
-            .copy(robotPitchRollSwap)
-            .multiply(robotPoseRotationMatrix)
-            .multiply(robotPitchRollSwapInverse);
-
         robotFinalMatrix
             .copy(robotPoseTranslationMatrix)
-            .multiply(robotCorrectedRotation)
+            .multiply(robotPoseRotationMatrix)
             .multiply(visualOrientationMatrix)
-            .multiply(robotPitchUpMatrix)
-            .multiply(robotActualPitchMatrix)
             .multiply(robotScaleMatrix);
     } else {
-        robotFinalMatrix
-            .copy(visualOrientationMatrix)
-            .multiply(robotPitchUpMatrix)
-            .multiply(robotActualPitchMatrix)
-            .multiply(robotScaleMatrix);
+        robotFinalMatrix.copy(visualOrientationMatrix).multiply(robotScaleMatrix);
     }
 
     robotObject.matrixAutoUpdate = false;
@@ -229,11 +208,8 @@ function refreshRobotMatrix() {
  * Applies the shared visual-axis correction used for camera and detection transforms.
  */
 function applySharedVisualAxisCorrection(matrix) {
-    return matrix
-        .multiply(robotPitchRollSwap)
-        .multiply(visualOrientationMatrix)
-        .multiply(extraVisualRollMatrix)
-        .multiply(robotPitchRollSwapInverse);
+    // Camera frustum geometry already points along +X in the Y-up basis.
+    return matrix;
 }
 
 /**
