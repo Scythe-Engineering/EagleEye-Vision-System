@@ -5,7 +5,6 @@ import numpy as np
 from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
-from src.utils.colors import Colors
 
 
 class PnpLocalization:
@@ -20,6 +19,7 @@ class PnpLocalization:
         camera_matrix: np.ndarray,
         distortion_coefficients: np.ndarray,
         apriltag_map: Dict[int, Apriltag],
+        refinement_iterations: int = 10,
     ) -> None:
         """Initialize the AprilTag pose estimator.
 
@@ -27,13 +27,15 @@ class PnpLocalization:
             camera_matrix: Camera intrinsic matrix.
             distortion_coefficients: Camera distortion coefficients.
             apriltag_map: Mapping of tag IDs to AprilTag objects.
+            refinement_iterations: Maximum LM refinement iterations; zero disables refinement.
         """
-        self.camera_matrix = camera_matrix.astype(np.float32, copy=False)
-        dist = distortion_coefficients.astype(np.float32, copy=False)
+        self.camera_matrix = camera_matrix.astype(np.float64, copy=False)
+        dist = distortion_coefficients.astype(np.float64, copy=False)
         if dist.ndim == 1 or (dist.ndim == 2 and dist.shape[0] == 1):
             dist = dist.reshape((-1, 1))
         self.distortion_coefficients = dist
         self.apriltag_map = apriltag_map
+        self.set_refinement_iterations(refinement_iterations)
 
     @staticmethod
     def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
@@ -59,28 +61,114 @@ class PnpLocalization:
 
         return t_inv_matrix
 
-    def _fast_rodrigues(self, rvec: np.ndarray) -> np.ndarray:
-        """Compute rotation matrix from rotation vector using Rodrigues formula.
+    def set_refinement_iterations(self, iterations: int) -> None:
+        """Set the bounded, live-updatable LM iteration limit."""
+        value = int(iterations)
+        if (
+            isinstance(iterations, bool)
+            or value != float(iterations)
+            or not 0 <= value <= 100
+        ):
+            raise ValueError("refinement_iterations must be an integer from 0 to 100")
+        self.refinement_iterations = value
 
-        Args:
-            rvec: Rotation vector (3,) or (3, 1).
+    def _solve(
+        self, object_points: np.ndarray, image_points: np.ndarray, tag_count: int
+    ):
+        """Initialize with planar IPPE or multi-tag SQPnP, then refine valid candidates.
 
-        Returns:
-            Rotation matrix (3, 3) as float32.
+        Candidate ranking uses squared reprojection error. Both initialization and
+        refinement are stateless: a previous pose never masks motion or tag ambiguity.
+        IPPE accepts arbitrary coplanar field points, avoiding IPPE_SQUARE's special
+        local corner order. No field/camera basis conversion occurs in this solver.
         """
-        v = rvec.reshape(3).astype(np.float32, copy=False)
-        theta = float(np.linalg.norm(v))
-        if np.isclose(theta, 0.0, rtol=1e-09, atol=1e-09):
-            return np.eye(3, dtype=np.float32)
-        n = v / theta
-        nx, ny, nz = float(n[0]), float(n[1]), float(n[2])
-        K = np.array([[0.0, -nz, ny], [nz, 0.0, -nx], [-ny, nx, 0.0]], dtype=np.float32)
-        s = np.float32(np.sin(theta))
-        c = np.float32(np.cos(theta))
-        K2 = K @ K
-        R = np.eye(3, dtype=np.float32)
-        R += s * K + (1.0 - c) * K2
-        return R
+        if np.linalg.matrix_rank(object_points - object_points.mean(axis=0)) < 2:
+            return None
+        iterations = self.refinement_iterations
+        try:
+            solved = cv2.solvePnPGeneric(
+                object_points,
+                image_points,
+                self.camera_matrix,
+                self.distortion_coefficients,
+                flags=cv2.SOLVEPNP_IPPE if tag_count == 1 else cv2.SOLVEPNP_SQPNP,
+            )
+        except cv2.error:
+            return None
+        if not solved[0]:
+            return None
+        rotations, translations = list(solved[1]), list(solved[2])
+        # Coplanar multi-tag layouts can have two plausible minima. SQPnP alone
+        # need not expose both; evaluate IPPE's planar hypotheses as well.
+        singular_values = np.linalg.svd(
+            object_points - object_points.mean(axis=0), compute_uv=False
+        )
+        if tag_count > 1 and singular_values[-1] < 1e-6 * singular_values[0]:
+            try:
+                planar = cv2.solvePnPGeneric(
+                    object_points,
+                    image_points,
+                    self.camera_matrix,
+                    self.distortion_coefficients,
+                    flags=cv2.SOLVEPNP_IPPE,
+                )
+                if planar[0]:
+                    rotations.extend(planar[1])
+                    translations.extend(planar[2])
+            except cv2.error:
+                pass
+
+        def score(rvec, tvec):
+            if not np.isfinite(rvec).all() or not np.isfinite(tvec).all():
+                return float("inf")
+            rotation = cv2.Rodrigues(rvec)[0]
+            if np.any((object_points @ rotation.T + tvec.reshape(3))[:, 2] <= 0):
+                return float("inf")
+            projected = cv2.projectPoints(
+                object_points,
+                rvec,
+                tvec,
+                self.camera_matrix,
+                self.distortion_coefficients,
+            )[0]
+            return float(
+                np.mean(np.sum((projected.reshape(-1, 2) - image_points) ** 2, axis=1))
+            )
+
+        best = None
+        best_error = float("inf")
+        for rotation, translation in zip(rotations, translations):
+            error = score(rotation, translation)
+            if not np.isfinite(error):
+                continue
+            if iterations:
+                try:
+                    refined_rotation, refined_translation = cv2.solvePnPRefineLM(
+                        object_points,
+                        image_points,
+                        self.camera_matrix,
+                        self.distortion_coefficients,
+                        rotation.copy(),
+                        translation.copy(),
+                        criteria=(
+                            cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,
+                            iterations,
+                            1e-9,
+                        ),
+                    )
+                    refined_error = score(refined_rotation, refined_translation)
+                    if refined_error <= error:
+                        rotation, translation, error = (
+                            refined_rotation,
+                            refined_translation,
+                            refined_error,
+                        )
+                except cv2.error:
+                    pass  # A valid initializer is preferable to dropping this frame.
+            if error < best_error:
+                best = rotation, translation
+                best_error = error
+        return best
 
     def _solution_quality(
         self,
@@ -116,18 +204,14 @@ class PnpLocalization:
             self.distortion_coefficients,
         )
         reprojection_error = float(
-            np.mean(
-                np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1)
-            )
+            np.mean(np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1))
         )
 
         tag_centers = object_points.reshape(-1, 4, 3).mean(axis=1)
         camera_space_centers = (
             tag_centers @ rotation_matrix.T + translation_vector.reshape(3)
         )
-        mean_distance = float(
-            np.mean(np.linalg.norm(camera_space_centers, axis=1))
-        )
+        mean_distance = float(np.mean(np.linalg.norm(camera_space_centers, axis=1)))
 
         return [float(tag_count), mean_distance, reprojection_error]
 
@@ -148,21 +232,25 @@ class PnpLocalization:
         image_points_list = []
         object_points_list = []
         valid_tags_found = 0
+        seen_ids = set()
 
         for detection in detections:
             tag_id = detection.tag_id
-            if tag_id not in self.apriltag_map:
+            if tag_id not in self.apriltag_map or tag_id in seen_ids:
                 continue
 
-            corners = detection.corners.astype(np.float32, copy=False)
+            corners = detection.corners.astype(np.float64, copy=False)
             apriltag_obj = self.apriltag_map[tag_id]
-            global_corners = apriltag_obj.global_corners.astype(np.float32, copy=False)
+            global_corners = apriltag_obj.global_corners.astype(np.float64, copy=False)
 
+            if corners.shape != (4, 2) or global_corners.shape != (4, 3):
+                continue
             if not np.all(np.isfinite(corners)) or not np.all(
                 np.isfinite(global_corners)
             ):
                 continue
 
+            seen_ids.add(tag_id)
             image_points_list.append(corners)
             object_points_list.append(global_corners)
             valid_tags_found += 1
@@ -170,46 +258,33 @@ class PnpLocalization:
         if valid_tags_found == 0:
             return None
 
-        image_points = np.vstack(image_points_list).astype(np.float32, copy=False)
-        object_points = np.vstack(object_points_list).astype(np.float32, copy=False)
+        image_points = np.vstack(image_points_list).astype(np.float64, copy=False)
+        object_points = np.vstack(object_points_list).astype(np.float64, copy=False)
 
         if not (
             np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))
         ):
             return None
 
-        success, rotation_vector, translation_vector = cv2.solvePnP(
-            object_points,
-            image_points,
-            self.camera_matrix,
-            self.distortion_coefficients,
-            flags=cv2.SOLVEPNP_ITERATIVE,
+        # Optimize around nearby tag geometry rather than the distant field origin.
+        # This improves rotation/translation conditioning, particularly in older
+        # OpenCV LM builds, without changing the published field coordinates.
+        object_origin = object_points.mean(axis=0)
+        solution = self._solve(
+            object_points - object_origin, image_points, valid_tags_found
         )
-
-        if (
-            not success
-            or rotation_vector is None
-            or translation_vector is None
-            or not np.all(np.isfinite(rotation_vector))
-            or not np.all(np.isfinite(translation_vector))
-        ):
+        if solution is None:
             return None
-
-        rotation_matrix = self._fast_rodrigues(rotation_vector)
-        camera_space_transform = np.eye(4, dtype=np.float32)
+        rotation_vector, translation_vector = solution
+        rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
+        translation_vector = translation_vector.reshape(3, 1) - (
+            rotation_matrix @ object_origin
+        ).reshape(3, 1)
+        camera_space_transform = np.eye(4, dtype=np.float64)
         camera_space_transform[:3, :3] = rotation_matrix
-        camera_space_transform[:3, 3] = translation_vector.flatten().astype(
-            np.float32, copy=False
-        )
-
-        global_camera_transform = PnpLocalization.fast_se3_inverse(
-            camera_space_transform
-        )
-
+        camera_space_transform[:3, 3] = translation_vector.reshape(3)
+        global_camera_transform = self.fast_se3_inverse(camera_space_transform)
         if not np.all(np.isfinite(global_camera_transform)):
-            print(
-                f"{Colors.YELLOW}Operation - Skipping publish of robot transform due to non-finite values{Colors.RESET}"
-            )
             return None
 
         quality = self._solution_quality(

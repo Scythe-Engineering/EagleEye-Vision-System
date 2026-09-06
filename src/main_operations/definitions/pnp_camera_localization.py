@@ -20,6 +20,7 @@ class PnpCameraLocalizationDefinition(OperationInstance):
         apriltag_map_path: str,
         camera_config_registry: CameraConfigRegistry | None = None,
         web_interface: EagleEyeInterface | None = None,
+        refinement_iterations: int = 10,
     ) -> None:
         """Initialize the camera localization definition.
 
@@ -27,6 +28,8 @@ class PnpCameraLocalizationDefinition(OperationInstance):
             camera_bus_id: Camera bus ID used to resolve calibration files.
             apriltag_map_path: Path to the apriltag map file.
             camera_config_registry: Injected shared camera config registry.
+            web_interface: Optional frontend interface.
+            refinement_iterations: Maximum LM iterations, zero disables refinement.
         """
         self.web_interface = web_interface
 
@@ -48,16 +51,22 @@ class PnpCameraLocalizationDefinition(OperationInstance):
                 / "intrinsics.json"
             )
 
-        camera_matrix, distortion_coefficients = load_camera_parameters(
-            intrinsics_path
-        )
+        camera_matrix, distortion_coefficients = load_camera_parameters(intrinsics_path)
         apriltag_map = load_fmap_file(apriltag_map_path)
 
         self.pose_estimator = PnpLocalization(
             camera_matrix=camera_matrix,
             distortion_coefficients=distortion_coefficients,
             apriltag_map=apriltag_map,
+            refinement_iterations=refinement_iterations,
         )
+
+    def update_config(self, json_config: dict) -> None:
+        """Apply the solver iteration limit without restarting the pipeline."""
+        if "refinement_iterations" in json_config:
+            self.pose_estimator.set_refinement_iterations(
+                json_config["refinement_iterations"]
+            )
 
     def run(self, detections: List[Detection]) -> Dict[str, Any]:
         """Estimate camera pose from AprilTag detections.
