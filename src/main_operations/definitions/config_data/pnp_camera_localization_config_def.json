@@ -26,6 +26,15 @@
             "default": "{project_root}/config/apriltag_map.fmap",
             "required": true,
             "restart_for_change": true
+        },
+        "refinement_iterations": {
+            "type": "int",
+            "description": "Maximum Levenberg-Marquardt refinement iterations after IPPE (one tag) or SQPnP (multiple tags). 0 disables refinement. More iterations cannot correct noisy corners or an incorrect tag map.",
+            "default": 10,
+            "required": false,
+            "min": 0,
+            "max": 100,
+            "restart_for_change": false
         }
     }
 }

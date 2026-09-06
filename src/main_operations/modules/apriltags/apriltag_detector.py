@@ -1,3 +1,4 @@
+from copy import copy
 from dataclasses import dataclass
 import logging
 from threading import Lock
@@ -57,8 +58,9 @@ class AprilTagDetector:
                          "snap to" strong gradients nearby. This is useful when
                          decimation is used, as it can increase the quality of the
                          initial quad estimate substantially. Generally recommended
-                         to be on (1). Very computationally inexpensive. Option is
-                         ignored if quad_decimate = 1.
+                         to be on (1). The pinned pupil-apriltags 1.0.4.post11 native
+                         implementation also applies this when quad_decimate = 1;
+                         its older binding documentation says otherwise.
             decode_sharpening: How much sharpening should be done to decoded images?
                               This can help decode small tags but may or may not help
                               in odd lighting conditions or low light conditions.
@@ -272,6 +274,24 @@ class AprilTagDetector:
             self._disable_native_destructor(old_detector)
 
     @staticmethod
+    def to_opencv_coordinates(detection: Detection) -> Detection:
+        """Copy native pixel-edge coordinates into OpenCV pixel-center coordinates.
+
+        AprilTag samples pixel cells with integer indexing; OpenCV calibration,
+        warpPerspective and cornerSubPix place the first pixel center at (0, 0).
+        Apply the half-pixel translation before mapping a rectified crop, where
+        its full-frame equivalent is generally not a constant XY translation.
+        """
+        normalized = copy(detection)
+        normalized.corners = np.asarray(detection.corners, dtype=np.float64) - 0.5
+        if getattr(detection, "center", None) is not None:
+            normalized.center = np.asarray(detection.center, dtype=np.float64) - 0.5
+        if getattr(detection, "homography", None) is not None:
+            shift = np.array([[1., 0., -0.5], [0., 1., -0.5], [0., 0., 1.]])
+            normalized.homography = shift @ detection.homography
+        return normalized
+
+    @staticmethod
     def _map_segment_corners(
         corners: np.ndarray, full_frame_mapping: np.ndarray
     ) -> np.ndarray:
@@ -289,7 +309,7 @@ class AprilTagDetector:
         if mapping.shape == (2,):
             return corners + mapping
         if mapping.shape == (3, 3):
-            points = corners.astype(np.float32, copy=False).reshape(-1, 1, 2)
+            points = corners.astype(np.float64, copy=False).reshape(-1, 1, 2)
             return cv2.perspectiveTransform(points, mapping).reshape(-1, 2)
         raise ValueError(
             f"Expected a 2D offset or 3x3 perspective transform, got {mapping.shape}"
@@ -338,7 +358,7 @@ class AprilTagDetector:
                 except Exception as exc:
                     logger.exception("AprilTag detection failed: %s", exc)
                     return None
-                return detections
+                return [self.to_opencv_coordinates(detection) for detection in detections]
         else:
             detections = []
             with self._detect_lock:
@@ -352,6 +372,7 @@ class AprilTagDetector:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue
                     if isinstance(detected_tags, Detection):
+                        detected_tags = self.to_opencv_coordinates(detected_tags)
                         detections.append(
                             CustomDetection(
                                 tag_id=detected_tags.tag_id,
@@ -362,6 +383,7 @@ class AprilTagDetector:
                         )
                     elif isinstance(detected_tags, list):
                         for detection in detected_tags:
+                            detection = self.to_opencv_coordinates(detection)
                             detections.append(
                                 CustomDetection(
                                     tag_id=detection.tag_id,
