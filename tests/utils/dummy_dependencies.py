@@ -252,7 +252,7 @@ class FakeNetworkTable:
         table = self
 
         class _Topic:
-            def publish(self) -> Any:
+            def publish(self, *_options: object, **_kwargs: object) -> Any:
                 """Create a publisher for this topic.
 
                 Returns:

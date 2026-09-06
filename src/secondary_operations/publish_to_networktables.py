@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+from ntcore import PubSubOptions
 from wpimath.geometry import (
     Pose2d,
     Pose3d,
@@ -244,28 +245,31 @@ class PublishToNetworktables(OperationInstance):
             self._publisher.set(wpi_value)
 
     def _create_publisher(self, wpi_value: Any) -> Any:
+        # Pose/meta join by capture timestamp. Suppressing unchanged values
+        # loses frames (especially stationary poses and constant quality).
+        options = PubSubOptions(keepDuplicates=True, sendAll=True)
         if isinstance(wpi_value, list):
             if not wpi_value:
                 if self.schema == "detections":
-                    return self.network_table.getStringArrayTopic(self.target_key).publish()
+                    return self.network_table.getStringArrayTopic(self.target_key).publish(options)
                 return None
             first = wpi_value[0]
             if isinstance(first, bool):
-                return self.network_table.getBooleanArrayTopic(self.target_key).publish()
+                return self.network_table.getBooleanArrayTopic(self.target_key).publish(options)
             if isinstance(first, float):
-                return self.network_table.getDoubleArrayTopic(self.target_key).publish()
+                return self.network_table.getDoubleArrayTopic(self.target_key).publish(options)
             if isinstance(first, str):
-                return self.network_table.getStringArrayTopic(self.target_key).publish()
+                return self.network_table.getStringArrayTopic(self.target_key).publish(options)
             return self.network_table.getStructArrayTopic(
                 self.target_key, type(first)
-            ).publish()
+            ).publish(options)
         if isinstance(wpi_value, bool):
-            return self.network_table.getBooleanTopic(self.target_key).publish()
+            return self.network_table.getBooleanTopic(self.target_key).publish(options)
         if isinstance(wpi_value, float):
-            return self.network_table.getDoubleTopic(self.target_key).publish()
+            return self.network_table.getDoubleTopic(self.target_key).publish(options)
         if isinstance(wpi_value, str):
-            return self.network_table.getStringTopic(self.target_key).publish()
-        return self.network_table.getStructTopic(self.target_key, type(wpi_value)).publish()
+            return self.network_table.getStringTopic(self.target_key).publish(options)
+        return self.network_table.getStructTopic(self.target_key, type(wpi_value)).publish(options)
 
     def _normalize_path(self, data_path: str | Sequence[str] | None) -> list[str | int]:
         if data_path is None:

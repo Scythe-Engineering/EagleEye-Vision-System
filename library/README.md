@@ -21,6 +21,20 @@ publishes only `pose` and `meta`:
 | `EagleEye/localization/<source>/meta` | `double[3]` | `[tagCount, meanTagDistanceMeters, reprojectionErrorPixels]` |
 | `EagleEye/localization/<source>/detections` | `String[]` | Repeating `[className, fieldX, fieldY, fieldZ]` groups |
 
+Pose translation is in meters in the field's corner-origin NWU frame: +X downfield,
++Y left, and +Z up. `Pose3d` uses WPILib's NWU local axes; `toPose2d()` retains X/Y
+and counterclockwise yaw in radians. Do not negate Y or yaw for a screen display.
+The WebUI performs its own conversion to a centered, Y-up Three.js view.
+
+Camera mount offsets are robot-relative NWU meters. Mount angles are degrees with
+rotation `Rz(yaw) Ry(pitch) Rx(roll)`: positive yaw turns left, positive pitch points
+forward down, and positive roll rotates the robot's left axis toward up.
+The backend converts its camera-local EDN matrix to NWU when publishing Pose3d.
+
+Publishers must retain unchanged values (`keepDuplicates=True`, `sendAll=True`).
+A stationary pose and constant quality metrics still need a sample at every capture
+timestamp so the Java consumer can join them.
+
 Every published topic carries the same capture timestamp. `EagleEyeCamera` joins detections to an
 accepted pose by exact timestamp equality rather than searching for a near match. Detection
 publishers sit downstream of valid PnP, so an unlocalized frame publishes no field coordinates.
@@ -115,6 +129,11 @@ Use `camera.poll()` directly if you want the raw observations for logging or for
 filtering; it returns them in capture order with the quality metrics attached.
 
 ## Simulation
+
+For a runnable desktop project and Java contract tests, see
+[`examples/localization-sim`](examples/localization-sim). It compiles this SDK directly
+and displays the estimated pose and ground truth in AdvantageScope.
+
 
 `EagleEyeCameraSim` publishes the same three topics with the same shared timestamp from a simulated
 robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unchanged in WPILib

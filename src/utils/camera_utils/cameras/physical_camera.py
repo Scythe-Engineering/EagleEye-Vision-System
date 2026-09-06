@@ -205,9 +205,18 @@ class PhysicalCamera(Camera):
             )
         return OpenCvCapture(self.camera_index, self.frame_width, self.frame_height)
 
-    def _negotiate_frame_rate(self, backend: V4l2Capture | OpenCvCapture) -> int:
-        """Pick the fastest rate the device will accept for this resolution."""
-        available_fps = self.get_available_fps_for_resolution()
+    def _negotiate_frame_rate(
+        self, backend: V4l2Capture | OpenCvCapture, available_fps: list[int]
+    ) -> int:
+        """Pick the fastest rate the device will accept for this resolution.
+
+        Args:
+            backend: Open capture backend used to request a frame rate.
+            available_fps: Advertised rates for the resolution, fastest first.
+
+        Returns:
+            Achieved frame rate, or DEFAULT_FPS if all requests are rejected.
+        """
         if available_fps:
             achieved_fps = backend.set_frame_rate(available_fps[0])
             if achieved_fps > 0:
@@ -225,6 +234,9 @@ class PhysicalCamera(Camera):
         Raises:
             RuntimeError: If the camera cannot be opened.
         """
+        # Discover capabilities before opening the capture handle; avoid a second
+        # device open by v4l2-ctl while configuring or streaming the camera.
+        available_fps = self.get_available_fps_for_resolution()
         try:
             backend = self._open_backend()
         except Exception as error:
@@ -234,7 +246,7 @@ class PhysicalCamera(Camera):
             ) from error
 
         self.backend = backend
-        self.achieved_fps = self._negotiate_frame_rate(backend)
+        self.achieved_fps = self._negotiate_frame_rate(backend, available_fps)
         backend.start()
         backend.set_control(CID_FOCUS_AUTO, 1)
 
