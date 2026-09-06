@@ -208,7 +208,15 @@ class PhysicalCamera(Camera):
     def _negotiate_frame_rate(
         self, backend: V4l2Capture | OpenCvCapture, available_fps: list[int]
     ) -> int:
-        """Pick the fastest rate the device will accept for this resolution."""
+        """Pick the fastest rate the device will accept for this resolution.
+
+        Args:
+            backend: Open capture backend used to request a frame rate.
+            available_fps: Advertised rates for the resolution, fastest first.
+
+        Returns:
+            Achieved frame rate, or DEFAULT_FPS if all requests are rejected.
+        """
         if available_fps:
             achieved_fps = backend.set_frame_rate(available_fps[0])
             if achieved_fps > 0:

@@ -40,9 +40,11 @@ def test_camera_to_robot_pose_applies_extrinsics(tmp_path) -> None:
     )
     camera_pose = _make_pose(x=5.0, y=2.0, z=1.5, yaw_deg=45.0)
 
-    basis = np.array([[0., 0., 1.], [-1., 0., 0.], [0., -1., 0.]])
+    basis = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
     robot_from_camera = np.eye(4)
-    robot_from_camera[:3, :3] = basis.T @ euler_to_rotation_matrix(0, 90, 0)[:3, :3] @ basis
+    robot_from_camera[:3, :3] = (
+        basis.T @ euler_to_rotation_matrix(0, 90, 0)[:3, :3] @ basis
+    )
     robot_from_camera[:3, 3] = basis.T @ np.array([0.5, 0.0, 0.25])
     expected_robot_pose = camera_pose @ CameraToRobotPose._fast_se3_inverse(
         robot_from_camera

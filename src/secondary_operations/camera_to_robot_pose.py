@@ -5,7 +5,8 @@ import numpy as np
 from src.main_operations.definitions.base.base_class import OperationInstance
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.camera_coordinate_transforms import (
-    _CAMERA_TO_ROBOT_BASIS, build_robot_from_camera_transform,
+    _CAMERA_TO_ROBOT_BASIS,
+    build_robot_from_camera_transform,
 )
 
 
@@ -67,7 +68,9 @@ class CameraToRobotPose(OperationInstance):
         if self.camera_config_registry is None:
             return np.eye(4, dtype=float)
 
-        extrinsics = self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
+        extrinsics = self.camera_config_registry.get_config(
+            self.camera_bus_id
+        ).extrinsics
         # Both pipeline poses retain EDN local axes, while their translation is
         # already in the field's NWU frame. Change the mounting transform's
         # output basis only; the publisher converts the final local axes to NWU.
@@ -92,10 +95,17 @@ class CameraToRobotPose(OperationInstance):
         """
         signature = None
         if self.camera_config_registry is not None:
-            extrinsics = self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
-            signature = tuple(float(getattr(extrinsics, key)) for key in
-                              ("pitch", "yaw", "roll", "x_offset", "y_offset", "z_offset"))
-        if self._cached_camera_from_robot_transform is None or signature != self._cached_extrinsics:
+            extrinsics = self.camera_config_registry.get_config(
+                self.camera_bus_id
+            ).extrinsics
+            signature = tuple(
+                float(getattr(extrinsics, key))
+                for key in ("pitch", "yaw", "roll", "x_offset", "y_offset", "z_offset")
+            )
+        if (
+            self._cached_camera_from_robot_transform is None
+            or signature != self._cached_extrinsics
+        ):
             self._cached_extrinsics = signature
             self._cached_camera_from_robot_transform = self._build_inverse_transform()
         return self._cached_camera_from_robot_transform
@@ -141,7 +151,9 @@ class CameraToRobotPose(OperationInstance):
             return None
 
         camera_pose_matrix = np.asarray(camera_pose, dtype=float)
-        if camera_pose_matrix.shape != (4, 4) or not np.all(np.isfinite(camera_pose_matrix)):
+        if camera_pose_matrix.shape != (4, 4) or not np.all(
+            np.isfinite(camera_pose_matrix)
+        ):
             return None
 
         camera_from_robot_transform = self._get_cached_inverse_transform()

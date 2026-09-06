@@ -246,7 +246,10 @@ def test_failed_advertised_fps_negotiation_uses_fallbacks() -> None:
 
     backend = RejectingBackend()
 
-    assert camera._negotiate_frame_rate(backend, []) == DEFAULT_FPS
+    assert camera._negotiate_frame_rate(
+        backend, camera.get_available_fps_for_resolution()
+    ) == DEFAULT_FPS
+    assert backend.requests[0] == 120
     assert len(backend.requests) > 1
 
 
