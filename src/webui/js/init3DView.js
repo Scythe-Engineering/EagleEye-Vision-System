@@ -35,7 +35,7 @@ import { OrbitControls } from "OrbitControls";
 import { DRACOLoader } from "DRACOLoader";
 import { populateRobotDropdown } from "./dropdown/robotDropdown.js";
 import { BACKEND_BASE_URL } from "./config.js";
-import { position3DToFieldSpaceVector } from "./utils/fieldSpaceTransforms.js";
+import { position3DToFieldSpaceVector, robotViewPoseToModelMatrix } from "./utils/fieldSpaceTransforms.js";
 
 let renderer, scene, camera, directionalLight, controls;
 let shadowsEnabled = true;
@@ -81,13 +81,6 @@ const robotScaleMatrix = new Matrix4().makeScale(
     robotBaseScale,
 );
 const robotFinalMatrix = new Matrix4();
-const robotPoseRotationMatrix = new Matrix4();
-const robotPoseTranslationMatrix = new Matrix4();
-const robotPosePosition = new Vector3();
-// Robot GLB assets use WPILib NWU axes (X forward, Y left, Z up).
-// Convert the asset once into the Y-up visual basis; pose rotations are
-// already in that basis and must never be conjugated by model corrections.
-const visualOrientationMatrix = new Matrix4().makeRotationX(-Math.PI / 2);
 const cameraCorrectedRotation = new Matrix4();
 const detectionCylinderRadius = 150;
 const detectionCylinderHeight = 400;
@@ -185,19 +178,7 @@ function refreshRobotMatrix() {
         return;
     }
 
-    if (lastRobotTransformMatrix) {
-        robotPoseRotationMatrix.extractRotation(lastRobotTransformMatrix);
-        robotPosePosition.setFromMatrixPosition(lastRobotTransformMatrix);
-        robotPoseTranslationMatrix.identity().setPosition(robotPosePosition);
-
-        robotFinalMatrix
-            .copy(robotPoseTranslationMatrix)
-            .multiply(robotPoseRotationMatrix)
-            .multiply(visualOrientationMatrix)
-            .multiply(robotScaleMatrix);
-    } else {
-        robotFinalMatrix.copy(visualOrientationMatrix).multiply(robotScaleMatrix);
-    }
+    robotViewPoseToModelMatrix(lastRobotTransformMatrix, robotScaleMatrix, robotFinalMatrix);
 
     robotObject.matrixAutoUpdate = false;
     robotObject.matrix.copy(robotFinalMatrix);

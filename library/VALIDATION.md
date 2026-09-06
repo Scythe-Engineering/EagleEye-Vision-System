@@ -42,3 +42,38 @@ Camera capture showed intermittent restart failures outside EagleEye as well as 
 That investigation is separate from these passing current-stream tests; no camera-reliability
 fix is claimed here. Capability discovery now precedes opening the capture handle, avoiding
 a second open during configuration. Production quality thresholds were not relaxed.
+
+## Follow-up: model axes and physical room geometry
+
+The follow-up corrected the robot asset transform: the bundled glTF model is Y-up and
++Z-forward, while the converted view pose is Y-up and +X-forward. Apply the asset's
+Y-axis alignment once. The prior X-axis quarter-turn incorrectly tipped the model.
+Three additional frontend tests exercise the final model transform, including up/forward
+vectors at zero, 90° yaw, and compound pitch/roll (18 frontend tests total).
+
+AdvantageScope's 3D view displayed the live Pose3d beside the Java diagnostic Pose2d.
+X/Y/yaw agreed; flattening Z/roll/pitch is intentional for the Java 2D estimator and must
+not be mistaken for full 3D equality. The running backend was not restarted.
+
+A read-only, 25-frame diagnostic used the existing downscaled MJPEG feed, resized to the
+calibration resolution. These are lossy-image diagnostics, not raw-camera accuracy tests:
+
+| Solve | Tag 0 range | Camera upward tilt | Reprojection error |
+|---|---|---|---|
+| Tag 0 alone | 2.790 m | 17.8° mean | 0.076 px mean |
+| Saved two-tag map | about 2.64 m | about 1–2° | about 2.7 px |
+| Hypothetical adjusted map, fitted to these images | 2.793 m | 17.8° | 0.097 px mean |
+
+The user estimated 9 ft 3 in (2.819 m) and 20–30° upward. Independent single-tag solves
+implied tag 1 was about 35.8 cm sideways and 46.1 cm higher than tag 0; the saved map says
+35 cm and 40 cm. The fitted-map result is a sensitivity check on the same images, not
+independent validation. Physical tag size, center spacing, camera mount and distance
+still need measurement. No guessed map or mount values were saved.
+
+The actual temporal preprocessor produced crops enclosing both tags. Comparing full-frame
+and cropped detections on the same 25 images gave a maximum corner difference of 0.334 px.
+Position standard deviations were about [2.1, 4.9, 3.5] cm for full-frame detection and
+[2.5, 5.8, 4.0] cm for cropped detection. This does not establish performance during fast
+motion or rule out every temporal issue. The feedback edge consumes the original PnP camera
+pose, before mounting compensation. With the saved zero-angle mount and 0.25 m Z offset,
+the previous and corrected backend mounting matrices are exactly equal.

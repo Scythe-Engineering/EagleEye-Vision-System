@@ -80,3 +80,18 @@ export function mountingPoseToViewMatrix({x_offset = 0, y_offset = 0, z_offset =
         .multiply(new Matrix4().makeRotationZ(-pitch * toRad))
         .multiply(new Matrix4().makeRotationX(roll * toRad));
 }
+
+// Bundled glTF robots use +Y up and +Z forward; the view pose uses +Y up,
+// +X forward. This changes the asset axes only, not the measured robot pose.
+const robotAssetToView = new Matrix4().makeRotationY(Math.PI / 2);
+
+/** Places a Y-up, +Z-forward robot GLB using the converted view pose. */
+export function robotViewPoseToModelMatrix(viewPose, scaleMatrix, target = new Matrix4()) {
+    if (viewPose) {
+        target.extractRotation(viewPose);
+        target.copyPosition(viewPose);
+    } else {
+        target.identity();
+    }
+    return target.multiply(robotAssetToView).multiply(scaleMatrix);
+}
