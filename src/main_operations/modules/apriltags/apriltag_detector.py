@@ -58,7 +58,9 @@ class AprilTagDetector:
                          "snap to" strong gradients nearby. This is useful when
                          decimation is used, as it can increase the quality of the
                          initial quad estimate substantially. Generally recommended
-                         to be on (1). Also applies when quad_decimate = 1.
+                         to be on (1). The pinned pupil-apriltags 1.0.4.post11 native
+                         implementation also applies this when quad_decimate = 1;
+                         its older binding documentation says otherwise.
             decode_sharpening: How much sharpening should be done to decoded images?
                               This can help decode small tags but may or may not help
                               in odd lighting conditions or low light conditions.

@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -5,6 +6,8 @@ import numpy as np
 from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
+
+logger = logging.getLogger(__name__)
 
 
 class PnpLocalization:
@@ -62,7 +65,14 @@ class PnpLocalization:
         return t_inv_matrix
 
     def set_refinement_iterations(self, iterations: int) -> None:
-        """Set the bounded, live-updatable LM iteration limit."""
+        """Set the bounded, live-updatable LM iteration limit.
+
+        Args:
+            iterations: Maximum LM refinement iterations, from 0 to 100.
+
+        Raises:
+            ValueError: If iterations is not an integer from 0 to 100.
+        """
         value = int(iterations)
         if (
             isinstance(iterations, bool)
@@ -74,15 +84,30 @@ class PnpLocalization:
 
     def _solve(
         self, object_points: np.ndarray, image_points: np.ndarray, tag_count: int
-    ):
+    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """Initialize with planar IPPE or multi-tag SQPnP, then refine valid candidates.
 
         Candidate ranking uses squared reprojection error. Both initialization and
         refinement are stateless: a previous pose never masks motion or tag ambiguity.
         IPPE accepts arbitrary coplanar field points, avoiding IPPE_SQUARE's special
         local corner order. No field/camera basis conversion occurs in this solver.
+
+        Args:
+            object_points: Mean-centered tag corners in meters, shape (4 * tags, 3).
+            image_points: Corresponding image corners in pixels, shape (4 * tags, 2).
+            tag_count: Number of contributing tags.
+
+        Returns:
+            Best rotation and translation vectors, or None if no candidate is valid.
         """
-        if np.linalg.matrix_rank(object_points - object_points.mean(axis=0)) < 2:
+        centered_points = object_points - object_points.mean(axis=0)
+        singular_values = np.linalg.svd(centered_points, compute_uv=False)
+        rank_tolerance = (
+            singular_values[0]
+            * max(centered_points.shape)
+            * np.finfo(centered_points.dtype).eps
+        )
+        if np.count_nonzero(singular_values > rank_tolerance) < 2:
             return None
         iterations = self.refinement_iterations
         try:
@@ -100,9 +125,6 @@ class PnpLocalization:
         rotations, translations = list(solved[1]), list(solved[2])
         # Coplanar multi-tag layouts can have two plausible minima. SQPnP alone
         # need not expose both; evaluate IPPE's planar hypotheses as well.
-        singular_values = np.linalg.svd(
-            object_points - object_points.mean(axis=0), compute_uv=False
-        )
         if tag_count > 1 and singular_values[-1] < 1e-6 * singular_values[0]:
             try:
                 planar = cv2.solvePnPGeneric(
@@ -115,10 +137,19 @@ class PnpLocalization:
                 if planar[0]:
                     rotations.extend(planar[1])
                     translations.extend(planar[2])
-            except cv2.error:
-                pass
+            except cv2.error as exc:
+                logger.error("Planar IPPE candidate generation failed: %s", exc)
 
-        def score(rvec, tvec):
+        def score(rvec: np.ndarray, tvec: np.ndarray) -> float:
+            """Measure reprojection error for a physically valid candidate.
+
+            Args:
+                rvec: Candidate rotation vector.
+                tvec: Candidate translation vector.
+
+            Returns:
+                Mean squared pixel error, or infinity for an invalid candidate.
+            """
             if not np.isfinite(rvec).all() or not np.isfinite(tvec).all():
                 return float("inf")
             rotation = cv2.Rodrigues(rvec)[0]
