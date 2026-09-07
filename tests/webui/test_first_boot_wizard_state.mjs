@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    cameraDisplayName,
+    cameraPreviewUrl,
+} from "../../src/webui/js/ui/cameraPreviewGrid.js";
+import {
     WIZARD_STEP,
     buildGenerationPayload,
     guidedStepCopy,
@@ -11,6 +15,19 @@ import {
     upsertCameraSetup,
     wizardStepView,
 } from "../../src/webui/js/setup/wizardState.js";
+
+test("camera display names are UI-only and previews retain stream identity", () => {
+    const camera = {
+        name: "USB Camera",
+        stream_name: "USB_Camera",
+        bus_id: "1-2",
+        display_name: "Front bumper",
+    };
+
+    assert.equal(cameraDisplayName(camera), "Front bumper");
+    assert.match(cameraPreviewUrl(camera), /\/feed\/USB_Camera\?snapshot=1$/);
+    assert.equal(camera.bus_id, "1-2");
+});
 
 test("camera setup repeats without duplicating a camera", () => {
     const first = upsertCameraSetup([], {

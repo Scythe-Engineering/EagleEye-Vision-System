@@ -446,6 +446,12 @@ class EagleEyeInterface(
             methods=["GET"],
         )
         self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/display-name",
+            "save_camera_display_name",
+            self.save_camera_display_name,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>/extrinsics",
             "save_camera_extrinsics",
             self.save_camera_extrinsics,

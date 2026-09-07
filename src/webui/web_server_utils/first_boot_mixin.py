@@ -355,20 +355,29 @@ class FirstBootMixin:
             self._write_general_conf(config)
         return config
 
-    def _first_boot_camera_records(self) -> list[dict[str, str]]:
+    def _first_boot_camera_records(self) -> list[dict[str, str | None]]:
         """Return active cameras in the wizard's stable public shape."""
         with self.frame_list_structure_lock:
             available_cameras = list(self.available_cameras.items())
-        cameras: list[dict[str, str]] = []
+        registry = self.camera_config_registry
+        cameras: list[dict[str, str | None]] = []
         for camera_name, camera_info in available_cameras:
             if not isinstance(camera_info, dict):
                 continue
             bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
             if not bus_id:
                 continue
+            display_name = (
+                registry.get_config(bus_id).display_name
+                if registry is not None
+                else None
+            )
             cameras.append(
                 {
+                    # Keep this hardware-derived name for generated pipeline
+                    # identities; display_name is UI-only.
                     "name": str(camera_name),
+                    "display_name": display_name,
                     "bus_id": bus_id,
                     "stream_name": str(camera_info.get("name") or camera_name),
                 }

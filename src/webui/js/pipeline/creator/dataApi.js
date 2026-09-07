@@ -83,7 +83,7 @@ export async function fetchAvailableCameras(pipelineStore) {
             }
 
             return {
-                name,
+                name: cameraInfo?.display_name || name,
                 urlSafeName: cameraInfo?.name ?? name.replaceAll(" ", "_"),
                 id: resolvedCameraId,
             };

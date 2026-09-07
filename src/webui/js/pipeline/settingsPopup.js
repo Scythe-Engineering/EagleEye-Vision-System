@@ -267,7 +267,7 @@ export function registerSettingsPopup() {
                         }
 
                         return {
-                            name,
+                            name: cameraInfo?.display_name || name,
                             id,
                         };
                     },
