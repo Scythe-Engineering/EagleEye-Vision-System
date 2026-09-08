@@ -167,7 +167,7 @@ class EagleEyeInterface(
 
         self.restart_required_for_config = False
         self.runtime_id = f"{os.getpid()}-{time.time_ns()}"
-        self.last_log_message_count = 0
+        self._last_sse_overflow_warning_ts = 0.0
         self.network_table_instance = network_table_instance
         self.device_registry = device_registry
         self.model_library = model_library
@@ -1015,17 +1015,14 @@ class EagleEyeInterface(
                 try:
                     q.get_nowait()
                     q.put_nowait(msg)
-                    self.log(
-                        f"SSE queue full, dropped oldest event to add {event_name}"
-                    )
-                except queue.Empty:
-                    self.log(
-                        f"SSE queue unexpectedly empty when trying to drop oldest for {event_name}"
-                    )
-                except queue.Full:
-                    self.log(
-                        f"SSE queue still full after dropping oldest, dropping {event_name} event"
-                    )
+                except (queue.Empty, queue.Full):
+                    pass  # Another publisher/consumer raced with the drop.
+                # Logging every dropped event feeds more log_update events into
+                # the same congested queue. Keep the diagnostic rate bounded.
+                now = time.monotonic()
+                if now - self._last_sse_overflow_warning_ts >= 30.0:
+                    self._last_sse_overflow_warning_ts = now
+                    self.log("SSE queue full; dropping events for a slow client")
             except Exception as e:
                 self.log(f"SSE publish error for {event_name}: {e}")
 
