@@ -5,9 +5,7 @@ import {
     showSuccess,
     showWarning,
 } from "../ui/notificationSystem.js";
-import { mountCameraPreviewGrid } from "../ui/cameraPreviewGrid.js";
-
-let cameraNameGrid = null;
+import { initializeCameraNamesModal } from "./cameraNamesModal.js";
 
 // Handles loading, rendering, and saving settings for the web UI.
 
@@ -122,60 +120,7 @@ export async function loadSettings() {
     }
 
     await loadNetworkTableStatus();
-    await loadCameraNameGrid();
-}
-
-/**
- * Fetch active cameras and render their placement-name editor in Settings.
- *
- * @returns {Promise<void>} Resolves after the grid has been updated.
- */
-async function loadCameraNameGrid() {
-    const container = document.getElementById("settingsCameraNameGrid");
-    if (!container) return;
-
-    try {
-        const response = await fetch(
-            `${BACKEND_BASE_URL}/camera-config/cameras`,
-        );
-        const payload = await response.json();
-        if (!response.ok) {
-            throw new Error(payload?.error || "Unable to load cameras");
-        }
-        cameraNameGrid?.destroy();
-        cameraNameGrid = null;
-        container.className = "text-sm text-gray-300";
-        if (!payload.cameras?.length) {
-            container.textContent =
-                "No active cameras were found. Connect a camera and restart the backend.";
-            return;
-        }
-        cameraNameGrid = mountCameraPreviewGrid(container, {
-            cameras: Array.isArray(payload?.cameras) ? payload.cameras : [],
-            onRename: async (camera, displayName) => {
-                const saveResponse = await fetch(
-                    `${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(camera.bus_id)}/display-name`,
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ display_name: displayName }),
-                    },
-                );
-                const saved = await saveResponse.json();
-                if (!saveResponse.ok) {
-                    throw new Error(
-                        saved?.error || "Unable to save camera name",
-                    );
-                }
-                return saved;
-            },
-        });
-    } catch (error) {
-        cameraNameGrid?.destroy();
-        cameraNameGrid = null;
-        container.textContent = `Unable to load cameras: ${error.message}`;
-        container.className = "text-sm text-red-300";
-    }
+    initializeCameraNamesModal();
 }
 
 /**

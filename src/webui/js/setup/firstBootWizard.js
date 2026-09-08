@@ -333,6 +333,7 @@ function appendCameraGrid(content, cameras) {
     state.cameraGrid = mountCameraPreviewGrid(gridHost, {
         cameras,
         selectedBusId: state.currentCamera?.bus_id,
+        showRefresh: false,
         onRename: renameCamera,
         onSelect: (camera) => {
             state.currentCamera = camera;
