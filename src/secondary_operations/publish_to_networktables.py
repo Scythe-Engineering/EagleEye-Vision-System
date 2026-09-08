@@ -247,7 +247,8 @@ class PublishToNetworktables(OperationInstance):
     def _create_publisher(self, wpi_value: Any) -> Any:
         # Pose/meta join by capture timestamp. Suppressing unchanged values
         # loses frames (especially stationary poses and constant quality).
-        options = PubSubOptions(keepDuplicates=True, sendAll=True)
+        # Send fresh vision every 10 ms instead of batching it for 100 ms.
+        options = PubSubOptions(keepDuplicates=True, sendAll=True, periodic=0.01)
         if isinstance(wpi_value, list):
             if not wpi_value:
                 if self.schema == "detections":
