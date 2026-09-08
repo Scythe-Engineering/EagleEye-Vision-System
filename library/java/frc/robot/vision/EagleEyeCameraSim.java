@@ -51,7 +51,7 @@ import java.util.Random;
  * <p>Noise is Gaussian on x and y, scaled by the same distance-squared-over-tag-count model {@link
  * EagleEyeCamera#standardDeviations} uses to weight real measurements.
  */
-public class EagleEyeCameraSim implements AutoCloseable {
+public class EagleEyeCameraSim {
   /** Translational noise at one meter with one tag, in meters. Zero for deterministic tests. */
   public static double translationNoiseBase = 0.02;
 
@@ -179,10 +179,5 @@ public class EagleEyeCameraSim implements AutoCloseable {
       return null;
     }
     return new double[] {count, distanceSum / count};
-  }
-  /** Release NT resources after the owning loop has stopped; do not reuse this instance. */
-  @Override public void close() {
-    posePublisher.close(); metaPublisher.close(); detectionsPublisher.close();
-    nextDetections = new String[0];
   }
 }

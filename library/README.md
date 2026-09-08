@@ -182,24 +182,14 @@ already owns odometry on another thread, integrate vision with that existing own
 model instead of copying this callback. To return to the simple path, remove the callback
 and call `updateOdometryAndVision()` once from `Drive.periodic()`.
 
-### Coprocessor behavior and measured benefit
+### Coprocessor behavior
 
 EagleEye requests a NetworkTables flush after all branches of a successful publishing
 pipeline finish. This benefits both robot paths automatically, with no additional ports,
 packages, or robot API changes. NetworkTables still rate-limits transmission.
 
-In the September 8, 2026 Pi-to-desktop WPILib test, with the same camera configuration
-and pipeline flush enabled:
-
-| Robot ingestion | Mean capture timestamp to ingestion | Mean pose/metadata ready to ingestion |
-| --- | --- | --- |
-| Simple, 20 ms | 32.3 ms | 16.8 ms |
-| Enhanced, 5 ms | 24.9 ms | 9.4 ms |
-
-These are clean-window measurements, not guaranteed robot timing or photon-to-pose
-latency. A separate run showed an unresolved approximately 29-second NetworkTables
-backlog. Verify sample age, accepted counts, loop overruns, and reconnect behavior on
-your robot; keep the SDK's stale-sample rejection enabled.
+Verify sample age, accepted counts, loop overruns, and reconnect behavior on your
+robot; keep the SDK’s stale-sample rejection enabled.
 
 ## Simulation
 

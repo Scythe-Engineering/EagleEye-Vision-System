@@ -53,7 +53,7 @@ import java.util.Optional;
  * }
  * </pre>
  */
-public class EagleEyeCamera implements AutoCloseable {
+public class EagleEyeCamera {
   /** A single field-pose measurement and everything needed to weight it. */
   public record Observation(
       Pose2d pose,
@@ -459,13 +459,5 @@ public class EagleEyeCamera implements AutoCloseable {
       }
     }
     return null;
-  }
-  /** Release NT resources after the owning loop has stopped; do not reuse this instance. */
-  @Override public void close() {
-    poseSubscriber.close();
-    metaSubscriber.close();
-    if (detectionsSubscriber != null) detectionsSubscriber.close();
-    carriedPoses.clear(); carriedMetas.clear(); carriedDetections.clear(); recentPoses.clear();
-    latestDetections = List.of(); latestDetectionsTimestamp = 0;
   }
 }

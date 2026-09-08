@@ -21,17 +21,6 @@ class EagleEyeContractTest {
     meta = table.getDoubleArrayTopic(key + "/meta").publish(PubSubOption.keepDuplicates(true));
     now = NetworkTablesJNI.now() - 1000;
   }
-  @AfterEach void cleanup() { camera.close(); pose.close(); meta.close(); }
-  @Test void simulatorCloseReleasesPublishers() {
-    String source = "cleanup/" + UUID.randomUUID();
-    var topic = NetworkTableInstance.getDefault().getTable("EagleEye")
-        .getStructTopic(source + "/pose", Pose3d.struct);
-    var simulator = new EagleEyeCameraSim(source);
-    assertTrue(topic.exists());
-    simulator.close();
-    assertFalse(topic.exists());
-    simulator.close(); // Cleanup is safe when invoked again by shutdown.
-  }
   void publish(Pose3d p, double[] m, long time) { pose.set(p,time); meta.set(m,time); }
   Pose3d p(double yaw) { return new Pose3d(2,3,0,new Rotation3d(0,0,yaw)); }
   @Test void nwuMetersAndCounterclockwiseYaw() {
