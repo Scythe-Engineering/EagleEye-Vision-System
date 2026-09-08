@@ -9,7 +9,9 @@
             "has_default": false
         }
     ],
-    "output_nodes": ["data"],
+    "output_nodes": [
+        "data"
+    ],
     "parameters": {
         "target_key": {
             "type": "str",
@@ -29,6 +31,14 @@
             "type": "list",
             "description": "Optional path of keys or indices used to select a nested value from the pipeline data",
             "default": [],
+            "required": false,
+            "restart_for_change": false
+        },
+        "publish_period_seconds": {
+            "type": "float",
+            "description": "Requested NT publish interval in seconds (rate-limited by ntcore). Use 0.01 for vision or 0.1 for slower telemetry. Pipeline flushes may send pending values sooner.",
+            "default": 0.01,
+            "min": 0.001,
             "required": false,
             "restart_for_change": false
         }

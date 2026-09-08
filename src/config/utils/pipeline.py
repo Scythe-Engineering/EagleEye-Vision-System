@@ -703,6 +703,13 @@ class Pipeline:
 
         elapsed = time.time() - start_time
         if completed:
+            # Flush after all branches finish so pose and metadata travel together.
+            # ntcore rate-limits this; faster periodic options alone are quantized.
+            if any(
+                operation.name == "publish_to_networktables"
+                for operation in self.operations.values()
+            ):
+                self.network_table.getInstance().flush()
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
             capture_latency_ms = self._capture_latency_ms()
             if capture_latency_ms is not None:

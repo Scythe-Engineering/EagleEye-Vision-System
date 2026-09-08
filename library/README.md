@@ -128,6 +128,69 @@ Call it from a subsystem's `periodic()`, not from a NetworkTables listener threa
 Use `camera.poll()` directly if you want the raw observations for logging or for your own
 filtering; it returns them in capture order with the quality metrics attached.
 
+## Optional enhancement: lower-latency ingestion
+
+The simple 20 ms integration above remains supported and is the default. For faster
+consumption, move **both odometry and vision ingestion** into a method scheduled every
+5 ms. The camera keys, SDK, quality gates, and capture timestamps stay the same.
+
+### 1. Move the estimator update in Drive.java
+
+Replace the odometry and EagleEye calls in `Drive.periodic()` with a public method:
+
+```java
+public void updateOdometryAndVision() {
+  // Read fresh measured sensor positions here on every call.
+  poseEstimator.update(gyro.getRotation2d(), getModulePositions());
+  EagleEyeCamera.update(poseEstimator::addVisionMeasurement, cameras);
+}
+
+@Override
+public void periodic() {
+  // Keep dashboard updates and other normal subsystem work here.
+  // Odometry and EagleEye now run only in updateOdometryAndVision().
+}
+```
+
+`getModulePositions()` stands for your drivetrain's method that reads current module
+positions; replace it with your actual sensor API. For differential drive, pass current
+left and right wheel distances instead. Do not reuse positions cached only every 20 ms.
+
+### 2. Register the callback once in Robot.java
+
+After constructing your existing `RobotContainer`, register its existing drive subsystem:
+
+```java
+public Robot() {
+  // Keep your existing initialization, including creation of robotContainer.
+  addPeriodic(robotContainer.getDrive()::updateOdometryAndVision, 0.005, 0.002);
+}
+```
+
+Use your project's container field name and expose its existing drive instance through
+`getDrive()` if needed. Do not create a second drive subsystem. Keep the command scheduler
+and normal robot loop at 20 ms.
+
+WPILib's `TimedRobot.addPeriodic` runs this callback on the same thread as the normal
+robot callbacks. No extra thread or locks are needed for this path. Keep the method short:
+no blocking waits, dashboard publishing, or heavy processing. A 5 ms callback does not
+increase the camera's capture rate or the sensors' hardware refresh rate.
+
+Use exactly one estimator update path: remove the old periodic odometry/vision calls,
+and do not also poll the same cameras from a listener or worker thread. If your drivetrain
+already owns odometry on another thread, integrate vision with that existing ownership
+model instead of copying this callback. To return to the simple path, remove the callback
+and call `updateOdometryAndVision()` once from `Drive.periodic()`.
+
+### Coprocessor behavior
+
+EagleEye requests a NetworkTables flush after all branches of a successful publishing
+pipeline finish. This benefits both robot paths automatically, with no additional ports,
+packages, or robot API changes. NetworkTables still rate-limits transmission.
+
+Verify sample age, accepted counts, loop overruns, and reconnect behavior on your
+robot; keep the SDK’s stale-sample rejection enabled.
+
 ## Simulation
 
 For a runnable desktop project and Java contract tests, see
@@ -238,5 +301,9 @@ port; every pose is dropped, because a pose without metrics cannot be weighted.
 error before changing anything else.
 
 **Everything arrives in bursts, and the estimate lags.** Confirm the pipeline is actually keeping
-up on the coprocessor. `sendAll` means the robot sees every frame EagleEye produces, so a burst is
-a coprocessor-side stall rather than a subscription problem.
+up on the coprocessor. `sendAll` means the robot sees every frame EagleEye produces, so investigate coprocessor stalls, network/TCP backlog, and robot scheduling when
+frames arrive in bursts.
+
+Publisher operations expose `publish_period_seconds` (default `0.01`). Set `0.1`
+for slower non-vision telemetry. This is a requested interval, not a strict rate limit:
+ntcore quantization and instance-wide pipeline flushes can affect delivery timing.
