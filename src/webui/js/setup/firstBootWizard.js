@@ -3,6 +3,10 @@ import { registerModelLibraryModal } from "../pipeline/modelLibraryModal.js";
 import { activateAppView } from "../ui/sidebar.js";
 import { showDanger, showSuccess } from "../ui/notificationSystem.js";
 import {
+    cameraDisplayName,
+    mountCameraPreviewGrid,
+} from "../ui/cameraPreviewGrid.js";
+import {
     saveExtrinsics,
     selectCameraConfig,
 } from "../utils/cameraConfigUtils.js";
@@ -31,7 +35,9 @@ const state = {
     verificationInFlight: false,
     guideToken: 0,
     modelResolveToken: 0,
+    cameraSelectionToken: 0,
     guideTarget: null,
+    cameraGrid: null,
 };
 
 /**
@@ -91,6 +97,8 @@ function contentElement() {
  * @returns {HTMLElement} Empty content element.
  */
 function beginStep(progress) {
+    state.cameraGrid?.destroy();
+    state.cameraGrid = null;
     const content = contentElement();
     content.replaceChildren();
     content.tabIndex = -1;
@@ -243,24 +251,21 @@ function showGuide(copy, step) {
  * Render the first wizard screen.
  */
 function renderWelcome() {
-    const content = beginStep("Welcome");
+    const content = beginStep("Choose a camera");
     content.append(
         element("h2", {
-            text: "Set up real camera pipelines",
+            text: "Name and configure your cameras",
             className: "mb-3 text-xl font-bold text-white",
         }),
         element("p", {
-            text: "Choose each camera here, then the wizard opens the existing Camera Config and Settings pages for calibration, mounting, and NetworkTables. A guide stays on screen with Cancel and Continue.",
-            className: "mb-5 max-w-2xl text-gray-300",
+            text: "Use a placement description such as Front bumper so your camera is easy to recognize later. Select Configure to calibrate and mount that camera.",
+            className: "mb-4 max-w-2xl text-gray-300",
         }),
     );
-    const actions = element("div", { className: "flex flex-wrap gap-3" });
+    appendCameraGrid(content, state.cameras);
+    const actions = element("div", { className: "mt-5 flex flex-wrap gap-3" });
     actions.append(
-        actionButton(
-            "Start setup",
-            () => goToStep(WIZARD_STEP.CAMERA_SELECT),
-            true,
-        ),
+        actionButton("Refresh cameras", () => void refreshCameraSelection()),
         actionButton("Skip for now", () => void skipWizard()),
     );
     content.append(actions);
@@ -277,6 +282,67 @@ function remainingCameras() {
 }
 
 /**
+ * Persist one camera's placement description and retain its hardware identity.
+ *
+ * @param {object} camera - Camera record to rename.
+ * @param {string} displayName - Operator-facing placement description.
+ * @returns {Promise<object>} Saved backend payload.
+ */
+async function renameCamera(camera, displayName) {
+    const saved = await fetchJson(
+        `/camera-config/${encodeURIComponent(camera.bus_id)}/display-name`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ display_name: displayName }),
+        },
+    );
+    state.cameras = state.cameras.map((current) =>
+        current.bus_id === camera.bus_id
+            ? { ...current, display_name: saved.display_name }
+            : current,
+    );
+    if (state.currentCamera?.bus_id === camera.bus_id) {
+        state.currentCamera = {
+            ...state.currentCamera,
+            display_name: saved.display_name,
+        };
+    }
+    persistSession();
+    return saved;
+}
+
+/**
+ * Add the shared camera preview, naming, and selection grid to a wizard step.
+ *
+ * @param {HTMLElement} content - Wizard step content element.
+ * @param {Array<object>} cameras - Cameras to render.
+ */
+function appendCameraGrid(content, cameras) {
+    if (!cameras.length) {
+        content.append(
+            element("p", {
+                text: "No active cameras were found. Connect a camera, then refresh.",
+                className: "mb-4 text-gray-300",
+            }),
+        );
+        return;
+    }
+    const gridHost = element("div");
+    content.appendChild(gridHost);
+    state.cameraGrid = mountCameraPreviewGrid(gridHost, {
+        cameras,
+        selectedBusId: state.currentCamera?.bus_id,
+        onRename: renameCamera,
+        onSelect: (camera) => {
+            state.currentCamera = camera;
+            state.selectedModel = null;
+            goToStep(WIZARD_STEP.CALIBRATION);
+        },
+    });
+}
+
+/**
  * Render the active camera picker.
  */
 function renderCameraSelection() {
@@ -285,7 +351,7 @@ function renderCameraSelection() {
     );
     content.append(
         element("h2", {
-            text: "Choose a camera",
+            text: "Choose the next camera",
             className: "mb-3 text-xl font-bold text-white",
         }),
     );
@@ -299,70 +365,30 @@ function renderCameraSelection() {
                 className: "mb-4 text-gray-300",
             }),
         );
-        const actions = element("div", { className: "flex gap-3" });
+    } else {
+        appendCameraGrid(content, cameras);
+    }
+    const actions = element("div", { className: "mt-5 flex gap-3" });
+    actions.append(
+        actionButton("Refresh cameras", () => void refreshCameraSelection()),
+    );
+    if (state.setups.length) {
         actions.append(
             actionButton(
-                "Refresh cameras",
-                () => void refreshCameraSelection(),
+                "Continue",
+                () => goToStep(WIZARD_STEP.CAMERA_SUMMARY),
+                true,
             ),
         );
-        if (state.setups.length) {
-            actions.append(
-                actionButton(
-                    "Continue",
-                    () => goToStep(WIZARD_STEP.CAMERA_SUMMARY),
-                    true,
-                ),
-            );
-        }
-        content.append(actions);
-        return;
     }
-
-    const label = element("label", {
-        text: "Active camera",
-        className: "mb-2 block font-semibold text-[#f9c845]",
-    });
-    const select = element("select", {
-        className:
-            "min-w-64 flex-1 rounded-md border border-[#414141] bg-[#232323] px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#f9c845]",
-    });
-    select.setAttribute("aria-label", "Active camera");
-    cameras.forEach((camera) => {
-        const option = document.createElement("option");
-        option.value = camera.bus_id;
-        option.textContent = `${camera.name} (${camera.bus_id})`;
-        select.appendChild(option);
-    });
-    if (
-        state.currentCamera &&
-        cameras.some((camera) => camera.bus_id === state.currentCamera.bus_id)
-    ) {
-        select.value = state.currentCamera.bus_id;
-    }
-    const actions = element("div", { className: "flex flex-wrap gap-3" });
-    actions.append(
-        select,
-        actionButton(
-            "Continue to calibration",
-            () => {
-                state.currentCamera = cameras.find(
-                    (camera) => camera.bus_id === select.value,
-                );
-                state.selectedModel = null;
-                goToStep(WIZARD_STEP.CALIBRATION);
-            },
-            true,
-        ),
-    );
-    content.append(label, actions);
+    content.append(actions);
 }
 
 /**
  * Ask what the selected camera should do, including an optional detection model.
  */
 function renderPurpose() {
-    const cameraName = state.currentCamera?.name || "this camera";
+    const cameraName = cameraDisplayName(state.currentCamera || {});
     const content = beginStep(
         `Camera ${state.setups.length + 1}: pipeline purpose`,
     );
@@ -493,7 +519,7 @@ function renderPurpose() {
                 }
                 state.setups = upsertCameraSetup(state.setups, {
                     bus_id: state.currentCamera.bus_id,
-                    name: state.currentCamera.name,
+                    name: cameraDisplayName(state.currentCamera),
                     mode,
                     model_id:
                         mode === "localize"
@@ -567,7 +593,7 @@ function renderCameraSummary() {
  * @param {number} token - Generation token for the current goToStep call.
  */
 async function showGuidedStep(step, token) {
-    const cameraName = state.currentCamera?.name || "this camera";
+    const cameraName = cameraDisplayName(state.currentCamera || {});
     const copy = guidedStepCopy(step, cameraName, state.setups.length + 1);
     activateAppView(wizardStepView(step));
     showGuide(copy, step);
@@ -608,6 +634,8 @@ function goToStep(step) {
     const token = ++state.guideToken;
     persistSession();
     if (isGuidedStep(step)) {
+        state.cameraGrid?.destroy();
+        state.cameraGrid = null;
         void showGuidedStep(step, token);
         return;
     }
@@ -772,13 +800,24 @@ async function skipWizard() {
  * Refresh active cameras without discarding completed camera steps.
  */
 async function refreshCameraSelection() {
+    const step = state.step;
+    const selectionToken = ++state.cameraSelectionToken;
     try {
         const status = await fetchJson("/first-boot/status");
+        if (
+            state.step !== step ||
+            selectionToken !== state.cameraSelectionToken
+        ) {
+            return;
+        }
         state.status = status;
         state.cameras = status.cameras || [];
-        renderCameraSelection();
+        if (step === WIZARD_STEP.WELCOME) renderWelcome();
+        else renderCameraSelection();
     } catch (error) {
-        showDanger(`Unable to refresh cameras: ${error.message}`);
+        if (selectionToken === state.cameraSelectionToken) {
+            showDanger(`Unable to refresh cameras: ${error.message}`);
+        }
     }
 }
 
@@ -931,6 +970,8 @@ export async function initializeFirstBootWizard() {
     document
         .getElementById("firstBootCloseBtn")
         ?.addEventListener("click", () => {
+            state.cameraGrid?.destroy();
+            state.cameraGrid = null;
             hideGuide();
             activateAppView("view-settings");
         });

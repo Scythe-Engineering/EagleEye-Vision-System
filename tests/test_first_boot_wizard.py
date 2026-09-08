@@ -39,7 +39,13 @@ class _CameraRegistry:
 
     def get_config(self, bus_id: str) -> SimpleNamespace:
         """Return the camera config required by the generator."""
-        return SimpleNamespace(intrinsics_path=str(self.intrinsics_by_bus_id[bus_id]))
+        intrinsics_path = self.intrinsics_by_bus_id.get(bus_id)
+        return SimpleNamespace(
+            intrinsics_path=(
+                str(intrinsics_path) if intrinsics_path is not None else None
+            ),
+            display_name=f"Placed {bus_id}",
+        )
 
 
 class _FirstBootHarness(FirstBootMixin):
@@ -155,6 +161,7 @@ def test_first_boot_generates_unique_multi_camera_pipelines(
 
     assert initial_code == 200
     assert initial_status["required"] is True
+    assert initial_status["cameras"][0]["display_name"] == "Placed 1"
     assert status == 200
     assert payload["restart_required"] is True
     assert payload["pipelines"] == [

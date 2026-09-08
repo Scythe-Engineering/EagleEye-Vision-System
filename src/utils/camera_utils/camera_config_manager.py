@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
@@ -93,6 +95,10 @@ class CameraConfig:
         self._intrinsics_file: str = os.path.join(base_path, "intrinsics.json")
         self._intrinsics_path: Optional[str] = self._intrinsics_file
         self._extrinsics_file: str = os.path.join(base_path, "extrinsics.json")
+        self._metadata_file: str = os.path.join(base_path, "metadata.json")
+        self._display_name: Optional[str] = None
+        self._metadata_lock = threading.Lock()
+        self._load_display_name()
 
     @property
     def camera_id(self) -> str:
@@ -102,6 +108,72 @@ class CameraConfig:
             str: Camera ID.
         """
         return self._camera_id
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """Get the operator-facing placement name, if one has been saved.
+
+        Returns:
+            Optional[str]: Saved display name, or None when the technical
+                camera name should be shown.
+        """
+        return self._display_name
+
+    def _load_display_name(self) -> None:
+        """Load optional camera metadata without failing legacy configurations."""
+        if not os.path.isfile(self._metadata_file):
+            return
+        try:
+            with open(self._metadata_file, "r", encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+        display_name = (
+            metadata.get("display_name") if isinstance(metadata, dict) else None
+        )
+        if isinstance(display_name, str) and display_name.strip():
+            self._display_name = display_name.strip()
+
+    def set_display_name(self, display_name: str) -> None:
+        """Validate and persist an operator-facing camera placement name.
+
+        Args:
+            display_name: Human-readable camera placement description.
+
+        Raises:
+            ValueError: If the name is empty, too long, or contains controls.
+        """
+        if not isinstance(display_name, str):
+            raise ValueError("Camera name must be text")
+        normalized_name = display_name.strip()
+        if not normalized_name:
+            raise ValueError("Camera name cannot be empty")
+        if len(normalized_name) > 80:
+            raise ValueError("Camera name must be 80 characters or fewer")
+        if any(
+            ord(character) < 32 or ord(character) == 127
+            for character in normalized_name
+        ):
+            raise ValueError("Camera name cannot contain control characters")
+
+        with self._metadata_lock:
+            os.makedirs(self._base_path, exist_ok=True)
+            file_descriptor, temporary_file = tempfile.mkstemp(
+                dir=self._base_path, prefix=".metadata.", suffix=".tmp", text=True
+            )
+            try:
+                with os.fdopen(file_descriptor, "w", encoding="utf-8") as metadata_file:
+                    json.dump(
+                        {"display_name": normalized_name}, metadata_file, indent=4
+                    )
+                    metadata_file.write("\n")
+                    metadata_file.flush()
+                    os.fsync(metadata_file.fileno())
+                os.replace(temporary_file, self._metadata_file)
+                self._display_name = normalized_name
+            finally:
+                if os.path.exists(temporary_file):
+                    os.unlink(temporary_file)
 
     @property
     def intrinsics_path(self) -> Optional[str]:

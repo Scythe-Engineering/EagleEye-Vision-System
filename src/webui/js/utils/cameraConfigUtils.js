@@ -8,6 +8,7 @@ import {
     showWarning,
 } from "../ui/notificationSystem.js";
 import { uploadWithProgress } from "../ui/uploadWithProgress.js";
+import { cameraDisplayName } from "../ui/cameraPreviewGrid.js";
 import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
@@ -334,7 +335,7 @@ function setCameraMeta(camera) {
         return;
     }
 
-    meta.textContent = `Selected: ${camera.name} (bus_id: ${camera.bus_id})`;
+    meta.textContent = `Selected: ${cameraDisplayName(camera)} (bus_id: ${camera.bus_id})`;
 }
 
 /**
@@ -395,7 +396,8 @@ async function loadCameraList() {
             option.dataset.streamName = String(
                 camera.stream_name || camera.name || "",
             );
-            option.textContent = `${camera.name} (${camera.bus_id})`;
+            option.dataset.displayName = cameraDisplayName(camera);
+            option.textContent = `${cameraDisplayName(camera)} (${camera.bus_id})`;
             select.appendChild(option);
         });
 
@@ -980,12 +982,12 @@ export function initCameraConfigUtils() {
         currentCalibrationStreamName =
             cameraSelect.selectedOptions?.[0]?.dataset?.streamName || "";
         void loadCameraConfig(currentCameraBusId);
-        const selectedText =
-            cameraSelect.options[cameraSelect.selectedIndex]?.text || "";
+        const selectedDisplayName =
+            cameraSelect.selectedOptions?.[0]?.dataset?.displayName || "";
         setCameraMeta(
             currentCameraBusId
                 ? {
-                      name: selectedText.split(" (")[0] || selectedText,
+                      name: selectedDisplayName,
                       bus_id: currentCameraBusId,
                   }
                 : null,

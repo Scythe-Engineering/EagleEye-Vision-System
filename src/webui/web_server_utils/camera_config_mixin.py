@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from flask import request
 
@@ -15,17 +14,33 @@ class CameraConfigMixin:
         Returns:
             tuple[dict, int]: Camera list payload with HTTP status.
         """
-        cameras: list[dict[str, str]] = []
+        cameras: list[dict[str, str | None]] = []
         for camera_name, camera_info in self.available_cameras.items():
             if isinstance(camera_info, dict):
-                bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
+                raw_bus_id = camera_info.get("bus_id")
+                if raw_bus_id is None:
+                    raw_bus_id = camera_info.get("id")
+                bus_id = str(raw_bus_id) if raw_bus_id is not None else ""
             else:
                 bus_id = str(camera_info)
 
             if not bus_id:
                 continue
 
-            cameras.append({"name": str(camera_name), "bus_id": bus_id})
+            config = self._resolve_camera_config(bus_id)
+            display_name = config.display_name if config is not None else None
+            cameras.append(
+                {
+                    "name": str(camera_name),
+                    "display_name": display_name,
+                    "bus_id": bus_id,
+                    "stream_name": str(
+                        camera_info.get("name") or camera_name
+                        if isinstance(camera_info, dict)
+                        else camera_name
+                    ),
+                }
+            )
 
         cameras.sort(key=lambda camera: camera["name"])
         return {"cameras": cameras}, 200
@@ -43,6 +58,60 @@ class CameraConfigMixin:
             return None
         return self.camera_config_registry.get_config(str(camera_bus_id))
 
+    def save_camera_display_name(self, camera_bus_id: str) -> tuple[dict, int]:
+        """Save a human-readable placement name without changing camera identity.
+
+        Args:
+            camera_bus_id: Deterministic camera bus ID.
+
+        Returns:
+            tuple[dict, int]: Saved display-name payload with HTTP status.
+        """
+        active_bus_ids = {
+            str(
+                camera_info.get("bus_id")
+                if camera_info.get("bus_id") is not None
+                else (
+                    camera_info.get("id")
+                    if camera_info.get("id") is not None
+                    else ""
+                )
+            )
+            if isinstance(camera_info, dict)
+            else str(camera_info)
+            for camera_info in self.available_cameras.values()
+        }
+        if camera_bus_id not in active_bus_ids:
+            return {"error": "Unknown camera bus ID"}, 404
+        if (
+            camera_bus_id in {".", ".."}
+            or os.path.basename(camera_bus_id) != camera_bus_id
+            or (os.path.altsep is not None and os.path.altsep in camera_bus_id)
+        ):
+            return {"error": "Invalid camera bus ID"}, 400
+
+        config = self._resolve_camera_config(camera_bus_id)
+        if config is None:
+            return {"error": "Camera config registry unavailable"}, 503
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {"display_name"}:
+            return {"error": "Expected a display_name JSON payload"}, 400
+
+        try:
+            config.set_display_name(payload["display_name"])
+        except ValueError as error:
+            return {"error": str(error)}, 400
+        except OSError as error:
+            self.log(f"Failed saving camera display name for {camera_bus_id}: {error}")
+            return {"error": "Failed to save camera name"}, 500
+
+        return {
+            "success": True,
+            "camera_bus_id": str(config.camera_id),
+            "display_name": config.display_name,
+        }, 200
+
     def get_camera_config(self, camera_bus_id: str) -> tuple[dict, int]:
         """Get camera extrinsics and intrinsics metadata for a bus ID.
 
@@ -59,6 +128,7 @@ class CameraConfigMixin:
         intrinsics_path = config.intrinsics_path
         return {
             "camera_bus_id": str(config.camera_id),
+            "display_name": config.display_name,
             "extrinsics": config.extrinsics.to_dict(),
             "intrinsics_path": intrinsics_path,
             "intrinsics_exists": bool(
@@ -138,7 +208,9 @@ class CameraConfigMixin:
         if not upload.filename.lower().endswith(".json"):
             return {"error": "Only .json intrinsics files are supported"}, 400
 
-        target_path = config.intrinsics_path or self._default_intrinsics_path(camera_bus_id)
+        target_path = config.intrinsics_path or self._default_intrinsics_path(
+            camera_bus_id
+        )
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
         try:

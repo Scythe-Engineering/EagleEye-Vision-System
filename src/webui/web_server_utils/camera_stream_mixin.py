@@ -6,7 +6,7 @@ from typing import Any, Generator
 
 import cv2
 import numpy as np
-from flask import Response
+from flask import Response, request
 
 from src.webui.web_server_utils.constants import (
     VIEW_STREAM_FPS,
@@ -77,17 +77,38 @@ class CameraStreamMixin:
                 self.log(f"Removed camera: {camera_name}")
 
     def get_available_cameras(self) -> dict:
-        """
-        Get a dict of available cameras.
+        """Return active cameras with stable identifiers and optional display names.
+
+        Display names are copied from ``CameraConfig`` metadata only for UI
+        rendering. Dictionary keys, URL-safe stream names, bus IDs, and all
+        runtime camera identities remain unchanged.
 
         Returns:
-            dict: A dict where keys are camera names and values are dicts with:
-                - name (str): URL-safe camera name (spaces replaced with underscores)
-                - id (int | str): The camera identifier
-                - bus_id (str): The camera bus identifier, or string
-                  representation of id if bus_id is not available
+            dict: Camera records keyed by their technical camera names.
         """
-        return self.available_cameras
+        with self.frame_list_structure_lock:
+            cameras = {
+                camera_name: dict(camera_info)
+                if isinstance(camera_info, dict)
+                else camera_info
+                for camera_name, camera_info in self.available_cameras.items()
+            }
+
+        registry = self.camera_config_registry
+        if registry is None:
+            return cameras
+        for camera_info in cameras.values():
+            if not isinstance(camera_info, dict):
+                continue
+            bus_id = camera_info.get("bus_id")
+            if bus_id is None:
+                bus_id = camera_info.get("id")
+            if bus_id is None:
+                continue
+            camera_info["display_name"] = registry.get_config(
+                str(bus_id)
+            ).display_name
+        return cameras
 
     def update_camera_frame(self, camera_name: str, frame: np.ndarray) -> None:
         """
@@ -199,12 +220,34 @@ class CameraStreamMixin:
                     original_camera_name = orig_name
                     break
             else:
-                return Response(
-                    self._frame_generator_no_image(),
-                    mimetype="multipart/x-mixed-replace; boundary=frame",
-                )
+                original_camera_name = ""
+
+        if request.args.get("snapshot") == "1":
+            # Finite thumbnails leave browser connections free for setup requests.
+            jpeg = no_image_jpeg_bytes
+            lock = self.frame_locks.get(original_camera_name)
+            if lock is not None:
+                with lock:
+                    source = self.frame_list.get(original_camera_name)
+                    frame = None if source is None else source.copy()
+                if frame is not None:
+                    height, width = frame.shape[:2]
+                    if width > 320:
+                        frame = cv2.resize(
+                            frame, (320, max(1, round(height * 320 / width)))
+                        )
+                    success, encoded = cv2.imencode(
+                        ".jpg", frame, self._view_stream_jpeg_params()
+                    )
+                    if success:
+                        jpeg = encoded.tobytes()
+            return Response(
+                jpeg, mimetype="image/jpeg", headers={"Cache-Control": "no-store"}
+            )
 
         return Response(
-            self._frame_generator(original_camera_name),
+            self._frame_generator(original_camera_name)
+            if original_camera_name
+            else self._frame_generator_no_image(),
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
