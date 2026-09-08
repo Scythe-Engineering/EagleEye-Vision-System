@@ -23,3 +23,14 @@ For the shortest real-robot integration use the [library guide](../../README.md)
 
 The JUnit contract tests exercise NWU coordinates, exact timestamp joins, split arrival,
 missing metadata, stale/future samples, quality gates, invalid values, and uncertainty.
+
+## Optional low-latency path
+
+The example defaults to the simple 20 ms robot loop. Set `LOW_LATENCY_VISION = true`
+in `Robot.java` to schedule the same odometry/vision method every 5 ms instead.
+The two paths are mutually exclusive; dashboard and synthetic camera publishing remain
+on the normal 20 ms loop. This example demonstrates scheduling, not a camera-latency
+benchmark. Both modes retain identical timestamp and quality handling.
+
+For the Drive.java and Robot.java edits needed on a real robot, see the
+[optional enhancement guide](../../README.md#optional-enhancement-lower-latency-ingestion).
