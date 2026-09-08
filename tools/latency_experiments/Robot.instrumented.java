@@ -47,7 +47,6 @@ public class Robot extends TimedRobot {
   @Override public void robotPeriodic() {
     latencyExperiment.robotPeriodic();
     if (highRateExperiment != null) highRateExperiment.robotPeriodic();
-    synchronized (EagleEyeCamera.class) {
     double now = Timer.getFPGATimestamp();
     double t = now - start;
     // A 2 m radius circle: wheel travel and gyro are consistent with the ground truth.
@@ -70,15 +69,17 @@ public class Robot extends TimedRobot {
     }
     // Observe the current camera without treating relaxed quality as trusted vision.
     // Keep the shipped 2 px gate for live and all estimator inputs.
-    double strictLimit = EagleEyeCamera.maximumReprojectionErrorPixels;
-    try {
-      EagleEyeCamera.maximumReprojectionErrorPixels = 4.0;
-      for (var obs : diagnostic.poll()) {
-        diagnosticCount++;
-        diagnosticPublisher.set(obs.pose());
-        field.getObject("DiagnosticOnly4px").setPose(obs.pose());
-      }
-    } finally { EagleEyeCamera.maximumReprojectionErrorPixels = strictLimit; }
+    synchronized (EagleEyeCamera.class) {
+      double strictLimit = EagleEyeCamera.maximumReprojectionErrorPixels;
+      try {
+        EagleEyeCamera.maximumReprojectionErrorPixels = 4.0;
+        for (var obs : diagnostic.poll()) {
+          diagnosticCount++;
+          diagnosticPublisher.set(obs.pose());
+          field.getObject("DiagnosticOnly4px").setPose(obs.pose());
+        }
+      } finally { EagleEyeCamera.maximumReprojectionErrorPixels = strictLimit; }
+    }
     SmartDashboard.putNumber("DiagnosticOnly4pxCount", diagnosticCount);
     SmartDashboard.putNumber("NTNowSeconds", NetworkTablesJNI.now() / 1e6);
     SmartDashboard.putNumber("FPGANowSeconds", now);
@@ -101,7 +102,14 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("EstimatorErrorMeters", estimator.getEstimatedPosition().getTranslation().getDistance(truth.getTranslation()));
   }
 
+  @Override public void startCompetition() {
+    try {
+      super.startCompetition();
+    } finally {
+      latencyExperiment.close();
+      if (highRateExperiment != null) highRateExperiment.close();
     }
+  }
 
   @Override public void simulationInit() {
     EagleEyeCameraSim.translationNoiseBase = 0;

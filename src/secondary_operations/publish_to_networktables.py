@@ -198,7 +198,9 @@ class PublishToNetworktables(OperationInstance):
         target_key: str,
         schema: str = "auto",
         data_path: str | Sequence[str] | None = None,
+        publish_period_seconds: float = 0.01,
     ) -> None:
+        self.publish_period_seconds = publish_period_seconds
         self.network_table = network_table
         self.target_key = target_key
         self.schema = schema
@@ -218,6 +220,11 @@ class PublishToNetworktables(OperationInstance):
         Args:
             json_config: Updated operation configuration fields.
         """
+        if "publish_period_seconds" in json_config:
+            self.publish_period_seconds = json_config["publish_period_seconds"]
+            if self._publisher is not None:
+                self._publisher.close()
+            self._publisher = None
         if "target_key" in json_config:
             self.target_key = json_config["target_key"]
             self._publisher = None
@@ -248,7 +255,7 @@ class PublishToNetworktables(OperationInstance):
         # Pose/meta join by capture timestamp. Suppressing unchanged values
         # loses frames (especially stationary poses and constant quality).
         # Send fresh vision every 10 ms instead of batching it for 100 ms.
-        options = PubSubOptions(keepDuplicates=True, sendAll=True, periodic=0.01)
+        options = PubSubOptions(keepDuplicates=True, sendAll=True, periodic=self.publish_period_seconds)
         if isinstance(wpi_value, list):
             if not wpi_value:
                 if self.schema == "detections":

@@ -313,3 +313,7 @@ error before changing anything else.
 **Everything arrives in bursts, and the estimate lags.** Confirm the pipeline is actually keeping
 up on the coprocessor. `sendAll` means the robot sees every frame EagleEye produces, so investigate coprocessor stalls, network/TCP backlog, and robot scheduling when
 frames arrive in bursts.
+
+Publisher operations expose `publish_period_seconds` (default `0.01`). Set `0.1`
+for slower non-vision telemetry. This is a requested interval, not a strict rate limit:
+ntcore quantization and instance-wide pipeline flushes can affect delivery timing.

@@ -72,7 +72,7 @@ public final class HighRateVisionExperiment implements AutoCloseable {
     void update() {
       if (!active) return;
       // The legacy bench briefly changes the SDK's static diagnostic quality limit.
-      // Its whole periodic body shares this lock, so the strict poll never sees 4 px.
+      // Its diagnostic relaxation window shares this lock, so the strict poll never sees 4 px.
       // Each estimator and subscriber has exactly one owning thread.
       synchronized (EagleEyeCamera.class) {
         double now=Timer.getFPGATimestamp(), t=now-start;
@@ -98,7 +98,9 @@ public final class HighRateVisionExperiment implements AutoCloseable {
     if (!active) return;
     // Called on the main loop outside the shared SDK lock, never while holding it.
     active=false; capture.stop(); odometry.stop();
+    capture.close(); odometry.close();
     String row; while ((row=rows.poll()) != null) out.println(row);
-    out.close(); capture.close(); odometry.close();
+    out.close();
+    baseline.camera.close(); fast.camera.close(); simulated.close();
   }
 }

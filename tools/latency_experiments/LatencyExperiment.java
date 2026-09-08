@@ -129,13 +129,13 @@ public final class LatencyExperiment implements AutoCloseable {
       pendingPoses.keySet().removeIf(t -> now-t > 1_000_000);
       pendingMetas.keySet().removeIf(t -> now-t > 1_000_000);
     }
-    public void close() { poses.close(); metas.close(); frames.close(); }
+    public synchronized void close() { poses.close(); metas.close(); frames.close(); }
   }
 
   @Override public void close() {
     if (!active) return;
     active = false;
-    five.stop(); one.stop(); socket.close(); nt.removeListener(listener);
+    nt.removeListener(listener); five.stop(); one.stop(); socket.close();
     for (Lane lane : List.of(normal, scheduled, thread5, thread1, eventLane)) lane.close();
     String row; while ((row = rows.poll()) != null) out.println(row);
     out.close(); five.close(); one.close();

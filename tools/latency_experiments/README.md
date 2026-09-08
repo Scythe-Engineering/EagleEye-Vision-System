@@ -1,4 +1,4 @@
-# Uncommitted live latency experiments
+# Live latency experiment harnesses
 
 These are diagnostic harnesses, not a replacement robot communications protocol.
 Results and limitations: `docs/validation/latency-experiments-2026-09-08.md`.
@@ -52,3 +52,12 @@ Do not install a permanent service override merely to reproduce a benchmark.
 The UDP experiment has no independent clock synchronization, authentication protocol,
 retransmission, production freshness policy, or robot fusion integration. Its limited
 source-address/framing checks are diagnostic checks, not production hardening.
+
+Run the summarizer from the bench directory, or supply an evidence path:
+
+```sh
+python tools/latency_experiments/summarize.py 7 30 --evidence-dir /path/to/evidence
+```
+
+Historical raw evidence remains on the author’s machines; the harnesses are included
+in this PR so other operators can collect their own runs.

@@ -1,28 +1,31 @@
 # Further latency experiments — 2026-09-08
 
 The previous 10 ms publisher change and first report were committed locally as
-**577bfca**. No new experiment or candidate changes were committed or pushed.
+**577bfca** (cherry-picked as **bbadcf1**). PR #163 includes that change, the
+candidate pipeline flush, optional robot example, flush tests, and diagnostic harnesses.
+Raw CSV/JSON evidence and device backups remain on the author’s machines only.
 
 The strongest small follow-up is **one NetworkTables flush after a completed
 pipeline cycle plus a 5 ms robot odometry/vision callback**. On the actual camera
 it measured **24.86 ms mean / 29.16 ms p95** capture-to-Java ingestion. The remaining
 delay after the pose and metadata were both ready was **9.37 ms mean / 12.55 ms p95**.
 
-## Changes left for review
+## Changes included in this PR and local deployment
 
 1. `src/config/utils/pipeline.py`: if a completed pipeline contains a NetworkTables
    publisher, call `network_table.getInstance().flush()` after `run_flow()` finishes.
    This batches all completed branches together, rather than flushing metadata
    before the pose branch finishes. The committed 10 ms publisher option remains.
 2. `library/examples/localization-sim/src/main/java/frc/robot/Robot.java`: move
-   odometry updates and SDK vision consumption into a 5 ms `addPeriodic` callback;
+   odometry updates and SDK vision consumption into an optional 5 ms `addPeriodic` callback
+   selected with `LOW_LATENCY_VISION`; the default remains the simple 20 ms path;
    keep the display on the 20 ms robot loop. All estimator access stays on one thread.
    The synthetic camera samples analytic ground truth at its own capture time,
    avoiding a timestamp mismatch with the preceding high-rate odometry callback.
 3. The existing `/Users/dark/Custom-Apps/EagleEye-Java-Sim` bench has the equivalent
    5 ms callback and keeps its physical camera diagnostic-only.
 4. Three pipeline flush ordering/completion tests, plus the optional harnesses in
-   `tools/latency_experiments/`, are uncommitted.
+   `tools/latency_experiments/`, are included in this PR.
 
 The Pi is running the candidate pipeline flush with the regular backend entrypoint.
 The temporary systemd override, UDP mirror, audit-topic publisher, CSV recorders,
@@ -59,9 +62,9 @@ as often. Arrival callbacks are fastest within NT4, but should enqueue observati
 for one estimator owner rather than mutate an estimator concurrently with odometry.
 The synchronous callback gives most of the benefit without that concurrency change.
 
-[WPILib documents](https://docs.wpilib.org/en/stable/docs/software/convenience-features/scheduling-functions.html)
+[WPILib 2026.2.1 TimedRobot source](https://github.com/wpilibsuite/allwpilib/blob/v2026.2.1/wpilibj/src/main/java/edu/wpi/first/wpilibj/TimedRobot.java)
 that `addPeriodic` runs synchronously with TimedRobot functions, whereas
-[Notifier callbacks](https://github.wpilib.org/allwpilib/docs/release/java/edu/wpi/first/wpilibj/Notifier.html)
+[Notifier callbacks](https://github.com/wpilibsuite/allwpilib/blob/v2026.2.1/wpilibj/src/main/java/edu/wpi/first/wpilibj/Notifier.java)
 run on a separate thread. Thread safety was considered explicitly in the experiments.
 
 ## Send cadence, flush, and protocol comparison
@@ -166,3 +169,13 @@ separate accuracy/exposure testing. The Pi reported no throttling.
 - Bench pre-experiment Robot source: `evidence/latency-experiments-2026-09-08/Robot.java.before`.
 
 No new commits were made after 577bfca. Existing unrelated WebUI edits were preserved.
+
+Reproducing the recorded results or using `pipeline.py.before-flush` requires access
+to the author’s Mac and Pi; those artifacts are not downloadable from this repository.
+Other operators can run the supplied harnesses to collect new evidence. For source-only
+rollback of the flush, restore `src/config/utils/pipeline.py` from base commit
+`9d7c5debcdaf02389ccca0bcfa8a8a88d9ac0eac` in your deployment and restart the backend.
+
+PR review subsequently tightened harness shutdown, reduced the diagnostic lock scope,
+and made evidence paths configurable. The measurements above describe the original
+September 8 run; they were not remeasured with these harness maintenance changes.
