@@ -1,9 +1,10 @@
 import { buildBackendUrl } from "../config.js";
+import { VirtualLogView } from "./virtualLogView.js";
 
 /**
  * Handles terminal controls and log display interactions in the settings UI.
  */
-let logsLoaded = false;
+let logView = null;
 let terminalPromptText = "$";
 let terminalCommandHistory = [];
 let terminalHistoryIndex = -1;
@@ -25,7 +26,6 @@ export function initializeTerminalHandlers() {
     const downloadLogsBtn = document.getElementById("downloadLogsBtn");
 
     if (terminalPanel) {
-        loadLogMessages();
         loadTerminalPrompt();
     }
 
@@ -37,7 +37,7 @@ export function initializeTerminalHandlers() {
              */
             function () {
                 if (logsOutput) {
-                    logsOutput.innerHTML = "";
+                    getLogView()?.clear();
                     appendToLogs(
                         "Logs cleared (display only - backend logs preserved)",
                         "INFO",
@@ -353,32 +353,29 @@ function appendToTerminal(terminalOutput, text, type) {
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
-/**
- * Load log messages from the backend once per page lifecycle.
- *
- * @returns {Promise<void>}
- */
-async function loadLogMessages() {
-    if (logsLoaded) return;
-
-    const logsOutput = document.getElementById("logsOutput");
-    if (!logsOutput) return;
-
-    try {
-        const response = await fetch(buildBackendUrl("/get-log-messages"));
-        const data = await response.json();
-
-        if (data.messages && Array.isArray(data.messages)) {
-            logsOutput.innerHTML = "";
-            for (const message of data.messages) {
-                appendLogMessage(message);
-            }
-            logsLoaded = true;
-        }
-    } catch (error) {
-        console.error("Failed to load log messages:", error);
-        appendToLogs("Failed to load log history", "ERROR");
+function getLogView() {
+    const output = document.getElementById("logsOutput");
+    if (!output) return null;
+    if (!logView) {
+        logView = new VirtualLogView(output, {
+            createRow: createLogMessage,
+            status: document.getElementById("logsStatus"),
+            latestButton: document.getElementById("latestLogsBtn"),
+            fetchPage: async (params) => {
+                const response = await fetch(
+                    buildBackendUrl(
+                        `/get-log-messages?${new URLSearchParams(params)}`,
+                    ),
+                    { signal: AbortSignal.timeout(10000) },
+                );
+                const data = await response.json();
+                if (!response.ok)
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                return data;
+            },
+        });
     }
+    return logView;
 }
 
 /**
@@ -429,16 +426,13 @@ function parseAnsiColors(text) {
 }
 
 /**
- * Append a single log message to the logs output area.
+ * Create a detached log row with ANSI color styling.
  *
  * @param {string} message - Log message content.
  */
-function appendLogMessage(message) {
-    const logsOutput = document.getElementById("logsOutput");
-    if (!logsOutput) return;
-
+function createLogMessage(message) {
     const logDiv = document.createElement("div");
-    logDiv.className = "flex items-start";
+    logDiv.className = "log-row";
     logDiv.style.whiteSpace = "pre-wrap";
 
     const segments = parseAnsiColors(message);
@@ -449,8 +443,7 @@ function appendLogMessage(message) {
         logDiv.appendChild(span);
     }
 
-    logsOutput.appendChild(logDiv);
-    logsOutput.scrollTop = logsOutput.scrollHeight;
+    return logDiv;
 }
 
 /**
@@ -459,23 +452,12 @@ function appendLogMessage(message) {
  * @param {{messages?: string[]}} data - Log update payload.
  */
 export function handleLogUpdate(data) {
-    if (data.messages && Array.isArray(data.messages)) {
-        for (const message of data.messages) {
-            appendLogMessage(message);
-        }
-    }
+    if (Array.isArray(data.messages)) getLogView()?.invalidate();
 }
 
-/**
- * Clear and reload the current log messages.
- */
+/** Load only the visible region, retaining scroll position across tab visits. */
 export function refreshLogMessages() {
-    logsLoaded = false;
-    const logsOutput = document.getElementById("logsOutput");
-    if (logsOutput) {
-        logsOutput.innerHTML = "";
-        loadLogMessages();
-    }
+    getLogView()?.activate();
 }
 
 /**
@@ -512,21 +494,9 @@ function downloadLogFile() {
  * @param {"INFO"|"ERROR"|"WARNING"|"DEBUG"} [level="INFO"] - Log severity level.
  */
 export function appendToLogs(message, level = "INFO") {
-    const logsOutput = document.getElementById("logsOutput");
-    if (logsOutput) {
-        const logDiv = document.createElement("div");
-        const timestamp = new Date().toLocaleTimeString();
-
-        let colorClass = "text-gray-300";
-        if (level === "ERROR") colorClass = "text-red-400";
-        else if (level === "WARNING") colorClass = "text-orange-400";
-        else if (level === "INFO") colorClass = "text-yellow-400";
-        else if (level === "DEBUG") colorClass = "text-gray-400";
-
-        logDiv.className = colorClass;
-        logDiv.style.whiteSpace = "pre-wrap";
-        logDiv.textContent = `[${level}] ${timestamp} - ${message}`;
-        logsOutput.appendChild(logDiv);
-        logsOutput.scrollTop = logsOutput.scrollHeight;
-    }
+    const timestamp = new Date().toLocaleTimeString();
+    const color = { ERROR: 91, WARNING: 93, INFO: 93, DEBUG: 0 }[level] ?? 0;
+    getLogView()?.append(
+        `\u001b[${color}m[${level}] ${timestamp} - ${message}\u001b[0m`,
+    );
 }

@@ -788,20 +788,65 @@ class SystemMonitorMixin:
             "target": target,
         }, 202
 
-    def get_log_messages(self) -> tuple[dict, int]:
-        """
-        Get all log messages from the logger instance.
+    def _recent_log_lines(self) -> list[str]:
+        """Return a bounded snapshot, including changes to collapsed sequences."""
+        with self.logger.lock:
+            entries = self.logger.message_history.messages[-500:]
+            return [line for entry in entries for line in entry.to_file_lines()][-500:]
 
-        Returns:
-            tuple[dict, int]: Dictionary containing log messages and HTTP status code.
-        """
+    def get_log_messages(self) -> tuple[dict, int]:
+        """Page through an immutable history snapshot so live logging cannot shift rows."""
         if self.logger is None:
             return {"messages": [], "error": "Logger instance not available"}, 503
 
+        args = _request().args
         try:
-            log_lines = self.logger.message_history.to_file_lines()
+            limit = min(500, max(1, int(args.get("limit", 200))))
+            offset = int(args["offset"]) if "offset" in args else None
+            if offset is not None and offset < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return {"error": "offset and limit must be nonnegative integers"}, 400
 
-            return {"messages": log_lines, "total_count": len(log_lines)}, 200
+        try:
+            now = time.monotonic()
+            with self.logger.lock:
+                # Bound server memory and expire abandoned readers. A client with
+                # an expired snapshot can explicitly retry against fresh history.
+                snapshots = getattr(self, "_log_history_snapshots", {})
+                self._log_history_snapshots = snapshots
+                for key, (_, accessed) in list(snapshots.items()):
+                    if now - accessed > 1800:
+                        del snapshots[key]
+                token = args.get("snapshot")
+                if token:
+                    if token not in snapshots:
+                        return {"error": "Log history expired. Load latest logs to continue."}, 410
+                    lines = snapshots[token][0]
+                else:
+                    lines = tuple(
+                        line
+                        for entry in self.logger.message_history.messages
+                        for block in entry.to_file_lines()
+                        for line in block.splitlines()
+                    )
+                    # Reuse unchanged snapshots across readers and tab visits.
+                    token = next((key for key, (saved, _) in snapshots.items()
+                                  if saved == lines), None)
+                    if token is None:
+                        token = uuid.uuid4().hex
+                        if len(snapshots) >= 16:
+                            del snapshots[min(snapshots, key=lambda key: snapshots[key][1])]
+                snapshots[token] = (lines, now)
+                if offset is None:
+                    offset = max(0, ((len(lines) - 1) // limit) * limit)
+                offset = min(offset, len(lines))
+                return {
+                    "messages": list(lines[offset:offset + limit]),
+                    "total_count": len(lines),
+                    "offset": offset,
+                    "snapshot": token,
+                }, 200
         except Exception as e:
             self.logger.log(f"Error retrieving log messages: {e}")
             return {"messages": [], "error": str(e)}, 500
@@ -826,24 +871,17 @@ class SystemMonitorMixin:
         if self.logger is None:
             return
 
+        previous_lines = None
         while True:
             try:
-                current_message_count = len(self.logger.message_history.messages)
-
-                if current_message_count > self.last_log_message_count:
-                    message_lines = self.logger.message_history.to_file_lines()
-
-                    if message_lines:
-                        self._publish_event(
-                            "log_update",
-                            {
-                                "messages": message_lines,
-                            },
-                        )
-
-                    self.last_log_message_count = current_message_count
-
-                time.sleep(0.1)
+                message_lines = self._recent_log_lines()
+                if message_lines != previous_lines:
+                    self._publish_event(
+                        "log_update",
+                        {"messages": message_lines, "replace": True},
+                    )
+                    previous_lines = message_lines
+                time.sleep(0.5)
             except Exception as e:
                 self.logger.log(f"Error in log monitor loop: {e}")
                 time.sleep(1.0)
