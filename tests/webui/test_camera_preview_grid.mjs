@@ -23,7 +23,9 @@ class Element {
     addEventListener(name, listener) {
         this.listeners[name] = listener;
     }
-    focus() {}
+    focus() {
+        this.focused = true;
+    }
 }
 
 test("configure saves a draft and previews retain the camera identity", async (t) => {
@@ -56,8 +58,13 @@ test("configure saves a draft and previews retain the camera identity", async (t
     const [image, title, , label, actions, status] =
         host.children[0].children[0].children;
     const input = label.children[0];
+    const saveName = actions.children[0];
     const configure = actions.children[1];
     assert.match(image.src, /\/feed\/USB_Camera\?snapshot=1$/);
+    await saveName.listeners.click();
+    assert.equal(input.focused, true);
+    assert.equal(status.textContent, "Enter a placement description.");
+
     input.value = "Front bumper";
     await configure.listeners.click();
     assert.equal(selected, null);

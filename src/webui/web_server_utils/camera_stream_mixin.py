@@ -100,7 +100,9 @@ class CameraStreamMixin:
         for camera_info in cameras.values():
             if not isinstance(camera_info, dict):
                 continue
-            bus_id = camera_info.get("bus_id") or camera_info.get("id")
+            bus_id = camera_info.get("bus_id")
+            if bus_id is None:
+                bus_id = camera_info.get("id")
             if bus_id is None:
                 continue
             camera_info["display_name"] = registry.get_config(

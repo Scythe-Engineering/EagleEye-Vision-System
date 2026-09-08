@@ -41,7 +41,9 @@ class _CameraRegistry:
         """Return the camera config required by the generator."""
         intrinsics_path = self.intrinsics_by_bus_id.get(bus_id)
         return SimpleNamespace(
-            intrinsics_path=str(intrinsics_path) if intrinsics_path is not None else None,
+            intrinsics_path=(
+                str(intrinsics_path) if intrinsics_path is not None else None
+            ),
             display_name=f"Placed {bus_id}",
         )
 

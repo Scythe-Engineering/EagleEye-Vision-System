@@ -17,9 +17,10 @@ class CameraConfigMixin:
         cameras: list[dict[str, str | None]] = []
         for camera_name, camera_info in self.available_cameras.items():
             if isinstance(camera_info, dict):
-                bus_id = str(
-                    camera_info.get("bus_id") or camera_info.get("id") or ""
-                )
+                raw_bus_id = camera_info.get("bus_id")
+                if raw_bus_id is None:
+                    raw_bus_id = camera_info.get("id")
+                bus_id = str(raw_bus_id) if raw_bus_id is not None else ""
             else:
                 bus_id = str(camera_info)
 
@@ -67,7 +68,15 @@ class CameraConfigMixin:
             tuple[dict, int]: Saved display-name payload with HTTP status.
         """
         active_bus_ids = {
-            str(camera_info.get("bus_id") or camera_info.get("id") or "")
+            str(
+                camera_info.get("bus_id")
+                if camera_info.get("bus_id") is not None
+                else (
+                    camera_info.get("id")
+                    if camera_info.get("id") is not None
+                    else ""
+                )
+            )
             if isinstance(camera_info, dict)
             else str(camera_info)
             for camera_info in self.available_cameras.values()
@@ -199,7 +208,9 @@ class CameraConfigMixin:
         if not upload.filename.lower().endswith(".json"):
             return {"error": "Only .json intrinsics files are supported"}, 400
 
-        target_path = config.intrinsics_path or self._default_intrinsics_path(camera_bus_id)
+        target_path = config.intrinsics_path or self._default_intrinsics_path(
+            camera_bus_id
+        )
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
         try:

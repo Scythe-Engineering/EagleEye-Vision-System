@@ -35,6 +35,7 @@ const state = {
     verificationInFlight: false,
     guideToken: 0,
     modelResolveToken: 0,
+    cameraSelectionToken: 0,
     guideTarget: null,
     cameraGrid: null,
 };
@@ -800,15 +801,23 @@ async function skipWizard() {
  */
 async function refreshCameraSelection() {
     const step = state.step;
+    const selectionToken = ++state.cameraSelectionToken;
     try {
         const status = await fetchJson("/first-boot/status");
-        if (state.step !== step) return;
+        if (
+            state.step !== step ||
+            selectionToken !== state.cameraSelectionToken
+        ) {
+            return;
+        }
         state.status = status;
         state.cameras = status.cameras || [];
         if (step === WIZARD_STEP.WELCOME) renderWelcome();
         else renderCameraSelection();
     } catch (error) {
-        showDanger(`Unable to refresh cameras: ${error.message}`);
+        if (selectionToken === state.cameraSelectionToken) {
+            showDanger(`Unable to refresh cameras: ${error.message}`);
+        }
     }
 }
 

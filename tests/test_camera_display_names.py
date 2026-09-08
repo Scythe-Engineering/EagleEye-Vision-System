@@ -61,6 +61,7 @@ class _FirstBootHarness(FirstBootMixin):
     """Minimal first-boot camera-list harness."""
 
     def __init__(self, registry: CameraConfigRegistry) -> None:
+        """Create an active-camera harness backed by the given registry."""
         self.available_cameras = {
             "USB Camera": {"name": "USB_Camera", "bus_id": "1-2"}
         }
@@ -117,7 +118,9 @@ def test_display_name_endpoint_validates_and_exposes_ui_name(
         ]
     }
 
-    monkeypatch.setattr(camera_config_module, "request", _Request({"display_name": " "}))
+    monkeypatch.setattr(
+        camera_config_module, "request", _Request({"display_name": " "})
+    )
     error, error_status = harness.save_camera_display_name("1-2")
 
     assert error_status == 400
@@ -143,11 +146,40 @@ def test_display_name_endpoint_rejects_unknown_bus_id(
 
 @pytest.mark.parametrize("name", [None, 7, "", " ", "x" * 81, "Front\nbumper"])
 def test_invalid_display_name_does_not_write(tmp_path: Path, name: Any) -> None:
+    """Reject invalid display names without writing metadata."""
     config = CameraConfigRegistry(str(tmp_path)).get_config("1-2")
     with pytest.raises(ValueError):
         config.set_display_name(name)
     assert config.display_name is None
     assert not (tmp_path / "1-2" / "metadata.json").exists()
+
+
+def test_invalid_metadata_encoding_is_ignored(tmp_path: Path) -> None:
+    """Treat undecodable optional display metadata as absent."""
+    metadata_path = tmp_path / "1-2" / "metadata.json"
+    metadata_path.parent.mkdir()
+    metadata_path.write_bytes(b"\xff\xfe")
+
+    assert CameraConfigRegistry(str(tmp_path)).get_config("1-2").display_name is None
+
+
+def test_numeric_zero_bus_id_is_preserved_for_display_name_endpoint(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Retain numeric zero camera IDs in records and display-name saves."""
+    harness = _CameraConfigHarness(tmp_path)
+    harness.available_cameras = {"USB Camera": {"name": "USB_Camera", "bus_id": 0}}
+    monkeypatch.setattr(
+        camera_config_module, "request", _Request({"display_name": "Front bumper"})
+    )
+
+    payload, status = harness.save_camera_display_name("0")
+    cameras, cameras_status = harness.get_camera_config_cameras()
+
+    assert status == 200
+    assert payload["camera_bus_id"] == "0"
+    assert cameras_status == 200
+    assert cameras["cameras"][0]["bus_id"] == "0"
 
 
 def test_failed_display_name_write_preserves_previous_name(
@@ -197,7 +229,11 @@ def test_camera_snapshot_is_finite_and_keeps_stream_identity(monkeypatch: Any) -
     }
     harness.frame_locks = {"USB Camera": threading.Lock()}
     harness.frame_list = {"USB Camera": np.zeros((480, 640, 3), dtype=np.uint8)}
-    monkeypatch.setattr(camera_stream_module, "request", SimpleNamespace(args={"snapshot": "1"}))
+    monkeypatch.setattr(
+        camera_stream_module,
+        "request",
+        SimpleNamespace(args={"snapshot": "1"}),
+    )
     monkeypatch.setattr(
         camera_stream_module, "Response",
         lambda data, **kwargs: SimpleNamespace(data=data, **kwargs),
@@ -206,7 +242,9 @@ def test_camera_snapshot_is_finite_and_keeps_stream_identity(monkeypatch: Any) -
     assert response.mimetype == "image/jpeg"
     assert response.headers["Cache-Control"] == "no-store"
     assert isinstance(response.data, bytes)
-    decoded = cv2.imdecode(np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    decoded = cv2.imdecode(
+        np.frombuffer(response.data, dtype=np.uint8), cv2.IMREAD_COLOR
+    )
     assert decoded.shape[:2] == (240, 320)
 
     missing = harness.serve_camera_feed_route("disconnected")

@@ -364,7 +364,10 @@ class FirstBootMixin:
         for camera_name, camera_info in available_cameras:
             if not isinstance(camera_info, dict):
                 continue
-            bus_id = str(camera_info.get("bus_id") or camera_info.get("id") or "")
+            raw_bus_id = camera_info.get("bus_id")
+            if raw_bus_id is None:
+                raw_bus_id = camera_info.get("id")
+            bus_id = str(raw_bus_id) if raw_bus_id is not None else ""
             if not bus_id:
                 continue
             display_name = (

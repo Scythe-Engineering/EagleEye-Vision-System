@@ -126,9 +126,11 @@ class CameraConfig:
         try:
             with open(self._metadata_file, "r", encoding="utf-8") as metadata_file:
                 metadata = json.load(metadata_file)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return
-        display_name = metadata.get("display_name") if isinstance(metadata, dict) else None
+        display_name = (
+            metadata.get("display_name") if isinstance(metadata, dict) else None
+        )
         if isinstance(display_name, str) and display_name.strip():
             self._display_name = display_name.strip()
 
@@ -148,7 +150,10 @@ class CameraConfig:
             raise ValueError("Camera name cannot be empty")
         if len(normalized_name) > 80:
             raise ValueError("Camera name must be 80 characters or fewer")
-        if any(ord(character) < 32 or ord(character) == 127 for character in normalized_name):
+        if any(
+            ord(character) < 32 or ord(character) == 127
+            for character in normalized_name
+        ):
             raise ValueError("Camera name cannot contain control characters")
 
         with self._metadata_lock:
@@ -158,7 +163,9 @@ class CameraConfig:
             )
             try:
                 with os.fdopen(file_descriptor, "w", encoding="utf-8") as metadata_file:
-                    json.dump({"display_name": normalized_name}, metadata_file, indent=4)
+                    json.dump(
+                        {"display_name": normalized_name}, metadata_file, indent=4
+                    )
                     metadata_file.write("\n")
                     metadata_file.flush()
                     os.fsync(metadata_file.fileno())
