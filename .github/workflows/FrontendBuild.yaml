@@ -25,5 +25,8 @@ jobs:
             - name: Verify coordinate transforms
               run: node --test tests/js/position_contract.test.mjs
 
+            - name: Verify virtual log scrolling
+              run: node --test tests/webui/test_settings_logs.mjs
+
             - name: Run Vite production build
               run: npm run build
