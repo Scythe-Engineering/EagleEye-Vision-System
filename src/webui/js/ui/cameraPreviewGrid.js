@@ -32,7 +32,7 @@ export function cameraPreviewUrl(camera) {
  * Finite snapshots avoid tying up browser connections with one stream per camera.
  *
  * @param {HTMLElement} container - Element that receives the grid.
- * @param {{cameras: Array<object>, selectedBusId?: string, onSelect?: (camera: object) => void, onRename: (camera: object, displayName: string) => Promise<{display_name?: string} | void>}} options - Grid behavior.
+ * @param {{cameras: Array<object>, selectedBusId?: string, showRefresh?: boolean, onSelect?: (camera: object) => void, onRename: (camera: object, displayName: string) => Promise<{display_name?: string} | void>}} options - Grid behavior.
  * @returns {{destroy: () => void}} Lifecycle controller.
  */
 export function mountCameraPreviewGrid(container, options) {
@@ -173,6 +173,8 @@ export function mountCameraPreviewGrid(container, options) {
         grid.appendChild(card);
     }
     container.appendChild(grid);
+
+    if (options.showRefresh === false) return { destroy };
 
     const refresh = document.createElement("button");
     refresh.type = "button";
