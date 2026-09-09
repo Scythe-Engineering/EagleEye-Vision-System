@@ -8,7 +8,7 @@ The goal of this project is simple: make advanced robot vision easy to start wit
 
 **[Setup and installation](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/install) · [Using EagleEye](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/overview) · [Robot integration](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/robot-integration)**
 
-![EagleEye's flow graph connecting camera input, temporal acceleration, and AprilTag detection, with live operation timings](https://scythe-engineering.github.io/EagleEye-Docs/img/ui-screenshots/pipeline-setup/apriltag-temporal-input-closeup.png)
+![EagleEye in action: live camera feed, dragging and connecting a pipeline operation, temporal acceleration, AprilTag detection previews, and an interactive 3D field view](docs/media/eagleeye-demo.gif)
 
 ## Why EagleEye?
 
