@@ -596,6 +596,13 @@ export class FlowchartConnections {
 
         const posKey = `${fromPos.x},${fromPos.y},${toPos.x},${toPos.y}`;
         if (connection.lastPosKey === posKey) {
+            if (
+                !skipLabelUpdate &&
+                !connection.isDocked &&
+                connection.labelDirty
+            ) {
+                this.updateLabel(connection);
+            }
             return;
         }
         connection.lastPosKey = posKey;
@@ -641,6 +648,7 @@ export class FlowchartConnections {
 
         connection.path.setAttribute("d", pathD);
         connection.hitArea.setAttribute("d", pathD);
+        connection.labelDirty = true;
 
         if (!skipLabelUpdate && !connection.isDocked) {
             this.updateLabel(connection);
@@ -830,23 +838,24 @@ export class FlowchartConnections {
             `translate(${midPoint.x}, ${midPoint.y})`,
         );
 
-        if (!connection.labelDimensions) {
-            const textBBox = text.getBBox();
-            const padding = 6;
-            connection.labelDimensions = {
-                width: textBBox.width + padding * 2,
-                height: textBBox.height + padding,
-            };
+        // Measure in SVG user units, just like the path. A hidden SVG reports
+        // an empty box; caching it permanently shrinks the label to padding.
+        const textBBox = text.getBBox();
+        if (textBBox.width <= 0 || textBBox.height <= 0) {
+            connection.labelDirty = true;
+            return;
         }
-
-        const { width, height } = connection.labelDimensions;
-        background.setAttribute("x", (-width / 2).toString());
-        background.setAttribute("y", (-height / 2).toString());
+        const padding = 6;
+        const width = textBBox.width + padding * 2;
+        const height = textBBox.height + padding;
+        background.setAttribute("x", (textBBox.x - padding).toString());
+        background.setAttribute("y", (textBBox.y - padding / 2).toString());
         background.setAttribute("width", width.toString());
         background.setAttribute("height", height.toString());
 
         text.setAttribute("x", "0");
         text.setAttribute("y", "0");
+        connection.labelDirty = false;
     }
 
     /**
