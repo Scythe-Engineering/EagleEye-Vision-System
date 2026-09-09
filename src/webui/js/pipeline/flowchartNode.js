@@ -1490,6 +1490,19 @@ export class FlowchartNode {
         const portRect = port.getBoundingClientRect();
         const nodeRect = this.element.getBoundingClientRect();
 
+        // Hidden tabs have no layout boxes. Do not turn their zero-sized
+        // measurements into a valid endpoint at the node's top-left corner.
+        if (
+            !Number.isFinite(scale) ||
+            scale <= 0 ||
+            portRect.width <= 0 ||
+            portRect.height <= 0 ||
+            nodeRect.width <= 0 ||
+            nodeRect.height <= 0
+        ) {
+            return null;
+        }
+
         return {
             x:
                 this.position.x +

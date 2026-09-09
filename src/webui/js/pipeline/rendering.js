@@ -385,6 +385,28 @@ export class FlowchartRenderer {
 
         this.dragGhost = null;
         this.setupDropZone();
+
+        // Pipelines are also restored while their tab is hidden. Refresh once
+        // layout becomes measurable, and after node/port layout changes.
+        this.pendingGeometryFrame = null;
+        this.geometryObserver = new ResizeObserver(() => {
+            if (this.pendingGeometryFrame !== null) return;
+            this.pendingGeometryFrame = requestAnimationFrame(() => {
+                this.pendingGeometryFrame = null;
+                const rect = this.canvasContainer.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return;
+                if (this.pendingCenterView) {
+                    this.pendingCenterView = false;
+                    this.centerViewOnNodes();
+                }
+                this.connections.connections.forEach((connection) => {
+                    connection.lastPosKey = null;
+                });
+                this.connections.updateAllConnections(this.nodes);
+                this.refreshLayoutChrome();
+            });
+        });
+        this.geometryObserver.observe(this.canvasContainer);
     }
 
     /**
@@ -567,7 +589,11 @@ export class FlowchartRenderer {
     async renderPipeline(pipeline, options = {}) {
         this.pipeline = pipeline;
 
-        this.nodes.forEach((node) => node.destroy());
+        this.nodes.forEach((node) => {
+            this.geometryObserver.unobserve(node.element);
+            node.destroy();
+        });
+        this.pendingCenterView = false;
         this.nodes.clear();
         this.selectedNodeIds.clear();
         this.multiDragOrigins = null;
@@ -821,6 +847,7 @@ export class FlowchartRenderer {
         nodesLayer.appendChild(element);
 
         this.nodes.set(item.instanceId, node);
+        this.geometryObserver.observe(element);
 
         return node;
     }
@@ -1775,6 +1802,7 @@ export class FlowchartRenderer {
     removeNode(instanceId) {
         const node = this.nodes.get(instanceId);
         if (node) {
+            this.geometryObserver.unobserve(node.element);
             this.connections.removeConnectionsForNode(instanceId);
             node.destroy();
             this.nodes.delete(instanceId);
@@ -1832,6 +1860,11 @@ export class FlowchartRenderer {
         const containerRect = this.canvasContainer.getBoundingClientRect();
         const padding = 100;
 
+        if (containerRect.width <= 0 || containerRect.height <= 0) {
+            this.pendingCenterView = true;
+            return;
+        }
+
         const scaleX = (containerRect.width - padding * 2) / width;
         const scaleY = (containerRect.height - padding * 2) / height;
         const scale = Math.min(scaleX, scaleY, 1);
@@ -1861,6 +1894,10 @@ export class FlowchartRenderer {
      * Tears down the renderer and its child components.
      */
     destroy() {
+        this.geometryObserver.disconnect();
+        if (this.pendingGeometryFrame !== null) {
+            cancelAnimationFrame(this.pendingGeometryFrame);
+        }
         this.nodes.forEach((node) => node.destroy());
         this.nodes.clear();
         this.clearIslandBlocks();
