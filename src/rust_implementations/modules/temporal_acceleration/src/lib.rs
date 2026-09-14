@@ -160,13 +160,14 @@ impl TemporalAcceleration {
                 continue;
             }
             let normal_camera = mat3_mul_vec3(&r_wc, normal_world);
-            if normal_camera[2] >= 0.0 {
-                continue;
-            }
-
-            // Depth and frustum checks
+            // Facing depends on the ray from the tag to the optical centre,
+            // not the camera's forward axis. Off-axis side faces can have a
+            // negative normal Z while still facing away from the camera.
             let center_camera = vec3_add(mat3_mul_vec3(&r_wc, *center_world), t_wc);
-            if center_camera[2] <= 0.01 {
+            let facing = normal_camera[0] * center_camera[0]
+                + normal_camera[1] * center_camera[1]
+                + normal_camera[2] * center_camera[2];
+            if !facing.is_finite() || facing >= 0.0 || center_camera[2] <= 0.01 {
                 continue;
             }
             let distance_3d = vec3_norm(center_camera);
@@ -452,6 +453,36 @@ mod tests {
 		assert!((xd - x * radial).abs() < 1e-6);
 		assert!((yd - y * radial).abs() < 1e-6);
 	}
+
+    #[test]
+    fn off_axis_face_uses_the_camera_position_not_forward_axis() {
+        let mut module = TemporalAcceleration {
+            camera_matrix: [100.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 0.0, 1.0],
+            distortion_coefficients: vec![0.0; 5],
+            apriltag_ids: vec![1],
+            apriltag_corners: vec![[
+                0.95, -0.5, 2.5, 0.95, 0.5, 2.5, 1.05, 0.5, 3.5, 1.05, -0.5, 3.5,
+            ]],
+            apriltag_centers: vec![[1.0, 0.0, 3.0]],
+            padding_factor: 0.35,
+            max_regions: 20,
+            min_region_size_px: 1,
+            max_detection_distance_m: 0.0,
+            last_pose_world_from_camera: Some([
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]),
+        };
+        // Normal +X/-Z: negative Z alone falsely accepts this back face.
+        let (quads, regions) = module.process_frame(200, 200).unwrap();
+        assert!(quads.is_empty());
+        assert_eq!(regions, vec![vec![0, 0, 200, 200]]);
+        // Reverse the face. Its positive normal Z must not reject a face
+        // that actually points toward the optical centre.
+        module.apriltag_corners[0] = [
+            0.95, -0.5, 2.5, 1.05, -0.5, 3.5, 1.05, 0.5, 3.5, 0.95, 0.5, 2.5,
+        ];
+        assert_eq!(module.process_frame(200, 200).unwrap().0.len(), 1);
+    }
 
     #[test]
     fn padded_quad_preserves_orientation_and_expands_bounds() {

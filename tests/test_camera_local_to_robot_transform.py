@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from src.secondary_operations.camera_local_to_robot_transform import (
     CameraLocalToRobotTransform,
 )
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
+from src.utils.camera_utils.camera_coordinate_transforms import (
+    EDN_TO_NWU_ROTATION,
+    pose_local_edn_to_nwu,
+)
 
 
 def test_camera_local_detection_transforms_to_robot_coordinates(tmp_path) -> None:
@@ -29,6 +34,19 @@ def test_camera_local_detection_transforms_to_robot_coordinates(tmp_path) -> Non
 
     assert result[0]["position_camera"] == pytest.approx([0.0, 0.0, 2.0**1.5])
     assert result[0]["position_3d"] == pytest.approx([2.5, 0.25, 0.0])
+
+
+def test_pose_local_edn_to_nwu_preserves_translation() -> None:
+    """Pose basis conversion should rotate local axes without moving the pose."""
+    pose = np.eye(4, dtype=float)
+    pose[:3, 3] = [1.0, 2.0, 3.0]
+    original = pose.copy()
+
+    converted = pose_local_edn_to_nwu(pose)
+
+    np.testing.assert_array_equal(converted[:3, :3], EDN_TO_NWU_ROTATION)
+    np.testing.assert_array_equal(converted[:3, 3], pose[:3, 3])
+    np.testing.assert_array_equal(pose, original)
 
 
 def test_non_finite_extrinsics_are_rejected(tmp_path) -> None:
