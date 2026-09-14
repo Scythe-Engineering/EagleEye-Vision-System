@@ -134,6 +134,39 @@ class _Clock:
         self.value = max(self.value, deadline_ns)
 
 
+def test_accuracy_stops_cleanly_between_frames() -> None:
+    """A stop request should retain completed records without requiring EOF."""
+
+    class Pipeline:
+        def run(self) -> None:
+            """Process one synthetic frame."""
+
+        def get_latest_profile_snapshot(self) -> dict[str, int]:
+            """Return a changing profile sequence."""
+            return {"frame_seq": 1}
+
+        def get_operation_errors(self) -> list[object]:
+            """Return no operation failures."""
+            return []
+
+    manager = ReplayCameraManager(epoch_ns=1)
+    seen: list[dict[str, object]] = []
+    records = run_accuracy(
+        _Decoder(3),
+        manager,
+        Pipeline(),
+        120,
+        aligned_truth=iter({"frame_index": index} for index in range(3)),
+        collect=lambda _pipeline, index: index,
+        on_record=seen.append,
+        should_stop=lambda: len(seen) == 1,
+    )
+
+    assert [record["output"] for record in records] == [0]
+    assert manager.eof is True
+    assert manager.error is None
+
+
 def test_accuracy_does_not_reuse_a_stale_profile() -> None:
     """A skipped cycle must not inherit the preceding profile snapshot."""
 
