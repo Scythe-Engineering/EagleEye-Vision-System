@@ -16,6 +16,6 @@ uv run python -m benchmarks run --dataset path/to/manifest.json --subset pilot \
   --pipeline both --output benchmark-results/pilot
 ```
 
-Use `--manifest-sha256` to pin the local manifest itself and `--overwrite` to replace an existing output directory. `--pipeline` also accepts `full-frame` or `temporal`.
+Use `--manifest-sha256` to pin the local manifest itself and `--overwrite` to replace an existing output directory. `--pipeline` also accepts `full-frame` or `temporal`. For a quick partial evaluation, pass `--timeout SECONDS`; the run stops between frames and writes a valid partial report. Without it, the full selected dataset runs.
 
 A run writes `run.json`, gzip JSON Lines frame records, `summary.json`, `summary.csv`, a dependency-free `index.html`, and a bounded diagnostic image set. Provenance includes manifest and graph hashes, calibration/map identities, repository state, dependencies, and platform details. Exit code `0` means reporting completed without pipeline frame failures; invalid input, missing or corrupt assets, and pipeline failures return `2`.

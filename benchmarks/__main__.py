@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--overwrite", action="store_true")
+    run.add_argument(
+        "--timeout",
+        type=float,
+        metavar="SECONDS",
+        help="stop cleanly after this many seconds of elapsed time",
+    )
     return parser
 
 
@@ -244,7 +251,10 @@ def _aggregate_accuracy(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _run(args: argparse.Namespace) -> int:
-    """Replay every selected frame through production graphs and write accuracy results."""
+    """Replay selected frames through production graphs and write accuracy results."""
+    if args.timeout is not None and args.timeout <= 0:
+        raise ValueError("timeout must be greater than zero")
+    deadline = time.monotonic() + args.timeout if args.timeout is not None else None
     manifest = load_manifest(args.dataset, args.manifest_sha256)
     clips = (
         manifest.clips
@@ -281,16 +291,21 @@ def _run(args: argparse.Namespace) -> int:
         "map_sha256": [file_sha256(DEFAULT_MAP_PATH)],
         "subset": args.subset,
         "pipeline": args.pipeline,
+        "timeout_seconds": args.timeout,
     }
     writer = RunWriter.create(args.output, metadata, overwrite=args.overwrite)
     rows: list[dict[str, Any]] = []
     videos: dict[str, Path] = {}
     attempted = completed = failed = 0
+    timed_out = False
     try:
         for clip in clips:
             videos[clip.id] = assets[clip.video]
             mounting = manifest.mounting_transforms[clip.camera_id].model_dump()
             for configuration in configurations:
+                if deadline is not None and time.monotonic() >= deadline:
+                    timed_out = True
+                    break
                 base = {
                     "clip": clip.id,
                     "scenario": clip.scenario_id,
@@ -347,11 +362,19 @@ def _run(args: argparse.Namespace) -> int:
                         ),
                         on_record=persist,
                         retain_records=False,
+                        should_stop=(
+                            (lambda: time.monotonic() >= deadline)
+                            if deadline is not None
+                            else None
+                        ),
                     )
-                if len(compact) != clip.frame_count:
+                timed_out = deadline is not None and time.monotonic() >= deadline
+                if not timed_out and len(compact) != clip.frame_count:
                     raise ValueError(
                         f"clip {clip.id} decoded {len(compact)} frames, manifest declares {clip.frame_count}"
                     )
+                if not compact:
+                    break
                 rows.append(
                     {
                         **base,
@@ -361,6 +384,10 @@ def _run(args: argparse.Namespace) -> int:
                         **_aggregate_accuracy(compact),
                     }
                 )
+                if timed_out:
+                    break
+            if timed_out:
+                break
         total_tp = sum(r["detection"]["tp"] for r in rows)
         total_fp = sum(r["detection"]["fp"] for r in rows)
         total_fn = sum(r["detection"]["fn"] for r in rows)
@@ -373,6 +400,7 @@ def _run(args: argparse.Namespace) -> int:
             "completed": completed,
             "skipped": attempted - completed - failed,
             "failed": failed,
+            "timed_out": timed_out,
             "detection": {
                 "tp": total_tp,
                 "fp": total_fp,

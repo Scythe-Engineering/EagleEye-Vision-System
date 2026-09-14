@@ -532,14 +532,18 @@ def run_accuracy(
     aligned_truth: Iterator[dict[str, Any]] | None = None,
     on_record: Callable[[dict[str, Any]], None] | None = None,
     retain_records: bool = True,
+    should_stop: Callable[[], bool] | None = None,
 ) -> list[Any]:
-    """Attempt every aligned frame and optionally stream completed records."""
+    """Attempt aligned frames until EOF or an optional clean stop request."""
     records: list[Any] = []
     truth = iter(aligned_truth) if aligned_truth is not None else None
     collector = collect or collect_pipeline_outputs
     expected = 0
     try:
         for item in decoder:
+            if should_stop is not None and should_stop():
+                manager.mark_eof()
+                return records
             if item.index != expected:
                 raise ReplayError(
                     f"frame alignment error: expected {expected}, got {item.index}"
