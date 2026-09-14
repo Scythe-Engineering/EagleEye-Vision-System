@@ -11,7 +11,9 @@ from benchmarks.dataset import (
     Asset,
     DatasetManifest,
     cache_path,
+    download_manifest,
     download_missing_videos,
+    manifest_url_for_archive,
     verify_dataset,
 )
 
@@ -120,6 +122,20 @@ def test_verify_dataset_checks_local_size_and_hash(tmp_path: Path) -> None:
     target.write_bytes(b"corrupt!")
     with pytest.raises(FileNotFoundError, match="checksum mismatch"):
         verify_dataset(manifest, tmp_path, "pilot")
+
+
+def test_download_manifest_derives_url_and_reuses_cache(tmp_path: Path) -> None:
+    """The remote manifest is downloaded once beside its associated ZIP URL."""
+    archive = tmp_path / "benchmark-videos.zip"
+    source = tmp_path / "benchmark-videos_manifest.json"
+    source.write_text(_manifest(b"video").model_dump_json())
+
+    assert manifest_url_for_archive(archive.as_uri()) == source.as_uri()
+    cached = download_manifest(archive.as_uri(), tmp_path / "cache")
+    source.unlink()
+
+    assert download_manifest(archive.as_uri(), tmp_path / "cache") == cached
+    assert DatasetManifest.model_validate_json(cached.read_bytes()).dataset_id == "local"
 
 
 def test_download_missing_videos_installs_verified_zip_asset(tmp_path: Path) -> None:
