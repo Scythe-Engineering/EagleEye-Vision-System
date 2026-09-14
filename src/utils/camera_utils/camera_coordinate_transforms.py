@@ -7,7 +7,6 @@ import numpy as np
 from src.utils.camera_utils.camera_config_manager import CameraExtrinsics
 from src.utils.quaternion_utils import euler_to_rotation_matrix
 
-
 # OpenCV camera coordinates are X right, Y down, Z forward. Robot coordinates
 # are X forward, Y left, Z up.
 _CAMERA_TO_ROBOT_BASIS = np.array(
@@ -18,6 +17,34 @@ _CAMERA_TO_ROBOT_BASIS = np.array(
     ],
     dtype=float,
 )
+EDN_TO_NWU_ROTATION = np.array(
+    [
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.0],
+    ],
+    dtype=float,
+)
+
+
+def pose_local_edn_to_nwu(transform: np.ndarray) -> np.ndarray:
+    """Convert a field pose's local axes from camera EDN to robot NWU.
+
+    Args:
+        transform: A 4x4 field-from-local pose whose translation is already NWU.
+
+    Returns:
+        A copied 4x4 pose with NWU local rotation axes.
+
+    Raises:
+        ValueError: If the input is not a finite 4x4 matrix.
+    """
+    pose = np.asarray(transform, dtype=float)
+    if pose.shape != (4, 4) or not np.all(np.isfinite(pose)):
+        raise ValueError("Pose must be a finite 4x4 matrix")
+    converted = pose.copy()
+    converted[:3, :3] = pose[:3, :3] @ EDN_TO_NWU_ROTATION
+    return converted
 
 
 def build_robot_from_camera_transform(extrinsics: CameraExtrinsics) -> np.ndarray:

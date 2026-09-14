@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "frc2026-blender-smoke",
+  "generator_arguments": {
+    "width": 1280,
+    "height": 800,
+    "fps": 120,
+    "frames": 3,
+    "samples": 1,
+    "variant": "clean",
+    "engine": "eevee"
+  },
+  "package": {
+    "codec": "ffv1",
+    "level": 3,
+    "pixel_format": "bgr0",
+    "require_sequential_opencv_pixel_hash_equality": true
+  },
+  "output_policy": "Keep high-bit-depth PNG intermediates until validated; cleanup is explicit",
+  "geometry_policy": "millimetre centred Y-up GLB explicitly mapped to field NWU and dimension-checked; fmap-authoritative tags"
+}

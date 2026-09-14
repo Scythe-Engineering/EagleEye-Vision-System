@@ -807,6 +807,34 @@ class Pipeline:
         """
         return self.operations.get(operation_uuid)
 
+    def get_operation_output(
+        self, operation_uuid: str, output_port: str | None = None
+    ) -> Any:
+        """Return a current-cycle operation output with timing metadata intact.
+
+        Args:
+            operation_uuid: UUID of the operation whose output should be read.
+            output_port: Named port for a multi-output operation.
+
+        Returns:
+            The stored output, selected port value, or None if no output exists.
+
+        Raises:
+            KeyError: If the operation UUID is unknown.
+            ValueError: If a multi-output operation requires a port or lacks it.
+        """
+        operation = self.operations.get(operation_uuid)
+        if operation is None:
+            raise KeyError(f"Unknown operation UUID: {operation_uuid}")
+        output = self.flow_manager.operation_outputs.get(operation_uuid)
+        if output is None:
+            return None
+        if not operation.routes_output_ports:
+            return output
+        if output_port is None:
+            raise ValueError(f"Operation {operation_uuid} requires an output port")
+        return operation.resolve_output_port(output, output_port)
+
     def update_operations_config(self, operations_config: list[Dict[str, Any]]) -> str:
         """Update the configuration of multiple operations in the pipeline.
 

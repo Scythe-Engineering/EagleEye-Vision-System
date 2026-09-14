@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "description": "Six CAD-validated flat-floor 2026 match routes. The active batch renders combined-realistic only; quality overrides are recorded per job.",
+  "variants": ["combined-realistic"],
+  "defaults": {"width": 1280, "height": 800, "fps": 120, "samples": 256, "engine": "cycles"},
+  "motion_limit_sources": {
+    "programming_guide": "https://docs.revrobotics.com/ion-build/motion/maxswerve/programming-maxswerve",
+    "java_template_constants": "https://github.com/REVrobotics/MAXSwerve-Java-Template/blob/main/src/main/java/frc/robot/Constants.java",
+    "interpretation": "Conservative controller settings, not measured universal real-match limits; simultaneous chassis commands are constrained by four-module wheel velocity."
+  },
+  "routes": [
+    {
+      "schema_version": 1,
+      "name": "red-end-range-ladder",
+      "duration_s": 30,
+      "severity": "low",
+      "geography": "Red hub approaches facing tags 9/10, with a robot crossing their sight lines.",
+      "start": [14.6, 4.0345, 180],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary", "near-end-wall"]},
+        {"type": "move", "duration_s": 5, "end": [14.2, 4.0345, 180], "labels": ["approach", "accelerate-brake"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary", "range-reference"]},
+        {"type": "move", "duration_s": 5, "end": [14.6, 4.0345, 180], "labels": ["retreat", "accelerate-brake"]},
+        {"type": "move", "duration_s": 6, "end": [14.3, 4.6, 160], "control_points": [[14.6, 4.4], [14.5, 4.7]], "labels": ["curved", "turn"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 6, "end": [14.6, 4.0, 200], "control_points": [[14.4, 4.4], [14.5, 4.0]], "labels": ["curved", "reversal", "turn"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]}
+      ],
+      "occluders": [{
+        "name": "red-range-crossing-robot",
+        "dimensions_m": [0.72, 0.72, 1.10],
+        "start": [13.5, 5.2, -90],
+        "segments": [
+          {"type": "hold", "duration_s": 5},
+          {"type": "move", "duration_s": 8, "end": [13.5, 3.0, -90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 7},
+          {"type": "move", "duration_s": 8, "end": [13.5, 5.2, 90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 2}
+        ]
+      }]
+    },
+    {
+      "schema_version": 1,
+      "name": "north-lane-approach-retreat",
+      "duration_s": 30,
+      "geography": "Clear north perimeter lane above all alliance-side structures, y=7.30..7.45.",
+      "start": [14.8, 7.35, 180],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary", "far-range"]},
+        {"type": "move", "duration_s": 9, "end": [7.0, 7.35, 180], "labels": ["long-approach", "accelerate-brake"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 8, "end": [13.6, 7.40, 165], "labels": ["retreat", "lateral", "turn"]},
+        {"type": "move", "duration_s": 7, "end": [10.0, 7.30, 205], "control_points": [[12.7, 7.15], [10.8, 7.55]], "labels": ["curved", "turn"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]}
+      ],
+      "occluders": [{
+        "name": "north-lane-crossing-robot",
+        "dimensions_m": [0.72, 0.72, 0.80],
+        "start": [5.8, 6.0, 90],
+        "segments": [
+          {"type": "hold", "duration_s": 6},
+          {"type": "move", "duration_s": 6, "end": [5.8, 6.75, 90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 8},
+          {"type": "move", "duration_s": 6, "end": [5.8, 6.0, -90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 4}
+        ]
+      }]
+    },
+    {
+      "schema_version": 1,
+      "name": "south-lane-sprint-and-turn",
+      "duration_s": 30,
+      "severity": "high",
+      "geography": "Clear south perimeter lane below the alliance structures, y=0.70..1.15 and x=6.2..14.8.",
+      "start": [14.8, 0.72, 180],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 4, "end": [7.2, 0.72, 180], "labels": ["fast-straight", "approach", "accelerate-brake"]},
+        {"type": "move", "duration_s": 4, "end": [14.8, 0.72, 180], "labels": ["fast-straight", "retreat", "accelerate-brake"]},
+        {"type": "move", "duration_s": 4, "end": [7.2, 0.72, 180], "labels": ["fast-straight", "approach", "accelerate-brake"]},
+        {"type": "move", "duration_s": 5, "end": [6.2, 1.15, 90], "control_points": [[6.8, 0.72], [6.2, 0.82]], "labels": ["fast-turn", "curve"]},
+        {"type": "hold", "duration_s": 3, "labels": ["stationary", "braking"]},
+        {"type": "move", "duration_s": 5, "end": [13.8, 0.78, 10], "control_points": [[8.0, 1.25], [12.0, 0.55]], "labels": ["reversal", "curved", "retreat"]},
+        {"type": "hold", "duration_s": 3, "labels": ["stationary"]}
+      ],
+      "occluders": [{
+        "name": "south-lane-parallel-robot",
+        "dimensions_m": [0.72, 0.72, 0.80],
+        "start": [14.0, 2.5, 90],
+        "segments": [
+          {"type": "hold", "duration_s": 3},
+          {"type": "move", "duration_s": 9, "end": [14.0, 5.5, 90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 6},
+          {"type": "move", "duration_s": 9, "end": [14.0, 2.5, -90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 3}
+        ]
+      }]
+    },
+    {
+      "schema_version": 1,
+      "name": "blue-end-lateral-slalom",
+      "duration_s": 30,
+      "geography": "Open blue-end flat region west of the central structures, x=1.2..3.3, y=1.1..7.0.",
+      "start": [2.0, 1.1, 90],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 7, "end": [2.8, 3.0, 115], "control_points": [[1.3, 1.8], [3.4, 2.2]], "labels": ["lateral", "slalom", "curve"]},
+        {"type": "move", "duration_s": 7, "end": [2.1, 5.1, 65], "control_points": [[2.5, 3.7], [1.8, 4.3]], "labels": ["lateral", "slalom", "curve"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 7, "end": [2.7, 6.9, 90], "control_points": [[2.5, 5.6], [3.2, 6.3]], "labels": ["lateral", "slalom", "curve"]},
+        {"type": "move", "duration_s": 5, "end": [2.1, 5.7, 250], "control_points": [[2.7, 6.5], [2.2, 6.1]], "labels": ["fast-turn", "look-away"]}
+      ],
+      "occluders": [{
+        "name": "blue-end-crossing-robot",
+        "dimensions_m": [0.72, 0.72, 0.80],
+        "start": [14.0, 2.5, 90],
+        "segments": [
+          {"type": "hold", "duration_s": 4},
+          {"type": "move", "duration_s": 9, "end": [14.0, 5.5, 90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 4},
+          {"type": "move", "duration_s": 9, "end": [14.0, 2.5, -90], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 4}
+        ]
+      }]
+    },
+    {
+      "schema_version": 1,
+      "name": "south-center-curves",
+      "duration_s": 30,
+      "severity": "high",
+      "geography": "Flat south-center transit space below the central structure, x=6.2..11.2, y=0.75..1.25.",
+      "start": [6.2, 1.15, 5],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]},
+        {"type": "move", "duration_s": 8, "end": [9.2, 0.78, -20], "control_points": [[6.7, 0.45], [8.0, 1.35]], "labels": ["s-curve", "accelerate-brake"]},
+        {"type": "move", "duration_s": 7, "end": [11.2, 1.20, 35], "control_points": [[10.0, 0.55], [10.5, 1.45]], "labels": ["s-curve", "turn"]},
+        {"type": "hold", "duration_s": 3, "labels": ["stationary", "braking"]},
+        {"type": "move", "duration_s": 8, "end": [7.0, 0.80, 190], "control_points": [[10.0, 1.55], [8.0, 0.35]], "labels": ["reversal", "curve", "look-away", "reacquisition"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary"]}
+      ],
+      "occluders": [{
+        "name": "south-center-crossing-robot",
+        "dimensions_m": [0.72, 0.72, 0.80],
+        "start": [8.6, 7.25, 0],
+        "segments": [
+          {"type": "hold", "duration_s": 5},
+          {"type": "move", "duration_s": 7, "end": [10.3, 7.25, 0], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 6},
+          {"type": "move", "duration_s": 7, "end": [8.6, 7.25, 180], "labels": ["moving-occluder"]},
+          {"type": "hold", "duration_s": 5}
+        ]
+      }]
+    },
+    {
+      "schema_version": 1,
+      "name": "red-end-loss-reacquisition",
+      "duration_s": 30,
+      "severity": "low",
+      "geography": "Open red-end vertical corridor east of structures, robot x=13.5..14.3 with an occluder at x=15.0, y=1.2..6.8.",
+      "start": [13.8, 1.2, 180],
+      "segments": [
+        {"type": "hold", "duration_s": 2, "labels": ["stationary", "tags-visible"]},
+        {"type": "move", "duration_s": 7, "end": [14.0, 3.0, 90], "control_points": [[13.6, 1.7], [14.3, 2.4]], "labels": ["curve", "turn"]},
+        {"type": "move", "duration_s": 5, "end": [13.7, 4.2, 0], "labels": ["look-away", "loss"]},
+        {"type": "hold", "duration_s": 5.5, "labels": ["stationary", "loss"]},
+        {"type": "move", "duration_s": 2.5, "end": [13.9, 5.5, 180], "labels": ["reacquisition", "fast-turn"]},
+        {"type": "move", "duration_s": 6, "end": [13.8, 6.8, 270], "control_points": [[14.2, 5.9], [13.5, 6.3]], "labels": ["curve", "lateral", "reacquisition"]},
+        {"type": "hold", "duration_s": 2, "labels": ["stationary", "tags-visible"]}
+      ],
+      "occluders": [{
+        "name": "red-loss-opposing-robot",
+        "dimensions_m": [0.72, 0.72, 0.80],
+        "start": [15.00, 6.5, -90],
+        "segments": [
+          {"type": "hold", "duration_s": 3},
+          {"type": "move", "duration_s": 10, "end": [15.00, 2.5, -90], "labels": ["moving-occluder", "occlusion"]},
+          {"type": "hold", "duration_s": 17, "labels": ["occlusion-cleared"]}
+        ]
+      }]
+    }
+  ]
+}

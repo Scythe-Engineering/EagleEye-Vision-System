@@ -314,3 +314,13 @@ package-lock.json
 
 /.pi
 ROADMAP.md
+
+# Synthetic benchmark media, Blender jobs, caches, and reports stay local.
+/benchmark-results/
+/benchmark-work/
+/benchmarks/cache/
+/benchmarks/**/*.blend
+/benchmarks/**/*.exr
+/benchmarks/**/*.mkv
+/benchmarks/**/frames/
+/benchmarks/**/tags/

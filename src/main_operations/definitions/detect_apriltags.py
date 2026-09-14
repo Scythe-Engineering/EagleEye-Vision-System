@@ -1,12 +1,13 @@
-import cv2
-import numpy as np
 from threading import Lock
-
-from ..modules.apriltags.apriltag_detector import AprilTagDetector
-from pupil_apriltags import Detection
-from ..modules.apriltags.apriltag_detector import CustomDetection
 from typing import List, Optional
+
+import numpy as np
+from pupil_apriltags import Detection
+
 from src.main_operations.definitions.base.base_class import OperationInstance
+
+from ..modules.apriltags.apriltag_detector import AprilTagDetector, CustomDetection
+from ..modules.apriltags.utils.visualization import draw_apriltag_overlay
 
 
 class DetectApriltagsDefinition(OperationInstance):
@@ -118,38 +119,10 @@ class DetectApriltagsDefinition(OperationInstance):
         Returns:
             Frame with detected AprilTags drawn on it.
         """
-        visualization_frame = frame.copy()
-
         with self.last_detections_lock:
             search_regions = [region.copy() for region in self.last_search_regions]
-            detections = self.last_detections
-
-        for region in search_regions:
-            cv2.polylines(
-                visualization_frame,
-                [np.rint(region).astype(np.int32)],
-                True,
-                (0, 0, 255),
-                2,
-            )
-
-        if detections is not None:
-            for detection in detections:
-                # Draw the bounding box
-                corners = detection.corners.astype(int)
-                cv2.polylines(visualization_frame, [corners], True, (0, 255, 0), 2)
-
-                # Draw the tag ID at the center
-                center_x = int(corners[:, 0].mean())
-                center_y = int(corners[:, 1].mean())
-                cv2.putText(
-                    visualization_frame,
-                    f"ID: {detection.tag_id}",
-                    (center_x, center_y),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    2,
-                )
-
-        return visualization_frame
+            detections = [
+                (detection.tag_id, detection.corners.copy())
+                for detection in self.last_detections or []
+            ]
+        return draw_apriltag_overlay(frame, detections, search_regions)

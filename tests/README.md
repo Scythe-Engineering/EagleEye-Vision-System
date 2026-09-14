@@ -36,3 +36,15 @@ pytest -q tests
 - Rust-backed operations (temporal acceleration and pose outlier filter)
   are skipped when the extensions are unavailable.
 - Hardware-specific operations rely on fakes and should not access devices.
+
+## Synthetic-video benchmarks
+
+Small fixture tests cover local manifests, replay alignment, metrics, and static reports. They validate orchestration and scoring, not localization accuracy.
+
+The opt-in rendered test launches Blender, packages three clean frames, and replays both production graphs in clean subprocesses:
+
+```bash
+EAGLEEYE_RUN_RENDERED_TESTS=1 uv run pytest -q tests/test_rendered_benchmark.py
+```
+
+See [`benchmarks/README.md`](../benchmarks/README.md) for local dataset verification and accuracy replay.

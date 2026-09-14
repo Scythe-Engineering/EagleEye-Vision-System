@@ -20,25 +20,24 @@ from wpimath.geometry import (
 )
 
 from src.main_operations.definitions.base.base_class import OperationInstance
+from src.utils.camera_utils.camera_coordinate_transforms import pose_local_edn_to_nwu
 from src.utils.timing import get_timing, retime, unwrap_timed
 
 _POSE3D_KEYS = frozenset({"x", "y", "z", "roll", "pitch", "yaw"})
 _POSE2D_KEYS = frozenset({"x", "y", "rotation"})
 _TRANSLATION3D_KEYS = frozenset({"x", "y", "z"})
 _TRANSLATION2D_KEYS = frozenset({"x", "y"})
-_EDN_TO_NWU_ROTATION = np.array(
-    [
-        [0.0, -1.0, 0.0],
-        [0.0, 0.0, -1.0],
-        [1.0, 0.0, 0.0],
-    ],
-    dtype=float,
-)
 
 
 def _matrix_to_pose3d(matrix: np.ndarray) -> Pose3d:
-    x, y, z = float(matrix[0, 3]), float(matrix[1, 3]), float(matrix[2, 3])
-    R = matrix[:3, :3] @ _EDN_TO_NWU_ROTATION
+    """Convert a field-from-camera EDN matrix to a WPILib NWU pose."""
+    converted = pose_local_edn_to_nwu(matrix)
+    x, y, z = (
+        float(converted[0, 3]),
+        float(converted[1, 3]),
+        float(converted[2, 3]),
+    )
+    R = converted[:3, :3]
     trace = float(R[0, 0] + R[1, 1] + R[2, 2])
     if trace > 0:
         s = 0.5 / math.sqrt(trace + 1.0)

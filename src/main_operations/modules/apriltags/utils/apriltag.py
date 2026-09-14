@@ -34,16 +34,19 @@ class Apriltag:
         self.field_width = field_width
 
         transform_matrix = np.array(self.transform, dtype=np.float64).reshape((4, 4))
-        rotation_y_90 = np.array(
+        # The welded fmap uses +X out of the printed face and +Z up.
+        # A tag image plane uses +X image-right, +Y image-up, +Z outward.
+        # A lone Y rotation made the printed face point into its CAD support.
+        fmap_from_tag_plane = np.array(
             [
-                [0, 0, -1, 0],
-                [0, 1, 0, 0],
+                [0, 0, 1, 0],
                 [1, 0, 0, 0],
+                [0, 1, 0, 0],
                 [0, 0, 0, 1],
             ],
             dtype=np.float64,
         )
-        transform_matrix = transform_matrix @ rotation_y_90
+        transform_matrix = transform_matrix @ fmap_from_tag_plane
 
         transform_matrix[0, 3] += self.field_length / 2
         transform_matrix[1, 3] += self.field_width / 2
@@ -60,7 +63,9 @@ class Apriltag:
             ]
         )
 
-        self.global_corners = self._get_global_corner_positions().astype(np.float32)
+        self.global_corners: np.ndarray = self._get_global_corner_positions().astype(
+            np.float32
+        )
         self.global_center = self.global_corners.mean(axis=0).astype(np.float32)
 
         self.tag_to_global_transform_matrix = self._get_global_transform_matrix()
@@ -76,17 +81,17 @@ class Apriltag:
             np.ndarray: An array of shape (4, 3) containing the global positions of the tag's corners in field space.
         """
         half_size = self.size / 2
+        # For the independently decoded tag36h11 bitmap, pupil-apriltags gives
+        # top-right, top-left, bottom-left, bottom-right in this image plane.
         local_corners = np.array(
             [
-                [-half_size, -half_size, 0, 1],
-                [half_size, -half_size, 0, 1],
                 [half_size, half_size, 0, 1],
                 [-half_size, half_size, 0, 1],
+                [-half_size, -half_size, 0, 1],
+                [half_size, -half_size, 0, 1],
             ]
         )
 
         global_transform_matrix = self._get_global_transform_matrix()
         global_corners_homogeneous = (global_transform_matrix @ local_corners.T).T
-        global_corners = global_corners_homogeneous[:, :3]
-        global_corners = global_corners[[0, 3, 2, 1]]
-        return global_corners
+        return global_corners_homogeneous[:, :3]
