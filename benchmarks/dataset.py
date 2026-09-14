@@ -247,7 +247,7 @@ def download_manifest(archive_url: str, cache_dir: str | Path) -> Path:
         return target
 
     request = Request(manifest_url, headers={"User-Agent": "EagleEye-Benchmark/1.0"})
-    with urlopen(request) as response:
+    with urlopen(request, timeout=30) as response:
         data = response.read()
     DatasetManifest.model_validate_json(data)
 
