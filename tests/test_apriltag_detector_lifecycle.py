@@ -61,3 +61,29 @@ def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
     assert not update_thread.is_alive()
     assert detector.quad_decimate == 1.0
     assert 0 not in destroyed_ids
+
+
+def test_large_temporal_rois_use_the_high_decimation_detector(monkeypatch) -> None:
+    calls: list[tuple[float, tuple[int, int]]] = []
+
+    class FakeDetector:
+        def __init__(self, *, quad_decimate, **_kwargs) -> None:
+            self.quad_decimate = quad_decimate
+
+        def detect(self, image):
+            calls.append((self.quad_decimate, image.shape))
+            return []
+
+    monkeypatch.setattr(apriltag_detector, "Detector", FakeDetector)
+    detector = apriltag_detector.AprilTagDetector(
+        quad_decimate=2.0, large_roi_decimate=3.0, large_roi_min_px=96
+    )
+
+    detector.run_detection(
+        [
+            (np.zeros((95, 120), dtype=np.uint8), np.zeros(2)),
+            (np.zeros((96, 120), dtype=np.uint8), np.zeros(2)),
+        ]
+    )
+
+    assert calls == [(2.0, (95, 120)), (3.0, (96, 120))]

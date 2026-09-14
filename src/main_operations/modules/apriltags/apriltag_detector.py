@@ -40,6 +40,8 @@ class AprilTagDetector:
         quad_sigma: float = 0.0,
         refine_edges: int = 1,
         decode_sharpening: float = 0.25,
+        large_roi_decimate: float = 3.0,
+        large_roi_min_px: int = 96,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -71,6 +73,8 @@ class AprilTagDetector:
         self.quad_sigma = quad_sigma
         self.refine_edges = refine_edges
         self.decode_sharpening = decode_sharpening
+        self.large_roi_decimate = max(0.0, float(large_roi_decimate))
+        self.large_roi_min_px = max(0, int(large_roi_min_px))
 
         self.ready = False
         self._detect_lock: Lock = Lock()
@@ -94,6 +98,18 @@ class AprilTagDetector:
             self.quad_sigma,
             self.refine_edges,
             self.decode_sharpening,
+        )
+        self._large_roi_detector = (
+            self._create_detector(
+                families,
+                nthreads,
+                self.large_roi_decimate,
+                quad_sigma,
+                refine_edges,
+                decode_sharpening,
+            )
+            if self.large_roi_decimate >= 1.0 and self.large_roi_min_px > 0
+            else None
         )
         self.ready = True
 
@@ -218,6 +234,8 @@ class AprilTagDetector:
         quad_sigma: Optional[float] = None,
         refine_edges: Optional[int] = None,
         decode_sharpening: Optional[float] = None,
+        large_roi_decimate: Optional[float] = None,
+        large_roi_min_px: Optional[int] = None,
     ) -> None:
         """Update detector parameters and recreate the detector.
 
@@ -241,6 +259,16 @@ class AprilTagDetector:
             if decode_sharpening is None
             else decode_sharpening
         )
+        next_large_roi_decimate = (
+            self.large_roi_decimate
+            if large_roi_decimate is None
+            else max(0.0, float(large_roi_decimate))
+        )
+        next_large_roi_min_px = (
+            self.large_roi_min_px
+            if large_roi_min_px is None
+            else max(0, int(large_roi_min_px))
+        )
 
         try:
             new_detector = self._create_detector(
@@ -251,6 +279,18 @@ class AprilTagDetector:
                 next_refine_edges,
                 next_decode_sharpening,
             )
+            new_large_roi_detector = (
+                self._create_detector(
+                    next_families,
+                    next_nthreads,
+                    next_large_roi_decimate,
+                    next_quad_sigma,
+                    next_refine_edges,
+                    next_decode_sharpening,
+                )
+                if next_large_roi_decimate >= 1.0 and next_large_roi_min_px > 0
+                else None
+            )
         except Exception as exc:
             logger.exception("Failed to create AprilTag detector with updated parameters")
             raise ValueError(f"Invalid AprilTag detector configuration: {exc}") from exc
@@ -258,13 +298,17 @@ class AprilTagDetector:
         with self._detect_lock:
             self.ready = False
             old_detector = self.detector
+            old_large_roi_detector = self._large_roi_detector
             self.families = next_families
             self.nthreads = max(1, int(next_nthreads))
             self.quad_decimate = max(1.0, float(next_quad_decimate))
             self.quad_sigma = max(0.0, float(next_quad_sigma))
             self.refine_edges = int(next_refine_edges)
             self.decode_sharpening = float(next_decode_sharpening)
+            self.large_roi_decimate = next_large_roi_decimate
+            self.large_roi_min_px = next_large_roi_min_px
             self.detector = new_detector
+            self._large_roi_detector = new_large_roi_detector
             self.ready = True
             self._min_input_dimension = int(np.ceil(4 * self.quad_decimate))
             self._preprocess_signature = None
@@ -272,6 +316,8 @@ class AprilTagDetector:
             self._gray_buffer = None
             self._segment_gray_buffers.clear()
             self._disable_native_destructor(old_detector)
+            if old_large_roi_detector is not None:
+                self._disable_native_destructor(old_large_roi_detector)
 
     @staticmethod
     def to_opencv_coordinates(detection: Detection) -> Detection:
@@ -367,7 +413,13 @@ class AprilTagDetector:
                     if gray_image is None:
                         continue
                     try:
-                        detected_tags = self.detector.detect(gray_image)
+                        detector = (
+                            self._large_roi_detector
+                            if self._large_roi_detector is not None
+                            and min(gray_image.shape[:2]) >= self.large_roi_min_px
+                            else self.detector
+                        )
+                        detected_tags = detector.detect(gray_image)
                     except Exception as exc:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue

@@ -155,7 +155,11 @@
             },
             {
                 "action_name": "detect_apriltags.py",
-                "action_params": {},
+                "action_params": {
+                    "quad_decimate": 2.0,
+                    "large_roi_decimate": 3.0,
+                    "large_roi_min_px": 96
+                },
                 "position": {
                     "x": 840,
                     "y": 100
@@ -306,7 +310,11 @@
             },
             {
                 "action_name": "detect_apriltags.py",
-                "action_params": {},
+                "action_params": {
+                    "quad_decimate": 2.0,
+                    "large_roi_decimate": 3.0,
+                    "large_roi_min_px": 96
+                },
                 "position": {
                     "x": 1160,
                     "y": 100
@@ -657,7 +665,11 @@
             },
             {
                 "action_name": "detect_apriltags.py",
-                "action_params": {},
+                "action_params": {
+                    "quad_decimate": 2.0,
+                    "large_roi_decimate": 3.0,
+                    "large_roi_min_px": 96
+                },
                 "position": {
                     "x": 1160,
                     "y": 100

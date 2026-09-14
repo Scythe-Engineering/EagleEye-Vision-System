@@ -48,6 +48,24 @@
             "max": 10.0,
             "restart_for_change": false
         },
+        "large_roi_decimate": {
+            "type": "float",
+            "description": "Optional decimation used for large, nearby temporal ROIs; zero disables it",
+            "default": 3.0,
+            "required": false,
+            "min": 0.0,
+            "max": 10.0,
+            "restart_for_change": false
+        },
+        "large_roi_min_px": {
+            "type": "int",
+            "description": "Minimum ROI side length for large_roi_decimate; zero disables it",
+            "default": 96,
+            "required": false,
+            "min": 0,
+            "max": 4096,
+            "restart_for_change": false
+        },
         "quad_sigma": {
             "type": "float",
             "description": "Gaussian blur standard deviation in pixels applied to segmented image for quad detection",
