@@ -77,7 +77,7 @@ def test_blender_smoke_round_trips_pixels(tmp_path: Path) -> None:
     video = output / "clean.mkv"
     subprocess.run(
         [
-            str(root / ".venv/bin/python"),
+            sys.executable,
             str(root / "benchmarks/blender/package.py"),
             "--frames",
             str(output / "frames"),

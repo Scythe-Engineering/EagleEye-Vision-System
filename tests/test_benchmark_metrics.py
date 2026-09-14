@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 
+from benchmarks.__main__ import _score_accuracy_record
 from benchmarks.metrics import (
     Detection,
     TruthTag,
@@ -25,6 +26,30 @@ def test_detection_duplicate_wrong_id_and_empty_denominators() -> None:
     assert result["wrong_ids"] == 1
     empty = match_detections([], [], 1)
     assert empty["precision"] is None and empty["eligible_recall"] is None
+
+
+def test_invalid_truth_tag_does_not_shift_valid_tag_metadata() -> None:
+    record = {
+        "truth": {
+            "tags": [
+                {"id": 1, "corners": None, "category": "invalid"},
+                {"id": 2, "corners": [list(point) for point in C], "category": "valid"},
+            ]
+        },
+        "output": {"detections": []},
+    }
+
+    scored = _score_accuracy_record(record, 1.0)
+
+    assert scored["metrics"]["detection"]["by_tag"] == [
+        {
+            "tag_id": 2,
+            "projected_size_px": None,
+            "eligible": False,
+            "category": "valid",
+            "detected": False,
+        }
+    ]
 
 
 def test_pose_wrap_stats_and_availability() -> None:

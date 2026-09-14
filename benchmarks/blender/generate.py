@@ -153,7 +153,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--tag-ids", help=argparse.SUPPRESS)
     args = p.parse_args(argv)
     explicitly_set = {
-        option.lstrip("-").replace("-", "_")
+        option.lstrip("-").split("=", 1)[0].replace("-", "_")
         for option in argv
         if option.startswith("--")
     }
@@ -469,7 +469,12 @@ def run_blender(args: argparse.Namespace) -> None:
     scene.render.image_settings.color_depth = "16"
     scene.render.fps = args.fps
     scene.render.film_transparent = False
-    scene.render.engine = "BLENDER_EEVEE" if args.engine == "eevee" else "CYCLES"
+    if args.engine == "eevee":
+        scene.render.engine = (
+            "BLENDER_EEVEE" if bpy.app.version >= (5, 0, 0) else "BLENDER_EEVEE_NEXT"
+        )
+    else:
+        scene.render.engine = "CYCLES"
     scene.render.use_persistent_data = args.persistent_data
     if args.engine == "cycles":
         scene.cycles.samples = args.samples

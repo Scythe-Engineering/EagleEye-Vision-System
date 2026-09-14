@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -309,6 +310,11 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
                     handle.write(chunk)
                     progress.update(len(chunk))
         return archive_path
+    except HTTPError as error:
+        if error.code == 416 and offset and attempts > 1:
+            archive_path.unlink(missing_ok=True)
+            return _download_archive(url, directory, attempts - 1)
+        raise
     except OSError:
         if attempts <= 1:
             raise
@@ -332,7 +338,6 @@ def download_missing_videos(
         return []
 
     archive_path = _download_archive(archive_url, cache)
-    success = False
     try:
         if not zipfile.is_zipfile(archive_path):
             archive_path.unlink(missing_ok=True)
@@ -376,8 +381,6 @@ def download_missing_videos(
                     os.replace(temporary, target)
                     installed.append(target)
                     progress.update(1)
-            success = True
             return installed
     finally:
-        if success:
-            archive_path.unlink(missing_ok=True)
+        archive_path.unlink(missing_ok=True)

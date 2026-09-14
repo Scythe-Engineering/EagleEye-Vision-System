@@ -113,19 +113,23 @@ def _score_accuracy_record(
     """Attach detection and pose errors under a versioned pixel tolerance."""
     truth = record.get("truth") or {}
     output = record.get("output") or {}
-    truth_tags = []
+    truth_pairs = []
     for tag in truth.get("tags", []):
         corners = tag.get("corners", tag.get("corners_px"))
         if not isinstance(corners, list):
             continue
-        truth_tags.append(
-            TruthTag(
-                int(tag["id"]),
-                tuple((float(point[0]), float(point[1])) for point in corners),
-                bool(tag.get("eligible", tag.get("eligibility") == "eligible")),
-                str(tag.get("eligibility", tag.get("category", "unclassified"))),
+        truth_pairs.append(
+            (
+                tag,
+                TruthTag(
+                    int(tag["id"]),
+                    tuple((float(point[0]), float(point[1])) for point in corners),
+                    bool(tag.get("eligible", tag.get("eligibility") == "eligible")),
+                    str(tag.get("eligibility", tag.get("category", "unclassified"))),
+                ),
             )
         )
+    truth_tags = [scored for _, scored in truth_pairs]
     detections = []
     for detection in output.get("detections") or []:
         tag_id = (
@@ -154,16 +158,15 @@ def _score_accuracy_record(
     matched_truth = {item["truth_index"] for item in detection_score["matches"]}
     detection_score["by_tag"] = [
         {
-            "tag_id": int(tag["id"]),
+            "tag_id": scored.tag_id,
             "projected_size_px": tag.get(
                 "projected_min_edge_px", tag.get("projected_size")
             ),
-            "eligible": truth_tags[index].eligible,
-            "category": truth_tags[index].category,
+            "eligible": scored.eligible,
+            "category": scored.category,
             "detected": index in matched_truth,
         }
-        for index, tag in enumerate(truth.get("tags", []))
-        if index < len(truth_tags)
+        for index, (tag, scored) in enumerate(truth_pairs)
     ]
     metrics: dict[str, Any] = {"detection": detection_score}
 

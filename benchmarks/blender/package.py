@@ -151,20 +151,20 @@ def package(source: Path, output: Path, fps: int, ffmpeg: str) -> dict[str, Any]
         str(output),
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
-    process = subprocess.Popen(command, stdin=subprocess.PIPE)
-    assert process.stdin is not None
-    for path in frames:
-        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
-        if image is None or image.shape != first.shape:
-            process.kill()
-            raise RuntimeError(f"invalid or mismatched frame {path}")
-        image = apply_effects(image, len(hashes))
-        raw = image.tobytes()
-        hashes.append(digest_bytes(raw))
-        process.stdin.write(raw)
-    process.stdin.close()
-    if process.wait() != 0:
-        raise RuntimeError("FFmpeg encoding failed")
+    with subprocess.Popen(command, stdin=subprocess.PIPE) as process:
+        assert process.stdin is not None
+        for path in frames:
+            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if image is None or image.shape != first.shape:
+                process.kill()
+                raise RuntimeError(f"invalid or mismatched frame {path}")
+            image = apply_effects(image, len(hashes))
+            raw = image.tobytes()
+            hashes.append(digest_bytes(raw))
+            process.stdin.write(raw)
+        process.stdin.close()
+        if process.wait() != 0:
+            raise RuntimeError("FFmpeg encoding failed")
     capture = cv2.VideoCapture(str(output))
     decoded: list[str] = []
     while True:

@@ -50,6 +50,7 @@ def test_generator_accepts_explicit_fast_cycles_options() -> None:
     )
     assert args.samples == 64
     assert args.denoise and args.persistent_data
+    assert parse_args(["--output=/tmp/unused", "--samples=64"]).samples == 64
     defaults = parse_args(["--output", "/tmp/unused"])
     assert not defaults.denoise and not defaults.persistent_data
 

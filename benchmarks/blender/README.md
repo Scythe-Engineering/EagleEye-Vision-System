@@ -14,6 +14,8 @@ actual field mesh is required for match routes.
 
 ## Three-frame clean smoke
 
+This requires Blender 4.4 or later and FFmpeg.
+
 ```bash
 blender --background --python-exit-code 1 --python benchmarks/blender/generate.py -- \
   --recipe benchmarks/blender/smoke-recipe.json --output /tmp/eagleeye-blender-smoke \
