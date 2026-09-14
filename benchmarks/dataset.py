@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
 from urllib.error import HTTPError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -19,6 +20,16 @@ SHA256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 DEFAULT_VIDEO_ARCHIVE_URL = (
     "https://benchmarks.scytheengineering.com/EagleEye-current-benchmark-videos.zip"
 )
+
+
+def manifest_url_for_archive(archive_url: str) -> str:
+    """Derive the published manifest URL from a benchmark ZIP URL."""
+    parsed = urlsplit(archive_url)
+    if not parsed.path.lower().endswith(".zip"):
+        raise ValueError("benchmark archive URL must end with .zip")
+    return urlunsplit(
+        parsed._replace(path=f"{parsed.path[:-4]}_manifest.json", fragment="")
+    )
 
 
 class StrictModel(BaseModel):
@@ -219,6 +230,33 @@ class DatasetManifest(StrictModel):
             for value in (clip.video, clip.calibration, clip.ground_truth, clip.events)
         }
         return [asset for asset in self.assets if asset.path in paths]
+
+
+def cached_manifest_path(cache_dir: str | Path, manifest_url: str) -> Path:
+    """Return the stable cache path for a remote manifest URL."""
+    url_hash = hashlib.sha256(manifest_url.encode("utf-8")).hexdigest()
+    filename = Path(urlsplit(manifest_url).path).name or "manifest.json"
+    return Path(cache_dir) / "manifests" / url_hash / filename
+
+
+def download_manifest(archive_url: str, cache_dir: str | Path) -> Path:
+    """Download and validate an archive's manifest unless it is already cached."""
+    manifest_url = manifest_url_for_archive(archive_url)
+    target = cached_manifest_path(cache_dir, manifest_url)
+    if target.is_file():
+        return target
+
+    request = Request(manifest_url, headers={"User-Agent": "EagleEye-Benchmark/1.0"})
+    with urlopen(request, timeout=30) as response:
+        data = response.read()
+    DatasetManifest.model_validate_json(data)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, delete=False) as output:
+        temporary = Path(output.name)
+        output.write(data)
+    os.replace(temporary, target)
+    return target
 
 
 def load_manifest(

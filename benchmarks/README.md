@@ -12,10 +12,12 @@ Provide a `DatasetManifest` whose `Asset` entries contain safe relative paths, b
 
 ```bash
 uv run python -m benchmarks verify path/to/manifest.json --subset pilot
-uv run python -m benchmarks run --dataset path/to/manifest.json --subset pilot \
+uv run python -m benchmarks run --subset pilot \
   --pipeline both --output benchmark-results/pilot
 ```
 
-Use `--manifest-sha256` to pin the local manifest itself and `--overwrite` to replace an existing output directory. `--pipeline` also accepts `full-frame` or `temporal`. For a quick partial evaluation, pass `--timeout SECONDS`; the run stops between frames and writes a valid partial report. Without it, the full selected dataset runs.
+When `--dataset` is omitted, `run` derives `*_manifest.json` from the `--archive-url` ZIP URL and caches it under the benchmark cache directory. Pass `--dataset path/to/manifest.json` to use a local manifest instead. Delete the cached manifest to fetch it again.
+
+Use `--manifest-sha256` to pin the manifest itself and `--overwrite` to replace an existing output directory. `--pipeline` also accepts `full-frame` or `temporal`. For a quick partial evaluation, pass `--timeout SECONDS`; the run stops between frames and writes a valid partial report. Without it, the full selected dataset runs.
 
 A run writes `run.json`, gzip JSON Lines frame records, `summary.json`, `summary.csv`, a dependency-free `index.html`, and a bounded diagnostic image set. Provenance includes manifest and graph hashes, calibration/map identities, repository state, dependencies, and platform details. Exit code `0` means reporting completed without pipeline frame failures; invalid input, missing or corrupt assets, and pipeline failures return `2`.

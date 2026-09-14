@@ -13,6 +13,7 @@ from typing import Any
 from .dataset import (
     DEFAULT_VIDEO_ARCHIVE_URL,
     cache_path,
+    download_manifest,
     download_missing_videos,
     load_manifest,
     verify_dataset,
@@ -61,7 +62,11 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     verify.add_argument("--manifest-sha256")
     run = commands.add_parser("run")
-    run.add_argument("--dataset", type=Path, required=True)
+    run.add_argument(
+        "--dataset",
+        type=Path,
+        help="local manifest; defaults to the manifest derived from --archive-url",
+    )
     run.add_argument("--subset")
     run.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
     run.add_argument("--archive-url", default=DEFAULT_VIDEO_ARCHIVE_URL)
@@ -255,7 +260,8 @@ def _run(args: argparse.Namespace) -> int:
     if args.timeout is not None and args.timeout <= 0:
         raise ValueError("timeout must be greater than zero")
     deadline = time.monotonic() + args.timeout if args.timeout is not None else None
-    manifest = load_manifest(args.dataset, args.manifest_sha256)
+    dataset_path = args.dataset or download_manifest(args.archive_url, args.cache_dir)
+    manifest = load_manifest(dataset_path, args.manifest_sha256)
     clips = (
         manifest.clips
         if args.subset is None
@@ -277,7 +283,7 @@ def _run(args: argparse.Namespace) -> int:
         / ("full_frame.json" if name == "full-frame" else "temporal.json")
         for name in configurations
     }
-    provenance = collect_provenance(args.dataset, graph_paths)
+    provenance = collect_provenance(dataset_path, graph_paths)
     assets = {
         asset.path: cache_path(args.cache_dir, asset) for asset in manifest.assets
     }

@@ -21,6 +21,8 @@ class DetectApriltagsDefinition(OperationInstance):
         quad_sigma: float = 0.0,
         refine_edges: int = 1,
         decode_sharpening: float = 0.25,
+        large_roi_decimate: float = 3.0,
+        large_roi_min_px: int = 96,
     ) -> None:
         """Initialize the AprilTag detection definition.
 
@@ -45,6 +47,8 @@ class DetectApriltagsDefinition(OperationInstance):
             quad_sigma=quad_sigma,
             refine_edges=refine_edges,
             decode_sharpening=decode_sharpening,
+            large_roi_decimate=large_roi_decimate,
+            large_roi_min_px=large_roi_min_px,
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
@@ -106,6 +110,10 @@ class DetectApriltagsDefinition(OperationInstance):
             update_params["refine_edges"] = json_config["refine_edges"]
         if "decode_sharpening" in json_config:
             update_params["decode_sharpening"] = json_config["decode_sharpening"]
+        if "large_roi_decimate" in json_config:
+            update_params["large_roi_decimate"] = json_config["large_roi_decimate"]
+        if "large_roi_min_px" in json_config:
+            update_params["large_roi_min_px"] = json_config["large_roi_min_px"]
 
         if update_params:
             self.detector.update_parameters(**update_params)
