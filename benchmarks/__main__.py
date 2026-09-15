@@ -10,8 +10,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from tqdm import tqdm
+
 from .dataset import (
     DEFAULT_VIDEO_ARCHIVE_URL,
+    REPOSITORY_ROOT,
     cache_path,
     download_metadata,
     download_missing_assets,
@@ -45,7 +48,7 @@ from .report import (
     write_diagnostic_images,
 )
 
-DEFAULT_CACHE = Path.home() / ".cache" / "eagleeye" / "benchmarks"
+DEFAULT_CACHE = REPOSITORY_ROOT / "benchmarks" / "cache"
 DETECTION_POLICIES = {
     "pilot-candidate-v1": 8.0,
     "pilot-provisional-v1": 8.0,
@@ -300,6 +303,12 @@ def _run(args: argparse.Namespace) -> int:
         "timeout_seconds": args.timeout,
     }
     writer = RunWriter.create(args.output, metadata, overwrite=args.overwrite)
+    processing_started = time.monotonic()
+    progress = tqdm(
+        total=sum(clip.frame_count for clip in clips) * len(configurations),
+        unit="frame",
+        desc="Processing benchmark",
+    )
     rows: list[dict[str, Any]] = []
     videos: dict[str, Path] = {}
     attempted = completed = failed = 0
@@ -335,6 +344,7 @@ def _run(args: argparse.Namespace) -> int:
                     attempted += 1
                     completed += int(bool(record.get("completed")))
                     failed += int(bool(record.get("failure")))
+                    progress.update(1)
                     compact.append(
                         {
                             "timestamp_ns": record["timestamp_ns"],
@@ -407,6 +417,7 @@ def _run(args: argparse.Namespace) -> int:
             "skipped": attempted - completed - failed,
             "failed": failed,
             "timed_out": timed_out,
+            "processing_seconds": time.monotonic() - processing_started,
             "detection": {
                 "tp": total_tp,
                 "fp": total_fp,
@@ -423,8 +434,11 @@ def _run(args: argparse.Namespace) -> int:
             "diagnostic_images": images,
         }
         writer.finish(summary, rows)
+        progress.close()
+        print(f"Benchmark completed in {summary['processing_seconds']:.2f} seconds")
         return 2 if failed else 0
     finally:
+        progress.close()
         writer.close()
 
 

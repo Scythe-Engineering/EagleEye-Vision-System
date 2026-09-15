@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import shutil
@@ -235,6 +236,16 @@ class DatasetManifest(StrictModel):
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _require_space(directory: Path, required: int, purpose: str) -> None:
+    """Raise before a download or extraction would exhaust its filesystem."""
+    directory.mkdir(parents=True, exist_ok=True)
+    available = shutil.disk_usage(directory).free
+    if available < required:
+        raise OSError(
+            errno.ENOSPC,
+            f"not enough space in {directory} for {purpose}: "
+            f"need {required / 1024**3:.2f} GiB, have {available / 1024**3:.2f} GiB",
+        )
 
 
 def load_manifest(
@@ -302,7 +313,9 @@ def _metadata_assets(manifest: DatasetManifest, role: str | None) -> list[Asset]
     ]
 
 
-def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
+def _download_archive(
+    url: str, directory: Path, attempts: int = 3, reserve_bytes: int = 0
+) -> Path:
     """Download an archive into the repository, resuming interrupted transfers."""
     directory.mkdir(parents=True, exist_ok=True)
     archive_path = directory / (
@@ -324,6 +337,12 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
             length = response.headers.get("Content-Length")
             remaining = int(length) if length and length.isdigit() else None
             total = offset + remaining if remaining is not None else None
+            if remaining is not None:
+                _require_space(
+                    directory,
+                    remaining + reserve_bytes,
+                    f"{archive_path.name} download and extraction",
+                )
             with (
                 partial_path.open("ab" if resuming else "wb") as handle,
                 tqdm(
@@ -343,12 +362,16 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
     except HTTPError as error:
         if error.code == 416 and offset and attempts > 1:
             partial_path.unlink(missing_ok=True)
-            return _download_archive(url, directory, attempts - 1)
+            return _download_archive(
+                url, directory, attempts - 1, reserve_bytes=reserve_bytes
+            )
         raise
-    except OSError:
-        if attempts <= 1:
+    except OSError as error:
+        if error.errno == errno.ENOSPC or attempts <= 1:
             raise
-        return _download_archive(url, directory, attempts - 1)
+        return _download_archive(
+            url, directory, attempts - 1, reserve_bytes=reserve_bytes
+        )
 
 
 def _install_assets(
@@ -421,6 +444,11 @@ def download_metadata(
             for asset in _metadata_assets(manifest, None)
             if _check_file(cache_path(cache_dir, asset), asset) is not None
         ]
+        _require_space(
+            Path(cache_dir),
+            sum(asset.size for asset in missing),
+            "metadata extraction",
+        )
         _install_assets(archive, missing, cache_dir, "metadata")
 
     target = Path(download_dir) / f"{archive_path.stem}_manifest.json"
@@ -458,7 +486,19 @@ def download_missing_assets(
         ]
         if not missing:
             continue
-        archive_path = _download_archive(url, Path(download_dir))
+        extraction_bytes = sum(asset.size for asset in missing)
+        cache_path_root = Path(cache_dir)
+        download_path = Path(download_dir)
+        download_path.mkdir(parents=True, exist_ok=True)
+        _require_space(cache_path_root, extraction_bytes, f"{label} extraction")
+        same_filesystem = (
+            cache_path_root.stat().st_dev == download_path.stat().st_dev
+        )
+        archive_path = _download_archive(
+            url,
+            download_path,
+            reserve_bytes=extraction_bytes if same_filesystem else 0,
+        )
         if not zipfile.is_zipfile(archive_path):
             archive_path.unlink(missing_ok=True)
             raise ValueError(f"downloaded {label} archive is not a ZIP file")
