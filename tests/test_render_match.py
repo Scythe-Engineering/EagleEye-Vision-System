@@ -167,7 +167,9 @@ def test_completed_job_is_skipped_only_when_signature_and_outputs_match(
                 json.dumps(
                     {
                         "video": video.name,
-                        "pixel_round_trip": True,
+                        "codec": "H.264 test",
+                        "frame_count": 3,
+                        "decoded_frame_count": 3,
                         "byte_size": 5,
                         "video_sha256": hashlib.sha256(b"video").hexdigest(),
                         "encoding_command": ["ffmpeg", video.name],

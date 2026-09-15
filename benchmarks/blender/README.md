@@ -25,9 +25,9 @@ uv run python benchmarks/blender/package.py \
   --output /tmp/eagleeye-blender-smoke/clean.mkv --fps 120
 ```
 
-Frames are 16-bit PNG intermediates. Packaging writes lossless FFV1/bgr0,
-decodes every frame, and requires exact pixel hashes. Keep frames until the
-manifest is verified; `--cleanup-frames` is the only removal path.
+Frames are 16-bit PNG intermediates. Packaging writes lightly compressed H.264
+at a 300 Mb/s target and verifies that every frame decodes. Keep frames until
+the manifest is verified; `--cleanup-frames` is the only removal path.
 
 ## Match collection
 
@@ -51,8 +51,8 @@ uv run python benchmarks/blender/render_match.py --output benchmark-results/frc2
 ```
 
 Per-job `runner.log` and atomic `status.json` record progress. Resume skips
-only jobs whose input signature, generated truth/provenance/settings digests,
-FFV1 manifest, video size, and video hash all match. Use a new output directory
+only jobs whose input signature, generated truth/provenance/settings digests, H.264 manifest, decoded frame
+count, video size, and video hash all match. Use a new output directory
 after changing render inputs.
 
 After the dataset manifest and its content-addressed cache have been prepared,
