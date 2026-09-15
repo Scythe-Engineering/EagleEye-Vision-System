@@ -1,14 +1,18 @@
 """Focused tests for the local benchmark dataset contract."""
 
+import errno
 import hashlib
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 from benchmarks.blender.package_dataset import package_dataset
+from benchmarks.__main__ import DEFAULT_CACHE
 from benchmarks.dataset import (
+    REPOSITORY_ROOT,
     Asset,
     DatasetManifest,
     cache_path,
@@ -16,6 +20,7 @@ from benchmarks.dataset import (
     download_missing_assets,
     metadata_url_for_archive,
     verify_dataset,
+    _require_space,
 )
 
 
@@ -110,6 +115,26 @@ def test_asset_rejects_unsafe_path_and_network_fields() -> None:
                 "roles": ["pilot"],
             }
         )
+
+
+def test_default_cache_is_on_the_repository_filesystem() -> None:
+    """Benchmark assets default to ignored storage inside the repository."""
+    assert DEFAULT_CACHE == REPOSITORY_ROOT / "benchmarks" / "cache"
+
+
+def test_space_check_reports_required_and_available_space(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Downloads fail before writing when their filesystem is too full."""
+    monkeypatch.setattr(
+        "benchmarks.dataset.shutil.disk_usage",
+        lambda _path: SimpleNamespace(free=1024**3),
+    )
+
+    with pytest.raises(OSError, match=r"need 2\.00 GiB, have 1\.00 GiB") as error:
+        _require_space(tmp_path, 2 * 1024**3, "test download")
+
+    assert error.value.errno == errno.ENOSPC
 
 
 def test_verify_dataset_checks_local_size_and_hash(tmp_path: Path) -> None:
