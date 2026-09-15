@@ -55,6 +55,21 @@ only jobs whose input signature, generated truth/provenance/settings digests,
 FFV1 manifest, video size, and video hash all match. Use a new output directory
 after changing render inputs.
 
+After the dataset manifest and its content-addressed cache have been prepared,
+build the two publication archives with:
+
+```bash
+uv run python -m benchmarks.blender.package_dataset \
+  ~/Downloads/EagleEye-current-benchmark-videos_manifest.json \
+  --cache-dir ~/.cache/eagleeye/benchmarks --output-dir ~/Downloads
+```
+
+This writes `EagleEye-current-benchmark-videos.zip` and
+`EagleEye-current-benchmark-metadata.zip`. The first contains only
+manifest-referenced videos. The second contains `manifest.json` and every
+referenced calibration, ground-truth, and events file. Existing output ZIPs are
+replaced.
+
 Run the sole opt-in rendered end-to-end smoke check with:
 
 ```bash
