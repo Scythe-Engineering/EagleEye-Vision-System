@@ -1,4 +1,4 @@
-"""Package ordered PNG frames as pixel-exact FFV1/bgr0 Matroska."""
+"""Package ordered PNG frames as a lightly compressed H.264 stream."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def ordered_frames(directory: Path) -> list[Path]:
 
 
 def package(source: Path, output: Path, fps: int, ffmpeg: str) -> dict[str, Any]:
-    """Apply declared display-domain effects, encode, and verify decoded hashes."""
+    """Apply display-domain effects, encode H.264, and verify every frame decodes."""
     import cv2  # type: ignore
     import numpy as np  # type: ignore
 
@@ -143,11 +143,17 @@ def package(source: Path, output: Path, fps: int, ffmpeg: str) -> dict[str, Any]
         "-",
         "-an",
         "-c:v",
-        "ffv1",
-        "-level",
-        "3",
+        "libx264",
+        "-preset",
+        "medium",
+        "-b:v",
+        "300M",
+        "-maxrate",
+        "330M",
+        "-bufsize",
+        "600M",
         "-pix_fmt",
-        "bgr0",
+        "yuv420p",
         str(output),
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -173,9 +179,9 @@ def package(source: Path, output: Path, fps: int, ffmpeg: str) -> dict[str, Any]
             break
         decoded.append(digest_bytes(image.tobytes()))
     capture.release()
-    if decoded != hashes:
+    if len(decoded) != len(hashes):
         raise RuntimeError(
-            f"pixel round-trip mismatch: source={len(hashes)} decoded={len(decoded)}"
+            f"decoded frame count mismatch: source={len(hashes)} decoded={len(decoded)}"
         )
     ffmpeg_version = subprocess.check_output(
         [ffmpeg, "-version"], text=True
@@ -188,12 +194,13 @@ def package(source: Path, output: Path, fps: int, ffmpeg: str) -> dict[str, Any]
         "frame_count": len(frames),
         "resolution": [width, height],
         "frame_rate": f"{fps}/1",
-        "pixel_format": "bgr0",
-        "codec": "FFV1 level 3",
+        "pixel_format": "yuv420p",
+        "codec": "H.264 libx264, 300 Mb/s target, 330 Mb/s max",
         "timestamp_convention": "exposure midpoint; frame_index/fps",
         "canonical_bgr_sha256": hashes,
         "decoded_bgr_sha256": decoded,
-        "pixel_round_trip": True,
+        "pixel_round_trip": False,
+        "decoded_frame_count": len(decoded),
         "postprocessing": {
             "variant": variant,
             "severity": severity,
@@ -240,7 +247,7 @@ def main() -> None:
                 "video": str(args.output),
                 "manifest": str(manifest_path),
                 "frames": manifest["frame_count"],
-                "pixel_round_trip": True,
+                "decoded_frame_count": manifest["decoded_frame_count"],
             }
         )
     )

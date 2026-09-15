@@ -247,7 +247,8 @@ def _completed(job_dir: Path, signature: str, variant: str) -> bool:
             for name in ("provenance.json", "settings.json", "truth.jsonl")
         }
         and packaged.get("video") == video.name
-        and packaged.get("pixel_round_trip") is True
+        and packaged.get("decoded_frame_count") == packaged.get("frame_count")
+        and packaged.get("codec", "").startswith("H.264")
         and packaged.get("video_sha256") == _sha256(video)
         and packaged.get("byte_size") == video.stat().st_size
     )

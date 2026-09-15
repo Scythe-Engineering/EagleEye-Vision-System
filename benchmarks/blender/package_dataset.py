@@ -26,8 +26,12 @@ def package_dataset(
 
     try:
         for archive_path, include_videos in pending:
+            compression = zipfile.ZIP_STORED if include_videos else zipfile.ZIP_DEFLATED
             with zipfile.ZipFile(
-                archive_path.with_suffix(".zip.tmp"), "w", zipfile.ZIP_STORED
+                archive_path.with_suffix(".zip.tmp"),
+                "w",
+                compression,
+                compresslevel=None if include_videos else 6,
             ) as archive:
                 if not include_videos:
                     archive.writestr(

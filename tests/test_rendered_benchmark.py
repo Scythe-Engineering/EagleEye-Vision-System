@@ -97,7 +97,9 @@ def test_blender_smoke_round_trips_pixels(tmp_path: Path) -> None:
     truth = [
         json.loads(line) for line in (output / "truth.jsonl").read_text().splitlines()
     ]
-    assert manifest["pixel_round_trip"] is True
+    assert manifest["pixel_round_trip"] is False
+    assert manifest["decoded_frame_count"] == manifest["frame_count"]
+    assert manifest["codec"].startswith("H.264")
     assert manifest["resolution"] == [1280, 800]
     assert manifest["postprocessing"]["overscan_margin_px"] == [0, 0]
     assert manifest["frame_count"] == len(truth) == 3
