@@ -13,8 +13,8 @@ from typing import Any
 from .dataset import (
     DEFAULT_VIDEO_ARCHIVE_URL,
     cache_path,
-    download_manifest,
-    download_missing_videos,
+    download_metadata,
+    download_missing_assets,
     load_manifest,
     verify_dataset,
 )
@@ -65,7 +65,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--dataset",
         type=Path,
-        help="local manifest; defaults to the manifest derived from --archive-url",
+        help="local manifest; defaults to manifest.json from the metadata ZIP",
     )
     run.add_argument("--subset")
     run.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
@@ -260,7 +260,9 @@ def _run(args: argparse.Namespace) -> int:
     if args.timeout is not None and args.timeout <= 0:
         raise ValueError("timeout must be greater than zero")
     deadline = time.monotonic() + args.timeout if args.timeout is not None else None
-    dataset_path = args.dataset or download_manifest(args.archive_url)
+    dataset_path = args.dataset or download_metadata(
+        args.archive_url, args.cache_dir
+    )
     manifest = load_manifest(dataset_path, args.manifest_sha256)
     clips = (
         manifest.clips
@@ -273,9 +275,7 @@ def _run(args: argparse.Namespace) -> int:
         raise ValueError(
             f"unsupported detection policy {manifest.detection_policy_version}"
         )
-    download_missing_videos(
-        manifest, args.cache_dir, args.archive_url, args.subset
-    )
+    download_missing_assets(manifest, args.cache_dir, args.archive_url, args.subset)
     verify_dataset(manifest, args.cache_dir, args.subset)
     configurations = _pipelines(args.pipeline)
     graph_paths = {

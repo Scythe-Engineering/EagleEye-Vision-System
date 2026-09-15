@@ -7,13 +7,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from benchmarks.blender.package_dataset import package_dataset
 from benchmarks.dataset import (
     Asset,
     DatasetManifest,
     cache_path,
-    download_manifest,
-    download_missing_videos,
-    manifest_url_for_archive,
+    download_metadata,
+    download_missing_assets,
+    metadata_url_for_archive,
     verify_dataset,
 )
 
@@ -124,41 +125,99 @@ def test_verify_dataset_checks_local_size_and_hash(tmp_path: Path) -> None:
         verify_dataset(manifest, tmp_path, "pilot")
 
 
-def test_download_manifest_derives_url_and_reuses_download(tmp_path: Path) -> None:
-    """The remote manifest is downloaded once into the requested directory."""
+def test_download_metadata_keeps_archive_and_caches_assets(tmp_path: Path) -> None:
+    """The metadata ZIP supplies and retains the manifest and non-video assets."""
+    metadata = b"metadata"
+    manifest = _manifest(metadata)
+    manifest.clips[0].video = "video.bin"
+    manifest.assets.append(
+        Asset(
+            path="video.bin",
+            size=5,
+            sha256=hashlib.sha256(b"video").hexdigest(),
+            roles=["pilot"],
+        )
+    )
     source_dir = tmp_path / "source"
     source_dir.mkdir()
-    archive = source_dir / "benchmark-videos.zip"
-    source = source_dir / "benchmark-videos_manifest.json"
-    source.write_text(_manifest(b"video").model_dump_json())
+    videos = source_dir / "benchmark-videos.zip"
+    metadata_zip = source_dir / "benchmark-metadata.zip"
+    videos.touch()
+    with zipfile.ZipFile(metadata_zip, "w") as stream:
+        stream.writestr("manifest.json", manifest.model_dump_json())
+        stream.writestr("tiny.bin", metadata)
     downloads = tmp_path / "downloads"
+    cache = tmp_path / "cache"
 
-    assert manifest_url_for_archive(archive.as_uri()) == source.as_uri()
-    downloaded = download_manifest(archive.as_uri(), downloads)
-    source.unlink()
+    assert metadata_url_for_archive(videos.as_uri()) == metadata_zip.as_uri()
+    downloaded = download_metadata(videos.as_uri(), cache, downloads)
+    metadata_zip.unlink()
 
-    assert downloaded == downloads / source.name
-    assert download_manifest(archive.as_uri(), downloads) == downloaded
+    assert download_metadata(videos.as_uri(), cache, downloads) == downloaded
+    assert (downloads / "benchmark-metadata.zip").is_file()
     assert DatasetManifest.model_validate_json(downloaded.read_bytes()).dataset_id == "local"
 
 
-def test_download_missing_videos_keeps_archive_in_download_directory(tmp_path: Path) -> None:
-    """The archive and verified video asset are retained in their local homes."""
-    data = b"verified video"
-    manifest = _manifest(data)
+def test_download_missing_assets_keeps_both_archives(tmp_path: Path) -> None:
+    """The downloader installs assets and retains both downloaded ZIPs."""
+    metadata = b"metadata"
+    video = b"video"
+    manifest = _manifest(metadata)
+    manifest.clips[0].video = "video.bin"
+    manifest.assets.append(
+        Asset(
+            path="video.bin",
+            size=len(video),
+            sha256=hashlib.sha256(video).hexdigest(),
+            roles=["pilot"],
+        )
+    )
     source_dir = tmp_path / "source"
     source_dir.mkdir()
-    archive = source_dir / "videos.zip"
-    with zipfile.ZipFile(archive, "w") as stream:
-        stream.writestr("tiny.bin", data)
-
+    videos_zip = source_dir / "benchmark-videos.zip"
+    metadata_zip = source_dir / "benchmark-metadata.zip"
+    with zipfile.ZipFile(videos_zip, "w") as stream:
+        stream.writestr("video.bin", video)
+    with zipfile.ZipFile(metadata_zip, "w") as stream:
+        stream.writestr("tiny.bin", metadata)
     cache = tmp_path / "cache"
     downloads = tmp_path / "downloads"
-    installed = download_missing_videos(
-        manifest, cache, archive.as_uri(), "pilot", downloads
+
+    installed = download_missing_assets(
+        manifest, cache, videos_zip.as_uri(), "pilot", downloads
     )
 
-    target = cache_path(cache, manifest.assets[0])
-    assert installed == [target]
-    assert target.read_bytes() == data
-    assert (downloads / archive.name).is_file()
+    assert len(installed) == 2
+    assert all(path.is_file() for path in installed)
+    assert (downloads / videos_zip.name).is_file()
+    assert (downloads / metadata_zip.name).is_file()
+
+
+def test_package_dataset_splits_video_and_metadata(tmp_path: Path) -> None:
+    """The publication packager writes the two runtime archive layouts."""
+    metadata = b"metadata"
+    video = b"video"
+    manifest = _manifest(metadata)
+    manifest.clips[0].video = "video.bin"
+    manifest.assets.append(
+        Asset(
+            path="video.bin",
+            size=len(video),
+            sha256=hashlib.sha256(video).hexdigest(),
+            roles=["pilot"],
+        )
+    )
+    manifest_path = tmp_path / "benchmark-videos_manifest.json"
+    manifest_path.write_text(manifest.model_dump_json())
+    cache = tmp_path / "cache"
+    for asset, data in zip(manifest.assets, (metadata, video), strict=True):
+        target = cache_path(cache, asset)
+        target.parent.mkdir(parents=True)
+        target.write_bytes(data)
+
+    videos_zip, metadata_zip = package_dataset(manifest_path, cache, tmp_path)
+
+    with zipfile.ZipFile(videos_zip) as archive:
+        assert archive.namelist() == ["video.bin"]
+    with zipfile.ZipFile(metadata_zip) as archive:
+        assert set(archive.namelist()) == {"manifest.json", "tiny.bin"}

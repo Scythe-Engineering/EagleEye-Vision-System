@@ -22,13 +22,13 @@ DEFAULT_VIDEO_ARCHIVE_URL = (
 )
 
 
-def manifest_url_for_archive(archive_url: str) -> str:
-    """Derive the published manifest URL from a benchmark ZIP URL."""
+def metadata_url_for_archive(archive_url: str) -> str:
+    """Derive the metadata ZIP URL from a benchmark videos ZIP URL."""
     parsed = urlsplit(archive_url)
-    if not parsed.path.lower().endswith(".zip"):
-        raise ValueError("benchmark archive URL must end with .zip")
+    if not parsed.path.lower().endswith("-videos.zip"):
+        raise ValueError("benchmark video archive URL must end with -videos.zip")
     return urlunsplit(
-        parsed._replace(path=f"{parsed.path[:-4]}_manifest.json", fragment="")
+        parsed._replace(path=f"{parsed.path[:-11]}-metadata.zip", fragment="")
     )
 
 
@@ -235,28 +235,6 @@ class DatasetManifest(StrictModel):
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def download_manifest(
-    archive_url: str, download_dir: str | Path = REPOSITORY_ROOT
-) -> Path:
-    """Download and validate an archive's manifest in the download directory."""
-    manifest_url = manifest_url_for_archive(archive_url)
-    target = Path(download_dir) / (
-        Path(urlsplit(manifest_url).path).name or "manifest.json"
-    )
-    if target.is_file():
-        return target
-
-    request = Request(manifest_url, headers={"User-Agent": "EagleEye-Benchmark/1.0"})
-    with urlopen(request, timeout=30) as response:
-        data = response.read()
-    DatasetManifest.model_validate_json(data)
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, delete=False) as output:
-        temporary = Path(output.name)
-        output.write(data)
-    os.replace(temporary, target)
-    return target
 
 
 def load_manifest(
@@ -316,6 +294,14 @@ def _video_assets(manifest: DatasetManifest, role: str | None) -> list[Asset]:
     return [asset for asset in manifest.assets if asset.path in video_paths]
 
 
+def _metadata_assets(manifest: DatasetManifest, role: str | None) -> list[Asset]:
+    """Return the non-video assets required by the selected clips."""
+    video_paths = {clip.video for clip in manifest.clips}
+    return [
+        asset for asset in manifest.selected_assets(role) if asset.path not in video_paths
+    ]
+
+
 def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
     """Download an archive into the repository, resuming interrupted transfers."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -346,7 +332,7 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
                     unit="B",
                     unit_scale=True,
                     unit_divisor=1024,
-                    desc="Downloading benchmark videos",
+                    desc=f"Downloading {archive_path.name}",
                 ) as progress,
             ):
                 while chunk := response.read(1024 * 1024):
@@ -365,64 +351,117 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
         return _download_archive(url, directory, attempts - 1)
 
 
-def download_missing_videos(
+def _install_assets(
+    archive: zipfile.ZipFile,
+    assets: list[Asset],
+    cache_dir: str | Path,
+    label: str,
+) -> list[Path]:
+    """Verify and install manifest-pinned assets from an open ZIP archive."""
+    members = {member.filename: member for member in archive.infolist()}
+    unavailable = [
+        asset.path
+        for asset in assets
+        if asset.path not in members
+        or members[asset.path].is_dir()
+        or members[asset.path].file_size != asset.size
+    ]
+    if unavailable:
+        raise ValueError(
+            f"{label} archive does not contain the expected assets: "
+            + ", ".join(unavailable)
+        )
+
+    installed: list[Path] = []
+    with tqdm(
+        total=len(assets), unit="file", desc=f"Extracting benchmark {label}"
+    ) as progress:
+        for asset in assets:
+            target = cache_path(cache_dir, asset)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=target.parent, delete=False
+            ) as output:
+                temporary = Path(output.name)
+                try:
+                    with archive.open(members[asset.path]) as source:
+                        shutil.copyfileobj(source, output, 1024 * 1024)
+                except BaseException:
+                    temporary.unlink(missing_ok=True)
+                    raise
+            reason = _check_file(temporary, asset)
+            if reason is not None:
+                temporary.unlink(missing_ok=True)
+                raise ValueError(f"downloaded {asset.path}: {reason}")
+            os.replace(temporary, target)
+            installed.append(target)
+            progress.update(1)
+    return installed
+
+
+def download_metadata(
+    archive_url: str,
+    cache_dir: str | Path,
+    download_dir: str | Path = REPOSITORY_ROOT,
+) -> Path:
+    """Download and cache the metadata archive, manifest, and referenced assets."""
+    metadata_url = metadata_url_for_archive(archive_url)
+    archive_path = _download_archive(metadata_url, Path(download_dir))
+    if not zipfile.is_zipfile(archive_path):
+        archive_path.unlink(missing_ok=True)
+        raise ValueError("downloaded metadata archive is not a ZIP file")
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            data = archive.read("manifest.json")
+        except KeyError as error:
+            raise ValueError("metadata archive does not contain manifest.json") from error
+        manifest = DatasetManifest.model_validate_json(data)
+        missing = [
+            asset
+            for asset in _metadata_assets(manifest, None)
+            if _check_file(cache_path(cache_dir, asset), asset) is not None
+        ]
+        _install_assets(archive, missing, cache_dir, "metadata")
+
+    target = Path(download_dir) / f"{archive_path.stem}_manifest.json"
+    if not target.is_file() or target.read_bytes() != data:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=target.parent, delete=False
+        ) as output:
+            temporary = Path(output.name)
+            output.write(data)
+        os.replace(temporary, target)
+    return target
+
+
+def download_missing_assets(
     manifest: DatasetManifest,
     cache_dir: str | Path,
     archive_url: str = DEFAULT_VIDEO_ARCHIVE_URL,
     role: str | None = None,
     download_dir: str | Path = REPOSITORY_ROOT,
 ) -> list[Path]:
-    """Download, verify, and cache missing videos from a repository-root ZIP."""
-    cache = Path(cache_dir)
-    missing = [
-        asset
-        for asset in _video_assets(manifest, role)
-        if _check_file(cache_path(cache, asset), asset) is not None
-    ]
-    if not missing:
-        return []
-
-    archive_path = _download_archive(archive_url, Path(download_dir))
-    if not zipfile.is_zipfile(archive_path):
-        archive_path.unlink(missing_ok=True)
-        raise ValueError("downloaded video archive is not a ZIP file")
-    with zipfile.ZipFile(archive_path) as archive:
-        members = {member.filename: member for member in archive.infolist()}
-        unavailable = [
-            asset.path
-            for asset in missing
-            if asset.path not in members
-            or members[asset.path].is_dir()
-            or members[asset.path].file_size != asset.size
+    """Download and cache missing metadata and videos from retained ZIP files."""
+    installed: list[Path] = []
+    for label, url, assets in (
+        (
+            "metadata",
+            metadata_url_for_archive(archive_url),
+            _metadata_assets(manifest, role),
+        ),
+        ("videos", archive_url, _video_assets(manifest, role)),
+    ):
+        missing = [
+            asset
+            for asset in assets
+            if _check_file(cache_path(cache_dir, asset), asset) is not None
         ]
-        if unavailable:
-            raise ValueError(
-                "video archive does not contain the expected assets: "
-                + ", ".join(unavailable)
-            )
-
-        installed: list[Path] = []
-        with tqdm(
-            total=len(missing), unit="video", desc="Extracting benchmark videos"
-        ) as progress:
-            for asset in missing:
-                target = cache_path(cache, asset)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(
-                    mode="wb", dir=target.parent, delete=False
-                ) as output:
-                    temporary = Path(output.name)
-                    try:
-                        with archive.open(members[asset.path]) as source:
-                            shutil.copyfileobj(source, output, 1024 * 1024)
-                    except BaseException:
-                        temporary.unlink(missing_ok=True)
-                        raise
-                reason = _check_file(temporary, asset)
-                if reason is not None:
-                    temporary.unlink(missing_ok=True)
-                    raise ValueError(f"downloaded {asset.path}: {reason}")
-                os.replace(temporary, target)
-                installed.append(target)
-                progress.update(1)
-        return installed
+        if not missing:
+            continue
+        archive_path = _download_archive(url, Path(download_dir))
+        if not zipfile.is_zipfile(archive_path):
+            archive_path.unlink(missing_ok=True)
+            raise ValueError(f"downloaded {label} archive is not a ZIP file")
+        with zipfile.ZipFile(archive_path) as archive:
+            installed.extend(_install_assets(archive, missing, cache_dir, label))
+    return installed
