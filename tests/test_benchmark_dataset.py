@@ -124,32 +124,41 @@ def test_verify_dataset_checks_local_size_and_hash(tmp_path: Path) -> None:
         verify_dataset(manifest, tmp_path, "pilot")
 
 
-def test_download_manifest_derives_url_and_reuses_cache(tmp_path: Path) -> None:
-    """The remote manifest is downloaded once beside its associated ZIP URL."""
-    archive = tmp_path / "benchmark-videos.zip"
-    source = tmp_path / "benchmark-videos_manifest.json"
+def test_download_manifest_derives_url_and_reuses_download(tmp_path: Path) -> None:
+    """The remote manifest is downloaded once into the requested directory."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    archive = source_dir / "benchmark-videos.zip"
+    source = source_dir / "benchmark-videos_manifest.json"
     source.write_text(_manifest(b"video").model_dump_json())
+    downloads = tmp_path / "downloads"
 
     assert manifest_url_for_archive(archive.as_uri()) == source.as_uri()
-    cached = download_manifest(archive.as_uri(), tmp_path / "cache")
+    downloaded = download_manifest(archive.as_uri(), downloads)
     source.unlink()
 
-    assert download_manifest(archive.as_uri(), tmp_path / "cache") == cached
-    assert DatasetManifest.model_validate_json(cached.read_bytes()).dataset_id == "local"
+    assert downloaded == downloads / source.name
+    assert download_manifest(archive.as_uri(), downloads) == downloaded
+    assert DatasetManifest.model_validate_json(downloaded.read_bytes()).dataset_id == "local"
 
 
-def test_download_missing_videos_installs_verified_zip_asset(tmp_path: Path) -> None:
-    """The archive downloader caches only the manifest-pinned video asset."""
+def test_download_missing_videos_keeps_archive_in_download_directory(tmp_path: Path) -> None:
+    """The archive and verified video asset are retained in their local homes."""
     data = b"verified video"
     manifest = _manifest(data)
-    archive = tmp_path / "videos.zip"
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    archive = source_dir / "videos.zip"
     with zipfile.ZipFile(archive, "w") as stream:
         stream.writestr("tiny.bin", data)
 
     cache = tmp_path / "cache"
-    installed = download_missing_videos(manifest, cache, archive.as_uri(), "pilot")
+    downloads = tmp_path / "downloads"
+    installed = download_missing_videos(
+        manifest, cache, archive.as_uri(), "pilot", downloads
+    )
 
     target = cache_path(cache, manifest.assets[0])
     assert installed == [target]
     assert target.read_bytes() == data
-    assert not list(cache.glob("video-download-*.zip"))
+    assert (downloads / archive.name).is_file()

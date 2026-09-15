@@ -324,3 +324,10 @@ ROADMAP.md
 /benchmarks/**/*.mkv
 /benchmarks/**/frames/
 /benchmarks/**/tags/
+/benchmarks/blender/render_matrix.py
+
+# Downloaded benchmark release inputs.
+/*-benchmark-videos.zip
+/*-benchmark-videos.zip.partial
+/*-benchmark-videos_manifest.json
+/*-benchmark-videos_manifest.json.partial
