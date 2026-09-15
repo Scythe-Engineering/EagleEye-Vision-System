@@ -232,17 +232,17 @@ class DatasetManifest(StrictModel):
         return [asset for asset in self.assets if asset.path in paths]
 
 
-def cached_manifest_path(cache_dir: str | Path, manifest_url: str) -> Path:
-    """Return the stable cache path for a remote manifest URL."""
-    url_hash = hashlib.sha256(manifest_url.encode("utf-8")).hexdigest()
-    filename = Path(urlsplit(manifest_url).path).name or "manifest.json"
-    return Path(cache_dir) / "manifests" / url_hash / filename
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
-def download_manifest(archive_url: str, cache_dir: str | Path) -> Path:
-    """Download and validate an archive's manifest unless it is already cached."""
+def download_manifest(
+    archive_url: str, download_dir: str | Path = REPOSITORY_ROOT
+) -> Path:
+    """Download and validate an archive's manifest in the download directory."""
     manifest_url = manifest_url_for_archive(archive_url)
-    target = cached_manifest_path(cache_dir, manifest_url)
+    target = Path(download_dir) / (
+        Path(urlsplit(manifest_url).path).name or "manifest.json"
+    )
     if target.is_file():
         return target
 
@@ -317,10 +317,15 @@ def _video_assets(manifest: DatasetManifest, role: str | None) -> list[Asset]:
 
 
 def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
-    """Download an archive, resuming interrupted transfers up to three times."""
+    """Download an archive into the repository, resuming interrupted transfers."""
     directory.mkdir(parents=True, exist_ok=True)
-    archive_path = directory / "video-download.partial"
-    offset = archive_path.stat().st_size if archive_path.exists() else 0
+    archive_path = directory / (
+        Path(urlsplit(url).path).name or "benchmark-videos.zip"
+    )
+    if archive_path.is_file():
+        return archive_path
+    partial_path = archive_path.with_suffix(archive_path.suffix + ".partial")
+    offset = partial_path.stat().st_size if partial_path.exists() else 0
     headers = {"User-Agent": "EagleEye-Benchmark/1.0"}
     if offset:
         headers["Range"] = f"bytes={offset}-"
@@ -334,7 +339,7 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
             remaining = int(length) if length and length.isdigit() else None
             total = offset + remaining if remaining is not None else None
             with (
-                archive_path.open("ab" if resuming else "wb") as handle,
+                partial_path.open("ab" if resuming else "wb") as handle,
                 tqdm(
                     total=total,
                     initial=offset,
@@ -347,10 +352,11 @@ def _download_archive(url: str, directory: Path, attempts: int = 3) -> Path:
                 while chunk := response.read(1024 * 1024):
                     handle.write(chunk)
                     progress.update(len(chunk))
+        os.replace(partial_path, archive_path)
         return archive_path
     except HTTPError as error:
         if error.code == 416 and offset and attempts > 1:
-            archive_path.unlink(missing_ok=True)
+            partial_path.unlink(missing_ok=True)
             return _download_archive(url, directory, attempts - 1)
         raise
     except OSError:
@@ -364,8 +370,9 @@ def download_missing_videos(
     cache_dir: str | Path,
     archive_url: str = DEFAULT_VIDEO_ARCHIVE_URL,
     role: str | None = None,
+    download_dir: str | Path = REPOSITORY_ROOT,
 ) -> list[Path]:
-    """Download, verify, and cache missing selected videos from a ZIP archive."""
+    """Download, verify, and cache missing videos from a repository-root ZIP."""
     cache = Path(cache_dir)
     missing = [
         asset
@@ -375,50 +382,47 @@ def download_missing_videos(
     if not missing:
         return []
 
-    archive_path = _download_archive(archive_url, cache)
-    try:
-        if not zipfile.is_zipfile(archive_path):
-            archive_path.unlink(missing_ok=True)
-            raise ValueError("downloaded video archive is not a ZIP file")
-        with zipfile.ZipFile(archive_path) as archive:
-            members = {member.filename: member for member in archive.infolist()}
-            unavailable = [
-                asset.path
-                for asset in missing
-                if asset.path not in members
-                or members[asset.path].is_dir()
-                or members[asset.path].file_size != asset.size
-            ]
-            if unavailable:
-                raise ValueError(
-                    "video archive does not contain the expected assets: "
-                    + ", ".join(unavailable)
-                )
-
-            installed: list[Path] = []
-            with tqdm(
-                total=len(missing), unit="video", desc="Extracting benchmark videos"
-            ) as progress:
-                for asset in missing:
-                    target = cache_path(cache, asset)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with tempfile.NamedTemporaryFile(
-                        mode="wb", dir=target.parent, delete=False
-                    ) as output:
-                        temporary = Path(output.name)
-                        try:
-                            with archive.open(members[asset.path]) as source:
-                                shutil.copyfileobj(source, output, 1024 * 1024)
-                        except BaseException:
-                            temporary.unlink(missing_ok=True)
-                            raise
-                    reason = _check_file(temporary, asset)
-                    if reason is not None:
-                        temporary.unlink(missing_ok=True)
-                        raise ValueError(f"downloaded {asset.path}: {reason}")
-                    os.replace(temporary, target)
-                    installed.append(target)
-                    progress.update(1)
-            return installed
-    finally:
+    archive_path = _download_archive(archive_url, Path(download_dir))
+    if not zipfile.is_zipfile(archive_path):
         archive_path.unlink(missing_ok=True)
+        raise ValueError("downloaded video archive is not a ZIP file")
+    with zipfile.ZipFile(archive_path) as archive:
+        members = {member.filename: member for member in archive.infolist()}
+        unavailable = [
+            asset.path
+            for asset in missing
+            if asset.path not in members
+            or members[asset.path].is_dir()
+            or members[asset.path].file_size != asset.size
+        ]
+        if unavailable:
+            raise ValueError(
+                "video archive does not contain the expected assets: "
+                + ", ".join(unavailable)
+            )
+
+        installed: list[Path] = []
+        with tqdm(
+            total=len(missing), unit="video", desc="Extracting benchmark videos"
+        ) as progress:
+            for asset in missing:
+                target = cache_path(cache, asset)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", dir=target.parent, delete=False
+                ) as output:
+                    temporary = Path(output.name)
+                    try:
+                        with archive.open(members[asset.path]) as source:
+                            shutil.copyfileobj(source, output, 1024 * 1024)
+                    except BaseException:
+                        temporary.unlink(missing_ok=True)
+                        raise
+                reason = _check_file(temporary, asset)
+                if reason is not None:
+                    temporary.unlink(missing_ok=True)
+                    raise ValueError(f"downloaded {asset.path}: {reason}")
+                os.replace(temporary, target)
+                installed.append(target)
+                progress.update(1)
+        return installed

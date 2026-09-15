@@ -260,7 +260,7 @@ def _run(args: argparse.Namespace) -> int:
     if args.timeout is not None and args.timeout <= 0:
         raise ValueError("timeout must be greater than zero")
     deadline = time.monotonic() + args.timeout if args.timeout is not None else None
-    dataset_path = args.dataset or download_manifest(args.archive_url, args.cache_dir)
+    dataset_path = args.dataset or download_manifest(args.archive_url)
     manifest = load_manifest(dataset_path, args.manifest_sha256)
     clips = (
         manifest.clips
