@@ -148,7 +148,14 @@ def _reacquisition(rows: list[dict[str, Any]], key: str) -> list[dict[str, int |
         visible_end = index
         while visible_end < len(rows) and rows[visible_end]["provisional_truth_tags"]:
             visible_end += 1
-        recovered = next((i for i in range(index, visible_end) if rows[i][key]), None)
+        recovered = next(
+            (
+                frame_index
+                for frame_index in range(index, visible_end)
+                if rows[frame_index][key]
+            ),
+            None,
+        )
         result.append(
             {
                 "after_no_provisional_start": start,
@@ -247,7 +254,7 @@ def _run(args: argparse.Namespace) -> int:
     clips = (
         manifest.clips
         if args.subset is None
-        else [c for c in manifest.clips if args.subset in c.roles]
+        else [clip for clip in manifest.clips if args.subset in clip.roles]
     )
     if not clips:
         raise ValueError(f"dataset contains no clips for subset {args.subset!r}")

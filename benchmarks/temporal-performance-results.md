@@ -135,7 +135,7 @@ uv run python src/rust_implementations/build.py temporal_acceleration
 # Complete run. Use a fresh output directory each time.
 uv run python -m benchmarks.temporal_experiments \
   --config benchmarks/configs/temporal.json \
-  --opencv-threads 4 --timeout 600 \
+  --opencv-threads 4 \
   --output benchmark-results/temporal-recheck
 
 # Fast screen across every clip, preserving state within each prefix.

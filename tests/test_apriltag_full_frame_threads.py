@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import pytest
 from pupil_apriltags import Detector
 
 from src.main_operations.definitions.detect_apriltags import DetectApriltagsDefinition
@@ -11,7 +12,9 @@ from src.main_operations.modules.apriltags import apriltag_detector
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
 
 
-def test_full_frame_threads_do_not_change_roi_threads_or_fallback(monkeypatch) -> None:
+def test_full_frame_threads_do_not_change_roi_threads_or_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """ROIs keep nthreads while direct and fallback full frames use the override."""
     calls: list[int] = []
 
@@ -41,7 +44,7 @@ def test_full_frame_threads_do_not_change_roi_threads_or_fallback(monkeypatch) -
 
 
 def test_zero_full_frame_threads_reuses_base_detector_after_live_updates(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Zero removes the override, including through the operation config wrapper."""
 
