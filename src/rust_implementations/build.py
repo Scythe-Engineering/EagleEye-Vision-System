@@ -12,15 +12,15 @@ Usage:
     python build.py --clean           # Clean all build artifacts
 """
 
-import subprocess
-import sys
 import argparse
-from pathlib import Path
 import hashlib
 import json
-import time
 import os
 import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
 
 
 # ANSI color codes for colored console output
@@ -103,8 +103,16 @@ class RustModuleBuilder:
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
-        """Calculate hash of all source files in a module."""
-        hasher = hashlib.md5()
+        """Hash module sources and the default native build profile.
+
+        Args:
+            module_dir: Directory containing the module sources.
+
+        Returns:
+            The module hash as a hexadecimal string.
+        """
+        # Invalidate cached debug builds when switching inference to release mode.
+        hasher = hashlib.md5(b"maturin-develop-release")
 
         # Include Cargo.toml
         cargo_toml = module_dir / self.CARGO_TOML_FILENAME
@@ -125,7 +133,7 @@ class RustModuleBuilder:
             try:
                 with open(self.build_cache_file, "r") as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 pass
         return {}
 
@@ -150,7 +158,7 @@ class RustModuleBuilder:
         try:
             with open(self.build_cache_file, "w") as f:
                 json.dump(cache, f, indent=2)
-        except IOError:
+        except OSError:
             self._log(
                 f"{Colors.YELLOW}Warning: Could not save build cache to {self.build_cache_file}{Colors.RESET}"
             )
@@ -174,8 +182,9 @@ class RustModuleBuilder:
             return False
 
         result = subprocess.run(
-            [*self._maturin_command(), "develop"],
+            [*self._maturin_command(), "develop", "--release"],
             cwd=module_dir,
+            check=False,
             capture_output=True,
             text=True,
             env=self._get_clean_env(),
@@ -203,6 +212,7 @@ class RustModuleBuilder:
             result = subprocess.run(
                 [*self._python_command(), "-c", f"import {module_name}"],
                 cwd=self.repo_root,  # Run from workspace root
+                check=False,
                 capture_output=True,
                 text=True,
                 env=self._get_clean_env(),
@@ -259,6 +269,7 @@ class RustModuleBuilder:
             result = subprocess.run(
                 [*self._python_command(), str(build_script)],
                 cwd=module_dir,
+                check=False,
                 capture_output=True,
                 text=True,
                 env=self._get_clean_env(),
@@ -269,8 +280,9 @@ class RustModuleBuilder:
                 return False
 
             result = subprocess.run(
-                [*self._maturin_command(), "develop"],
+                [*self._maturin_command(), "develop", "--release"],
                 cwd=module_dir,
+                check=False,
                 capture_output=True,
                 text=True,
                 env=self._get_clean_env(),
@@ -323,6 +335,7 @@ class RustModuleBuilder:
             result = subprocess.run(
                 [*self._maturin_command(), "--version"],
                 cwd=self.repo_root,
+                check=False,
                 capture_output=True,
                 text=True,
                 env=env,

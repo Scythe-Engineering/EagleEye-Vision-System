@@ -39,6 +39,15 @@
             "max": 16,
             "restart_for_change": false
         },
+        "full_frame_nthreads": {
+            "type": "int",
+            "description": "Optional thread count for direct full-frame searches; zero uses nthreads without another detector",
+            "default": 0,
+            "required": false,
+            "min": 0,
+            "max": 16,
+            "restart_for_change": false
+        },
         "quad_decimate": {
             "type": "float",
             "description": "Detection of quads can be done on a lower-resolution image, improving speed at a cost of pose accuracy",
