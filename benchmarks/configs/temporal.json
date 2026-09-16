@@ -44,6 +44,7 @@
     "action_params": {
       "families": "tag36h11",
       "nthreads": 1,
+      "full_frame_nthreads": 2,
       "quad_decimate": 2.0,
       "large_roi_decimate": 3.0,
       "large_roi_min_px": 96,

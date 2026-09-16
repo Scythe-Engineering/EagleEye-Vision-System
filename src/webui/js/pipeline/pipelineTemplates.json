@@ -157,6 +157,7 @@
                 "action_name": "detect_apriltags.py",
                 "action_params": {
                     "quad_decimate": 2.0,
+                    "full_frame_nthreads": 2,
                     "large_roi_decimate": 3.0,
                     "large_roi_min_px": 96
                 },

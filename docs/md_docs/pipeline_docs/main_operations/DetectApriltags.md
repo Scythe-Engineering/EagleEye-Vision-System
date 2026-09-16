@@ -22,18 +22,20 @@ Use this operation before PnP camera localization or whenever a pipeline needs A
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `families` | `tag36h11` | Tag family to decode. The editor lists the families supported by `pupil-apriltags`. |
-| `nthreads` | `1` | Detector threads, 1 to 16. |
+| `nthreads` | `1` | Detector threads, 1 to 16. Used for region searches and, unless overridden, full-frame searches. |
+| `full_frame_nthreads` | `0` | Full-frame-only thread count, 0 to 16. Zero follows `nthreads` without allocating another detector. |
 | `quad_decimate` | `2.0` | Quad-search downsampling factor, 1.0 to 10.0. Larger values trade corner precision and detection range for less image work. |
 | `quad_sigma` | `0.0` | Blur applied during quad search, 0.0 to 5.0. |
 | `refine_edges` | `1` | Use `1` to refine detected edges, or `0` to disable it. |
 | `decode_sharpening` | `0.25` | Decode sharpening, 0.0 to 1.0. |
 
-All settings support live updates.
+All settings support live updates. Separate full-frame threading avoids thread-pool overhead on small temporal crops. The override applies to direct full-frame inputs and recovery searches, not individual regions, even when a region spans the frame. A nonzero override different from `nthreads` allocates one additional native detector.
 
 ```json
 {
   "families": "tag36h11",
-  "nthreads": 2,
+  "nthreads": 1,
+  "full_frame_nthreads": 2,
   "quad_decimate": 2.0,
   "refine_edges": 1
 }

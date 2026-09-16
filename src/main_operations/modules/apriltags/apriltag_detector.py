@@ -42,6 +42,7 @@ class AprilTagDetector:
         decode_sharpening: float = 0.25,
         large_roi_decimate: float = 3.0,
         large_roi_min_px: int = 96,
+        full_frame_nthreads: int = 0,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -66,6 +67,8 @@ class AprilTagDetector:
             decode_sharpening: How much sharpening should be done to decoded images?
                               This can help decode small tags but may or may not help
                               in odd lighting conditions or low light conditions.
+            full_frame_nthreads: Optional thread count for direct full-frame searches.
+                Zero uses ``nthreads`` without creating another native detector.
         """
         self.families = families
         self.nthreads = nthreads
@@ -73,6 +76,7 @@ class AprilTagDetector:
         self.quad_sigma = quad_sigma
         self.refine_edges = refine_edges
         self.decode_sharpening = decode_sharpening
+        self.full_frame_nthreads = max(0, int(full_frame_nthreads))
         self.large_roi_decimate = max(0.0, float(large_roi_decimate))
         self.large_roi_min_px = max(0, int(large_roi_min_px))
 
@@ -98,6 +102,19 @@ class AprilTagDetector:
             self.quad_sigma,
             self.refine_edges,
             self.decode_sharpening,
+        )
+        self._full_frame_detector = (
+            self._create_detector(
+                families,
+                self.full_frame_nthreads,
+                quad_decimate,
+                quad_sigma,
+                refine_edges,
+                decode_sharpening,
+            )
+            if self.full_frame_nthreads > 0
+            and self.full_frame_nthreads != max(1, int(self.nthreads))
+            else None
         )
         self._large_roi_detector = (
             self._create_detector(
@@ -236,6 +253,7 @@ class AprilTagDetector:
         decode_sharpening: Optional[float] = None,
         large_roi_decimate: Optional[float] = None,
         large_roi_min_px: Optional[int] = None,
+        full_frame_nthreads: int | None = None,
     ) -> None:
         """Update detector parameters and recreate the detector.
 
@@ -246,6 +264,8 @@ class AprilTagDetector:
             quad_sigma: Gaussian blur standard deviation for quad detection.
             refine_edges: Whether to refine quad edges.
             decode_sharpening: Sharpening amount for decoded images.
+            full_frame_nthreads: Optional thread count for direct full-frame searches.
+                Zero uses ``nthreads`` without another native detector.
         """
         next_families = self.families if families is None else families
         next_nthreads = self.nthreads if nthreads is None else nthreads
@@ -258,6 +278,11 @@ class AprilTagDetector:
             self.decode_sharpening
             if decode_sharpening is None
             else decode_sharpening
+        )
+        next_full_frame_nthreads = (
+            self.full_frame_nthreads
+            if full_frame_nthreads is None
+            else max(0, int(full_frame_nthreads))
         )
         next_large_roi_decimate = (
             self.large_roi_decimate
@@ -279,6 +304,19 @@ class AprilTagDetector:
                 next_refine_edges,
                 next_decode_sharpening,
             )
+            new_full_frame_detector = (
+                self._create_detector(
+                    next_families,
+                    next_full_frame_nthreads,
+                    next_quad_decimate,
+                    next_quad_sigma,
+                    next_refine_edges,
+                    next_decode_sharpening,
+                )
+                if next_full_frame_nthreads > 0
+                and next_full_frame_nthreads != max(1, int(next_nthreads))
+                else None
+            )
             new_large_roi_detector = (
                 self._create_detector(
                     next_families,
@@ -298,6 +336,7 @@ class AprilTagDetector:
         with self._detect_lock:
             self.ready = False
             old_detector = self.detector
+            old_full_frame_detector = self._full_frame_detector
             old_large_roi_detector = self._large_roi_detector
             self.families = next_families
             self.nthreads = max(1, int(next_nthreads))
@@ -305,9 +344,11 @@ class AprilTagDetector:
             self.quad_sigma = max(0.0, float(next_quad_sigma))
             self.refine_edges = int(next_refine_edges)
             self.decode_sharpening = float(next_decode_sharpening)
+            self.full_frame_nthreads = next_full_frame_nthreads
             self.large_roi_decimate = next_large_roi_decimate
             self.large_roi_min_px = next_large_roi_min_px
             self.detector = new_detector
+            self._full_frame_detector = new_full_frame_detector
             self._large_roi_detector = new_large_roi_detector
             self.ready = True
             self._min_input_dimension = int(np.ceil(4 * self.quad_decimate))
@@ -316,6 +357,8 @@ class AprilTagDetector:
             self._gray_buffer = None
             self._segment_gray_buffers.clear()
             self._disable_native_destructor(old_detector)
+            if old_full_frame_detector is not None:
+                self._disable_native_destructor(old_full_frame_detector)
             if old_large_roi_detector is not None:
                 self._disable_native_destructor(old_large_roi_detector)
 
@@ -400,7 +443,8 @@ class AprilTagDetector:
                 return None
             with self._detect_lock:
                 try:
-                    detections = cast(list[Detection], self.detector.detect(gray_image))
+                    detector = self._full_frame_detector or self.detector
+                    detections = cast(list[Detection], detector.detect(gray_image))
                 except Exception as exc:
                     logger.exception("AprilTag detection failed: %s", exc)
                     return None
@@ -424,23 +468,16 @@ class AprilTagDetector:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue
                     if isinstance(detected_tags, Detection):
-                        detected_tags = self.to_opencv_coordinates(detected_tags)
-                        detections.append(
-                            CustomDetection(
-                                tag_id=detected_tags.tag_id,
-                                corners=self._map_segment_corners(
-                                    detected_tags.corners, full_frame_mapping
-                                ),
-                            )
-                        )
-                    elif isinstance(detected_tags, list):
+                        detected_tags = [detected_tags]
+                    if isinstance(detected_tags, list):
                         for detection in detected_tags:
-                            detection = self.to_opencv_coordinates(detection)
                             detections.append(
                                 CustomDetection(
                                     tag_id=detection.tag_id,
                                     corners=self._map_segment_corners(
-                                        detection.corners, full_frame_mapping
+                                        np.asarray(detection.corners, dtype=np.float64)
+                                        - 0.5,
+                                        full_frame_mapping,
                                     ),
                                 )
                             )
