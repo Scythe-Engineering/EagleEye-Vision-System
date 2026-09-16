@@ -177,32 +177,28 @@ impl TemporalAcceleration {
                 continue;
             }
 
-            // Frustum cull using corners
-            if !frustum_cull(&r_wc, t_wc, corners_world, width as i32, height as i32, fx, fy) {
+            // Transform once: frustum culling and projection share these coordinates.
+            let corners_camera = transform_corners_to_camera(&r_wc, t_wc, corners_world);
+            if !frustum_cull(&corners_camera, width as i32, height as i32, fx, fy) {
                 continue;
             }
 
-            // Project corners with Brown–Conrady distortion
-	            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
-	            let mut valid_count = 0usize;
-	            let (k1, k2, p1, p2, k3) = extract_brown_conrady_coefficients(&self.distortion_coefficients);
-            for c in 0..4 {
-                let p = [
-                    corners_world[c * 3 + 0],
-                    corners_world[c * 3 + 1],
-                    corners_world[c * 3 + 2],
-                ];
-                let pc = vec3_add(mat3_mul_vec3(&r_wc, p), t_wc);
+            // Project corners with Brown–Conrady distortion.
+            let mut img_pts: [[f32; 2]; 4] = [[0.0; 2]; 4];
+            let mut valid_count = 0usize;
+            let (k1, k2, p1, p2, k3) =
+                extract_brown_conrady_coefficients(&self.distortion_coefficients);
+            for (c, pc) in corners_camera.iter().enumerate() {
                 if !pc[2].is_finite() || pc[2] <= 0.0 {
                     continue;
                 }
-	                let xn = pc[0] / pc[2];
-	                let yn = pc[1] / pc[2];
-	                let (xd, yd) = distort_brown_conrady(xn, yn, k1, k2, p1, p2, k3);
-	                let x = fx * xd + cx;
-	                let y = fy * yd + cy;
-	                img_pts[c] = [x, y];
-	                valid_count += 1;
+                let xn = pc[0] / pc[2];
+                let yn = pc[1] / pc[2];
+                let (xd, yd) = distort_brown_conrady(xn, yn, k1, k2, p1, p2, k3);
+                let x = fx * xd + cx;
+                let y = fy * yd + cy;
+                img_pts[c] = [x, y];
+                valid_count += 1;
             }
 
             if valid_count < 4 || !img_pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()) {
@@ -327,45 +323,47 @@ fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 
 fn is_finite3(v: &[f32; 3]) -> bool { v[0].is_finite() && v[1].is_finite() && v[2].is_finite() }
 
-fn frustum_cull(
+/// Transform four world-space tag corners into camera coordinates.
+fn transform_corners_to_camera(
     r_wc: &[[f32; 3]; 3],
     t_wc: [f32; 3],
     corners_world: &[f32; 12],
+) -> [[f32; 3]; 4] {
+    std::array::from_fn(|i| {
+        let p = [
+            corners_world[i * 3],
+            corners_world[i * 3 + 1],
+            corners_world[i * 3 + 2],
+        ];
+        vec3_add(mat3_mul_vec3(r_wc, p), t_wc)
+    })
+}
+
+/// Return whether a camera-space tag corner lies inside the padded pinhole frustum.
+///
+/// For finite positive focal lengths, comparing normalized-image slopes is equivalent
+/// to the former `atan` angle comparison while avoiding eight transcendental calls.
+fn frustum_cull(
+    corners_camera: &[[f32; 3]; 4],
     width: i32,
     height: i32,
     fx: f32,
     fy: f32,
 ) -> bool {
-    let mut corners_cam: [[f32; 3]; 4] = [[0.0; 3]; 4];
-    for i in 0..4 {
-        let p = [
-            corners_world[i * 3 + 0],
-            corners_world[i * 3 + 1],
-            corners_world[i * 3 + 2],
-        ];
-        let pc = vec3_add(mat3_mul_vec3(r_wc, p), t_wc);
-        corners_cam[i] = pc;
-    }
-
     let min_depth = 0.01f32;
-    if corners_cam.iter().all(|c| c[2] < min_depth) {
+    if corners_camera.iter().all(|c| c[2] < min_depth) {
         return false;
     }
 
     let margin_factor = 0.5f32;
-    let fov_x_half = ((width as f32 * 0.5) * (1.0 + margin_factor) / fx).atan();
-    let fov_y_half = ((height as f32 * 0.5) * (1.0 + margin_factor) / fy).atan();
+    let max_x_slope = (width as f32 * 0.5) * (1.0 + margin_factor) / fx;
+    let max_y_slope = (height as f32 * 0.5) * (1.0 + margin_factor) / fy;
 
-    let mut any_in = false;
-    for c in corners_cam.iter().filter(|c| c[2] > min_depth) {
-        let angle_x = (c[0].abs() / c[2]).atan();
-        let angle_y = (c[1].abs() / c[2]).atan();
-        if angle_x < fov_x_half && angle_y < fov_y_half {
-            any_in = true;
-            break;
-        }
-    }
-    any_in
+    corners_camera.iter().any(|c| {
+        c[2] > min_depth
+            && c[0].abs() / c[2] < max_x_slope
+            && c[1].abs() / c[2] < max_y_slope
+    })
 }
 
 /// Expand a projected tag around its center and return its visible axis-aligned bounds.
@@ -429,7 +427,72 @@ fn distort_brown_conrady(x: f32, y: f32, k1: f32, k2: f32, p1: f32, p2: f32, k3:
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+    use super::*;
+
+    /// Pre-optimization angular frustum test retained only for regression coverage.
+    fn frustum_cull_reference(
+        r_wc: &[[f32; 3]; 3],
+        t_wc: [f32; 3],
+        corners_world: &[f32; 12],
+        width: i32,
+        height: i32,
+        fx: f32,
+        fy: f32,
+    ) -> bool {
+        let corners_camera = transform_corners_to_camera(r_wc, t_wc, corners_world);
+        let min_depth = 0.01f32;
+        if corners_camera.iter().all(|c| c[2] < min_depth) {
+            return false;
+        }
+        let margin_factor = 0.5f32;
+        let fov_x_half = ((width as f32 * 0.5) * (1.0 + margin_factor) / fx).atan();
+        let fov_y_half = ((height as f32 * 0.5) * (1.0 + margin_factor) / fy).atan();
+        corners_camera.iter().any(|c| {
+            c[2] > min_depth
+                && (c[0].abs() / c[2]).atan() < fov_x_half
+                && (c[1].abs() / c[2]).atan() < fov_y_half
+        })
+    }
+
+    #[test]
+    fn camera_corner_transform_preserves_rotation_and_translation() {
+        let rotation = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
+        let corners = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 1.0, 2.0];
+        assert_eq!(
+            transform_corners_to_camera(&rotation, [10.0, 20.0, 30.0], &corners),
+            [[8.0, 21.0, 33.0], [5.0, 24.0, 36.0], [2.0, 27.0, 39.0], [9.0, 20.0, 32.0]]
+        );
+    }
+
+    #[test]
+    fn slope_frustum_cull_matches_angular_reference() {
+        let r_wc = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let t_wc = [0.25, -0.5, 0.0];
+        let cases = [
+            [0.0, 0.5, 2.0, 0.5, 0.5, 2.0, 0.5, 1.0, 2.0, 0.0, 1.0, 2.0],
+            [3.0, 0.0, 1.0, 3.1, 0.0, 1.0, 3.0, 0.1, 1.0, 3.1, 0.1, 1.0],
+            [0.0, 3.0, 1.0, 0.1, 3.0, 1.0, 0.0, 3.1, 1.0, 0.1, 3.1, 1.0],
+            // Strict near-plane and horizontal-slope boundaries.
+            [0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01],
+            [1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0],
+            [1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0],
+        ];
+
+        for corners_world in cases {
+            let optimized = frustum_cull(
+                &transform_corners_to_camera(&r_wc, t_wc, &corners_world),
+                200,
+                200,
+                100.0,
+                100.0,
+            );
+            assert_eq!(
+                optimized,
+                frustum_cull_reference(&r_wc, t_wc, &corners_world, 200, 200, 100.0, 100.0),
+                "corners: {corners_world:?}"
+            );
+        }
+    }
 
 	#[test]
 	fn distort_identity_when_zero_coefficients() {

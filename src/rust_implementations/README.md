@@ -10,6 +10,6 @@ uv run python build.py --clean  # remove build artifacts and the build cache
 uv run python build.py module_name
 ```
 
-`build.py` runs `maturin develop` for each module and verifies that Python can import it. It rebuilds a module when its `Cargo.toml` or Rust source changes. Run `uv sync` first if `maturin` is not installed.
+`build.py` runs `maturin develop --release` for modules without a custom build script and verifies that Python can import them. Both normal builds and reinstalls use optimized native code. It rebuilds a module when its `Cargo.toml` or Rust source changes; the build-profile cache marker also replaces previously cached debug builds. Run `uv sync` first if `maturin` is not installed.
 
 Each module lives in `modules/<name>/` and needs a `Cargo.toml` plus `src/lib.rs`. The crate and Python extension names must match the module directory name.

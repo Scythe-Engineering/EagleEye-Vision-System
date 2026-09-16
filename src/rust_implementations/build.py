@@ -103,8 +103,9 @@ class RustModuleBuilder:
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
-        """Calculate hash of all source files in a module."""
-        hasher = hashlib.md5()
+        """Hash module sources and the default native build profile."""
+        # Invalidate cached debug builds when switching inference to release mode.
+        hasher = hashlib.md5(b"maturin-develop-release")
 
         # Include Cargo.toml
         cargo_toml = module_dir / self.CARGO_TOML_FILENAME
@@ -174,7 +175,7 @@ class RustModuleBuilder:
             return False
 
         result = subprocess.run(
-            [*self._maturin_command(), "develop"],
+            [*self._maturin_command(), "develop", "--release"],
             cwd=module_dir,
             capture_output=True,
             text=True,
@@ -269,7 +270,7 @@ class RustModuleBuilder:
                 return False
 
             result = subprocess.run(
-                [*self._maturin_command(), "develop"],
+                [*self._maturin_command(), "develop", "--release"],
                 cwd=module_dir,
                 capture_output=True,
                 text=True,
