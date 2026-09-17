@@ -1,13 +1,12 @@
+import logging
 from copy import copy
 from dataclasses import dataclass
-import logging
 from threading import Lock
 from typing import Optional, cast
 
 import cv2
 import numpy as np
-from pupil_apriltags import Detector, Detection
-
+from pupil_apriltags import Detection, Detector
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,7 @@ class AprilTagDetector:
         large_roi_decimate: float = 3.0,
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 0,
+        small_roi_max_px: int = 32,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -69,6 +69,8 @@ class AprilTagDetector:
                               in odd lighting conditions or low light conditions.
             full_frame_nthreads: Optional thread count for direct full-frame searches.
                 Zero uses ``nthreads`` without creating another native detector.
+            small_roi_max_px: ROIs smaller than this use a native decimate-1 detector.
+                Zero disables the extra detector.
         """
         self.families = families
         self.nthreads = nthreads
@@ -79,6 +81,7 @@ class AprilTagDetector:
         self.full_frame_nthreads = max(0, int(full_frame_nthreads))
         self.large_roi_decimate = max(0.0, float(large_roi_decimate))
         self.large_roi_min_px = max(0, int(large_roi_min_px))
+        self.small_roi_max_px = max(0, int(small_roi_max_px))
 
         self.ready = False
         self._detect_lock: Lock = Lock()
@@ -87,13 +90,15 @@ class AprilTagDetector:
         # The camera pipeline is continuous, so frame shape/dtype/channel layout is
         # expected to stay stable. Cache the chosen preprocessing path and reusable
         # grayscale buffers to avoid repeated introspection/allocation every frame.
-        self._preprocess_signature: Optional[
-            tuple[tuple[int, ...], np.dtype, bool]
-        ] = None
+        self._preprocess_signature: Optional[tuple[tuple[int, ...], np.dtype, bool]] = (
+            None
+        )
         self._preprocess_mode: Optional[str] = None
         self._gray_buffer: Optional[np.ndarray] = None
         self._segment_gray_buffers: dict[tuple[int, int], np.ndarray] = {}
-        self._min_input_dimension = int(np.ceil(4 * max(1.0, float(self.quad_decimate))))
+        self._min_input_dimension = int(
+            np.ceil(4 * max(1.0, float(self.quad_decimate)))
+        )
 
         self.detector = self._create_detector(
             self.families,
@@ -126,6 +131,13 @@ class AprilTagDetector:
                 decode_sharpening,
             )
             if self.large_roi_decimate >= 1.0 and self.large_roi_min_px > 0
+            else None
+        )
+        self._small_roi_detector = (
+            self._create_detector(
+                families, nthreads, 1.0, quad_sigma, refine_edges, decode_sharpening
+            )
+            if self.quad_decimate > 1.0 and self.small_roi_max_px > 0
             else None
         )
         self.ready = True
@@ -164,7 +176,9 @@ class AprilTagDetector:
             if hasattr(detector, "tag_families"):
                 detector.tag_families = {}
         except Exception as exc:
-            logger.warning("Failed to disable old AprilTag detector destructor: %s", exc)
+            logger.warning(
+                "Failed to disable old AprilTag detector destructor: %s", exc
+            )
 
     def _get_gray_buffer(self, shape: tuple[int, int]) -> np.ndarray:
         """Return a reusable grayscale conversion buffer for a frame shape."""
@@ -206,12 +220,19 @@ class AprilTagDetector:
 
         c_contiguous = image.flags.c_contiguous
         signature = (shape, image.dtype, c_contiguous)
-        mode = self._preprocess_mode if signature == self._preprocess_signature else None
+        mode = (
+            self._preprocess_mode if signature == self._preprocess_signature else None
+        )
 
         if mode is None:
             if len(shape) == 3:
                 mode = "bgr"
-            elif len(shape) == 2 and image.dtype == np.uint8 and c_contiguous and image.flags.writeable:
+            elif (
+                len(shape) == 2
+                and image.dtype == np.uint8
+                and c_contiguous
+                and image.flags.writeable
+            ):
                 mode = "gray_passthrough"
             elif len(shape) == 2:
                 mode = "gray_convert" if image.dtype != np.uint8 else "gray_require"
@@ -254,6 +275,7 @@ class AprilTagDetector:
         large_roi_decimate: Optional[float] = None,
         large_roi_min_px: Optional[int] = None,
         full_frame_nthreads: int | None = None,
+        small_roi_max_px: int | None = None,
     ) -> None:
         """Update detector parameters and recreate the detector.
 
@@ -275,9 +297,7 @@ class AprilTagDetector:
         next_quad_sigma = self.quad_sigma if quad_sigma is None else quad_sigma
         next_refine_edges = self.refine_edges if refine_edges is None else refine_edges
         next_decode_sharpening = (
-            self.decode_sharpening
-            if decode_sharpening is None
-            else decode_sharpening
+            self.decode_sharpening if decode_sharpening is None else decode_sharpening
         )
         next_full_frame_nthreads = (
             self.full_frame_nthreads
@@ -293,6 +313,11 @@ class AprilTagDetector:
             self.large_roi_min_px
             if large_roi_min_px is None
             else max(0, int(large_roi_min_px))
+        )
+        next_small_roi_max_px = (
+            self.small_roi_max_px
+            if small_roi_max_px is None
+            else max(0, int(small_roi_max_px))
         )
 
         try:
@@ -329,8 +354,22 @@ class AprilTagDetector:
                 if next_large_roi_decimate >= 1.0 and next_large_roi_min_px > 0
                 else None
             )
+            new_small_roi_detector = (
+                self._create_detector(
+                    next_families,
+                    next_nthreads,
+                    1.0,
+                    next_quad_sigma,
+                    next_refine_edges,
+                    next_decode_sharpening,
+                )
+                if float(next_quad_decimate) > 1.0 and next_small_roi_max_px > 0
+                else None
+            )
         except Exception as exc:
-            logger.exception("Failed to create AprilTag detector with updated parameters")
+            logger.exception(
+                "Failed to create AprilTag detector with updated parameters"
+            )
             raise ValueError(f"Invalid AprilTag detector configuration: {exc}") from exc
 
         with self._detect_lock:
@@ -338,6 +377,7 @@ class AprilTagDetector:
             old_detector = self.detector
             old_full_frame_detector = self._full_frame_detector
             old_large_roi_detector = self._large_roi_detector
+            old_small_roi_detector = self._small_roi_detector
             self.families = next_families
             self.nthreads = max(1, int(next_nthreads))
             self.quad_decimate = max(1.0, float(next_quad_decimate))
@@ -347,9 +387,11 @@ class AprilTagDetector:
             self.full_frame_nthreads = next_full_frame_nthreads
             self.large_roi_decimate = next_large_roi_decimate
             self.large_roi_min_px = next_large_roi_min_px
+            self.small_roi_max_px = next_small_roi_max_px
             self.detector = new_detector
             self._full_frame_detector = new_full_frame_detector
             self._large_roi_detector = new_large_roi_detector
+            self._small_roi_detector = new_small_roi_detector
             self.ready = True
             self._min_input_dimension = int(np.ceil(4 * self.quad_decimate))
             self._preprocess_signature = None
@@ -361,6 +403,8 @@ class AprilTagDetector:
                 self._disable_native_destructor(old_full_frame_detector)
             if old_large_roi_detector is not None:
                 self._disable_native_destructor(old_large_roi_detector)
+            if old_small_roi_detector is not None:
+                self._disable_native_destructor(old_small_roi_detector)
 
     @staticmethod
     def to_opencv_coordinates(detection: Detection) -> Detection:
@@ -376,7 +420,7 @@ class AprilTagDetector:
         if getattr(detection, "center", None) is not None:
             normalized.center = np.asarray(detection.center, dtype=np.float64) - 0.5
         if getattr(detection, "homography", None) is not None:
-            shift = np.array([[1., 0., -0.5], [0., 1., -0.5], [0., 0., 1.]])
+            shift = np.array([[1.0, 0.0, -0.5], [0.0, 1.0, -0.5], [0.0, 0.0, 1.0]])
             normalized.homography = shift @ detection.homography
         return normalized
 
@@ -448,7 +492,9 @@ class AprilTagDetector:
                 except Exception as exc:
                     logger.exception("AprilTag detection failed: %s", exc)
                     return None
-                return [self.to_opencv_coordinates(detection) for detection in detections]
+                return [
+                    self.to_opencv_coordinates(detection) for detection in detections
+                ]
         else:
             detections = []
             with self._detect_lock:
@@ -457,12 +503,19 @@ class AprilTagDetector:
                     if gray_image is None:
                         continue
                     try:
-                        detector = (
-                            self._large_roi_detector
-                            if self._large_roi_detector is not None
-                            and min(gray_image.shape[:2]) >= self.large_roi_min_px
-                            else self.detector
-                        )
+                        minimum_dimension = min(gray_image.shape[:2])
+                        if (
+                            self._small_roi_detector is not None
+                            and minimum_dimension < self.small_roi_max_px
+                        ):
+                            detector = self._small_roi_detector
+                        elif (
+                            self._large_roi_detector is not None
+                            and minimum_dimension >= self.large_roi_min_px
+                        ):
+                            detector = self._large_roi_detector
+                        else:
+                            detector = self.detector
                         detected_tags = detector.detect(gray_image)
                     except Exception as exc:
                         logger.exception("AprilTag detection failed: %s", exc)

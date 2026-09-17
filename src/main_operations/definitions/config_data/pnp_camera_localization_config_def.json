@@ -35,6 +35,13 @@
             "min": 0,
             "max": 100,
             "restart_for_change": false
+        },
+        "use_pose_continuity": {
+            "type": "bool",
+            "description": "Use recent capture-timed poses to resolve single-tag ambiguity and reject implausible jumps. Outputs remain current-frame poses, never held or smoothed.",
+            "default": true,
+            "required": false,
+            "restart_for_change": false
         }
     }
 }

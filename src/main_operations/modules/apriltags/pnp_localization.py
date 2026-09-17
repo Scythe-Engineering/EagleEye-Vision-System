@@ -83,12 +83,17 @@ class PnpLocalization:
         self.refinement_iterations = value
 
     def _solve(
-        self, object_points: np.ndarray, image_points: np.ndarray, tag_count: int
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        tag_count: int,
+        previous_pose: Optional[np.ndarray] = None,
+        object_origin: Optional[np.ndarray] = None,
     ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """Initialize with planar IPPE or multi-tag SQPnP, then refine valid candidates.
 
-        Candidate ranking uses squared reprojection error. Both initialization and
-        refinement are stateless: a previous pose never masks motion or tag ambiguity.
+        Candidate ranking uses squared reprojection error. An optional previous field
+        pose only breaks near-ties between bounded single-tag IPPE hypotheses.
         IPPE accepts arbitrary coplanar field points, avoiding IPPE_SQUARE's special
         local corner order. No field/camera basis conversion occurs in this solver.
 
@@ -96,6 +101,8 @@ class PnpLocalization:
             object_points: Mean-centered tag corners in meters, shape (4 * tags, 3).
             image_points: Corresponding image corners in pixels, shape (4 * tags, 2).
             tag_count: Number of contributing tags.
+            previous_pose: Recent field-from-camera pose used only for single-tag ties.
+            object_origin: Field origin subtracted from the object points.
 
         Returns:
             Best rotation and translation vectors, or None if no candidate is valid.
@@ -165,6 +172,80 @@ class PnpLocalization:
             return float(
                 np.mean(np.sum((projected.reshape(-1, 2) - image_points) ** 2, axis=1))
             )
+
+        if tag_count == 1 and previous_pose is not None and object_origin is not None:
+            valid = [
+                (rotation, translation, score(rotation, translation))
+                for rotation, translation in zip(rotations, translations)
+            ]
+            valid = [candidate for candidate in valid if np.isfinite(candidate[2])]
+            if not valid:
+                return None
+            # A subpixel fit tie is not enough on its own: both the initializer and
+            # refined result must stay within the bounded neighborhood of the prior.
+            best_rms = np.sqrt(min(candidate[2] for candidate in valid))
+            tied = [
+                candidate
+                for candidate in valid
+                if np.sqrt(candidate[2]) <= best_rms + 0.25
+            ]
+
+            def pose_for(rvec: np.ndarray, tvec: np.ndarray) -> np.ndarray:
+                """Undo object centering before comparing field-space camera poses."""
+                rotation = cv2.Rodrigues(rvec)[0]
+                pose = np.eye(4, dtype=np.float64)
+                pose[:3, :3] = rotation.T
+                pose[:3, 3] = object_origin - rotation.T @ tvec.reshape(3)
+                return pose
+
+            def rotation_delta(pose: np.ndarray) -> float:
+                """Measure SO(3) separation from the previous camera orientation."""
+                cosine = np.clip(
+                    (np.trace(pose[:3, :3].T @ previous_pose[:3, :3]) - 1) / 2,
+                    -1.0,
+                    1.0,
+                )
+                return float(np.arccos(cosine))
+
+            def continuity(candidate: tuple[np.ndarray, np.ndarray, float]) -> float:
+                """Compare one-meter translation and half-radian rotation scales."""
+                pose = pose_for(candidate[0], candidate[1])
+                translation = np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3])
+                return float(translation**2 + (rotation_delta(pose) / 0.5) ** 2)
+
+            rotation, translation, error = min(tied, key=continuity)
+            pose = pose_for(rotation, translation)
+            if (
+                np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) > 1.0
+                or rotation_delta(pose) > 0.35
+            ):
+                return self._solve(object_points, image_points, tag_count)
+            if iterations:
+                try:
+                    refined_rotation, refined_translation = cv2.solvePnPRefineLM(
+                        object_points,
+                        image_points,
+                        self.camera_matrix,
+                        self.distortion_coefficients,
+                        rotation.copy(),
+                        translation.copy(),
+                        criteria=(
+                            cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,
+                            iterations,
+                            1e-9,
+                        ),
+                    )
+                    if score(refined_rotation, refined_translation) <= error:
+                        rotation, translation = refined_rotation, refined_translation
+                except cv2.error:
+                    pass
+            pose = pose_for(rotation, translation)
+            if (
+                np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) > 1.0
+                or rotation_delta(pose) > 0.35
+            ):
+                return self._solve(object_points, image_points, tag_count)
+            return rotation, translation
 
         best = None
         best_error = float("inf")
@@ -249,11 +330,13 @@ class PnpLocalization:
     def estimate_pose_from_detections(
         self,
         detections: List[Detection],
+        previous_pose: Optional[np.ndarray] = None,
     ) -> Optional[Tuple[np.ndarray, List[float]]]:
         """Estimate camera pose from AprilTag detections.
 
         Args:
             detections: List of AprilTag detections.
+            previous_pose: Optional recent field-from-camera pose, not a smoothing target.
 
         Returns:
             The 4x4 camera pose in field coordinates paired with its quality
@@ -302,7 +385,11 @@ class PnpLocalization:
         # OpenCV LM builds, without changing the published field coordinates.
         object_origin = object_points.mean(axis=0)
         solution = self._solve(
-            object_points - object_origin, image_points, valid_tags_found
+            object_points - object_origin,
+            image_points,
+            valid_tags_found,
+            previous_pose=previous_pose,
+            object_origin=object_origin,
         )
         if solution is None:
             return None
