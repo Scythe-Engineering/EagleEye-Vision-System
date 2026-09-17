@@ -4,6 +4,8 @@ Hello! EagleEye is a dynamic vision system for robotics, built for teams who wan
 
 The goal of this project is simple: make advanced robot vision easy to start with, fast on affordable hardware, and easy to extend when your robot needs something different.
 
+<img width="1092" height="556" alt="image" src="https://github.com/user-attachments/assets/58fc19af-04db-45ca-bd62-672fa01a4141" />
+
 > **THIS PROJECT IS IN ALPHA!!!! Expect issues and problems.** I've done a ton of simulation and testing, but I am only one person. Try it, break it, and please tell me what went wrong.
 
 **[Setup and installation](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/install) · [Using EagleEye](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/overview) · [Robot integration](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/robot-integration)**
