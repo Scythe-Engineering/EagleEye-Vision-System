@@ -24,6 +24,7 @@ class DetectApriltagsDefinition(OperationInstance):
         large_roi_decimate: float = 3.0,
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 0,
+        small_roi_max_px: int = 32,
     ) -> None:
         """Initialize the AprilTag detection definition.
 
@@ -41,6 +42,8 @@ class DetectApriltagsDefinition(OperationInstance):
             decode_sharpening: How much sharpening should be done to decoded images?
             full_frame_nthreads: Optional thread count for direct full-frame searches.
                 Zero uses ``nthreads`` without another native detector.
+            small_roi_max_px: Shorter-side threshold in pixels for decimate-1 temporal
+                ROI detection. Zero disables the override.
         """
         self.detector = AprilTagDetector(
             families=families,
@@ -52,6 +55,7 @@ class DetectApriltagsDefinition(OperationInstance):
             full_frame_nthreads=full_frame_nthreads,
             large_roi_decimate=large_roi_decimate,
             large_roi_min_px=large_roi_min_px,
+            small_roi_max_px=small_roi_max_px,
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
@@ -98,7 +102,9 @@ class DetectApriltagsDefinition(OperationInstance):
         """Update the configuration of the AprilTag detector. Only live-updatable parameters are changed.
 
         Args:
-            json_config: JSON configuration for the AprilTag detector.
+            json_config: JSON configuration for the AprilTag detector. Its optional
+                ``small_roi_max_px`` threshold enables decimate-1 temporal ROI
+                detection; zero disables that override.
         """
         update_params = {}
         if "families" in json_config:
@@ -119,6 +125,8 @@ class DetectApriltagsDefinition(OperationInstance):
             update_params["large_roi_decimate"] = json_config["large_roi_decimate"]
         if "large_roi_min_px" in json_config:
             update_params["large_roi_min_px"] = json_config["large_roi_min_px"]
+        if "small_roi_max_px" in json_config:
+            update_params["small_roi_max_px"] = json_config["small_roi_max_px"]
 
         if update_params:
             self.detector.update_parameters(**update_params)

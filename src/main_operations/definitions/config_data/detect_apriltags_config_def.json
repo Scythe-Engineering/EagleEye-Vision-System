@@ -103,6 +103,15 @@
             "min": 0.0,
             "max": 1.0,
             "restart_for_change": false
+        },
+        "small_roi_max_px": {
+            "type": "int",
+            "description": "ROIs smaller than this use a decimate-1 detector; zero disables it",
+            "default": 32,
+            "required": false,
+            "min": 0,
+            "max": 4096,
+            "restart_for_change": false
         }
     }
 }

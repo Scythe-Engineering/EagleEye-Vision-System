@@ -6,11 +6,15 @@ import threading
 import time
 
 import numpy as np
+from pytest import MonkeyPatch
 
 from src.main_operations.modules.apriltags import apriltag_detector
 
 
-def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
+def test_update_parameters_waits_for_in_flight_detection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Keep the retired detector alive until its in-flight call returns."""
     detect_entered = threading.Event()
     release_detect = threading.Event()
     destroyed_ids: list[int] = []
@@ -63,14 +67,57 @@ def test_update_parameters_waits_for_in_flight_detection(monkeypatch) -> None:
     assert 0 not in destroyed_ids
 
 
-def test_large_temporal_rois_use_the_high_decimation_detector(monkeypatch) -> None:
+def test_tiny_temporal_rois_use_decimate_one_only(monkeypatch: MonkeyPatch) -> None:
+    """Route only temporal ROIs below the threshold to decimation one."""
     calls: list[tuple[float, tuple[int, int]]] = []
 
     class FakeDetector:
-        def __init__(self, *, quad_decimate, **_kwargs) -> None:
+        """Record the selected native detector configuration."""
+
+        def __init__(self, *, quad_decimate: float, **_kwargs: object) -> None:
+            """Store the decimation setting supplied by the detector wrapper."""
             self.quad_decimate = quad_decimate
 
-        def detect(self, image):
+        def detect(self, image: np.ndarray) -> list[object]:
+            """Record a detection call without producing a tag."""
+            calls.append((self.quad_decimate, image.shape))
+            return []
+
+    monkeypatch.setattr(apriltag_detector, "Detector", FakeDetector)
+    detector = apriltag_detector.AprilTagDetector(
+        quad_decimate=2.0, small_roi_max_px=32
+    )
+
+    detector.run_detection(
+        [
+            (np.zeros((31, 40), dtype=np.uint8), np.zeros(2)),
+            (np.zeros((32, 40), dtype=np.uint8), np.zeros(2)),
+        ]
+    )
+    detector.run_detection(np.zeros((31, 40), dtype=np.uint8))
+
+    assert calls == [(1.0, (31, 40)), (2.0, (32, 40)), (2.0, (31, 40))]
+
+    detector.update_parameters(small_roi_max_px=0)
+    detector.run_detection([(np.zeros((31, 40), dtype=np.uint8), np.zeros(2))])
+    assert calls[-1] == (2.0, (31, 40))
+
+
+def test_large_temporal_rois_use_the_high_decimation_detector(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Route configured large temporal ROIs to their detector bank."""
+    calls: list[tuple[float, tuple[int, int]]] = []
+
+    class FakeDetector:
+        """Record the selected native detector configuration."""
+
+        def __init__(self, *, quad_decimate: float, **_kwargs: object) -> None:
+            """Store the decimation setting supplied by the detector wrapper."""
+            self.quad_decimate = quad_decimate
+
+        def detect(self, image: np.ndarray) -> list[object]:
+            """Record a detection call without producing a tag."""
             calls.append((self.quad_decimate, image.shape))
             return []
 
