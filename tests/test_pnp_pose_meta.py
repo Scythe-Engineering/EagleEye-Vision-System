@@ -93,8 +93,10 @@ def test_failed_solve_still_fills_both_output_ports() -> None:
     """Downstream operations rely on None, not a missing port, when PnP fails."""
     definition = object.__new__(PnpCameraLocalizationDefinition)
     definition.pose_estimator = SimpleNamespace(
-        estimate_pose_from_detections=lambda _detections: None
+        estimate_pose_from_detections=lambda _detections, previous_pose=None: None
     )
+    definition.use_pose_continuity = True
+    definition._reset_pose_history()
 
     assert definition.run([]) == {"camera_pose": None, "pose_meta": None}
 
@@ -104,6 +106,8 @@ def test_successful_solve_routes_pose_and_meta_to_separate_ports() -> None:
     estimator, detections = _estimator_and_detections()
     definition = object.__new__(PnpCameraLocalizationDefinition)
     definition.pose_estimator = estimator
+    definition.use_pose_continuity = True
+    definition._reset_pose_history()
 
     output = definition.run(detections)
 
