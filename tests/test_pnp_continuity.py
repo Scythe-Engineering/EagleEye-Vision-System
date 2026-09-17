@@ -52,6 +52,7 @@ TRUTH_POSITION = np.array([12.474364280700684, 7.349999904632568, 0.5])
 
 
 def estimator() -> PnpLocalization:
+    """Create the calibrated field solver used by continuity regressions."""
     root = Path(__file__).resolve().parents[1]
     return PnpLocalization(
         np.array(
@@ -70,14 +71,17 @@ def estimator() -> PnpLocalization:
 
 
 def detection(corners: np.ndarray) -> list:
+    """Wrap four image corners in the minimal AprilTag detection shape."""
     return [SimpleNamespace(tag_id=19, corners=corners)]
 
 
 def timed(corners: np.ndarray, timestamp: int) -> TimedValue:
+    """Attach a capture timestamp to one test detection."""
     return TimedValue(detection(corners), TimingMetadata(timestamp // 1000, timestamp))
 
 
 def primed_operation() -> PnpCameraLocalizationDefinition:
+    """Return an operation with the known good pose stored as history."""
     operation = object.__new__(PnpCameraLocalizationDefinition)
     operation.pose_estimator = estimator()
     operation.use_pose_continuity = True
@@ -97,6 +101,7 @@ def primed_operation() -> PnpCameraLocalizationDefinition:
 
 
 def test_single_tag_tie_uses_current_image_without_blending() -> None:
+    """Choose the nearby current-image IPPE branch without blending the prior."""
     solver = estimator()
     image_only = solver.estimate_pose_from_detections(detection(CORNERS))[0]
     selected = solver.estimate_pose_from_detections(detection(CORNERS), PREVIOUS)[0]
@@ -121,6 +126,7 @@ def test_single_tag_tie_uses_current_image_without_blending() -> None:
     "mode", ["stale", "duplicate", "backward", "untimed", "disabled"]
 )
 def test_invalid_history_keeps_stateless_output(mode: str) -> None:
+    """Clear invalid history and retain the ordinary image-only solution."""
     operation = primed_operation()
     expected = operation.pose_estimator.estimate_pose_from_detections(
         detection(CORNERS)
@@ -137,6 +143,7 @@ def test_invalid_history_keeps_stateless_output(mode: str) -> None:
 
 
 def projected(solver: PnpLocalization, pose: np.ndarray, tag_id: int) -> np.ndarray:
+    """Project one mapped tag into the image for a known field camera pose."""
     camera = solver.fast_se3_inverse(pose)
     return cv2.projectPoints(
         solver.apriltag_map[tag_id].global_corners,
@@ -148,6 +155,7 @@ def projected(solver: PnpLocalization, pose: np.ndarray, tag_id: int) -> np.ndar
 
 
 def test_jump_is_unavailable_not_held_and_reacquires_after_expiry() -> None:
+    """Reject a jump without holding output, then allow expired-history recovery."""
     operation = primed_operation()
     moved = PREVIOUS.copy()
     moved[0, 3] += 3.0
@@ -163,6 +171,7 @@ def test_jump_is_unavailable_not_held_and_reacquires_after_expiry() -> None:
 
 
 def test_multitag_pose_is_image_only_and_preserves_capture_timing() -> None:
+    """Keep multi-tag solving image-only and retain capture timing on both outputs."""
     operation = primed_operation()
     solver = operation.pose_estimator
     moved = PREVIOUS.copy()

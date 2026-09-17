@@ -96,18 +96,16 @@ The previous pose can still be wrong, and an abrupt real camera movement can tri
 
 ## Artifacts and reproduction
 
-Local experiment scripts, graph variants, per-frame records, summaries and paired comparisons are under `benchmark-results/pose-accuracy-session/`. The isolated edge candidate directory is `/home/eagleeye/pose-accuracy-session`; the untouched-source baseline directory is `/home/eagleeye/pose-accuracy-baseline`. They share existing video assets and the same release native library, not the live deployment's source files.
+The raw experiment scripts, graph variants, per-frame records, summaries, and paired comparisons used during investigation are intentionally ignored under `benchmark-results/pose-accuracy-session/`. The isolated edge candidate directory was `/home/eagleeye/pose-accuracy-session`; the untouched-source baseline directory was `/home/eagleeye/pose-accuracy-baseline`. They shared existing video assets and the same release native library, not the live deployment's source files.
 
-`run_experiment.py` wraps the existing `benchmarks.temporal_experiments` runner to retain raw poses, corners, capture timestamps, false-detection diagnostics and truth geometry. `compare.py` refuses unequal frame identities and reports coverage, shared-frame errors, distance bins and tails. Each final run records source/library/config hashes; source-operation hashes are also in `experiment.json`.
-
-For a comparable one-tag replay, use a copy of `benchmarks/configs/temporal.json` with only `minimum_detections` changed to `1`, retaining the filename `temporal.json`:
+For an independent clean-checkout one-tag replay, use the tracked one-tag graph. It writes standard temporal-experiment output rather than the unpublished diagnostic records from this investigation:
 
 ```bash
 uv run python -m benchmarks.temporal_experiments \
-  --config benchmark-results/pose-accuracy-session/configs/baseline/temporal.json \
+  --config benchmarks/configs/temporal-one-tag.json \
   --opencv-threads 4 --output benchmark-results/pose-accuracy-recheck
 ```
 
 Validation: 47 relevant tests passed, covering the actual large-ambiguity fixture, untimed/stale/repeated/backward capture times, disabled behavior, rejection/reacquisition, unchanged multi-tag solving, timing propagation, tiny/full-frame detector routing and live disabling. Focused Ruff checks, four-file mypy checking and `git diff --check` passed.
 
-No graph presets were changed. No commits or pushes were made. The live edge deployment was not updated; its service was confirmed active after the isolated runs. The pre-existing edit in the separate docs repository was left untouched. Physical-camera trials and a fresh matched PhotonVision comparison remain outstanding.
+The live edge deployment was not updated; its service was confirmed active after the isolated runs. Physical-camera trials and a fresh matched PhotonVision comparison remain outstanding.

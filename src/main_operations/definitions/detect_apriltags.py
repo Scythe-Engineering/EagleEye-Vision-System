@@ -42,6 +42,8 @@ class DetectApriltagsDefinition(OperationInstance):
             decode_sharpening: How much sharpening should be done to decoded images?
             full_frame_nthreads: Optional thread count for direct full-frame searches.
                 Zero uses ``nthreads`` without another native detector.
+            small_roi_max_px: Shorter-side threshold in pixels for decimate-1 temporal
+                ROI detection. Zero disables the override.
         """
         self.detector = AprilTagDetector(
             families=families,
@@ -100,7 +102,9 @@ class DetectApriltagsDefinition(OperationInstance):
         """Update the configuration of the AprilTag detector. Only live-updatable parameters are changed.
 
         Args:
-            json_config: JSON configuration for the AprilTag detector.
+            json_config: JSON configuration for the AprilTag detector. Its optional
+                ``small_roi_max_px`` threshold enables decimate-1 temporal ROI
+                detection; zero disables that override.
         """
         update_params = {}
         if "families" in json_config:

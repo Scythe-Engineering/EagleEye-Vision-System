@@ -213,13 +213,21 @@ class PnpLocalization:
                 translation = np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3])
                 return float(translation**2 + (rotation_delta(pose) / 0.5) ** 2)
 
-            rotation, translation, error = min(tied, key=continuity)
-            pose = pose_for(rotation, translation)
-            if (
-                np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) > 1.0
-                or rotation_delta(pose) > 0.35
-            ):
+            def is_near_previous(pose: np.ndarray) -> bool:
+                """Return whether a candidate remains inside continuity bounds."""
+                return bool(
+                    np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) <= 1.0
+                    and rotation_delta(pose) <= 0.35
+                )
+
+            bounded = [
+                candidate
+                for candidate in tied
+                if is_near_previous(pose_for(candidate[0], candidate[1]))
+            ]
+            if not bounded:
                 return self._solve(object_points, image_points, tag_count)
+            rotation, translation, error = min(bounded, key=continuity)
             if iterations:
                 try:
                     refined_rotation, refined_translation = cv2.solvePnPRefineLM(
@@ -240,10 +248,7 @@ class PnpLocalization:
                 except cv2.error:
                     pass
             pose = pose_for(rotation, translation)
-            if (
-                np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) > 1.0
-                or rotation_delta(pose) > 0.35
-            ):
+            if not is_near_previous(pose):
                 return self._solve(object_points, image_points, tag_count)
             return rotation, translation
 

@@ -73,7 +73,12 @@ class PnpCameraLocalizationDefinition(OperationInstance):
         )
 
     def update_config(self, json_config: dict) -> None:
-        """Apply the solver iteration limit without restarting the pipeline."""
+        """Apply live solver settings and reset history when continuity changes.
+
+        Args:
+            json_config: Operation configuration containing optional refinement and
+                continuity settings.
+        """
         if "refinement_iterations" in json_config:
             self.pose_estimator.set_refinement_iterations(
                 json_config["refinement_iterations"]
@@ -103,7 +108,9 @@ class PnpCameraLocalizationDefinition(OperationInstance):
         """Estimate camera pose from AprilTag detections.
 
         Args:
-            detections: List of AprilTag detection objects.
+            detections: AprilTag detections, optionally carrying capture timing.
+                Missing, repeated, or backward timestamps clear continuity history;
+                only a pose captured within 250 ms is eligible as a reference.
 
         Returns:
             Mapping of ``camera_pose`` to a 4x4 transform in global coordinates and
