@@ -11,6 +11,21 @@ from pytest import MonkeyPatch
 from src.main_operations.modules.apriltags import apriltag_detector
 
 
+def test_reconfiguration_disables_pupil_native_destructor() -> None:
+    """Retired pupil detectors must not enter the unsafe native destroy path."""
+    detector = apriltag_detector.Detector.__new__(apriltag_detector.Detector)
+    detector.tag_detector_ptr = object()
+    detector.tag_families = {"tag36h11": object()}
+    wrapper = apriltag_detector.AprilTagDetector.__new__(
+        apriltag_detector.AprilTagDetector
+    )
+    wrapper._disable_native_destructor(detector)
+    assert detector.tag_detector_ptr is None
+    assert detector.tag_families == {}
+    detector.__del__()
+    detector.__del__()
+
+
 def test_update_parameters_waits_for_in_flight_detection(
     monkeypatch: MonkeyPatch,
 ) -> None:

@@ -1,6 +1,7 @@
 """Checks for perspective-aligned temporal acceleration crops."""
 
 from threading import Lock
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -48,6 +49,77 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
 
     np.testing.assert_allclose(restored, source_quad, atol=1e-4)
     np.testing.assert_allclose(search_region, source_quad, atol=1e-4)
+
+
+def test_crop_pixels_and_maps_match_original_perimeter_math() -> None:
+    """Fixed-edge crop sizing stays byte-identical for both windings and channels."""
+    random = np.random.default_rng(20260929)
+    frame = random.integers(0, 256, (100, 120, 3), dtype=np.uint8)
+    for image in (frame, cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)):
+        for _ in range(40):
+            quad = np.array(
+                [[10, 10], [100, 10], [100, 90], [10, 90]], dtype=np.float32
+            )
+            quad += random.uniform(-20, 20, (4, 2)).astype(np.float32)
+            if random.integers(2):
+                quad = quad[::-1].copy()
+            edges = np.linalg.norm(quad - np.roll(quad, -1, axis=0), axis=1)
+            side = max(2, min(int(np.ceil(float(edges.max()))), max(image.shape[:2])))
+            destination = np.array(
+                [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
+                dtype=np.float32,
+            )
+            if cv2.contourArea(quad, oriented=True) < 0:
+                destination = destination[::-1].copy()
+            expected_map = cv2.getPerspectiveTransform(destination, quad)
+            expected_crop = cv2.warpPerspective(
+                image, cv2.getPerspectiveTransform(quad, destination), (side, side)
+            )
+            actual_crop, actual_map = (
+                TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+                    image, quad
+                )
+            )
+            np.testing.assert_array_equal(actual_crop, expected_crop)
+            np.testing.assert_array_equal(actual_map, expected_map)
+
+
+def test_temporal_run_keeps_roi_order_channels_maps_and_unwarped_fallback() -> None:
+    """Crop optimization leaves the public mapped-segment/full-frame contract intact."""
+    operation = TemporalAccelerationPreprocessorRustDefinition.__new__(
+        TemporalAccelerationPreprocessorRustDefinition
+    )
+    operation._last_visualization_quads = []
+    operation._last_visualization_quads_lock = Lock()
+    frame = np.random.default_rng(1).integers(0, 256, (100, 120, 3), dtype=np.uint8)
+    quads = [
+        [10, 20, 70, 10, 80, 80, 20, 90],
+        [80, 60, 100, 60, 100, 40, 80, 40],
+    ]
+    operation._rust_impl = SimpleNamespace(
+        process_frame=lambda width, height: (
+            quads,
+            [[10, 10, 80, 90], [80, 40, 100, 60]],
+        )
+    )
+    segments, original = operation.run(frame)
+    assert original is frame
+    assert len(segments) == 2
+    for (crop, mapping), quad in zip(segments, quads):
+        expected_crop, expected_mapping = operation._perspective_crop(
+            frame, np.array(quad, dtype=np.float32)
+        )
+        np.testing.assert_array_equal(crop, expected_crop)
+        np.testing.assert_array_equal(mapping, expected_mapping)
+        assert crop.shape[2] == 3
+    operation._rust_impl = SimpleNamespace(
+        process_frame=lambda width, height: ([], [[0, 0, width, height]])
+    )
+    segments, original = operation.run(frame)
+    assert original is frame and len(segments) == 1
+    assert np.shares_memory(segments[0][0], frame)
+    np.testing.assert_array_equal(segments[0][0], frame)
+    np.testing.assert_array_equal(segments[0][1], [0, 0])
 
 
 def test_perspective_crop_preserves_decodable_tag_winding() -> None:
@@ -100,6 +172,7 @@ def test_visualization_uses_projected_quad_instead_of_axis_aligned_bounds() -> N
 def test_detector_fallback_visualizes_only_the_full_frame() -> None:
     """A full-frame fallback replaces stale ROI visualization regions."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -117,6 +190,7 @@ def test_detector_fallback_visualizes_only_the_full_frame() -> None:
 def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
     """One temporal detection is enough to skip the full-frame fallback."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -147,6 +221,7 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
 def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
     """An empty temporal search falls back to the supplied full frame."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -163,6 +238,7 @@ def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
 def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
     """Malformed temporal regions do not prevent a full-frame fallback."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -178,8 +254,9 @@ def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
 
 
 def test_detector_ignores_malformed_full_frame_fallback() -> None:
-    """A malformed full frame is not recorded as a searched region."""
+    """A malformed full frame supplies neither fallback nor source bounds."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = True
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4

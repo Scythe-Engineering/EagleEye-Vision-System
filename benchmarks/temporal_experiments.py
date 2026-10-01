@@ -9,7 +9,8 @@ import json
 import math
 import sys
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +41,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=CONFIG_DIR / "temporal.json")
     parser.add_argument("--subset")
-    parser.add_argument("--frames-per-clip", type=int)
+    parser.add_argument("--clip", action="append", help="Clip ID (repeatable)")
+    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
+    parser.add_argument(
+        "--start-frame",
+        type=int,
+        default=0,
+        help="First reported frame; earlier frames are replayed",
+    )
+    parser.add_argument(
+        "--frames-per-clip", type=int, help="Reported frames per clip from start-frame"
+    )
+    parser.add_argument(
+        "--warmup-frames",
+        type=int,
+        default=0,
+        help="Exclude first N reported frames from timing only",
+    )
     parser.add_argument("--timeout", type=float, metavar="SECONDS")
     parser.add_argument("--opencv-threads", type=int)
     return parser
@@ -78,6 +95,7 @@ def compact_record(record: dict[str, Any], clip: str) -> dict[str, Any]:
     detection = metrics["detection"]
     provisional = _provisional_tags(detection.get("by_tag", []))
     output = record.get("output") or {}
+    detections = json_value(output.get("detections") or [])
     return {
         "clip": clip,
         "frame_index": record["frame_index"],
@@ -87,6 +105,23 @@ def compact_record(record: dict[str, Any], clip: str) -> dict[str, Any]:
         "provisional_truth_tags": len(provisional),
         "provisional_matched": sum(bool(tag.get("detected")) for tag in provisional),
         "total_matched": len(detection.get("matches", [])),
+        "corner_errors_px": detection.get("corner_errors_px", []),
+        "truth_matches": [
+            {
+                "truth_index": match["truth_index"],
+                "tag_id": detection["by_tag"][match["truth_index"]]["tag_id"],
+                "corner_error_px": match["corner_error_px"],
+            }
+            for match in detection.get("matches", [])
+        ],
+        "unmatched_detections": [
+            detections[index]
+            for index in detection.get("unmatched_detection_indices", [])
+        ],
+        "detections": [
+            {"tag_id": int(item["tag_id"]), "corners": item["corners"]}
+            for item in detections
+        ],
         "detected_ids": [
             int(item["tag_id"]) if isinstance(item, dict) else int(item.tag_id)
             for item in (output.get("detections") or [])
@@ -97,6 +132,8 @@ def compact_record(record: dict[str, Any], clip: str) -> dict[str, Any]:
         ],
         "pose_available": bool(metrics.get("pose_available")),
         "robot_errors": metrics.get("robot_pose"),
+        "camera_errors": metrics.get("camera_pose"),
+        "camera_pose": json_value(output.get("camera_pose_raw_edn")),
         "failure": record.get("failure"),
         "tp": detection["tp"],
         "fp": detection["fp"],
@@ -108,7 +145,7 @@ def _stats(values: Iterable[float]) -> dict[str, float | int | None]:
     """Return compact timing/error statistics with an explicit denominator."""
     data = sorted(float(value) for value in values)
     if not data:
-        return {"denominator": 0, "mean": None, "p50": None, "p95": None}
+        return {"denominator": 0, "mean": None, "p50": None, "p95": None, "p99": None}
 
     def percentile(percent: float) -> float:
         """Interpolate one percentile of the sorted sample."""
@@ -121,6 +158,7 @@ def _stats(values: Iterable[float]) -> dict[str, float | int | None]:
         "mean": sum(data) / len(data),
         "p50": percentile(50),
         "p95": percentile(95),
+        "p99": percentile(99),
     }
 
 
@@ -138,7 +176,7 @@ def _reacquisition(rows: list[dict[str, Any]], key: str) -> list[dict[str, int |
         if index == len(rows):
             result.append(
                 {
-                    "after_no_provisional_start": start,
+                    "after_no_provisional_start": rows[start]["frame_index"],
                     "visibility_frame": None,
                     "recovered_frame": None,
                     "delay_frames": None,
@@ -158,17 +196,40 @@ def _reacquisition(rows: list[dict[str, Any]], key: str) -> list[dict[str, int |
         )
         result.append(
             {
-                "after_no_provisional_start": start,
-                "visibility_frame": index,
-                "recovered_frame": recovered,
-                "delay_frames": None if recovered is None else recovered - index,
+                "after_no_provisional_start": rows[start]["frame_index"],
+                "visibility_frame": rows[index]["frame_index"],
+                "recovered_frame": (
+                    None if recovered is None else rows[recovered]["frame_index"]
+                ),
+                "delay_frames": (
+                    None
+                    if recovered is None
+                    else rows[recovered]["frame_index"] - rows[index]["frame_index"]
+                ),
             }
         )
     return result
 
 
+def longest_pose_gap(rows: Iterable[dict[str, Any]]) -> int:
+    """Count the longest consecutive missing-pose run without crossing clip boundaries."""
+    longest = current = 0
+    previous: tuple[str, int] | None = None
+    for row in rows:
+        key = (row["clip"], row["frame_index"])
+        if previous is None or key != (previous[0], previous[1] + 1):
+            current = 0
+        current = 0 if row["pose_available"] else current + 1
+        longest = max(longest, current)
+        previous = key
+    return longest
+
+
 def summarize(
-    rows: list[dict[str, Any]], *, include_reacquisition: bool = True
+    rows: list[dict[str, Any]],
+    *,
+    include_reacquisition: bool = True,
+    timing_start: int = 0,
 ) -> dict[str, Any]:
     """Summarize compact rows; provisional matching is deliberately only a proxy."""
     groups = {
@@ -184,7 +245,8 @@ def summarize(
         matched = sum(row["provisional_matched"] for row in data)
         pose_available = sum(bool(row["pose_available"]) for row in data)
         errors = [row["robot_errors"] for row in data if row["robot_errors"]]
-        stage_names = {name for row in data for name in row["operation_ms"]}
+        timed = [row for row in data if row["frame_index"] >= timing_start]
+        stage_names = {name for row in timed for name in row["operation_ms"]}
         return {
             "frames_denominator": len(data),
             "failure_count": sum(row["failure"] is not None for row in data),
@@ -192,6 +254,7 @@ def summarize(
                 "count": pose_available,
                 "rate": pose_available / len(data) if data else None,
             },
+            "longest_pose_gap_frames": longest_pose_gap(data),
             "official_detection": {
                 "tp": tp,
                 "fp": fp,
@@ -204,12 +267,23 @@ def summarize(
                 "truth_tags_denominator": provisional,
                 "rate": matched / provisional if provisional else None,
             },
-            "pipeline_ms": _stats(row["pipeline_ms"] for row in data),
-            "decode_ms": _stats(row["decode_ms"] for row in data),
+            "pipeline_ms": _stats(row["pipeline_ms"] for row in timed),
+            "decode_ms": _stats(row["decode_ms"] for row in timed),
+            "native_detector_ms": _stats(
+                row["native_detector_ms"]
+                for row in timed
+                if row.get("native_detector_ms") is not None
+            ),
+            "native_detector_calls": sum(
+                row.get("native_detector_calls", 0) for row in timed
+            ),
+            "corner_error_px": _stats(
+                value for row in data for value in row.get("corner_errors_px", [])
+            ),
             "operation_ms": {
                 name: _stats(
                     row["operation_ms"][name]
-                    for row in data
+                    for row in timed
                     if name in row["operation_ms"]
                 )
                 for name in sorted(stage_names)
@@ -236,12 +310,67 @@ def summarize(
     return result
 
 
+class _TimedNativeDetector:
+    """Benchmark-local proxy around a native detector, without global patching."""
+
+    def __init__(self, detector: Any, samples: list[float]) -> None:
+        """Keep the native instance and the current frame's timing collector."""
+        self.detector = detector
+        self.samples = samples
+
+    def detect(self, *args: Any, **kwargs: Any) -> Any:
+        """Time calls even when native detection raises or finds no tags."""
+        started = time.perf_counter_ns()
+        try:
+            return self.detector.detect(*args, **kwargs)
+        finally:
+            self.samples.append((time.perf_counter_ns() - started) / 1_000_000)
+
+    def __getattr__(self, name: str) -> Any:
+        """Preserve the wrapped detector's inspection attributes."""
+        return getattr(self.detector, name)
+
+
+@contextmanager
+def _native_detector_timings(
+    pipeline: Any, samples: list[float]
+) -> Iterator[dict[str, str]]:
+    """Observe every native detect call, including fallback and skipped graph frames."""
+    operation = pipeline.get_operation_by_uuid("bench-detect")
+    if operation is None:
+        raise ValueError("benchmark detector operation is missing")
+    detector = operation.instance.detector
+    fields = (
+        "detector",
+        "_full_frame_detector",
+        "_large_roi_detector",
+        "_small_roi_detector",
+    )
+    originals = {name: getattr(detector, name) for name in fields}
+    libraries = {
+        str(Path(native.libc._name).resolve())
+        for native in originals.values()
+        if native is not None
+    }
+    hashes = {path: file_sha256(path) for path in sorted(libraries)}
+    try:
+        for name, native in originals.items():
+            if native is not None:
+                setattr(detector, name, _TimedNativeDetector(native, samples))
+        yield hashes
+    finally:
+        for name, native in originals.items():
+            setattr(detector, name, native)
+
+
 def _run(args: argparse.Namespace) -> int:
     """Run selected local clips sequentially, streaming rows as they complete."""
     if args.timeout is not None and args.timeout <= 0:
         raise ValueError("timeout must be greater than zero")
     if args.frames_per_clip is not None and args.frames_per_clip <= 0:
         raise ValueError("frames-per-clip must be greater than zero")
+    if args.start_frame < 0 or args.warmup_frames < 0:
+        raise ValueError("start-frame and warmup-frames must be nonnegative")
     config = args.config.resolve()
     if config.name != "temporal.json":
         raise ValueError("temporal experiments require a config named temporal.json")
@@ -256,14 +385,24 @@ def _run(args: argparse.Namespace) -> int:
         if args.subset is None
         else [clip for clip in manifest.clips if args.subset in clip.roles]
     )
+    if args.clip:
+        unknown = set(args.clip) - {clip.id for clip in manifest.clips}
+        if unknown:
+            raise ValueError(f"unknown clip IDs: {sorted(unknown)}")
+        clips = [clip for clip in clips if clip.id in set(args.clip)]
     if not clips:
-        raise ValueError(f"dataset contains no clips for subset {args.subset!r}")
+        raise ValueError(
+            f"dataset contains no clips for subset {args.subset!r} and IDs {args.clip!r}"
+        )
+    if any(args.start_frame >= clip.frame_count for clip in clips):
+        raise ValueError("start-frame must be inside each selected clip")
     if manifest.detection_policy_version not in DETECTION_POLICIES:
         raise ValueError(
             f"unsupported detection policy {manifest.detection_policy_version}"
         )
-    cache_dir = DEFAULT_CACHE
-    verify_dataset(manifest, cache_dir, args.subset)
+    cache_dir = args.cache_dir.resolve()
+    assets = {asset.path: cache_path(cache_dir, asset) for asset in manifest.assets}
+    verify_dataset(manifest.model_copy(update={"clips": clips}), cache_dir)
     output = args.output
     output.mkdir(parents=True, exist_ok=False)
     import temporal_acceleration
@@ -276,6 +415,12 @@ def _run(args: argparse.Namespace) -> int:
             "config_sha256": file_sha256(config),
             "dataset_sha256": file_sha256(manifest_path),
             "subset": args.subset,
+            "clips": [clip.id for clip in clips],
+            "clip_frame_counts": {clip.id: clip.frame_count for clip in clips},
+            "cache_dir": str(cache_dir),
+            "start_frame": args.start_frame,
+            "warmup_frames": args.warmup_frames,
+            "timing_note": "Native calls include fallback and skipped graph frames; operation_ms only exists when the graph completes. No-call frames are excluded from native_detector_ms statistics. Warmup excludes timing only.",
             "frames_per_clip": args.frames_per_clip,
             "timeout_seconds": args.timeout,
             "opencv_threads": cv2.getNumThreads(),
@@ -304,27 +449,37 @@ def _run(args: argparse.Namespace) -> int:
                 timed_out = True
                 break
             rows: list[dict[str, Any]] = []
-            assets = {
-                asset.path: cache_path(cache_dir, asset) for asset in manifest.assets
-            }
+            samples: list[float] = []
 
             def persist(
                 record: dict[str, Any],
                 clip_id: str = clip.id,
                 clip_rows: list[dict[str, Any]] = rows,
+                samples: list[float] = samples,
             ) -> None:
                 """Score and persist one replayed frame."""
                 _score_accuracy_record(
                     record, DETECTION_POLICIES[manifest.detection_policy_version]
                 )
                 row = compact_record(record, clip_id)
+                row["reported"] = row["frame_index"] >= args.start_frame
+                row["timing_included"] = (
+                    row["frame_index"] >= args.start_frame + args.warmup_frames
+                )
+                row["native_detector_calls"] = len(samples)
+                row["native_detector_ms"] = sum(samples) if samples else None
+                samples.clear()
                 stream.write(
                     json.dumps(json_value(row), separators=(",", ":"), allow_nan=False)
                     + "\n"
                 )
                 clip_rows.append(row)
 
-            limit = args.frames_per_clip
+            limit = (
+                min(clip.frame_count, args.start_frame + args.frames_per_clip)
+                if args.frames_per_clip is not None
+                else clip.frame_count
+            )
             with (
                 build_pipeline(
                     config,
@@ -334,7 +489,10 @@ def _run(args: argparse.Namespace) -> int:
                     manager=(manager := ReplayCameraManager()),
                 ) as pipeline,
                 SequentialVideoDecoder(assets[clip.video]) as decoder,
+                _native_detector_timings(pipeline, samples) as native_libraries,
             ):
+                metadata["apriltag_library_sha256"] = native_libraries
+                atomic_json(output / "metadata.json", metadata)
                 run_accuracy(
                     itertools.islice(decoder, limit),
                     manager,
@@ -356,9 +514,7 @@ def _run(args: argparse.Namespace) -> int:
                     if deadline
                     else None,
                 )
-            expected_frames = (
-                min(limit, clip.frame_count) if limit is not None else clip.frame_count
-            )
+            expected_frames = limit
             clip_timed_out = (
                 deadline is not None
                 and time.monotonic() >= deadline
@@ -370,13 +526,23 @@ def _run(args: argparse.Namespace) -> int:
                 raise ValueError(
                     f"clip {clip.id} decoded {len(rows)} frames, expected {expected_frames}"
                 )
-            all_rows.extend(rows)
+            selected = [row for row in rows if row["frame_index"] >= args.start_frame]
+            all_rows.extend(selected)
             timed_out = timed_out or clip_timed_out
             clips_summary.append(
                 {
                     "clip": clip.id,
-                    "partial": clip_timed_out or expected_frames < clip.frame_count,
-                    **summarize(rows),
+                    "partial": (
+                        clip_timed_out
+                        or expected_frames < clip.frame_count
+                        or args.start_frame > 0
+                    ),
+                    "replayed_frames": len(rows),
+                    "reported_start_frame": args.start_frame,
+                    "timing_start_frame": args.start_frame + args.warmup_frames,
+                    **summarize(
+                        selected, timing_start=args.start_frame + args.warmup_frames
+                    ),
                 }
             )
             if clip_timed_out:
@@ -386,15 +552,18 @@ def _run(args: argparse.Namespace) -> int:
         {
             "schema_version": 1,
             "partial": timed_out
+            or args.start_frame > 0
             or any(
-                (
-                    args.frames_per_clip is not None
-                    and args.frames_per_clip < clip.frame_count
-                )
+                args.frames_per_clip is not None
+                and args.start_frame + args.frames_per_clip < clip.frame_count
                 for clip in clips
             ),
             "timed_out": timed_out,
-            **summarize(all_rows, include_reacquisition=False),
+            **summarize(
+                all_rows,
+                include_reacquisition=False,
+                timing_start=args.start_frame + args.warmup_frames,
+            ),
             "clips": clips_summary,
         },
     )
