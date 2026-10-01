@@ -129,7 +129,8 @@ class PnpLocalization:
             return None
         if not solved[0]:
             return None
-        candidates = list(zip(solved[1], solved[2], solved[3].ravel()))
+        rotations, translations = list(solved[1]), list(solved[2])
+        initial_rms = list(solved[3].ravel())
         # Coplanar multi-tag layouts can have two plausible minima. SQPnP alone
         # need not expose both; evaluate IPPE's planar hypotheses as well.
         if tag_count > 1 and singular_values[-1] < 1e-6 * singular_values[0]:
@@ -142,28 +143,54 @@ class PnpLocalization:
                     flags=cv2.SOLVEPNP_IPPE,
                 )
                 if planar[0]:
-                    candidates.extend(zip(planar[1], planar[2], planar[3].ravel()))
+                    rotations.extend(planar[1])
+                    translations.extend(planar[2])
+                    initial_rms.extend(planar[3].ravel())
             except cv2.error as exc:
                 logger.error("Planar IPPE candidate generation failed: %s", exc)
 
-        # OpenCV reports RMS over 2*N coordinates; ranking uses mean squared
-        # Euclidean pixel distance, so convert with 2*RMS**2. Reuse that projection
-        # instead of generating a second projection and its unused Jacobian.
-        valid = [
-            (
-                rotation,
-                translation,
-                self._candidate_error(
-                    object_points, image_points, rotation, translation, float(error)
-                ),
+        def score(
+            rvec: np.ndarray, tvec: np.ndarray, coordinate_rms: float | None = None
+        ) -> float:
+            """Measure reprojection error for a physically valid candidate.
+
+            Args:
+                rvec: Candidate rotation vector.
+                tvec: Candidate translation vector.
+                coordinate_rms: OpenCV's per-coordinate RMS for this candidate, which
+                    equals sqrt(mean squared error / 2). None projects the points.
+
+            Returns:
+                Mean squared pixel error, or infinity for an invalid candidate.
+            """
+            if not np.isfinite(rvec).all() or not np.isfinite(tvec).all():
+                return float("inf")
+            rotation = cv2.Rodrigues(rvec)[0]
+            if np.any((object_points @ rotation.T + tvec.reshape(3))[:, 2] <= 0):
+                return float("inf")
+            if coordinate_rms is not None:
+                return 2.0 * float(coordinate_rms) ** 2
+            projected = cv2.projectPoints(
+                object_points,
+                rvec,
+                tvec,
+                self.camera_matrix,
+                self.distortion_coefficients,
+            )[0]
+            return float(
+                np.mean(np.sum((projected.reshape(-1, 2) - image_points) ** 2, axis=1))
             )
-            for rotation, translation, error in candidates
-        ]
-        valid = [candidate for candidate in valid if np.isfinite(candidate[2])]
-        if not valid:
-            return None
 
         if tag_count == 1 and previous_pose is not None and object_origin is not None:
+            valid = [
+                (rotation, translation, score(rotation, translation, rms))
+                for rotation, translation, rms in zip(
+                    rotations, translations, initial_rms
+                )
+            ]
+            valid = [candidate for candidate in valid if np.isfinite(candidate[2])]
+            if not valid:
+                return None
             # A subpixel fit tie is not enough on its own: both the initializer and
             # refined result must stay within the bounded neighborhood of the prior.
             best_rms = np.sqrt(min(candidate[2] for candidate in valid))
@@ -226,15 +253,7 @@ class PnpLocalization:
                             1e-9,
                         ),
                     )
-                    if (
-                        self._candidate_error(
-                            object_points,
-                            image_points,
-                            refined_rotation,
-                            refined_translation,
-                        )
-                        <= error
-                    ):
+                    if score(refined_rotation, refined_translation) <= error:
                         rotation, translation = refined_rotation, refined_translation
                 except cv2.error:
                     pass
@@ -245,7 +264,10 @@ class PnpLocalization:
 
         best = None
         best_error = float("inf")
-        for rotation, translation, error in valid:
+        for rotation, translation, rms in zip(rotations, translations, initial_rms):
+            error = score(rotation, translation, rms)
+            if not np.isfinite(error):
+                continue
             if iterations:
                 try:
                     refined_rotation, refined_translation = cv2.solvePnPRefineLM(
@@ -261,12 +283,7 @@ class PnpLocalization:
                             1e-9,
                         ),
                     )
-                    refined_error = self._candidate_error(
-                        object_points,
-                        image_points,
-                        refined_rotation,
-                        refined_translation,
-                    )
+                    refined_error = score(refined_rotation, refined_translation)
                     if refined_error <= error:
                         rotation, translation, error = (
                             refined_rotation,
@@ -279,52 +296,6 @@ class PnpLocalization:
                 best = rotation, translation
                 best_error = error
         return best
-
-    def _candidate_error(
-        self,
-        object_points: np.ndarray,
-        image_points: np.ndarray,
-        rvec: np.ndarray,
-        tvec: np.ndarray,
-        coordinate_rms: float | None = None,
-    ) -> float:
-        """Score a finite, positive-depth candidate in squared pixel distance.
-
-        Initializers supply OpenCV's RMS over both pixel coordinates. Refined
-        candidates need a fresh projection. Both paths validate every point's
-        depth before accepting the reprojection score.
-
-        Args:
-            object_points: Solver's mean-centered corners, shape (N, 3).
-            image_points: Corresponding pixel coordinates, shape (N, 2).
-            rvec: Candidate Rodrigues rotation vector.
-            tvec: Candidate translation vector.
-            coordinate_rms: OpenCV initializer error, or None to project anew.
-
-        Returns:
-            Mean squared pixel distance, or infinity for an invalid candidate.
-        """
-        if not np.isfinite(rvec).all() or not np.isfinite(tvec).all():
-            return float("inf")
-        rotation = cv2.Rodrigues(rvec)[0]
-        if ((object_points @ rotation.T + tvec.reshape(3))[:, 2] <= 0).any():
-            return float("inf")
-        if coordinate_rms is not None:
-            return (
-                coordinate_rms * coordinate_rms * 2.0
-                if np.isfinite(coordinate_rms)
-                else float("inf")
-            )
-        projected = cv2.projectPoints(
-            object_points,
-            rvec,
-            tvec,
-            self.camera_matrix,
-            self.distortion_coefficients,
-        )[0]
-        return float(
-            ((projected.reshape(-1, 2) - image_points) ** 2).sum(axis=1).mean()
-        )
 
     def _solution_quality(
         self,
@@ -339,7 +310,7 @@ class PnpLocalization:
 
         The robot-side pose estimator needs standard deviations, and these three
         numbers are what it derives them from. Cost is one ``projectPoints`` call
-        over the contributing corners, plus tag-center distance calculations.
+        over at most a few dozen points, which is noise next to tag detection.
 
         Args:
             object_points: Stacked field-space tag corners, shape (4 * tags, 3).
@@ -360,14 +331,14 @@ class PnpLocalization:
             self.distortion_coefficients,
         )
         reprojection_error = float(
-            np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1).mean()
+            np.mean(np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1))
         )
 
         tag_centers = object_points.reshape(-1, 4, 3).mean(axis=1)
         camera_space_centers = (
             tag_centers @ rotation_matrix.T + translation_vector.reshape(3)
         )
-        mean_distance = float(np.linalg.norm(camera_space_centers, axis=1).mean())
+        mean_distance = float(np.mean(np.linalg.norm(camera_space_centers, axis=1)))
 
         return [float(tag_count), mean_distance, reprojection_error]
 
@@ -403,7 +374,9 @@ class PnpLocalization:
 
             if corners.shape != (4, 2) or global_corners.shape != (4, 3):
                 continue
-            if not np.isfinite(corners).all() or not np.isfinite(global_corners).all():
+            if not np.all(np.isfinite(corners)) or not np.all(
+                np.isfinite(global_corners)
+            ):
                 continue
 
             seen_ids.add(tag_id)
@@ -417,8 +390,10 @@ class PnpLocalization:
         image_points = np.vstack(image_points_list).astype(np.float64, copy=False)
         object_points = np.vstack(object_points_list).astype(np.float64, copy=False)
 
-        # Every constituent array was checked before stacking; stacking cannot
-        # introduce non-finite values.
+        if not (
+            np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))
+        ):
+            return None
 
         # Optimize around nearby tag geometry rather than the distant field origin.
         # This improves rotation/translation conditioning, particularly in older
@@ -438,14 +413,11 @@ class PnpLocalization:
         translation_vector = translation_vector.reshape(3, 1) - (
             rotation_matrix @ object_origin
         ).reshape(3, 1)
-        # Build field-from-camera directly instead of allocating its inverse
-        # solely to immediately invert it again.
-        global_camera_transform: np.ndarray = np.eye(4, dtype=np.float64)
-        global_camera_transform[:3, :3] = rotation_matrix.T
-        global_camera_transform[:3, 3] = (
-            -rotation_matrix.T @ translation_vector.reshape(3)
-        )
-        if not np.isfinite(global_camera_transform).all():
+        camera_space_transform = np.eye(4, dtype=np.float64)
+        camera_space_transform[:3, :3] = rotation_matrix
+        camera_space_transform[:3, 3] = translation_vector.reshape(3)
+        global_camera_transform = self.fast_se3_inverse(camera_space_transform)
+        if not np.all(np.isfinite(global_camera_transform)):
             return None
 
         quality = self._solution_quality(

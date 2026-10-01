@@ -111,7 +111,7 @@ class RustModuleBuilder:
         Returns:
             The module hash as a hexadecimal string.
         """
-        hasher = hashlib.sha256(b"maturin-develop-release-build-policy-v2")
+        hasher = hashlib.sha256(b"maturin-develop-release-build-policy-v3")
         paths = [
             Path(__file__),
             module_dir / "Cargo.toml",
@@ -120,7 +120,6 @@ class RustModuleBuilder:
             module_dir / "build.rs",
         ]
         paths.extend(sorted((module_dir / "src").rglob("*.rs")))
-        paths.extend(sorted((module_dir / "profiles").rglob("*")))
         for path in paths:
             if path.is_file():
                 hasher.update(str(path).encode())
@@ -163,27 +162,6 @@ class RustModuleBuilder:
             hasher.update(str(compiler.returncode).encode())
         except OSError:
             hasher.update(b"rustc-unavailable")
-        if (
-            module_dir.name == "custom_apriltag_detector"
-            and (module_dir / "build.py").is_file()
-        ):
-            context = subprocess.run(
-                [
-                    *self._python_command(),
-                    str(module_dir / "build.py"),
-                    "--build-context",
-                ],
-                cwd=module_dir,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if context.returncode:
-                raise RuntimeError(
-                    f"Cannot resolve detector build context: {context.stderr}"
-                )
-            hasher.update(context.stdout.encode())
         return hasher.hexdigest()
 
     def load_build_cache(self) -> dict:

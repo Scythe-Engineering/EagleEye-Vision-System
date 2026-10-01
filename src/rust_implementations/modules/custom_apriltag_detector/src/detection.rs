@@ -1,6 +1,7 @@
-//! Owned detection fields shared by Python and the existing ABI 2 boundary.
+use pyo3::prelude::*;
 
-#[repr(C)]
+/// One decoded tag in image pixel-edge coordinates.
+#[pyclass(frozen, get_all, skip_from_py_object, module = "custom_apriltag_detector")]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Detection {
     pub(crate) family_index: u32,

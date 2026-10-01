@@ -1,12 +1,10 @@
-//! Detector state and the unchanged proposal/refinement/decoding policy.
-
 use std::cmp::Ordering;
 
-use crate::candidates::candidates;
+use crate::candidates::{prepare, proposals, Scratch};
 use crate::decode::decode;
 use crate::detection::Detection;
 use crate::families::{select_families, IndexedFamily};
-use crate::geometry::{max_f64, H};
+use crate::geometry::{max_f64, Homography};
 use crate::image::Image;
 use crate::workers::Workers;
 
@@ -20,7 +18,6 @@ pub(crate) struct Settings {
 }
 
 impl Settings {
-    /// Validate the numeric limits used by the reference native implementation.
     pub(crate) fn validate(&self) -> Result<(), String> {
         if !(1..=64).contains(&self.nthreads)
             || !self.quad_decimate.is_finite()
@@ -41,10 +38,10 @@ pub(crate) struct Detector {
     pub(crate) selected: Vec<IndexedFamily>,
     pub(crate) results: Vec<Detection>,
     workers: Workers,
+    scratch: Scratch,
 }
 
 impl Detector {
-    /// Own the selected families, persistent workers and borrowed-result storage.
     pub(crate) fn new(names: &str, settings: Settings) -> Result<Self, String> {
         settings.validate()?;
         let selected = select_families(names)?;
@@ -54,30 +51,66 @@ impl Detector {
             selected,
             results: Vec::new(),
             workers,
+            scratch: Scratch::new(),
         })
     }
 
-    /// Detect using genuine observed pixels without a lower-count fallback.
     pub(crate) fn detect(&mut self, mut image: Image<'_>) -> &[Detection] {
         self.results.clear();
         if image.fully_observed() {
             image.source_map = None;
         }
         let light = self.selected.iter().any(|family| family.family.reversed);
-        let proposals = candidates(
+        let prepared = prepare(
             &image,
             self.settings.quad_decimate,
             self.settings.quad_sigma,
             &self.workers,
-            light,
-            0.0,
+            &mut self.scratch,
         );
-        for proposal in proposals {
+        let primary = proposals(
+            &prepared,
+            &mut self.scratch,
+            &self.workers,
+            light,
+            false,
+        );
+        self.decode_proposals(&image, &primary);
+        if self.results.is_empty() {
+            let recovery = proposals(
+                &prepared,
+                &mut self.scratch,
+                &self.workers,
+                light,
+                true,
+            );
+            self.decode_proposals(&image, &recovery);
+        }
+        self.results.sort_unstable_by(|a, b| {
+            a.family_index
+                .cmp(&b.family_index)
+                .then_with(|| a.tag_id.cmp(&b.tag_id))
+                .then_with(|| {
+                    a.center[1]
+                        .partial_cmp(&b.center[1])
+                        .unwrap_or(Ordering::Equal)
+                })
+                .then_with(|| {
+                    a.center[0]
+                        .partial_cmp(&b.center[0])
+                        .unwrap_or(Ordering::Equal)
+                })
+        });
+        &self.results
+    }
+
+    fn decode_proposals(&mut self, image: &Image<'_>, found: &[crate::candidates::Proposal]) {
+        for proposal in found {
             let mut quad = proposal.quad;
-            if (self.settings.refine_edges || proposal.recovery)
+            if self.settings.refine_edges
                 && !crate::geometry::refine(
                     &mut quad,
-                    &image,
+                    image,
                     self.settings.quad_decimate + 1.0,
                     if proposal.color != 0 { -1 } else { 1 },
                 )
@@ -90,7 +123,7 @@ impl Detector {
                 }
                 let Some(detection) = decode(
                     &quad,
-                    &image,
+                    image,
                     family,
                     index as u32,
                     self.settings.decode_sharpening,
@@ -123,26 +156,9 @@ impl Detector {
                 }
             }
         }
-        self.results.sort_unstable_by(|a, b| {
-            a.family_index
-                .cmp(&b.family_index)
-                .then_with(|| a.tag_id.cmp(&b.tag_id))
-                .then_with(|| {
-                    a.center[1]
-                        .partial_cmp(&b.center[1])
-                        .unwrap_or(Ordering::Equal)
-                })
-                .then_with(|| {
-                    a.center[0]
-                        .partial_cmp(&b.center[0])
-                        .unwrap_or(Ordering::Equal)
-                })
-        });
-        &self.results
     }
 }
 
-/// Validate dimensions before creating a slice over a strided native image.
 pub(crate) fn image_span(width: usize, height: usize, stride: usize) -> Result<usize, String> {
     if !(2..=32768).contains(&width)
         || !(2..=32768).contains(&height)
@@ -158,13 +174,12 @@ pub(crate) fn image_span(width: usize, height: usize, stride: usize) -> Result<u
     Ok((height - 1) * stride + width)
 }
 
-/// Preserve physical-map validation and integer-pixel-center source dimensions.
 pub(crate) fn mapped_image<'a>(
     pixels: &'a [u8],
     width: usize,
     height: usize,
     stride: usize,
-    source_map: Option<H>,
+    source_map: Option<Homography>,
     source_shape: Option<(u32, u32)>,
 ) -> Result<Image<'a>, String> {
     if pixels.len() < image_span(width, height, stride)? {

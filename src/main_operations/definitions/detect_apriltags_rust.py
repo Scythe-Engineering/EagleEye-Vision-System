@@ -19,11 +19,19 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
         full_frame_nthreads: int = 2,
         small_roi_max_px: int = 0,
     ) -> None:
-        """Select the PyO3 detector independently of benchmark environment overrides.
+        """Initialize the Rust AprilTag detection definition.
 
-        Defaults retain the validated ROI-one/full-frame-two thread selection.
-        A zero small-ROI threshold keeps the validated decimation behavior.
-        Other parameters have the same meanings as the existing detector operation.
+        Args:
+            families: AprilTag family to detect.
+            nthreads: Detector threads for temporal ROIs.
+            quad_decimate: Decimation for quad detection; decoding uses full resolution.
+            quad_sigma: Gaussian blur standard deviation in pixels for quad detection.
+            refine_edges: When non-zero, quad edges snap to nearby image gradients.
+            decode_sharpening: Sharpening applied during decoding.
+            large_roi_decimate: Decimation for large temporal ROIs; zero disables it.
+            large_roi_min_px: Minimum ROI side for large_roi_decimate; zero disables it.
+            full_frame_nthreads: Thread count for full-frame searches; zero uses nthreads.
+            small_roi_max_px: ROIs smaller than this use decimate one; zero disables it.
         """
         super().__init__(
             families=families,
@@ -36,5 +44,5 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
             large_roi_min_px=large_roi_min_px,
             full_frame_nthreads=full_frame_nthreads,
             small_roi_max_px=small_roi_max_px,
-            backend="rust",
+            rust_backend=True,
         )

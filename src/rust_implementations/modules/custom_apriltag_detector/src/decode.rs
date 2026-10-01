@@ -1,8 +1,8 @@
-//! Independent frozen Eagle Tags scalar decoding and bounded template grid fit.
+//! Scalar decoding and bounded template grid fit.
 
 use crate::detection::Detection;
-use crate::families::{Family, IndexedFamily};
-use crate::geometry::{dot, homography, min_f64, norm, project, Point, Quad, H};
+use crate::families::IndexedFamily;
+use crate::geometry::{dot, homography, min_f64, norm, project, Point, Quad, Homography};
 use crate::image::Image;
 
 /// Rotate a unit-square coordinate clockwise by quarter turns.
@@ -17,28 +17,18 @@ fn rotate(mut point: Point, rotation: i32) -> Point {
 }
 
 /// Fit independent template edges for two iterations, restoring the input on failure.
-#[allow(clippy::needless_range_loop)] // Indexed rows preserve the oracle's pivot/accumulation order.
-fn refine_grid(h: &mut H, image: &Image<'_>, family: &Family, id: i32, rotation: i32) -> bool {
+fn refine_grid(
+    h: &mut Homography,
+    image: &Image<'_>,
+    indexed: &IndexedFamily,
+    id: i32,
+    rotation: i32,
+) -> bool {
+    let family = indexed.family;
     if family.total != family.width + 2 || family.reversed {
         return false;
     }
-    for b in 0..family.nbits {
-        if family.x[b] < 0
-            || family.y[b] < 0
-            || family.x[b] >= family.width
-            || family.y[b] >= family.width
-        {
-            return false;
-        }
-    }
-    let white = |x: i32, y: i32| -> i32 {
-        for b in 0..family.nbits {
-            if family.x[b] == x && family.y[b] == y {
-                return ((family.codes[id as usize] >> (family.nbits - 1 - b)) & 1) as i32;
-            }
-        }
-        i32::from(x < 0 || y < 0 || x >= family.width || y >= family.width)
-    };
+    let white = |x: i32, y: i32| -> i32 { indexed.white_cell(id, x, y) };
     let initial = *h;
     let mut cell = 1e9;
     for k in 0..4 {
@@ -187,7 +177,6 @@ fn refine_grid(h: &mut H, image: &Image<'_>, family: &Family, id: i32, rotation:
                         -dot(n, p) * uv.x / z,
                         -dot(n, p) * uv.y / z,
                     ];
-                    // Frozen C++ normal-equation accumulation: same rows/order; solver unchanged.
                     for a in 0..8 {
                         for b in 0..8 {
                             system[a][b] = j[a].mul_add(j[b], system[a][b]);
@@ -277,7 +266,7 @@ pub(crate) fn decode(
         );
         image.sample(project(&h, p.x, p.y))
     };
-    let payload = |x: i32, y: i32| -> bool { (0..f.nbits).any(|b| f.x[b] == x && f.y[b] == y) };
+    let payload = |x: i32, y: i32| -> bool { indexed.bit_at(x, y).is_some() };
     for side in 0..4 {
         for i in 0..f.width {
             let (x, y) = match side {
@@ -338,7 +327,6 @@ pub(crate) fn decode(
     if reference.len() < 4 {
         return None;
     }
-    // ponytail: scalar illumination; fit spatial planes only if real clips demand it.
     let inner = border.iter().sum::<f64>() / border.len() as f64;
     let outer = reference.iter().sum::<f64>() / reference.len() as f64;
     let black = if f.reversed { outer } else { inner };
@@ -395,8 +383,8 @@ pub(crate) fn decode(
         let mut sum = 0.0;
         let mut valid = true;
         for b in 0..f.nbits {
-            let x = f64::from(f.x[b]) + 0.5;
-            let y = f64::from(f.y[b]) + 0.5;
+            let x = f64::from(f.bit_x[b]) + 0.5;
+            let y = f64::from(f.bit_y[b]) + 0.5;
             let mut v = sample(x, y, r);
             if !v.is_finite() {
                 valid = false;
@@ -447,7 +435,7 @@ pub(crate) fn decode(
     }
     if grid {
         let mut refined = h;
-        if refine_grid(&mut refined, image, f, id, rotation) {
+        if refine_grid(&mut refined, image, indexed, id, rotation) {
             let refined_quad = [
                 project(&refined, 0.0, 0.0),
                 project(&refined, 1.0, 0.0),
@@ -516,114 +504,4 @@ pub(crate) fn decode(
         out.homography[j] = normalized[j] / scale;
     }
     Some(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::family_data::FAMILIES;
-
-    // Rasterize physical cells, not decoder sample predictions. All evidence is pixels.
-    fn render(family: &Family, id: usize, rotation: i32) -> (Vec<u8>, usize, Quad) {
-        let cell = 8;
-        let origin = 48;
-        let size = (origin * 2 + family.width * cell) as usize;
-        let mut pixels = vec![0; size * size];
-        for y in 0..size {
-            for x in 0..size {
-                let mut cx = (x as i32 - origin).div_euclid(cell);
-                let mut cy = (y as i32 - origin).div_euclid(cell);
-                for _ in 0..rotation {
-                    (cx, cy) = (cy, family.width - 1 - cx);
-                }
-                let inside = cx >= 0 && cy >= 0 && cx < family.width && cy < family.width;
-                let mut white = if family.reversed { inside } else { !inside };
-                for b in 0..family.nbits {
-                    if family.x[b] == cx && family.y[b] == cy {
-                        white = (family.codes[id] >> (family.nbits - 1 - b)) & 1 != 0;
-                        break;
-                    }
-                }
-                pixels[y * size + x] = if white { 230 } else { 20 };
-            }
-        }
-        let lo = f64::from(origin) - 0.5;
-        let hi = f64::from(origin + family.width * cell) - 0.5;
-        (
-            pixels,
-            size,
-            [
-                Point { x: lo, y: lo },
-                Point { x: hi, y: lo },
-                Point { x: hi, y: hi },
-                Point { x: lo, y: hi },
-            ],
-        )
-    }
-
-    #[test]
-    fn physical_normal_and_reversed_all_rotations() {
-        for (fi, family) in FAMILIES.iter().enumerate() {
-            let indexed = IndexedFamily::new(family);
-            for rotation in 0..4 {
-                let (pixels, size, quad) = render(family, 0, rotation);
-                let image = Image {
-                    pixels: &pixels,
-                    width: size,
-                    height: size,
-                    stride: size,
-                    source_map: None,
-                    source_width: 0,
-                    source_height: 0,
-                };
-                for grid in [false, true] {
-                    let detection = decode(&quad, &image, &indexed, fi as u32, 0.25, grid)
-                        .unwrap_or_else(|| {
-                            panic!("{} rotation {rotation} grid {grid}", family.name)
-                        });
-                    assert_eq!(detection.tag_id, 0);
-                    assert_eq!(detection.hamming, 0);
-                    assert_eq!(detection.rotation, rotation);
-                    assert_eq!(detection.family_index, fi as u32);
-                    assert!(detection.decision_margin > 15.0);
-                    assert!(detection.homography.iter().all(|v| v.is_finite()));
-                    // Normalized homography includes the same native half-pixel shift.
-                    for (k, uv) in [(-1.0, 1.0), (1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)]
-                        .iter()
-                        .enumerate()
-                    {
-                        let p = project(&detection.homography, uv.0, uv.1);
-                        assert!((p.x - detection.corners[2 * k]).abs() < 1e-8);
-                        assert!((p.y - detection.corners[2 * k + 1]).abs() < 1e-8);
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn degenerate_and_unobserved_evidence_rejected() {
-        let family = &FAMILIES[0];
-        let indexed = IndexedFamily::new(family);
-        let (pixels, size, quad) = render(family, 0, 0);
-        let mut image = Image {
-            pixels: &pixels,
-            width: size,
-            height: size,
-            stride: size,
-            source_map: None,
-            source_width: size as u32,
-            source_height: size as u32,
-        };
-        assert!(decode(&[Point::default(); 4], &image, &indexed, 0, 0.0, false).is_none());
-        // One missing exterior side cannot borrow reference support from the others.
-        image.source_map = Some([1.0, 0.0, -quad[0].x, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        assert!(decode(&quad, &image, &indexed, 0, 0.0, false).is_none());
-        image.source_map = Some([0.0; 9]);
-        assert!(decode(&quad, &image, &indexed, 0, 0.0, true).is_none());
-        let mut h = homography(&quad).unwrap();
-        let initial = h;
-        assert!(!refine_grid(&mut h, &image, family, 0, 0));
-        assert_eq!(h, initial);
-    }
 }

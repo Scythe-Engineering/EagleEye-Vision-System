@@ -1,5 +1,4 @@
 import logging
-import os
 from copy import copy
 from dataclasses import dataclass
 from threading import Lock
@@ -12,20 +11,6 @@ from pupil_apriltags import Detection, Detector
 from .custom_native import CustomNativeDetector
 
 logger = logging.getLogger(__name__)
-
-
-class _NativeDetector(Detector):
-    """Release custom-build family registrations before pupil frees the families."""
-
-    def __del__(self) -> None:
-        pointer = getattr(self, "tag_detector_ptr", None)
-        if pointer:
-            # pupil 1.0.4.post11 frees families first, but detector destruction
-            # dereferences those families to release their quick-decode tables.
-            self.libc.apriltag_detector_clear_families.restype = None
-            self.libc.apriltag_detector_clear_families(pointer)
-            super().__del__()
-            self.tag_detector_ptr = None
 
 
 @dataclass
@@ -61,7 +46,7 @@ class AprilTagDetector:
         full_frame_nthreads: int = 0,
         small_roi_max_px: int = 32,
         *,
-        backend: str | None = None,
+        rust_backend: bool = False,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -90,32 +75,10 @@ class AprilTagDetector:
                 Zero uses ``nthreads`` without creating another native detector.
             small_roi_max_px: ROIs smaller than this use a native decimate-1 detector.
                 Zero disables the extra detector.
-            backend: Explicit operation backend. ``rust`` always selects the built
-                PyO3 module, ignoring benchmark library overrides. None preserves
-                the existing pupil default and environment-based benchmark selection.
+            rust_backend: Use the built custom_apriltag_detector module instead of
+                pupil_apriltags for every detector bank.
         """
-        selected_backend = (
-            os.environ.get("EAGLEEYE_APRILTAG_BACKEND", "pupil")
-            if backend is None
-            else backend
-        )
-        if backend is None and selected_backend not in ("pupil", "custom"):
-            raise ValueError("EAGLEEYE_APRILTAG_BACKEND must be pupil or custom")
-        self._backend = "custom" if selected_backend == "rust" else selected_backend
-        self._native_dir = (
-            None
-            if selected_backend == "rust"
-            else os.environ.get("EAGLEEYE_APRILTAG_LIBRARY")
-        )
-        self._custom_library = (
-            ""
-            if selected_backend == "rust"
-            else os.environ.get("EAGLEEYE_CUSTOM_TAG_LIBRARY", "")
-        )
-        if self._backend not in ("pupil", "custom"):
-            raise ValueError("AprilTag backend must be pupil, custom, or rust")
-        if self._backend == "custom" and self._native_dir:
-            raise ValueError("Custom backend conflicts with EAGLEEYE_APRILTAG_LIBRARY")
+        self.rust_backend = rust_backend
         self.families = families
         self.nthreads = nthreads
         self.quad_decimate = quad_decimate
@@ -195,27 +158,8 @@ class AprilTagDetector:
         refine_edges: int,
         decode_sharpening: float,
     ) -> Detector | CustomNativeDetector:
-        """Create every bank from the backend resolved at wrapper construction."""
-        from pathlib import Path
-
-        if self._backend == "custom":
-            return CustomNativeDetector(
-                library=self._custom_library,
-                families=families,
-                nthreads=nthreads,
-                quad_decimate=quad_decimate,
-                quad_sigma=quad_sigma,
-                refine_edges=refine_edges,
-                decode_sharpening=decode_sharpening,
-            )
-        # Keep the stock constructor mockable and the patched baseline isolated.
-        native_dir = self._native_dir
-        if native_dir and not (Path(native_dir) / "libapriltag.so").is_file():
-            raise FileNotFoundError(
-                f"AprilTag native library missing: {native_dir}/libapriltag.so"
-            )
-        detector = (_NativeDetector if native_dir else Detector)(
-            **({"searchpath": (Path(native_dir),)} if native_dir else {}),
+        """Create the native AprilTag detector with normalized parameters."""
+        return (CustomNativeDetector if self.rust_backend else Detector)(
             families=families,
             nthreads=max(1, int(nthreads)),
             quad_decimate=max(1.0, float(quad_decimate)),
@@ -223,15 +167,6 @@ class AprilTagDetector:
             refine_edges=int(refine_edges),
             decode_sharpening=float(decode_sharpening),
         )
-        if (
-            native_dir
-            and Path(detector.libc._name).resolve()
-            != (Path(native_dir) / "libapriltag.so").resolve()
-        ):
-            raise RuntimeError(
-                f"Unexpected AprilTag library loaded: {detector.libc._name}"
-            )
-        return detector
 
     def _disable_native_destructor(
         self, detector: Detector | CustomNativeDetector
@@ -245,10 +180,7 @@ class AprilTagDetector:
         the crashing native destroy path.
         """
         if isinstance(detector, CustomNativeDetector):
-            detector.close()
             return
-        if isinstance(detector, _NativeDetector):
-            return  # Custom builds have safe cleanup; retain the legacy stock workaround.
         try:
             if hasattr(detector, "tag_detector_ptr"):
                 detector.tag_detector_ptr = None
@@ -607,7 +539,7 @@ class AprilTagDetector:
                                 source_map=full_frame_mapping,
                                 source_shape=source_shape,
                             )
-                            if self._backend == "custom" and source_shape is not None
+                            if self.rust_backend and source_shape is not None
                             else detector.detect(gray_image)
                         )
                     except Exception as exc:
@@ -661,7 +593,7 @@ class AprilTagDetector:
 
         detections = (
             self.run_detection(images, source_shape=full_frame.shape[:2])
-            if self._backend == "custom"
+            if self.rust_backend
             and temporal_segments
             and full_frame is not None
             and self._is_valid_image(full_frame)

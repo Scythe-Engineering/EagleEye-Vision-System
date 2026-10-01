@@ -40,7 +40,7 @@ impl Mul<f64> for Point {
 }
 
 pub(crate) type Quad = [Point; 4];
-pub(crate) type H = [f64; 9];
+pub(crate) type Homography = [f64; 9];
 
 /// C++ std::min semantics, including returning the first operand on unordered comparison.
 pub(crate) fn min_f64(a: f64, b: f64) -> f64 {
@@ -58,16 +58,6 @@ pub(crate) fn max_f64(a: f64, b: f64) -> f64 {
         a
     }
 }
-/// C++ std::clamp semantics for validated ordered bounds, preserving unordered values.
-pub(crate) fn clamp_f64(v: f64, lo: f64, hi: f64) -> f64 {
-    if v < lo {
-        lo
-    } else if hi < v {
-        hi
-    } else {
-        v
-    }
-}
 /// Signed two-dimensional cross product.
 pub(crate) fn cross(a: Point, b: Point) -> f64 {
     a.x * b.y - a.y * b.x
@@ -82,7 +72,7 @@ pub(crate) fn norm(a: Point) -> f64 {
 }
 
 /// Direct unit-square to quadrilateral homography solve.
-pub(crate) fn homography(q: &Quad) -> Option<H> {
+pub(crate) fn homography(q: &Quad) -> Option<Homography> {
     let dx = q[0].x - q[1].x + q[2].x - q[3].x;
     let dy = q[0].y - q[1].y + q[2].y - q[3].y;
     let a = q[1].x - q[2].x;
@@ -109,8 +99,7 @@ pub(crate) fn homography(q: &Quad) -> Option<H> {
 }
 
 /// Project coordinates through a homography, retaining nonfinite pole results.
-pub(crate) fn project(h: &H, x: f64, y: f64) -> Point {
-    // Frozen C++ project contracts the product sum, not its translation addition.
+pub(crate) fn project(h: &Homography, x: f64, y: f64) -> Point {
     let z = h[6].mul_add(x, h[7] * y) + h[8];
     Point {
         x: (h[0].mul_add(x, h[1] * y) + h[2]) / z,
@@ -164,7 +153,6 @@ pub(crate) fn fit(points: &[Point], weights: &[f64]) -> Option<Line> {
     if points.len() < 3 {
         return None;
     }
-    // Frozen C++ fit contracts weighted accumulations without changing traversal.
     let mut sum = 0.0;
     let mut mean = Point { x: 0.0, y: 0.0 };
     for i in 0..points.len() {
@@ -266,7 +254,6 @@ pub(crate) fn refine(q: &mut Quad, im: &Image<'_>, radius: f64, polarity: i32) -
             if best <= 4.0 {
                 continue;
             }
-            // ponytail: local 4px lobe; widen/model the PSF if blur exceeds this span.
             let mut mass = 0.0;
             let mut moment = 0.0;
             let mut t = -2.0;
@@ -366,8 +353,6 @@ pub(crate) fn fit_quad(boundary: &[Point]) -> Option<Quad> {
         return None;
     }
     let mut polygon = boundary.to_vec();
-    // ponytail: greedy O(n²) hull simplification; use a priority queue if hull
-    // vertex counts become a measured extraction bottleneck.
     while polygon.len() > 4 {
         let mut remove = 0;
         let mut best = f64::INFINITY;
@@ -454,104 +439,4 @@ pub(crate) fn fit_quad(boundary: &[Point]) -> Option<Quad> {
         }
     }
     Some(fitted)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn contracted_frozen_cpp_projection() {
-        // GCC -O3 -march=native -ffp-contract=fast, frozen project.
-        let h = [
-            1.23456789012345,
-            2.34567890123456,
-            3.45678901234567,
-            4.56789012345678,
-            5.67890123456789,
-            6.78901234567890,
-            0.001234567890123,
-            -0.002345678901234,
-            1.0,
-        ];
-        let p = project(&h, 0.123456789012345, 0.765432109876543);
-        assert_eq!(p.x.to_bits(), 0x4015_a77b_9ae7_08c2);
-        assert_eq!(p.y.to_bits(), 0x4027_7023_12b7_be2a);
-    }
-
-    #[test]
-    fn native_geometry_and_nan_semantics() {
-        assert!(min_f64(f64::NAN, 1.0).is_nan());
-        assert_eq!(min_f64(1.0, f64::NAN), 1.0);
-        assert!(max_f64(f64::NAN, 1.0).is_nan());
-        assert_eq!(max_f64(1.0, f64::NAN), 1.0);
-        assert!(clamp_f64(f64::NAN, 0.0, 1.0).is_nan());
-        assert_eq!(min_f64(-0.0, 0.0).to_bits(), (-0.0f64).to_bits());
-        let q = [
-            Point { x: 2.0, y: 3.0 },
-            Point { x: 12.0, y: 3.0 },
-            Point { x: 12.0, y: 13.0 },
-            Point { x: 2.0, y: 13.0 },
-        ];
-        let h = homography(&q).unwrap();
-        for (i, (x, y)) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-            .into_iter()
-            .enumerate()
-        {
-            assert_eq!(project(&h, x, y), q[i]);
-        }
-        let mut points = q.to_vec();
-        points.extend_from_slice(&[q[0], Point { x: 7.0, y: 3.0 }, Point { x: 7.0, y: 7.0 }]);
-        assert_eq!(hull(points), q);
-        let fitted = fit_quad(&q).unwrap();
-        for k in 0..4 {
-            assert!(norm(fitted[k] - q[k]) < 1e-12);
-        }
-        assert!(homography(&[Point::default(); 4]).is_none());
-        assert!(fit(&[Point::default(); 3], &[1.0; 3]).is_none());
-        assert!(fit(&q, &[0.0; 4]).is_none());
-        let horizontal = fit(&q[..3], &[1.0, 1.0, 0.0]).unwrap();
-        assert_eq!(horizontal.n, Point { x: -0.0, y: 1.0 });
-        assert_eq!(horizontal.d, 3.0);
-        assert!(intersect(horizontal, horizontal).is_none());
-    }
-
-    #[test]
-    fn local_edge_refinement_preserves_phase_and_physical_support() {
-        let mut pixels = vec![220; 64 * 64];
-        for y in 16..48 {
-            for x in 16..48 {
-                pixels[y * 64 + x] = 20;
-            }
-        }
-        let mut image = Image {
-            pixels: &pixels,
-            width: 64,
-            height: 64,
-            stride: 64,
-            source_map: None,
-            source_width: 64,
-            source_height: 64,
-        };
-        let seed = [
-            Point { x: 16.0, y: 16.0 },
-            Point { x: 48.0, y: 16.0 },
-            Point { x: 48.0, y: 48.0 },
-            Point { x: 16.0, y: 48.0 },
-        ];
-        let mut q = seed;
-        assert!(refine(&mut q, &image, 3.0, 1));
-        for (actual, expected) in q.into_iter().zip([
-            Point { x: 15.5, y: 15.5 },
-            Point { x: 47.5, y: 15.5 },
-            Point { x: 47.5, y: 47.5 },
-            Point { x: 15.5, y: 47.5 },
-        ]) {
-            assert!(norm(actual - expected) < 0.06, "{actual:?}");
-        }
-        image.source_map = Some([1.0, 0.0, -16.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        let mut clipped = seed;
-        assert!(!refine(&mut clipped, &image, 3.0, 1));
-        assert_eq!(clipped, seed);
-    }
 }

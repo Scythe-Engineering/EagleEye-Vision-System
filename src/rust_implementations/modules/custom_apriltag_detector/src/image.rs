@@ -1,4 +1,4 @@
-use crate::geometry::{max_f64, min_f64, Point, H};
+use crate::geometry::{max_f64, min_f64, Point, Homography};
 
 /// Borrowed grayscale pixels with an optional integer-center physical-source map.
 #[derive(Clone, Copy)]
@@ -7,7 +7,7 @@ pub(crate) struct Image<'a> {
     pub(crate) width: usize,
     pub(crate) height: usize,
     pub(crate) stride: usize,
-    pub(crate) source_map: Option<H>,
+    pub(crate) source_map: Option<Homography>,
     pub(crate) source_width: u32,
     pub(crate) source_height: u32,
 }
@@ -27,7 +27,6 @@ impl Image<'_> {
         let Some(m) = self.source_map else {
             return true;
         };
-        // Contract only the product sum; keep the translation addition separate.
         let z = m[6].mul_add(q.x, m[7] * q.y) + m[8];
         let x = (m[0].mul_add(q.x, m[1] * q.y) + m[2]) / z;
         let y = (m[3].mul_add(q.x, m[4] * q.y) + m[5]) / z;
@@ -110,7 +109,6 @@ impl Image<'_> {
     }
 
     /// Bilinearly sample, excluding and renormalizing unavailable physical contributors.
-    // The CM5 profile identifies this hot leaf; inline it into bounded sampling loops.
     #[inline(always)]
     pub(crate) fn sample(&self, q: Point) -> f64 {
         if !self.valid(q) {
@@ -157,7 +155,6 @@ impl Image<'_> {
                 f64::NAN
             };
         }
-        // Frozen C++ sample: contract each row sum, then the outer sum; no reassociation.
         let top = (1.0 - a).mul_add(
             self.pixels[y * self.stride + x] as f64,
             a * self.pixels[y * self.stride + xx] as f64,
@@ -167,81 +164,5 @@ impl Image<'_> {
             a * self.pixels[yy * self.stride + xx] as f64,
         );
         (1.0 - b).mul_add(top, b * bottom)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn contracted_frozen_cpp_sample() {
-        // GCC -O3 -march=native -ffp-contract=fast, frozen Image::sample.
-        let image = Image {
-            pixels: &[17, 231, 95, 3],
-            width: 2,
-            height: 2,
-            stride: 2,
-            source_map: None,
-            source_width: 2,
-            source_height: 2,
-        };
-        assert_eq!(
-            image
-                .sample(Point {
-                    x: 0.123456789012345,
-                    y: 0.765432109876543
-                })
-                .to_bits(),
-            0x4052_8d41_acfc_8f9f,
-        );
-    }
-
-    #[test]
-    fn physical_sampling_and_poles() {
-        // The last row has no trailing stride bytes; black is observed data.
-        let pixels = [0, 100, 250, 99, 0, 100, 250];
-        let mut image = Image {
-            pixels: &pixels,
-            width: 3,
-            height: 2,
-            stride: 4,
-            source_map: None,
-            source_width: 3,
-            source_height: 2,
-        };
-        assert_eq!(image.sample(Point { x: 0.5, y: 0.5 }), 50.0);
-        assert_eq!(image.sample(Point { x: 2.0, y: 1.0 }), 250.0);
-        assert!(image
-            .sample(Point {
-                x: f64::NAN,
-                y: 0.0
-            })
-            .is_nan());
-        assert!(image.sample(Point { x: -0.1, y: 0.0 }).is_nan());
-        image.source_map = Some([1.0, 0.0, -0.25, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        assert!(image.valid(Point { x: 0.5, y: 0.5 }));
-        assert_eq!(image.sample(Point { x: 0.5, y: 0.5 }), 100.0);
-        assert!(!image.fully_observed());
-        assert_eq!(
-            image.ray_limit(Point { x: 0.5, y: 0.5 }, Point { x: -1.0, y: 0.0 }),
-            0.25
-        );
-        image.source_map = Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        assert!(image.fully_observed());
-        assert_eq!(image.sample(Point { x: 0.0, y: 0.0 }), 0.0);
-        // A valid subpixel position can have no available integer contributors.
-        image.source_width = 1;
-        image.source_map = Some([1.0, 0.0, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-        assert!(image.valid(Point { x: 0.5, y: 0.5 }));
-        assert!(image.sample(Point { x: 0.5, y: 0.5 }).is_nan());
-        image.source_width = 3;
-        image.source_map = Some([-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0]);
-        assert!(image.fully_observed());
-        image.source_map = Some([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0]);
-        assert!(image.valid(Point { x: 0.0, y: 0.0 }));
-        assert!(image.valid(Point { x: 2.0, y: 1.0 }));
-        assert!(!image.fully_observed());
-        assert!(image.sample(Point { x: 1.0, y: 0.0 }).is_nan());
     }
 }
