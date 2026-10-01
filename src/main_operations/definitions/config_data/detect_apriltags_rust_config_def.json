@@ -1,0 +1,99 @@
+{
+    "class_name": "DetectApriltagsRustDefinition",
+    "description": "Detect AprilTags with the Rust detector using the same detections and temporal ROI inputs as the existing detector",
+    "category": "det",
+    "folder": "Detection",
+    "requires_rust_module": "custom_apriltag_detector",
+    "input_nodes": [{"name": "frame", "has_default": false}],
+    "output_nodes": ["detections"],
+    "parameters": {
+        "families": {
+            "type": "str",
+            "description": "AprilTag family to detect",
+            "default": "tag36h11",
+            "required": false,
+            "options": ["tag16h5", "tag25h9", "tag36h11", "tagCircle21h7", "tagCircle49h12", "tagCustom48h12", "tagStandard41h12", "tagStandard52h13"],
+            "restart_for_change": false
+        },
+        "nthreads": {
+            "type": "int",
+            "description": "Number of detector threads for temporal ROIs",
+            "default": 1,
+            "required": false,
+            "min": 1,
+            "max": 16,
+            "restart_for_change": false
+        },
+        "full_frame_nthreads": {
+            "type": "int",
+            "description": "Thread count for full-frame searches; zero uses nthreads",
+            "default": 2,
+            "required": false,
+            "min": 0,
+            "max": 16,
+            "restart_for_change": false
+        },
+        "quad_decimate": {
+            "type": "float",
+            "description": "Decimation for quad detection; decoding uses full-resolution pixels",
+            "default": 2.0,
+            "required": false,
+            "min": 1.0,
+            "max": 10.0,
+            "restart_for_change": false
+        },
+        "large_roi_decimate": {
+            "type": "float",
+            "description": "Optional decimation for large temporal ROIs; zero disables it",
+            "default": 3.0,
+            "required": false,
+            "min": 0.0,
+            "max": 10.0,
+            "restart_for_change": false
+        },
+        "large_roi_min_px": {
+            "type": "int",
+            "description": "Minimum ROI side length for large_roi_decimate; zero disables it",
+            "default": 96,
+            "required": false,
+            "min": 0,
+            "max": 4096,
+            "restart_for_change": false
+        },
+        "quad_sigma": {
+            "type": "float",
+            "description": "Gaussian blur standard deviation in pixels for quad detection",
+            "default": 0.0,
+            "required": false,
+            "min": 0.0,
+            "max": 5.0,
+            "restart_for_change": false
+        },
+        "refine_edges": {
+            "type": "int",
+            "description": "Refine quad edges against observed image gradients",
+            "default": 1,
+            "required": false,
+            "options": [0, 1],
+            "restart_for_change": false
+        },
+        "decode_sharpening": {
+            "type": "float",
+            "description": "Sharpening applied during decoding",
+            "default": 0.25,
+            "required": false,
+            "min": 0.0,
+            "max": 1.0,
+            "restart_for_change": false
+        },
+        "small_roi_max_px": {
+            "type": "int",
+            "description": "Optional decimate-one override for smaller ROIs; zero disables it",
+            "default": 0,
+            "required": false,
+            "min": 0,
+            "max": 4096,
+            "restart_for_change": false
+        }
+    }
+}

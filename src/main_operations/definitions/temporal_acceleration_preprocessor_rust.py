@@ -204,7 +204,9 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             coordinates to full-frame coordinates.
         """
         source = flattened_quad.reshape(4, 2)
-        edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
+        # Four fixed perimeter edges need no general-purpose roll machinery.
+        edges = source - source[[1, 2, 3, 0]]
+        edge_lengths = np.sqrt((edges * edges).sum(axis=1))
         side = min(int(np.ceil(float(edge_lengths.max()))), max(frame.shape[:2]))
         side = max(side, 2)
         destination = np.array(
