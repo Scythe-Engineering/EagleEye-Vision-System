@@ -33,6 +33,8 @@ class AprilTagDetector:
     over all detector parameters. It can be used independently from pose estimation.
     """
 
+    rust_backend = False
+
     def __init__(
         self,
         families: str = "tag36h11",
