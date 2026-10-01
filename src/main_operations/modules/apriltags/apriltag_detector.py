@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from pupil_apriltags import Detection, Detector
 
+from .custom_native import CustomNativeDetector
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +33,8 @@ class AprilTagDetector:
     over all detector parameters. It can be used independently from pose estimation.
     """
 
+    rust_backend = False
+
     def __init__(
         self,
         families: str = "tag36h11",
@@ -43,6 +47,8 @@ class AprilTagDetector:
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 0,
         small_roi_max_px: int = 32,
+        *,
+        rust_backend: bool = False,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -71,7 +77,10 @@ class AprilTagDetector:
                 Zero uses ``nthreads`` without creating another native detector.
             small_roi_max_px: ROIs smaller than this use a native decimate-1 detector.
                 Zero disables the extra detector.
+            rust_backend: Use the built custom_apriltag_detector module instead of
+                pupil_apriltags for every detector bank.
         """
+        self.rust_backend = rust_backend
         self.families = families
         self.nthreads = nthreads
         self.quad_decimate = quad_decimate
@@ -150,9 +159,9 @@ class AprilTagDetector:
         quad_sigma: float,
         refine_edges: int,
         decode_sharpening: float,
-    ) -> Detector:
+    ) -> Detector | CustomNativeDetector:
         """Create the native AprilTag detector with normalized parameters."""
-        return Detector(
+        return (CustomNativeDetector if self.rust_backend else Detector)(
             families=families,
             nthreads=max(1, int(nthreads)),
             quad_decimate=max(1.0, float(quad_decimate)),
@@ -161,7 +170,9 @@ class AprilTagDetector:
             decode_sharpening=float(decode_sharpening),
         )
 
-    def _disable_native_destructor(self, detector: Detector) -> None:
+    def _disable_native_destructor(
+        self, detector: Detector | CustomNativeDetector
+    ) -> None:
         """Prevent a known unsafe pupil_apriltags destructor path during reconfigure.
 
         pupil_apriltags.Detector.__del__ releases C pointers. On macOS this has
@@ -170,6 +181,8 @@ class AprilTagDetector:
         clearing these attributes lets Python drop the wrapper without entering
         the crashing native destroy path.
         """
+        if isinstance(detector, CustomNativeDetector):
+            return
         try:
             if hasattr(detector, "tag_detector_ptr"):
                 detector.tag_detector_ptr = None
@@ -474,9 +487,15 @@ class AprilTagDetector:
             return [region.copy() for region in self._last_search_regions]
 
     def run_detection(
-        self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
+        self,
+        images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
+        *,
+        source_shape: tuple[int, int] | None = None,
     ) -> Optional[list[Detection] | list[CustomDetection]]:
-        """Run detection on a single image or a list of mapped image segments."""
+        """Run detection; mapped custom segments use optional physical source bounds.
+
+        Direct callers without source_shape intentionally leave inputs unmasked.
+        """
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:
             return None
@@ -516,7 +535,15 @@ class AprilTagDetector:
                             detector = self._large_roi_detector
                         else:
                             detector = self.detector
-                        detected_tags = detector.detect(gray_image)
+                        detected_tags = (
+                            detector.detect(
+                                gray_image,
+                                source_map=full_frame_mapping,
+                                source_shape=source_shape,
+                            )
+                            if self.rust_backend and source_shape is not None
+                            else detector.detect(gray_image)
+                        )
                     except Exception as exc:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue
@@ -548,7 +575,8 @@ class AprilTagDetector:
         Args:
             images: Input image or image segments paired with either an XY offset
                 or a 3x3 transform from segment coordinates to the full frame.
-            full_frame: Optional fallback used when the first search finds no tags.
+            full_frame: Physical source image for custom segment validity, and
+                optional fallback used when the first search finds no tags.
 
         Returns:
             Detected tags from the supplied image or regions. If no tag is found,
@@ -565,7 +593,14 @@ class AprilTagDetector:
             else []
         )
 
-        detections = self.run_detection(images)
+        detections = (
+            self.run_detection(images, source_shape=full_frame.shape[:2])
+            if self.rust_backend
+            and temporal_segments
+            and full_frame is not None
+            and self._is_valid_image(full_frame)
+            else self.run_detection(images)
+        )
         if (
             full_frame is not None
             and self._is_valid_image(full_frame)

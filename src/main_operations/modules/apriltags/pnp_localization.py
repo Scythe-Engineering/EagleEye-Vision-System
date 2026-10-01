@@ -130,6 +130,7 @@ class PnpLocalization:
         if not solved[0]:
             return None
         rotations, translations = list(solved[1]), list(solved[2])
+        initial_rms = list(solved[3].ravel())
         # Coplanar multi-tag layouts can have two plausible minima. SQPnP alone
         # need not expose both; evaluate IPPE's planar hypotheses as well.
         if tag_count > 1 and singular_values[-1] < 1e-6 * singular_values[0]:
@@ -144,15 +145,20 @@ class PnpLocalization:
                 if planar[0]:
                     rotations.extend(planar[1])
                     translations.extend(planar[2])
+                    initial_rms.extend(planar[3].ravel())
             except cv2.error as exc:
                 logger.error("Planar IPPE candidate generation failed: %s", exc)
 
-        def score(rvec: np.ndarray, tvec: np.ndarray) -> float:
+        def score(
+            rvec: np.ndarray, tvec: np.ndarray, coordinate_rms: float | None = None
+        ) -> float:
             """Measure reprojection error for a physically valid candidate.
 
             Args:
                 rvec: Candidate rotation vector.
                 tvec: Candidate translation vector.
+                coordinate_rms: OpenCV's per-coordinate RMS for this candidate, which
+                    equals sqrt(mean squared error / 2). None projects the points.
 
             Returns:
                 Mean squared pixel error, or infinity for an invalid candidate.
@@ -162,6 +168,8 @@ class PnpLocalization:
             rotation = cv2.Rodrigues(rvec)[0]
             if np.any((object_points @ rotation.T + tvec.reshape(3))[:, 2] <= 0):
                 return float("inf")
+            if coordinate_rms is not None:
+                return 2.0 * float(coordinate_rms) ** 2
             projected = cv2.projectPoints(
                 object_points,
                 rvec,
@@ -175,8 +183,10 @@ class PnpLocalization:
 
         if tag_count == 1 and previous_pose is not None and object_origin is not None:
             valid = [
-                (rotation, translation, score(rotation, translation))
-                for rotation, translation in zip(rotations, translations)
+                (rotation, translation, score(rotation, translation, rms))
+                for rotation, translation, rms in zip(
+                    rotations, translations, initial_rms
+                )
             ]
             valid = [candidate for candidate in valid if np.isfinite(candidate[2])]
             if not valid:
@@ -254,8 +264,8 @@ class PnpLocalization:
 
         best = None
         best_error = float("inf")
-        for rotation, translation in zip(rotations, translations):
-            error = score(rotation, translation)
+        for rotation, translation, rms in zip(rotations, translations, initial_rms):
+            error = score(rotation, translation, rms)
             if not np.isfinite(error):
                 continue
             if iterations:

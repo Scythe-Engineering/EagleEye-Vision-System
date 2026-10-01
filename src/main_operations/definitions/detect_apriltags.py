@@ -25,6 +25,8 @@ class DetectApriltagsDefinition(OperationInstance):
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 0,
         small_roi_max_px: int = 32,
+        *,
+        rust_backend: bool = False,
     ) -> None:
         """Initialize the AprilTag detection definition.
 
@@ -44,6 +46,7 @@ class DetectApriltagsDefinition(OperationInstance):
                 Zero uses ``nthreads`` without another native detector.
             small_roi_max_px: Shorter-side threshold in pixels for decimate-1 temporal
                 ROI detection. Zero disables the override.
+            rust_backend: Use the Rust detector; set by the separate Rust operation.
         """
         self.detector = AprilTagDetector(
             families=families,
@@ -56,6 +59,7 @@ class DetectApriltagsDefinition(OperationInstance):
             large_roi_decimate=large_roi_decimate,
             large_roi_min_px=large_roi_min_px,
             small_roi_max_px=small_roi_max_px,
+            rust_backend=rust_backend,
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None
