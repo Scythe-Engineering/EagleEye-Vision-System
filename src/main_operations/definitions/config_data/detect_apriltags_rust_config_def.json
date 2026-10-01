@@ -12,7 +12,7 @@
             "description": "AprilTag family to detect",
             "default": "tag36h11",
             "required": false,
-            "options": ["tag16h5", "tag25h9", "tag36h11", "tagCircle21h7", "tagCircle49h12", "tagCustom48h12", "tagStandard41h12", "tagStandard52h13"],
+            "options": ["tag36h11"],
             "restart_for_change": false
         },
         "nthreads": {
