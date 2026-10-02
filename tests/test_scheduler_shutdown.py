@@ -171,6 +171,56 @@ def test_pipeline_close_finishes_work_before_closing_collaborators(threaded):
     )
 
 
+@pytest.mark.parametrize("temporal", [False, True])
+def test_repeated_pipeline_close_releases_workers_and_native_detectors(
+    temporal, tmp_path
+):
+    """Release real production graphs without depending on the 2D benchmark tools."""
+    import gc
+    import json
+
+    import numpy as np
+
+    from benchmarks.replay import CONFIG_DIR, ReplayCameraManager, build_pipeline
+
+    calibration = {
+        "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
+        "distortion_coefficients": [0] * 5,
+    }
+    config_name = "temporal.json" if temporal else "full_frame.json"
+    graph = json.loads((CONFIG_DIR / config_name).read_text(encoding="utf-8"))
+    for node in graph:
+        if node["action_name"] == "detect_apriltags.py":
+            # Repeated native multithreaded detection has a separate upstream fault.
+            node["action_params"]["full_frame_nthreads"] = 1
+    config_path = tmp_path / config_name
+    config_path.write_text(json.dumps(graph), encoding="utf-8")
+    baseline = set(threading.enumerate())
+    for _ in range(3):
+        manager = ReplayCameraManager()
+        lifecycle = build_pipeline(config_path, calibration, manager=manager)
+        with lifecycle as pipeline:
+            detector = pipeline.get_operation_by_uuid("bench-detect").instance.detector
+            references = [
+                weakref.ref(item) for item in (pipeline, detector, detector.detector)
+            ]
+            workers = [
+                worker.processing_thread_object
+                for worker in pipeline.flow_manager.thread_objects
+            ]
+            manager.publish(np.zeros((64, 64, 3), np.uint8), 0, 0)
+            pipeline.run()
+            assert pipeline.get_operation_errors() == []
+        lifecycle.close()
+        assert all(not worker.is_alive() for worker in workers)
+        with pytest.raises(RuntimeError, match="closed"):
+            pipeline.run()
+        del pipeline, detector
+        gc.collect()
+        assert all(reference() is None for reference in references)
+        assert set(threading.enumerate()) == baseline
+
+
 def test_owned_native_cleanup_order_and_partial_construction():
     """The detector owns decoding userdata, while the wrapper owns families."""
     import ctypes
