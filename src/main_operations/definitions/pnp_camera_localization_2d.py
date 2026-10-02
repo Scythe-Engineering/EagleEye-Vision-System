@@ -72,23 +72,18 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
                 "Please build the Rust extension first with "
                 "uv run python src/rust_implementations/build.py pnp_localization_2d."
             )
-        if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
-            raise ValueError("camera_matrix must be a finite 3x3 matrix")
-        if (
-            distortion.ndim not in (1, 2)
-            or (distortion.ndim == 2 and 1 not in distortion.shape)
-            or distortion.size not in (0, 4, 5, 8, 12, 14)
-            or not np.isfinite(distortion).all()
+        if matrix.shape != (3, 3):
+            raise ValueError("camera_matrix must be a 3x3 matrix")
+        if distortion.ndim not in (1, 2) or (
+            distortion.ndim == 2 and 1 not in distortion.shape
         ):
-            raise ValueError(
-                "distortion_coefficients must be a finite supported vector"
-            )
+            raise ValueError("distortion_coefficients must be a vector")
         tags = load_fmap_file(apriltag_map_path)
         corners = []
         for tag in tags.values():
             points = np.asarray(tag.global_corners, dtype=np.float64)
-            if points.shape != (4, 3) or not np.isfinite(points).all():
-                raise ValueError("AprilTag corners must be finite 4x3 arrays")
+            if points.shape != (4, 3):
+                raise ValueError("AprilTag corners must be 4x3 arrays")
             corners.extend(points.reshape(-1).tolist())
         self.native_solver = PnpLocalization2D(
             matrix.reshape(-1).tolist(),
@@ -171,9 +166,7 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
             mount = build_robot_from_camera_transform(
                 self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
             )
-            mounting_transform = (
-                mount.reshape(-1).tolist() if np.isfinite(mount).all() else None
-            )
+            mounting_transform = mount.reshape(-1).tolist()
         except (TypeError, ValueError, AttributeError, OverflowError):
             mounting_transform = None
         # Native validation owns rejection precedence, including invalid mounting.

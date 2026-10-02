@@ -39,7 +39,7 @@ from .replay import (
     SequentialVideoDecoder,
     _absolute_map_paths,
     benchmark_variant,
-    build_pipeline,
+    build_resolved_pipeline,
     collect_pipeline_outputs,
     load_benchmark_config,
     run_accuracy,
@@ -520,14 +520,11 @@ def _run(args: argparse.Namespace) -> int:
                     )
 
                 with (
-                    build_pipeline(
-                        graph_paths[configuration],
+                    build_resolved_pipeline(
+                        resolved[configuration],
                         _calibration(assets[clip.calibration]),
                         mounting,
-                        map_path=DEFAULT_MAP_PATH,
                         manager=(manager := ReplayCameraManager()),
-                        solver=solver,
-                        minimum_tags=minimum,
                         paired=args.solver == "both",
                     ) as pipeline,
                     SequentialVideoDecoder(assets[clip.video]) as decoder,

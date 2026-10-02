@@ -17,7 +17,11 @@ from benchmarks.replay import (
     ReplayCameraManager,
     ReplayError,
     SequentialVideoDecoder,
+    _absolute_map_paths,
+    benchmark_variant,
     build_pipeline,
+    build_resolved_pipeline,
+    load_benchmark_config,
     rational_timestamp_ns,
     run_accuracy,
     stream_annotations,
@@ -203,14 +207,31 @@ def test_accuracy_does_not_reuse_a_stale_profile() -> None:
 
 
 @pytest.mark.parametrize("temporal", [False, True])
-def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) -> None:
-    """Both graphs must initialize their real production operation classes."""
+def test_real_benchmark_graph_constructs_and_runs_blank_frame(
+    temporal: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Execute the recorded resolved graph without reloading or mutating it."""
     calibration = {
         "camera_matrix": [[762.7, 0.0, 640.0], [0.0, 762.7, 400.0], [0.0, 0.0, 1.0]],
         "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],
     }
+    graph = benchmark_variant(
+        load_benchmark_config(
+            CONFIG_DIR / ("temporal.json" if temporal else "full_frame.json"), temporal
+        )
+    )
+    _absolute_map_paths(graph, None)
+    recorded = json.dumps(graph, sort_keys=True)
+
+    def unexpected_reload(*_args: object) -> None:
+        """Fail if construction resolves the recorded graph a second time."""
+        pytest.fail("resolved graph must not be reloaded or transformed")
+
+    monkeypatch.setattr("benchmarks.replay.load_benchmark_config", unexpected_reload)
+    monkeypatch.setattr("benchmarks.replay.benchmark_variant", unexpected_reload)
     manager = ReplayCameraManager(epoch_ns=1_000_000)
-    with build_pipeline(temporal, calibration, manager=manager) as pipeline:
+    with build_resolved_pipeline(graph, calibration, manager=manager) as pipeline:
+        assert pipeline.pipeline_config is graph
         manager.publish(np.zeros((800, 1280, 3), dtype=np.uint8), 0, 0)
         manager.begin_cycle()
         try:
@@ -219,6 +240,7 @@ def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) ->
             manager.end_cycle()
         assert pipeline.get_operation_errors() == []
         assert pipeline.get_operation_by_uuid("bench-detect") is not None
+    assert json.dumps(graph, sort_keys=True) == recorded
 
 
 @pytest.mark.parametrize("temporal", [False, True])

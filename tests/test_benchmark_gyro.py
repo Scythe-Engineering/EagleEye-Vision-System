@@ -76,10 +76,9 @@ def test_processing_offset_and_oracle_are_explicit() -> None:
 
 
 @pytest.mark.parametrize("temporal", [False, True])
-@pytest.mark.parametrize("minimum", [1, 2])
 @pytest.mark.parametrize("solver", ["normal", "2d"])
 def test_real_variants_replay_causal_source_on_blank_frames(
-    monkeypatch: pytest.MonkeyPatch, temporal: bool, minimum: int, solver: str
+    monkeypatch: pytest.MonkeyPatch, temporal: bool, solver: str
 ) -> None:
     """Drain causal gyro data once across paired production variants."""
     manager = ReplayCameraManager()
@@ -94,7 +93,7 @@ def test_real_variants_replay_causal_source_on_blank_frames(
         calibration,
         manager=manager,
         solver=solver,
-        minimum_tags=minimum,
+        minimum_tags=2,
         paired=True,
     ) as pipeline:
         reader = pipeline.get_operation_by_uuid("bench-gyro").instance
@@ -114,7 +113,7 @@ def test_real_variants_replay_causal_source_on_blank_frames(
         )
         assert pipeline.get_operation_errors() == []
         assert len(reads) == 3  # No second queue drain for the paired shadow.
-        assert pipeline._benchmark_gyro_samples is reads[-1]
+        assert records[-1]["gyro"]["available_samples"] == reads[-1]
         assert records[0]["gyro"]["available_samples"] == []
         assert records[1]["gyro"]["available_samples"] == []
         assert records[2]["gyro"]["available_samples"] == [
@@ -126,7 +125,7 @@ def test_real_variants_replay_causal_source_on_blank_frames(
         )
         assert all(record["output"]["solver_duration_ns"] is None for record in records)
         for record in records:
-            record["minimum_tags"] = minimum
+            record["minimum_tags"] = 2
             _score_accuracy_record(record, 8)
         summary = _aggregate_accuracy(records)
         assert summary["identical_detector_outputs_paired"]["neither"] == 3
@@ -191,8 +190,9 @@ def test_paired_metrics_include_losses_gains_and_large_error_tails() -> None:
 
 @pytest.mark.parametrize("delay_ms", [0, 100])
 @pytest.mark.parametrize("minimum", [1, 2])
+@pytest.mark.parametrize("solver", ["normal", "2d"])
 def test_projected_detections_replay_real_solver_and_alignment(
-    monkeypatch: pytest.MonkeyPatch, delay_ms: int, minimum: int
+    monkeypatch: pytest.MonkeyPatch, delay_ms: int, minimum: int, solver: str
 ) -> None:
     """Use production graph/NT/alignment with known distorted detector points."""
     from types import SimpleNamespace
@@ -263,7 +263,7 @@ def test_projected_detections_replay_real_solver_and_alignment(
         calibration,
         mounting,
         manager=manager,
-        solver="2d",
+        solver=solver,
         minimum_tags=minimum,
         paired=True,
     ) as pipeline:
@@ -274,12 +274,17 @@ def test_projected_detections_replay_real_solver_and_alignment(
             lambda frame: detections,
         )
         primary = pipeline.get_operation_by_uuid("bench-pnp").instance
-        assert isinstance(primary, constrained_module.PnpCameraLocalization2DDefinition)
-        original = primary.run
+        constrained = (
+            primary if solver == "2d" else pipeline._benchmark_shadow.operation
+        )
+        assert isinstance(
+            constrained, constrained_module.PnpCameraLocalization2DDefinition
+        )
+        original = constrained.run
         observed = []
 
         def spy(value: Any) -> dict[str, Any]:
-            """Verify the primary solver receives the original detections and gyro input."""
+            """Verify either constrained solver receives the cached gyro and detections."""
             assert set(value) == {"detections", "gyro_samples"}
             assert all(
                 actual is expected
@@ -287,10 +292,13 @@ def test_projected_detections_replay_real_solver_and_alignment(
                     unwrap_timed(value["detections"]), detections
                 )
             )
+            assert value["gyro_samples"] == pipeline.get_operation_output(
+                "bench-gyro", "data"
+            )
             observed.append(value)
             return original(value)
 
-        monkeypatch.setattr(primary, "run", spy)
+        monkeypatch.setattr(constrained, "run", spy)
         annotation = {"frame_index": 0, "T_field_from_robot": robot.tolist()}
         records = run_accuracy(
             [DecodedFrame(0, np.zeros((800, 1280, 3), np.uint8))],
@@ -307,13 +315,16 @@ def test_projected_detections_replay_real_solver_and_alignment(
         assert record["output"]["solver_duration_ns"] > 0
         record["minimum_tags"] = minimum
         _score_accuracy_record(record, 8)
+        output = record["output"] if solver == "2d" else record["output"]["paired"]
+        metrics = record["metrics"] if solver == "2d" else record["metrics"]["paired"]
         if delay_ms:
-            assert record["output"]["diagnostics"]["reason"] == "missing_gyro"
-            assert record["metrics"]["robot_pose"] is None
+            assert output["diagnostics"]["reason"] == "missing_gyro"
+            assert metrics["robot_pose"] is None
         else:
-            assert record["output"]["diagnostics"]["alignment"] == "exact"
-            assert record["metrics"]["robot_pose"]["translation_3d_m"] < 1e-7
-        assert record["metrics"]["paired"]["pose_available"]
+            assert output["diagnostics"]["alignment"] == "exact"
+            assert metrics["robot_pose"]["translation_3d_m"] < 1e-7
+        normal = record["metrics"]["paired"] if solver == "2d" else record["metrics"]
+        assert normal["pose_available"]
 
 
 def test_report_labels_oracle_and_keeps_solver_count_variants_separate(

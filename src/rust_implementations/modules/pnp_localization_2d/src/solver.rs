@@ -163,7 +163,8 @@ pub fn solve(
             break;
         }
     }
-    let (_, final_condition, _) = least_squares(projection.jacobian.clone(), &projection.residual)?;
+    let singular_values = projection.jacobian.svd(false, false).singular_values;
+    let final_condition = singular_values[0] / singular_values[1];
     if !xy.iter().all(|value| value.is_finite())
         || final_condition > 1e8
         || !final_condition.is_finite()

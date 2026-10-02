@@ -18,7 +18,6 @@ from src.utils.camera_utils.camera_config_manager import CameraExtrinsics
 from src.utils.camera_utils.camera_coordinate_transforms import (
     build_robot_from_camera_transform,
 )
-from src.utils.timestamped_samples import align_heading
 from src.utils.timing import TimedValue, TimingMetadata, get_timing, unwrap_timed
 
 
@@ -214,7 +213,7 @@ def test_capture_and_geometry_rejection(scene: Scene) -> None:
         )
         assert solver.run(data)["diagnostics"]["reason"] == "missing_capture"
         with pytest.raises(ValueError, match="missing_capture"):
-            align_heading(data["gyro_samples"], capture, 100_000, 20_000)
+            native_align_heading(data["gyro_samples"], capture, 100_000, 20_000)
     data, _ = inputs()
     for detection in data["detections"].value:
         detection.corners[:] = [640, 400]
@@ -227,13 +226,16 @@ def test_gap_nearest_and_no_extrapolation() -> None:
     """Bound interpolation gaps and nearest alignment without extrapolation."""
     samples = [{"timestamp_us": 2, "value": 1}, {"timestamp_us": 200_000, "value": 2}]
     with pytest.raises(ValueError, match="gyro_gap_too_large"):
-        align_heading(samples, 100_000, 100_000, 20_000)
+        native_align_heading(samples, 100_000, 100_000, 20_000)
     # Even near an endpoint, an oversized bracket must not use nearest fallback.
     with pytest.raises(ValueError, match="gyro_gap_too_large"):
-        align_heading(samples, 190_000, 100_000, 20_000)
-    assert align_heading(samples, 210_000, 100_000, 20_000)[1]["alignment"] == "nearest"
+        native_align_heading(samples, 190_000, 100_000, 20_000)
+    assert native_align_heading(samples, 210_000, 100_000, 20_000) == (
+        2.0,
+        {"alignment": "nearest", "gyro_delta_us": -10_000},
+    )
     with pytest.raises(ValueError, match="stale_gyro"):
-        align_heading(samples, 221_000, 100_000, 20_000)
+        native_align_heading(samples, 221_000, 100_000, 20_000)
 
 
 def test_heading_recovers_with_unused_invalid_history() -> None:
@@ -249,14 +251,14 @@ def test_heading_recovers_with_unused_invalid_history() -> None:
             (20_000, 0.4, "exact"),
             (25_000, 0.5, "interpolated"),
         ):
-            yaw, metadata = align_heading(samples, capture, 100_000, 20_000)
+            yaw, metadata = native_align_heading(samples, capture, 100_000, 20_000)
             assert yaw == pytest.approx(expected)
             assert metadata["alignment"] == alignment
         for history, capture, expected in (
             (samples[:2], 35_000, 0.4),
             (samples[2:], 15_000, 0.6),
         ):
-            yaw, metadata = align_heading(history, capture, 100_000, 20_000)
+            yaw, metadata = native_align_heading(history, capture, 100_000, 20_000)
             assert yaw == pytest.approx(expected)
             assert metadata["alignment"] == "nearest"
         # Exact, nearest and either bracket endpoint must not skip bad yaw.
@@ -269,7 +271,7 @@ def test_heading_recovers_with_unused_invalid_history() -> None:
             (samples, 35_000),
         ):
             with pytest.raises(ValueError, match="invalid_gyro"):
-                align_heading(history, capture, 100_000, 20_000)
+                native_align_heading(history, capture, 100_000, 20_000)
     # Unused envelopes/timestamps still require validation at the public boundary.
     for malformed in (
         None,
@@ -278,7 +280,7 @@ def test_heading_recovers_with_unused_invalid_history() -> None:
         *({"timestamp_us": t, "value": 0} for t in (0, 1, -1, True, 1.5, 2**63)),
     ):
         with pytest.raises(ValueError, match="invalid_gyro"):
-            align_heading(
+            native_align_heading(
                 [malformed, {"timestamp_us": 20_000, "value": 0.4}],
                 20_000,
                 100_000,
@@ -396,63 +398,83 @@ def test_requires_registry_and_intrinsics(scene: Scene) -> None:
         module.PnpCameraLocalization2DDefinition("camera", "map", registry)
 
 
-def test_native_alignment_matches_shared_helper(scene: Scene) -> None:
-    """Compare public native diagnostics with exact/bracket/nearest IEEE semantics."""
-    histories: list[tuple[Any, int]] = [
-        ([{"timestamp_us": 1_000_000, "value": yaw}], 1_000_000)
-        for yaw in (np.pi, -np.pi, 1e300, -1e300)
-    ]
-    histories += [
+@pytest.mark.parametrize(
+    "yaw,expected",
+    [
+        (np.pi, np.pi),
+        (-np.pi, -np.pi),
+        (1e300, -0.7234267005270212),
+        (-1e300, 0.7234267005270212),
+    ],
+)
+def test_native_heading_wrap(yaw: float, expected: float) -> None:
+    """Wrap exact yaw with IEEE remainder, including huge finite inputs."""
+    actual, metadata = native_align_heading(
+        [{"timestamp_us": 1_000_000, "value": yaw}], 1_000_000, 100_000, 20_000
+    )
+    assert actual == pytest.approx(expected)
+    assert metadata == {"alignment": "exact", "gyro_delta_us": 0}
+
+
+@pytest.mark.parametrize(
+    "samples,expected",
+    [
         (
-            [
-                {"timestamp_us": 990_000, "value": np.pi - 0.02},
-                {"timestamp_us": 1_010_000, "value": -np.pi + 0.02},
-            ],
-            1_000_000,
+            [{"timestamp_us": 1_000_000, "value": 0.4}],
+            {"alignment": "exact", "gyro_delta_us": 0, "yaw_rad": 0.4},
         ),
-        ([{"timestamp_us": 990_000, "value": 0.4}], 1_000_000),
-        ([{"timestamp_us": 1_010_000, "value": -0.4}], 1_000_000),
         (
-            [
-                {"timestamp_us": 1_000_000, "value": None},
-                {"timestamp_us": 1_000_000, "value": 0.4},
-            ],
-            1_000_000,
-        ),
-        (
-            [
-                {"timestamp_us": 900_000, "value": None},
-                {"timestamp_us": 1_000_000, "value": 0.4},
-                {"timestamp_us": 1_100_000, "value": float("nan")},
-            ],
-            1_000_000,
+            [{"timestamp_us": 990_000, "value": 0.4}],
+            {"alignment": "nearest", "gyro_delta_us": -10_000, "yaw_rad": 0.4},
         ),
         (
             [
-                {"timestamp_us": 900_000, "value": 0.4},
-                {"timestamp_us": 1_100_000, "value": 0.5},
+                {"timestamp_us": 990_000, "value": 0.4},
+                {"timestamp_us": 1_010_000, "value": 0.6},
             ],
-            1_000_000,
+            {"alignment": "interpolated", "gyro_gap_us": 20_000, "yaw_rad": 0.5},
         ),
-        ([{"timestamp_us": 900_000, "value": 0.4}], 1_000_000),
-        ([{"timestamp_us": True, "value": 0.4}], 1_000_000),
-        ([{"timestamp_us": 1_000_000, "value": 0.4, "extra": 1}], 1_000_000),
-        (({"timestamp_us": 1_000_000, "value": 0.4},), 1_000_000),
-    ]
-    for samples, capture in histories:
-        data, _ = scene.inputs()
-        data["gyro_samples"] = samples
-        data["detections"] = TimedValue([], TimingMetadata(capture, 55_000_000))
-        result = scene.solver.run(data)
-        try:
-            yaw, expected = align_heading(samples, capture, 100_000, 20_000)
-        except ValueError as exc:
-            assert result["diagnostics"]["reason"] == str(exc)
-        else:
-            assert result["diagnostics"]["reason"] == "no_mapped_tags"
-            assert result["diagnostics"]["yaw_rad"] == yaw
-            for key, value in expected.items():
-                assert result["diagnostics"][key] == value
+    ],
+)
+def test_native_solve_retains_alignment_on_detection_rejection(
+    samples: list[dict[str, float | int]], expected: dict[str, str | float | int]
+) -> None:
+    """Preserve accumulated alignment diagnostics when no mapped tags are present."""
+    solver = module.PnpLocalization2D(np.eye(3).reshape(-1).tolist(), [], [], [])
+    result = solver.solve(1_000_000, samples, [], None, 10, 100_000, 20_000)
+    assert result == {
+        "camera_pose": None,
+        "pose_meta": None,
+        "diagnostics": {
+            "capture_nt_us": 1_000_000,
+            **expected,
+            "reason": "no_mapped_tags",
+        },
+    }
+
+
+def test_native_heading_duplicate_timestamp_and_wrap() -> None:
+    """Use the last duplicate and the shortest circular interpolation arc."""
+    assert native_align_heading(
+        [
+            {"timestamp_us": 20_000, "value": None},
+            {"timestamp_us": 20_000, "value": 0.4},
+        ],
+        20_000,
+        100_000,
+        20_000,
+    ) == (0.4, {"alignment": "exact", "gyro_delta_us": 0})
+    yaw, metadata = native_align_heading(
+        [
+            {"timestamp_us": 990_000, "value": np.pi - 0.02},
+            {"timestamp_us": 1_010_000, "value": -np.pi + 0.02},
+        ],
+        1_000_000,
+        100_000,
+        20_000,
+    )
+    assert yaw == pytest.approx(np.pi)
+    assert metadata == {"alignment": "interpolated", "gyro_gap_us": 20_000}
 
 
 def test_native_validation_precedence_and_detection_metadata(scene: Scene) -> None:
@@ -645,3 +667,65 @@ def test_missing_native_module_has_actionable_error(
     monkeypatch.setattr(module, "PnpLocalization2D", None)
     with pytest.raises(ImportError, match="build.*Rust extension"):
         scene.fresh_solver()
+
+
+@pytest.mark.parametrize(
+    "matrix,distortion,corners,message",
+    [
+        (np.full((3, 3), np.nan), np.zeros(4), np.zeros((4, 3)), "invalid calibration"),
+        (np.eye(3), np.full(4, np.inf), np.zeros((4, 3)), "invalid calibration"),
+        (np.eye(3), np.zeros(6), np.zeros((4, 3)), "invalid calibration"),
+        (
+            np.diag([-1.0, 1.0, 1.0]),
+            np.zeros(4),
+            np.zeros((4, 3)),
+            "invalid calibration",
+        ),
+        (np.eye(3).reshape(9), np.zeros(4), np.zeros((4, 3)), "3x3"),
+        (np.eye(3), np.zeros((2, 2)), np.zeros((4, 3)), "vector"),
+        (np.eye(3), np.zeros(4), np.zeros((3, 4)), "4x3"),
+        (np.eye(3), np.zeros(4), np.full((4, 3), np.nan), "12 finite values"),
+    ],
+)
+def test_constructor_preserves_shape_and_native_value_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    matrix: np.ndarray,
+    distortion: np.ndarray,
+    corners: np.ndarray,
+    message: str,
+) -> None:
+    """Keep shape checks before flattening and value checks at the native boundary."""
+    registry = SimpleNamespace(
+        get_config=lambda bus: SimpleNamespace(intrinsics_path="unused")
+    )
+    monkeypatch.setattr(
+        module, "load_camera_parameters", lambda path: (matrix, distortion)
+    )
+    monkeypatch.setattr(
+        module,
+        "load_fmap_file",
+        lambda path: {1: SimpleNamespace(global_corners=corners)},
+    )
+    with pytest.raises(ValueError, match=message):
+        module.PnpCameraLocalization2DDefinition("camera", "map", registry)
+
+
+def test_native_rejects_nonfinite_live_mount(scene: Scene) -> None:
+    """Pass nonfinite translations through to native mounting validation."""
+    data, _ = scene.inputs()
+    scene.config.extrinsics.x_offset = float("nan")
+    assert scene.solver.run(data)["diagnostics"]["reason"] == "invalid_mounting"
+
+
+@pytest.mark.parametrize(
+    "samples,reason",
+    [
+        (None, "missing_gyro"),
+        ([], "missing_gyro"),
+        (({"timestamp_us": 20_000, "value": 0.4},), "missing_gyro"),
+    ],
+)
+def test_native_heading_rejects_nonlist_history(samples: object, reason: str) -> None:
+    """Require a nonempty list rather than accepting arbitrary iterables."""
+    with pytest.raises(ValueError, match=reason):
+        native_align_heading(samples, 20_000, 100_000, 20_000)

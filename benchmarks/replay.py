@@ -97,9 +97,8 @@ class PipelineLifecycle(AbstractContextManager[Any]):
             if publisher is not None:
                 publisher.close()
                 del pipeline._benchmark_gyro_publisher
-            for name in ("_benchmark_shadow", "_benchmark_gyro_samples"):
-                if hasattr(pipeline, name):
-                    delattr(pipeline, name)
+            if hasattr(pipeline, "_benchmark_shadow"):
+                del pipeline._benchmark_shadow
             self.pipeline = None
         instance, self.nt_instance = self.nt_instance, None
         if instance is not None:
@@ -193,10 +192,6 @@ def build_pipeline(
     Returns:
         A context manager that owns the pipeline and temporary resources.
     """
-    from src.config.utils.pipeline import Pipeline
-    from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
-    from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
-
     if isinstance(config, bool):
         config_path = CONFIG_DIR / ("temporal.json" if config else "full_frame.json")
         expected_temporal = config
@@ -205,14 +200,41 @@ def build_pipeline(
         if not config_path.is_absolute():
             config_path = REPOSITORY_ROOT / config_path
         expected_temporal = config_path.stem == "temporal"
-    graph = json.loads(
-        json.dumps(load_benchmark_config(config_path, expected_temporal))
-    )
     graph = benchmark_variant(
-        graph, solver, minimum_tags, gyro=paired or solver == "2d"
+        load_benchmark_config(config_path, expected_temporal),
+        solver,
+        minimum_tags,
+        gyro=paired or solver == "2d",
     )
     _absolute_map_paths(graph, map_path)
+    return build_resolved_pipeline(
+        graph, calibration, extrinsics, manager=manager, paired=paired
+    )
 
+
+def build_resolved_pipeline(
+    graph: list[dict[str, Any]],
+    calibration: str | Path | dict[str, Any],
+    extrinsics: dict[str, Any] | None = None,
+    *,
+    manager: ReplayCameraManager | None = None,
+    paired: bool = False,
+) -> PipelineLifecycle:
+    """Construct from an already validated variant with absolute map paths.
+
+    The graph is used unchanged, so execution and recorded provenance agree.
+    Path-based callers should use build_pipeline to load and resolve a preset.
+    """
+    from src.config.utils.pipeline import Pipeline
+    from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
+    from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
+
+    solver = (
+        "2d"
+        if next(node for node in graph if node["uuid"] == "bench-pnp")["action_name"]
+        == "pnp_camera_localization_2d.py"
+        else "normal"
+    )
     if isinstance(calibration, dict):
         calibration_data = calibration
     else:
@@ -658,11 +680,8 @@ def run_accuracy(
                 pipeline.run()
                 duration = time.perf_counter_ns() - started
                 if gyro_record is not None:
-                    pipeline._benchmark_gyro_samples = pipeline.get_operation_output(
-                        "bench-gyro", "data"
-                    )
                     gyro_record["available_samples"] = _copy_output(
-                        pipeline._benchmark_gyro_samples or []
+                        pipeline.get_operation_output("bench-gyro", "data") or []
                     )
                 errors = pipeline.get_operation_errors()
                 if errors:
@@ -907,7 +926,7 @@ class PairedSolver:
         value = (
             {
                 "detections": detections,
-                "gyro_samples": getattr(pipeline, "_benchmark_gyro_samples", []),
+                "gyro_samples": pipeline.get_operation_output("bench-gyro", "data"),
             }
             if self.solver == "2d"
             else detections
