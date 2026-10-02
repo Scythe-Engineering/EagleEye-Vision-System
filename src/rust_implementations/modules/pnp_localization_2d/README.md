@@ -1,5 +1,48 @@
 # Native level-robot 2D PnP
 
+## Production pipeline setup
+
+Build the extension through the existing project workflow:
+
+```sh
+uv run python src/rust_implementations/build.py pnp_localization_2d
+```
+
+Replace the normal `pnp_camera_localization` node with
+`pnp_camera_localization_2d`. Keep the existing detector, minimum-tag gate,
+`camera_to_robot_pose` conversion, and temporal feedback connections. Connect a
+`get_networktables_value` source's `data` output to the new solver's
+`gyro_samples` input. Configure that source with `network_table_key="gyro"`,
+`timestamped=true`, and `history_size=256`. Normal 3D PnP remains unchanged.
+
+Publish a native double using `publisher.set(yaw_rad, measurement_nt_us)`, with
+NWU yaw radians counterclockwise about field +Z, zero along field +X. Heading
+must already match the AprilTag map's field axes, not an arbitrary gyro startup
+zero or alliance-mirrored heading. The timestamp is the original measurement
+instant in the publisher's local NT clock, even when publication is delayed.
+ntcore converts it to the receiver clock; do not use JSON timestamps or manual
+offset arithmetic. Use `keepDuplicates=true`, `sendAll=true`, a short period
+such as 10 ms, and timely flushing. These settings do not guarantee delivery
+within the solver's default 20 ms nearest-sample tolerance.
+
+The reader retains bounded native sample history and rejects client input until
+NT clock synchronization is available. Detections must retain their image capture
+timestamp. The solver circularly interpolates capture-time heading, allowing a
+100 ms bracket or a nearest sample within 20 ms by default. Missing, stale, or
+invalid data rejects the current pose with diagnostics, without held poses or
+an unconstrained fallback.
+
+Use the same `camera_bus_id` for input, solver, and robot conversion, with the
+existing `CameraConfigRegistry`. The model assumes a level robot at field Z=0
+and solves robot XY with fixed gyro heading. Mounting pitch/yaw/roll are degrees
+and offsets are meters; all six mounting values are fetched live each run.
+Intrinsics and map geometry are fixed at construction, so recreate the operation
+after editing them. The Python action emits a float64 4x4 field-from-camera EDN
+matrix, the three-item quality list below, and explicit diagnostics. Real use
+requires calibrated mounting and an actual synchronized gyro publisher.
+
+## Native interface
+
 Import `PnpLocalization2D` from `pnp_localization_2d` after building the extension.
 
 ```python
