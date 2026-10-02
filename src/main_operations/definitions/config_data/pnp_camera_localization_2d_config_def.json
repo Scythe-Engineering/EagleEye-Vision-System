@@ -1,6 +1,6 @@
 {
     "class_name": "PnpCameraLocalization2DDefinition",
-    "description": "Solve level-robot field XY using native NT measurement-time aligned gyro yaw radians CCW about NWU +Z and current camera mounting.",
+    "description": "Rust-backed level-robot field XY localization using capture-aligned native NT gyro yaw radians CCW about NWU +Z and current camera mounting.",
     "category": "proc",
     "folder": "Localization",
     "input_nodes": [

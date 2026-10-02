@@ -274,6 +274,7 @@ def test_projected_detections_replay_real_solver_and_alignment(
             lambda frame: detections,
         )
         primary = pipeline.get_operation_by_uuid("bench-pnp").instance
+        assert isinstance(primary, constrained_module.PnpCameraLocalization2DDefinition)
         original = primary.run
         observed = []
 

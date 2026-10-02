@@ -15,6 +15,12 @@ The default remains normal PnP, minimum two detected tags, both full-frame and t
 
 ## Matched normal versus 2D PnP
 
+The `2d` solver uses the native Rust `pnp_localization_2d` extension, with no
+Python numerical fallback. Build extensions using the existing project build
+workflow (`uv run --no-sync python src/rust_implementations/build.py`) before
+running a comparison; a missing module produces an actionable construction error.
+Normal PnP is unchanged.
+
 ```sh
 # Rapid original-clock prefix of one verified real clip; explicitly partial.
 uv run --no-sync python -m benchmarks run \
@@ -47,7 +53,7 @@ Replace the manifest/cache paths with your dataset paths. Repeat `--clip ID` to 
 
 ## Output
 
-Open `OUTPUT/index.html` offline. `run.json` contains reproducibility metadata; `frames.jsonl.gz` contains actual detections, outputs, gyro inputs and rejection diagnostics; `summary.json` and `summary.csv` contain aggregate errors, p95/p99/max tails, explicit XY and 3D errors over 1 m, availability/missing intervals, rejection counts and separate solver/pipeline latency.
+Open `OUTPUT/index.html` offline. `run.json` contains reproducibility metadata (Rust source/Cargo/lock hashes, crate versions, and the actually loaded native binary path/hash/version when exposed); `frames.jsonl.gz` contains actual detections, outputs, gyro inputs and rejection diagnostics; `summary.json` and `summary.csv` contain aggregate errors, p95/p99/max tails, explicit XY and 3D errors over 1 m, availability/missing intervals, rejection counts and separate solver/pipeline latency.
 
 Each pipeline/solver/minimum-count variant stays separate in plots and rows. `identical_detector_outputs_paired` reports common-frame accuracy and error deltas (including signed means), lost/gained/neither counts and frame IDs, plus errors on the lost/gained populations. Independent comparisons also report attempted/failed populations, unmatched attempts and matched-frame pose availability. `independent_pipeline_comparisons` reports the corresponding comparison for separately replayed pipelines. Common-frame accuracy alone is not an availability claim. Acceptance is lower XY error/outliers without material availability loss; numerical gates have not been set. `partial=true` explicitly identifies prefix or timeout results; do not compare a prefix with a complete historical run as if their populations matched.
 
@@ -81,6 +87,6 @@ A production gyro source node uses:
 
 Configure the publisher with `keepDuplicates=true`, `sendAll=true`, and a short publication period such as 10 ms. Flush the publishing instance as the vision pipeline does; server-local publishers can otherwise encounter ntcore's separate 100 ms input pump. The timestamped reader requests 10 ms network updates rather than the default 100 ms. Neither setting guarantees delivery within the 20 ms nearest-sample tolerance: stale samples still reject, and a stationary heading must continue producing timestamped measurements.
 
-The 2D operation accepts `{"detections": TimedValue[list[Detection]], "gyro_samples": list[dict]}`. Detections must retain the actual image capture timestamp. It emits `camera_pose`, `pose_meta`, and `diagnostics` (including alignment/rejection `reason`); missing/stale/invalid heading rejects the current pose rather than substituting a held pose. The model assumes a level robot and solves field XY with gyro-constrained heading, not arbitrary 6-DoF robot pose.
+The 2D operation accepts `{"detections": TimedValue[list[Detection]], "gyro_samples": list[dict]}`. Detections must retain the actual image capture timestamp. It emits `camera_pose`, `pose_meta`, and `diagnostics` (including alignment/rejection `reason`); missing/stale/invalid heading rejects the current pose rather than substituting a held pose. The model assumes a level robot at field Z=0 and solves field XY with gyro-constrained heading, not arbitrary 6-DoF robot pose. Numerical solve, distorted-pixel refinement, detection validation and timestamp alignment run natively in binary64. OpenCV-compatible distortion vectors of length 0, 4, 5, 8, 12 or 14 are supported, including rational, thin-prism and tilt terms. Map geometry/intrinsics are immutable per solver construction; recreate the operation after editing them. Mounting is fetched live each run. Success returns a float64 4x4 field-from-camera matrix and three-item quality list (mapped tag count, mean tag-center distance in meters, mean per-corner pixel error); failures return `None` pose/meta and explicit diagnostics. No held pose, unconstrained fallback or smoothing is applied.
 
 Use the same `camera_bus_id` for device input, solver and camera-to-robot conversion, and inject the production `CameraConfigRegistry`. Intrinsics must match the replay image resolution/distortion model; mounting pitch/yaw/roll are degrees and offsets are meters. The current mounting transform is part of the constrained model, so correct camera height/orientation/translation is essential. Benchmarks load those exact manifest calibration and mounting values into an isolated production registry, while both solvers consume the same field map. Real deployment needs an actual synchronized gyro publisher and calibrated mounting; synthetic oracle improvements alone do not validate physical sensor accuracy.

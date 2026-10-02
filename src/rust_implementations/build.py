@@ -103,7 +103,7 @@ class RustModuleBuilder:
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
-        """Hash module sources and the default native build profile.
+        """Hash module sources, locked dependencies, and the native build profile.
 
         Args:
             module_dir: Directory containing the module sources.
@@ -119,10 +119,15 @@ class RustModuleBuilder:
         if cargo_toml.exists():
             hasher.update(cargo_toml.read_bytes())
 
+        # Dependency-only updates change the binary even when Rust sources do not.
+        cargo_lock = module_dir / "Cargo.lock"
+        if cargo_lock.is_file():
+            hasher.update(cargo_lock.read_bytes())
+
         # Include all Rust source files
         src_dir = module_dir / "src"
         if src_dir.exists():
-            for rust_file in src_dir.rglob("*.rs"):
+            for rust_file in sorted(src_dir.rglob("*.rs")):
                 hasher.update(rust_file.read_bytes())
 
         return hasher.hexdigest()

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,18 +20,44 @@ from src.utils.camera_utils.camera_coordinate_transforms import (
 from src.utils.timestamped_samples import align_heading
 from src.utils.timing import TimedValue, TimingMetadata, get_timing, unwrap_timed
 
-Scene = tuple[
-    module.PnpCameraLocalization2DDefinition,
-    SimpleNamespace,
-    Callable[[], tuple[dict[str, Any], np.ndarray]],
-]
+
+@dataclass
+class Scene:
+    """Calibration, mutable map fixture, and fresh immutable native solver factory."""
+
+    solver: module.PnpCameraLocalization2DDefinition
+    config: SimpleNamespace
+    inputs: Callable[[], tuple[dict[str, Any], np.ndarray]]
+    matrix: np.ndarray
+    distortion: np.ndarray
+    tags: dict[int, SimpleNamespace]
+    fresh_solver: Callable[[], module.PnpCameraLocalization2DDefinition]
 
 
-@pytest.fixture
-def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
+@pytest.fixture(params=[4, 5, 8, 12, 14])
+def scene(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Scene:
     """Build distorted observations with a live six-parameter camera mount."""
     matrix = np.array([[700.0, 0, 640], [0, 710, 400], [0, 0, 1]])
-    distortion = np.array([-0.12, 0.03, 0.002, -0.001, 0.005])
+    distortion = np.array(
+        [
+            -0.12,
+            0.03,
+            0.002,
+            -0.001,
+            0.005,
+            0.01,
+            -0.002,
+            0.001,
+            0.001,
+            -0.0002,
+            0.0005,
+            -0.0001,
+            0.02,
+            -0.015,
+        ][: request.param]
+    )
     path = tmp_path / "intrinsics.json"
     path.write_text(
         json.dumps(
@@ -70,7 +97,12 @@ def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
         for index, point in enumerate(points.reshape(-1, 4, 3))
     }
     monkeypatch.setattr(module, "load_fmap_file", lambda path: tags)
-    solver = module.PnpCameraLocalization2DDefinition("camera", "map", registry)
+
+    def fresh_solver() -> module.PnpCameraLocalization2DDefinition:
+        """Construct a solver after deliberate fixture-map edits."""
+        return module.PnpCameraLocalization2DDefinition("camera", "map", registry)
+
+    solver = fresh_solver()
 
     def inputs() -> tuple[dict[str, Any], np.ndarray]:
         """Project fresh detections using the current camera mounting."""
@@ -78,7 +110,11 @@ def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
         rotation = current_pose[:3, :3].T
         translation = -rotation @ current_pose[:3, 3]
         pixels = cv2.projectPoints(
-            points, cv2.Rodrigues(rotation)[0], translation, matrix, distortion
+            np.vstack([tag.global_corners for tag in tags.values()]),
+            cv2.Rodrigues(rotation)[0],
+            translation,
+            matrix,
+            distortion,
         )[0].reshape(-1, 4, 2)
         detections = [
             SimpleNamespace(tag_id=index + 1, corners=corner)
@@ -94,12 +130,12 @@ def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
             ],
         }, current_pose
 
-    return solver, config, inputs
+    return Scene(solver, config, inputs, matrix, distortion, tags, fresh_solver)
 
 
 def test_exact_asymmetric_distorted_wrap_and_live_mount(scene: Scene) -> None:
     """Recover the exact pose across yaw wrap and live mounting edits."""
-    solver, config, inputs = scene
+    solver, config, inputs = scene.solver, scene.config, scene.inputs
     for new_offset in (0.3, 0.45):
         config.extrinsics.x_offset = new_offset
         config.extrinsics.roll += 1
@@ -111,13 +147,24 @@ def test_exact_asymmetric_distorted_wrap_and_live_mount(scene: Scene) -> None:
         np.testing.assert_allclose(
             result["diagnostics"]["robot_xy_m"], [3, 2], atol=1e-7
         )
+        assert set(result) == {"camera_pose", "pose_meta", "diagnostics"}
+        assert result["camera_pose"].shape == (4, 4)
+        assert result["camera_pose"].dtype == np.float64
+        assert isinstance(result["pose_meta"], list)
+        assert len(result["pose_meta"]) == 3
         assert result["pose_meta"][0] == 2
+        centers = np.array(
+            [tag.global_corners.mean(axis=0) for tag in scene.tags.values()]
+        )
+        assert result["pose_meta"][1] == pytest.approx(
+            np.linalg.norm(centers - expected[:3, 3], axis=1).mean(), abs=1e-7
+        )
         assert result["pose_meta"][2] < 1e-7
 
 
 def test_wrapper_preserves_detection_capture_only(scene: Scene) -> None:
     """Propagate detection capture metadata to every solver output."""
-    solver, _, inputs = scene
+    solver, inputs = scene.solver, scene.inputs
     data, _ = inputs()
     operation = Operation(
         solver,
@@ -145,7 +192,7 @@ def test_wrapper_preserves_detection_capture_only(scene: Scene) -> None:
 )
 def test_missing_stale_invalid(scene: Scene, samples: object, reason: str) -> None:
     """Reject absent, stale, or invalid gyro measurements explicitly."""
-    solver, _, inputs = scene
+    solver, inputs = scene.solver, scene.inputs
     data, _ = inputs()
     data["gyro_samples"] = samples
     result = solver.run(data)
@@ -155,7 +202,7 @@ def test_missing_stale_invalid(scene: Scene, samples: object, reason: str) -> No
 
 def test_capture_and_geometry_rejection(scene: Scene) -> None:
     """Reject invalid capture clocks and degenerate image geometry."""
-    solver, _, inputs = scene
+    solver, inputs = scene.solver, scene.inputs
     data, _ = inputs()
     data["detections"] = unwrap_timed(data["detections"])
     assert solver.run(data)["diagnostics"]["reason"] == "missing_capture"
@@ -240,7 +287,7 @@ def test_heading_recovers_with_unused_invalid_history() -> None:
 
 def test_pixel_refinement_reduces_noisy_reprojection(scene: Scene) -> None:
     """Reduce squared pixel error with bounded refinement."""
-    solver, _, inputs = scene
+    solver, inputs = scene.solver, scene.inputs
     data, _ = inputs()
     data["detections"].value[0].corners += np.array(
         [[2, -1], [-1, 2], [1, 1], [-2, -1]]
@@ -254,17 +301,14 @@ def test_pixel_refinement_reduces_noisy_reprojection(scene: Scene) -> None:
     # Optimizer minimizes squared pixel error, not the metadata's mean norm.
     def squared(pose: np.ndarray) -> np.floating[Any]:
         """Measure total squared distorted-pixel reprojection error."""
-        estimator = solver.pose_estimator
-        inverse = estimator.fast_se3_inverse(pose)
-        points = np.vstack(
-            [tag.global_corners for tag in estimator.apriltag_map.values()]
-        )
+        inverse = np.linalg.inv(pose)
+        points = np.vstack([tag.global_corners for tag in scene.tags.values()])
         pixels = cv2.projectPoints(
             points,
             cv2.Rodrigues(inverse[:3, :3])[0],
             inverse[:3, 3],
-            estimator.camera_matrix,
-            estimator.distortion_coefficients,
+            scene.matrix,
+            scene.distortion,
         )[0].reshape(-1, 2)
         return np.sum(
             (pixels - np.vstack([det.corners for det in data["detections"].value])) ** 2
@@ -275,35 +319,35 @@ def test_pixel_refinement_reduces_noisy_reprojection(scene: Scene) -> None:
 
 def test_behind_camera_rejected(scene: Scene) -> None:
     """Reject mapped points behind the calibrated camera."""
-    solver, _, inputs = scene
+    inputs = scene.inputs
     _, pose = inputs()
-    for tag in solver.pose_estimator.apriltag_map.values():
+    for tag in scene.tags.values():
         tag.global_corners[:] = 2 * pose[:3, 3] - tag.global_corners
     data, _ = inputs()
-    result = solver.run(data)
+    result = scene.fresh_solver().run(data)
     assert result["camera_pose"] is None
     assert result["diagnostics"]["reason"] == "behind_camera"
 
 
 def test_near_horizontal_rays_ill_conditioned(scene: Scene) -> None:
     """Reject XY geometry with insufficient numerical conditioning."""
-    solver, config, inputs = scene
+    config, inputs = scene.config, scene.inputs
     config.extrinsics.pitch = config.extrinsics.yaw = config.extrinsics.roll = 0
     _, pose = inputs()
     local = np.array(
         [[-1e-9, -1e-9, 4], [1e-9, -1e-9, 4], [1e-9, 1e-9, 4], [-1e-9, 1e-9, 4]]
     )
-    for tag in solver.pose_estimator.apriltag_map.values():
+    for tag in scene.tags.values():
         tag.global_corners[:] = local @ pose[:3, :3].T + pose[:3, 3]
     data, _ = inputs()
-    result = solver.run(data)
+    result = scene.fresh_solver().run(data)
     assert result["camera_pose"] is None
     assert result["diagnostics"]["reason"] == "ill_conditioned_geometry"
 
 
 def test_unknown_ids_ignored_and_invalid_mount_rejected(scene: Scene) -> None:
     """Ignore unmapped detections and reject invalid live mounting."""
-    solver, config, inputs = scene
+    solver, config, inputs = scene.solver, scene.config, scene.inputs
     data, expected = inputs()
     data["detections"].value.append(
         SimpleNamespace(tag_id=999, corners=np.full((4, 2), np.nan))
@@ -319,7 +363,7 @@ def test_unknown_ids_ignored_and_invalid_mount_rejected(scene: Scene) -> None:
 
 def test_wrapper_single_detection_connection_preserves_capture(scene: Scene) -> None:
     """Preserve bare routed detection timing on missing-gyro rejection."""
-    solver, _, inputs = scene
+    solver, inputs = scene.solver, scene.inputs
     data, _ = inputs()
     operation = Operation(
         solver,
@@ -342,10 +386,117 @@ def test_wrapper_single_detection_connection_preserves_capture(scene: Scene) -> 
 
 def test_requires_registry_and_intrinsics(scene: Scene) -> None:
     """Require current registry calibration at construction."""
-    _, config, _ = scene
+    config = scene.config
     with pytest.raises(ValueError, match="registry"):
         module.PnpCameraLocalization2DDefinition("camera", "map")
     config.intrinsics_path = None
     registry = SimpleNamespace(get_config=lambda bus: config)
     with pytest.raises(ValueError, match="intrinsics calibration"):
         module.PnpCameraLocalization2DDefinition("camera", "map", registry)
+
+
+def test_native_alignment_matches_shared_helper(scene: Scene) -> None:
+    """Compare public native diagnostics with exact/bracket/nearest IEEE semantics."""
+    histories: list[tuple[Any, int]] = [
+        ([{"timestamp_us": 1_000_000, "value": yaw}], 1_000_000)
+        for yaw in (np.pi, -np.pi, 1e300, -1e300)
+    ]
+    histories += [
+        (
+            [
+                {"timestamp_us": 990_000, "value": np.pi - 0.02},
+                {"timestamp_us": 1_010_000, "value": -np.pi + 0.02},
+            ],
+            1_000_000,
+        ),
+        ([{"timestamp_us": 990_000, "value": 0.4}], 1_000_000),
+        ([{"timestamp_us": 1_010_000, "value": -0.4}], 1_000_000),
+        (
+            [
+                {"timestamp_us": 1_000_000, "value": None},
+                {"timestamp_us": 1_000_000, "value": 0.4},
+            ],
+            1_000_000,
+        ),
+        (
+            [
+                {"timestamp_us": 900_000, "value": None},
+                {"timestamp_us": 1_000_000, "value": 0.4},
+                {"timestamp_us": 1_100_000, "value": float("nan")},
+            ],
+            1_000_000,
+        ),
+        (
+            [
+                {"timestamp_us": 900_000, "value": 0.4},
+                {"timestamp_us": 1_100_000, "value": 0.5},
+            ],
+            1_000_000,
+        ),
+        ([{"timestamp_us": 900_000, "value": 0.4}], 1_000_000),
+        ([{"timestamp_us": True, "value": 0.4}], 1_000_000),
+        ([{"timestamp_us": 1_000_000, "value": 0.4, "extra": 1}], 1_000_000),
+        (({"timestamp_us": 1_000_000, "value": 0.4},), 1_000_000),
+    ]
+    for samples, capture in histories:
+        data, _ = scene.inputs()
+        data["gyro_samples"] = samples
+        data["detections"] = TimedValue([], TimingMetadata(capture, 55_000_000))
+        result = scene.solver.run(data)
+        try:
+            yaw, expected = align_heading(samples, capture, 100_000, 20_000)
+        except ValueError as exc:
+            assert result["diagnostics"]["reason"] == str(exc)
+        else:
+            assert result["diagnostics"]["reason"] == "no_mapped_tags"
+            assert result["diagnostics"]["yaw_rad"] == yaw
+            for key, value in expected.items():
+                assert result["diagnostics"][key] == value
+
+
+def test_native_validation_precedence_and_detection_metadata(scene: Scene) -> None:
+    """Validate detections before mounting and ignore duplicate/unknown bad corners."""
+    data, expected = scene.inputs()
+    data["detections"].value.extend(
+        [
+            SimpleNamespace(tag_id=1, corners=None),
+            SimpleNamespace(tag_id=999, corners=None),
+        ]
+    )
+    np.testing.assert_allclose(
+        scene.solver.run(data)["camera_pose"], expected, atol=1e-7
+    )
+    scene.config.extrinsics.x_offset = None
+    data["gyro_samples"] = None
+    assert scene.solver.run(data)["diagnostics"]["reason"] == "missing_gyro"
+    data["gyro_samples"] = [{"timestamp_us": 1_000_000, "value": np.pi}]
+    data["detections"].value[0].corners = [[1, 2]]
+    assert scene.solver.run(data)["diagnostics"]["reason"] == "invalid_points"
+    data["detections"] = TimedValue(None, TimingMetadata(1_000_000, 55_000_000))
+    assert scene.solver.run(data)["diagnostics"]["reason"] == "invalid_detections"
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"refinement_iterations": 1.5},
+        {"refinement_iterations": 101},
+        {"gyro_max_gap_ms": float("nan")},
+        {"gyro_nearest_ms": -1},
+    ],
+)
+def test_wrapper_validates_live_configuration(
+    scene: Scene, settings: dict[str, float]
+) -> None:
+    """Keep bounded wrapper configuration independent of native argument coercion."""
+    with pytest.raises(ValueError):
+        scene.solver.update_config(settings)
+
+
+def test_missing_native_module_has_actionable_error(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never silently substitute a Python solver when the extension is unavailable."""
+    monkeypatch.setattr(module, "PnpLocalization2D", None)
+    with pytest.raises(ImportError, match="build.*Rust extension"):
+        scene.fresh_solver()

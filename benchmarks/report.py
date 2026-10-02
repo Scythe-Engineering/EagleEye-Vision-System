@@ -14,9 +14,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import metadata
+from importlib.machinery import EXTENSION_SUFFIXES
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,79 @@ def file_sha256(path: str | Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def native_provenance(root: Path) -> tuple[dict[str, str], dict[str, Any]]:
+    """Fingerprint native inputs and loaded extensions, never compiled-output trees.
+
+    Args:
+        root: Repository root containing the native module sources.
+
+    Returns:
+        Source hashes and per-crate version/loaded-binary metadata.
+    """
+    native_root = root / "src/rust_implementations"
+    sources = [native_root / "build.py"]
+    builds: dict[str, Any] = {}
+    for manifest in sorted((native_root / "modules").glob("*/Cargo.toml")):
+        crate = manifest.parent
+        manifest_data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        package = manifest_data["package"]
+        sources.extend([manifest, *sorted((crate / "src").rglob("*.rs"))])
+        sources.extend(
+            path
+            for path in (
+                crate / "Cargo.lock",
+                crate / "build.rs",
+                crate / "pyproject.toml",
+            )
+            if path.is_file()
+        )
+        build: dict[str, Any] = {
+            "package": package["name"],
+            "version": package["version"],
+            "loaded_binary": None,
+        }
+        # Record what this interpreter actually loaded, not an arbitrary wheel on disk.
+        module_names = {
+            crate.name,
+            package["name"].replace("-", "_"),
+            manifest_data.get("lib", {}).get("name"),
+        }
+        module_names.discard(None)
+        # Maturin packages expose a Python wrapper; the binary is a loaded submodule.
+        loaded_modules = {
+            name: loaded
+            for name, loaded in sys.modules.copy().items()
+            if any(
+                name == module_name or name.startswith(module_name + ".")
+                for module_name in module_names
+            )
+        }
+        for name, loaded in sorted(loaded_modules.items()):
+            binary = getattr(loaded, "__file__", None)
+            if binary and any(binary.endswith(suffix) for suffix in EXTENSION_SUFFIXES):
+                version = getattr(loaded, "__version__", None)
+                if version is None:
+                    # PyO3 need not export a version; use the installed distribution.
+                    try:
+                        version = metadata.version(package["name"])
+                    except metadata.PackageNotFoundError:
+                        version = None
+                build["loaded_binary"] = {
+                    "module": name,
+                    "path": str(Path(binary).resolve()),
+                    "sha256": file_sha256(binary),
+                    "version": version,
+                }
+                break
+        builds[crate.name] = build
+    sources.extend(
+        path
+        for path in (native_root / "Cargo.toml", native_root / "Cargo.lock")
+        if path.is_file()
+    )
+    return {str(path.relative_to(root)): file_sha256(path) for path in sources}, builds
 
 
 def collect_provenance(
@@ -102,35 +177,43 @@ def collect_provenance(
         name: json.loads(path.read_text(encoding="utf-8"))
         for name, path in graphs.items()
     }
+    native_sources, native_builds = native_provenance(root)
     return {
+        "native_builds": native_builds,
         "dataset_manifest_sha256": file_sha256(dataset_path),
         "graphs": resolved,
         "graph_sha256": {name: file_sha256(path) for name, path in graphs.items()},
         "revision": revision,
         "git_dirty": dirty,
         "source_sha256": {
-            path: file_sha256(root / path)
-            for path in (
-                "benchmarks/__main__.py",
-                "benchmarks/gyro.py",
-                "benchmarks/replay.py",
-                "benchmarks/metrics.py",
-                "benchmarks/report.py",
-                "src/config/utils/flow_manager.py",
-                "src/config/utils/pipeline.py",
-                "src/config/utils/thread_object.py",
-                "src/main_operations/definitions/detect_apriltags.py",
-                "src/main_operations/modules/apriltags/apriltag_detector.py",
-                "src/main_operations/modules/apriltags/native_detector.py",
-                "src/main_operations/definitions/pnp_camera_localization.py",
-                "src/main_operations/definitions/pnp_camera_localization_2d.py",
-                "src/main_operations/modules/apriltags/pnp_localization.py",
-                "src/secondary_operations/get_networktables_value.py",
-                "src/secondary_operations/camera_to_robot_pose.py",
-                "src/utils/timestamped_samples.py",
-                "src/utils/timing.py",
-                "src/utils/camera_utils/camera_coordinate_transforms.py",
-            )
+            **native_sources,
+            **{
+                path: file_sha256(root / path)
+                for path in (
+                    "benchmarks/__main__.py",
+                    "benchmarks/gyro.py",
+                    "benchmarks/replay.py",
+                    "benchmarks/metrics.py",
+                    "benchmarks/report.py",
+                    "src/config/utils/flow_manager.py",
+                    "src/config/utils/pipeline.py",
+                    "src/config/utils/thread_object.py",
+                    "src/main_operations/definitions/detect_apriltags.py",
+                    "src/main_operations/modules/apriltags/apriltag_detector.py",
+                    "src/main_operations/modules/apriltags/native_detector.py",
+                    "src/main_operations/definitions/pnp_camera_localization.py",
+                    "src/main_operations/definitions/pnp_camera_localization_2d.py",
+                    "src/main_operations/modules/apriltags/pnp_localization.py",
+                    "src/secondary_operations/get_networktables_value.py",
+                    "src/secondary_operations/camera_to_robot_pose.py",
+                    "src/utils/timestamped_samples.py",
+                    "src/utils/timing.py",
+                    "src/utils/camera_utils/camera_coordinate_transforms.py",
+                    "src/utils/camera_utils/load_camera_parameters.py",
+                    "src/utils/camera_utils/camera_config_manager.py",
+                    "src/main_operations/modules/apriltags/utils/fmap_parser.py",
+                )
+            },
         },
         "dependencies": dependencies,
         "python": sys.version,
@@ -201,6 +284,11 @@ class RunWriter:
         self.finish_frames()
         atomic_json(self.directory / "summary.json", summary)
         write_summary_csv(self.directory / "summary.csv", rows)
+        # Pipeline construction imports extensions after initial provenance collection.
+        if "native_builds" in self.metadata:
+            self.metadata["native_builds"] = native_provenance(
+                Path(__file__).resolve().parents[1]
+            )[1]
         complete = {**self.metadata, "status": "complete"}
         render_report(self.directory, complete, summary, rows)
         atomic_json(self.directory / "run.json", complete)

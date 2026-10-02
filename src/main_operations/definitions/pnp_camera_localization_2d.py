@@ -2,20 +2,24 @@
 
 from typing import Any
 
-import cv2
 import numpy as np
 
 from src.main_operations.definitions.base.base_class import OperationInstance
-from src.main_operations.modules.apriltags.pnp_localization import PnpLocalization
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.camera_coordinate_transforms import (
     build_robot_from_camera_transform,
 )
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
-from src.utils.timestamped_samples import align_heading
 from src.utils.timing import get_timing, unwrap_timed
 from src.webui.web_server import EagleEyeInterface
+
+try:
+    from pnp_localization_2d import (  # type: ignore[import-not-found, import-untyped]
+        PnpLocalization2D,
+    )
+except ImportError:
+    PnpLocalization2D = None
 
 
 class PnpCameraLocalization2DDefinition(OperationInstance):
@@ -51,6 +55,7 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
             ValueError: Registry or intrinsics are missing, settings are invalid,
                 or a calibration or field map file contains invalid JSON.
             TypeError: A numeric setting cannot be converted to a number.
+            ImportError: The required native extension has not been built.
         """
         self.uses_timed_inputs = True
         self.camera_bus_id = str(camera_bus_id)
@@ -61,8 +66,35 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
         if not config.intrinsics_path:
             raise ValueError("2D PnP requires a camera intrinsics calibration file")
         matrix, distortion = load_camera_parameters(config.intrinsics_path)
-        self.pose_estimator = PnpLocalization(
-            matrix, distortion, load_fmap_file(apriltag_map_path)
+        if PnpLocalization2D is None:
+            raise ImportError(
+                "Rust pnp_localization_2d module not available. "
+                "Please build the Rust extension first with "
+                "uv run python src/rust_implementations/build.py pnp_localization_2d."
+            )
+        if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
+            raise ValueError("camera_matrix must be a finite 3x3 matrix")
+        if (
+            distortion.ndim not in (1, 2)
+            or (distortion.ndim == 2 and 1 not in distortion.shape)
+            or distortion.size not in (0, 4, 5, 8, 12, 14)
+            or not np.isfinite(distortion).all()
+        ):
+            raise ValueError(
+                "distortion_coefficients must be a finite supported vector"
+            )
+        tags = load_fmap_file(apriltag_map_path)
+        corners = []
+        for tag in tags.values():
+            points = np.asarray(tag.global_corners, dtype=np.float64)
+            if points.shape != (4, 3) or not np.isfinite(points).all():
+                raise ValueError("AprilTag corners must be finite 4x3 arrays")
+            corners.extend(points.reshape(-1).tolist())
+        self.native_solver = PnpLocalization2D(
+            matrix.reshape(-1).tolist(),
+            distortion.reshape(-1).tolist(),
+            list(tags),
+            corners,
         )
         self.refinement_iterations: int
         self.gyro_max_gap_ms: float
@@ -117,23 +149,6 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
             Camera pose, quality metadata, and diagnostics; rejected solves have
             None pose and metadata with an explicit diagnostic reason.
         """
-        diagnostics: dict[str, Any] = {}
-
-        def failure(reason: str) -> dict[str, Any]:
-            """Emit explicit failure without a held or unconstrained pose.
-
-            Args:
-                reason: Diagnostic rejection code.
-
-            Returns:
-                Empty pose and metadata with the accumulated failure diagnostics.
-            """
-            return {
-                "camera_pose": None,
-                "pose_meta": None,
-                "diagnostics": {**diagnostics, "reason": reason},
-            }
-
         if not isinstance(input_data, dict):
             # FlowManager sends the sole connected detection input bare.
             input_data = {"detections": input_data}
@@ -144,165 +159,35 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
             or type(timing.capture_nt_us) is not int
             or not 1 < timing.capture_nt_us <= 2**63 - 1
         ):
-            return failure("missing_capture")
-        diagnostics["capture_nt_us"] = timing.capture_nt_us
+            return {
+                "camera_pose": None,
+                "pose_meta": None,
+                "diagnostics": {"reason": "missing_capture"},
+            }
         try:
-            yaw, alignment = align_heading(
-                input_data.get("gyro_samples"),
-                timing.capture_nt_us,
-                round(self.gyro_max_gap_ms * 1000),
-                round(self.gyro_nearest_ms * 1000),
+            mount = build_robot_from_camera_transform(
+                self.camera_config_registry.get_config(self.camera_bus_id).extrinsics
             )
-        except ValueError as exc:
-            return failure(str(exc))
-        diagnostics.update(alignment, yaw_rad=yaw)
-        estimator = self.pose_estimator
-        objects, images, seen = [], [], set()
-        raw = unwrap_timed(detections)
-        if not isinstance(raw, (list, tuple)):
-            return failure("invalid_detections")
-        for detection in raw:
-            tag_id = getattr(detection, "tag_id", None)
-            if tag_id not in estimator.apriltag_map or tag_id in seen:
-                continue
-            try:
-                image = np.asarray(detection.corners, dtype=float)
-                obj = np.asarray(
-                    estimator.apriltag_map[tag_id].global_corners, dtype=float
-                )
-            except (TypeError, ValueError, AttributeError):
-                return failure("invalid_points")
-            if (
-                image.shape != (4, 2)
-                or obj.shape != (4, 3)
-                or not np.isfinite(image).all()
-                or not np.isfinite(obj).all()
-            ):
-                return failure("invalid_points")
-            images.append(image)
-            objects.append(obj)
-            seen.add(tag_id)
-        if not seen:
-            return failure("no_mapped_tags")
-        image, obj = np.vstack(images), np.vstack(objects)
-        if (
-            np.linalg.matrix_rank(image - image.mean(axis=0)) < 2
-            or np.linalg.matrix_rank(obj - obj.mean(axis=0)) < 2
-        ):
-            return failure("degenerate_geometry")
-        try:
-            try:
-                mount = build_robot_from_camera_transform(
-                    self.camera_config_registry.get_config(
-                        self.camera_bus_id
-                    ).extrinsics
-                )
-            except (TypeError, ValueError, AttributeError, OverflowError):
-                return failure("invalid_mounting")
-            if not np.isfinite(mount).all():
-                return failure("invalid_mounting")
-            cosine, sine = np.cos(yaw), np.sin(yaw)
-            robot_rotation = np.array(
-                [[cosine, -sine, 0], [sine, cosine, 0], [0, 0, 1]]
+            mounting_transform = (
+                mount.reshape(-1).tolist() if np.isfinite(mount).all() else None
             )
-            rotation = robot_rotation @ mount[:3, :3]
-            offset = robot_rotation @ mount[:3, 3]
-            camera_rotation = rotation.T
-            rotated = (obj - offset) @ camera_rotation.T
-            rays = cv2.undistortPoints(
-                image.reshape(-1, 1, 2),
-                estimator.camera_matrix,
-                estimator.distortion_coefficients,
-            ).reshape(-1, 2)
-            # Fixed heading/height make normalized projection equations linear in XY.
-            xy_coefficients = (
-                camera_rotation[:2, :2][None, :, :]
-                - rays[:, :, None] * camera_rotation[2, :2]
-            ).reshape(-1, 2)
-            xy_targets = (rotated[:, :2] - rays * rotated[:, 2, None]).reshape(-1)
-            xy, _, rank, singular = np.linalg.lstsq(
-                xy_coefficients, xy_targets, rcond=None
-            )
-            condition = singular[0] / singular[-1] if singular[-1] > 0 else float("inf")
-            diagnostics["condition_number"] = float(condition)
-            if rank != 2 or not np.isfinite(condition) or condition > 1e8:
-                return failure("ill_conditioned_geometry")
-            rvec = cv2.Rodrigues(camera_rotation)[0]
-
-            def project(
-                position: np.ndarray,
-            ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-                """Return distorted pixel residual, XY Jacobian, and camera translation.
-
-                Args:
-                    position: Robot field XY coordinates in meters, at field Z=0.
-
-                Returns:
-                    Flattened pixel residual, its XY Jacobian, and camera translation.
-
-                Raises:
-                    ValueError: Points are behind the camera or residuals are nonfinite.
-                    cv2.error: The calibrated projection cannot be computed.
-                """
-                translation = -camera_rotation @ (offset + np.r_[position, 0.0])
-                depth = (obj @ camera_rotation.T + translation)[:, 2]
-                if not np.isfinite(depth).all() or np.any(depth <= 1e-6):
-                    raise ValueError("behind_camera")
-                pixels, jacobian = cv2.projectPoints(
-                    obj,
-                    rvec,
-                    translation,
-                    estimator.camera_matrix,
-                    estimator.distortion_coefficients,
-                )
-                residual = (pixels.reshape(-1, 2) - image).reshape(-1)
-                if not np.isfinite(residual).all():
-                    raise ValueError("nonfinite_solution")
-                return (
-                    residual,
-                    jacobian[:, 3:6] @ (-camera_rotation[:, :2]),
-                    translation,
-                )
-
-            residual, jacobian, translation = project(xy)
-            # Bounded Gauss-Newton and backtracking optimize actual distorted pixels.
-            for _ in range(self.refinement_iterations):
-                step = np.linalg.lstsq(jacobian, -residual, rcond=None)[0]
-                if not np.isfinite(step).all():
-                    return failure("nonfinite_solution")
-                # ponytail: 1 m step ceiling; expose tuning only if benchmarks need it.
-                step /= max(1.0, np.linalg.norm(step))
-                improved = False
-                for scale in (1, 0.5, 0.25, 0.125, 0.0625, 0.03125):
-                    try:
-                        candidate = project(xy + scale * step)
-                    except ValueError:
-                        continue
-                    if candidate[0] @ candidate[0] < residual @ residual:
-                        xy += scale * step
-                        residual, jacobian, translation = candidate
-                        improved = True
-                        break
-                if not improved or np.linalg.norm(step) < 1e-9:
-                    break
-            if not np.isfinite(xy).all() or np.linalg.cond(jacobian) > 1e8:
-                return failure("ill_conditioned_geometry")
-            pose = np.eye(4)
-            pose[:3, :3] = rotation
-            pose[:3, 3] = offset + np.r_[xy, 0.0]
-            meta = estimator._solution_quality(
-                obj, image, rvec, camera_rotation, translation, len(seen)
-            )
-            if not np.isfinite(meta).all():
-                return failure("nonfinite_solution")
-            diagnostics.update(reason="ok", robot_xy_m=xy.tolist())
-            return {"camera_pose": pose, "pose_meta": meta, "diagnostics": diagnostics}
-        except (cv2.error, np.linalg.LinAlgError, ValueError) as exc:
-            return failure(
-                str(exc)
-                if str(exc) in {"behind_camera", "nonfinite_solution"}
-                else "invalid_geometry"
-            )
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            mounting_transform = None
+        # Native validation owns rejection precedence, including invalid mounting.
+        result = self.native_solver.solve(
+            capture_us=timing.capture_nt_us,
+            gyro_samples=input_data.get("gyro_samples"),
+            detections=unwrap_timed(detections),
+            mounting_transform=mounting_transform,
+            refinement_iterations=self.refinement_iterations,
+            gyro_max_gap_us=round(self.gyro_max_gap_ms * 1000),
+            gyro_nearest_us=round(self.gyro_nearest_ms * 1000),
+        )
+        if result["camera_pose"] is not None:
+            result["camera_pose"] = np.asarray(
+                result["camera_pose"], dtype=np.float64
+            ).reshape(4, 4)
+        return result
 
 
 # The pipeline factory capitalizes each snake-case segment ("2d" -> "2d").

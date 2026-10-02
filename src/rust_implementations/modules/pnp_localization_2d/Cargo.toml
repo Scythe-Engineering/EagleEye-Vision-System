@@ -1,0 +1,17 @@
+[package]
+name = "pnp_localization_2d"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pnp_localization_2d"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = "0.29.0"
+nalgebra = "0.34"
+libm = "0.2"
