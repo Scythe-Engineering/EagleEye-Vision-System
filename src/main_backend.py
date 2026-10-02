@@ -182,7 +182,7 @@ class MainBackend:
         return self.pipelines
 
     def shutdown(self, restart_service: bool = False) -> None:
-        """Stop compilation, pipelines, MX3 runtimes, cameras, then optionally restart."""
+        """Drain pipelines before shared teardown; raise for a safe shutdown retry."""
         if (
             self.web_interface is not None
             and self.web_interface.mx3_compiler is not None
@@ -197,11 +197,22 @@ class MainBackend:
                 pipeline.stop()
             except Exception as error:
                 self.logger.log(f"Pipeline shutdown failed: {error}")
-        for pipeline in tuple(self.pipelines.values()):
+        failed_pipelines: list[str] = []
+        for name, pipeline in tuple(self.pipelines.items()):
             try:
                 pipeline.close()
             except Exception as error:
-                self.logger.log(f"Pipeline async close failed: {error}")
+                failed_pipelines.append(name)
+                self.logger.log(f"Pipeline {name} close failed: {error}")
+
+        if failed_pipelines:
+            message = (
+                f"Shutdown incomplete: pipelines {failed_pipelines} did not close. "
+                "Shared MX3 runtimes and cameras remain open; resolve the pipeline "
+                "failure and retry shutdown before restarting."
+            )
+            self.logger.log(message)
+            raise RuntimeError(message)
 
         if self.mx3_coordinator is not None:
             try:

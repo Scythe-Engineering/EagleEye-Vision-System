@@ -85,15 +85,17 @@ class PipelineLifecycle(AbstractContextManager[Any]):
         """Close all owned resources once."""
         if self.closed:
             return
-        self.closed = True
-        pipeline, self.pipeline = self.pipeline, None
+        pipeline = self.pipeline
         if pipeline is not None:
+            # Keep ownership on failed drain so cleanup can be retried safely.
             pipeline.close()
+            self.pipeline = None
         instance, self.nt_instance = self.nt_instance, None
         if instance is not None:
             instance.stopLocal()
             ntcore.NetworkTableInstance.destroy(instance)
         self.temporary.cleanup()
+        self.closed = True
 
     def __exit__(self, *_args: object) -> None:
         """Close resources when leaving the context."""
@@ -220,6 +222,7 @@ def build_pipeline(
     replay = manager or ReplayCameraManager()
     instance = ntcore.NetworkTableInstance.create()
     instance.startLocal()
+    pipeline = None
     try:
         pipeline = Pipeline(
             graph,
@@ -246,6 +249,8 @@ def build_pipeline(
                 f"pipeline initialization errors: {pipeline.get_operation_errors()}"
             )
     except BaseException:
+        if pipeline is not None:
+            pipeline.close()
         instance.stopLocal()
         ntcore.NetworkTableInstance.destroy(instance)
         temporary.cleanup()

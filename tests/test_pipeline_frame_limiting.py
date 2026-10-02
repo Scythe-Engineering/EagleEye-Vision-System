@@ -61,9 +61,7 @@ class _PacketManager:
     ) -> TimedValue[np.ndarray] | None:
         return self.packets.get(bus_id)
 
-    def get_current_timing_by_bus_id(
-        self, bus_id: str
-    ) -> TimingMetadata | None:
+    def get_current_timing_by_bus_id(self, bus_id: str) -> TimingMetadata | None:
         packet = self.packets.get(bus_id)
         return packet.timing if packet is not None else None
 
@@ -105,6 +103,9 @@ def _two_camera_pipeline() -> tuple[Pipeline, _PacketManager]:
 
     manager = _PacketManager()
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.operations = {
         source_a.uuid: source_a,
         source_b.uuid: source_b,
@@ -226,6 +227,9 @@ def test_pipeline_without_device_inputs_continues_running() -> None:
         _CountingSource(), "continuous", "network_source", is_data_source=True
     )
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.operations = {operation.uuid: operation}
     pipeline.device_input_uuids = ()
     pipeline._last_device_input_tokens = {}

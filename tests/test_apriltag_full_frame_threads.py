@@ -5,11 +5,11 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
-from pupil_apriltags import Detector
 
 from src.main_operations.definitions.detect_apriltags import DetectApriltagsDefinition
 from src.main_operations.modules.apriltags import apriltag_detector
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
+from src.main_operations.modules.apriltags.native_detector import Detector
 
 
 def test_full_frame_threads_do_not_change_roi_threads_or_fallback(
@@ -21,6 +21,9 @@ def test_full_frame_threads_do_not_change_roi_threads_or_fallback(
     class RecordingDetector:
         def __init__(self, *, nthreads: int, **_kwargs: object) -> None:
             self.nthreads = nthreads
+
+        def close(self) -> None:
+            """Match the native detector cleanup interface."""
 
         def detect(self, _image: np.ndarray) -> list[object]:
             calls.append(self.nthreads)
@@ -52,6 +55,9 @@ def test_zero_full_frame_threads_reuses_base_detector_after_live_updates(
         def __init__(self, *, nthreads: int, **_kwargs: object) -> None:
             self.nthreads = nthreads
 
+        def close(self) -> None:
+            """Match the native detector cleanup interface."""
+
         def detect(self, _image: np.ndarray) -> list[object]:
             return []
 
@@ -70,6 +76,8 @@ def test_zero_full_frame_threads_reuses_base_detector_after_live_updates(
     operation.update_config({"full_frame_nthreads": 0})
     assert operation.detector.full_frame_nthreads == 0
     assert operation.detector._full_frame_detector is None
+    operation.close()
+    assert not operation.detector.ready
 
 
 def test_cropped_tag_corners_match_direct_detection_and_full_metadata() -> None:
