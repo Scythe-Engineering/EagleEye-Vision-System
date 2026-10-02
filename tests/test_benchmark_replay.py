@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from benchmarks.replay import (
+    CONFIG_DIR,
     DecodedFrame,
     ReplayCameraManager,
     ReplayError,
@@ -225,7 +226,7 @@ def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) ->
     "solver,paired", [("normal", False), ("normal", True), ("2d", True)]
 )
 def test_repeated_production_contexts_release_workers_and_native_detectors(
-    temporal: bool, solver: str, paired: bool
+    temporal: bool, solver: str, paired: bool, tmp_path: Path
 ) -> None:
     """Keep four-frame records while tearing down real graphs in every mode."""
     import gc
@@ -238,13 +239,22 @@ def test_repeated_production_contexts_release_workers_and_native_detectors(
         "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
         "distortion_coefficients": [0] * 5,
     }
+    config_name = "temporal.json" if temporal else "full_frame.json"
+    graph = json.loads((CONFIG_DIR / config_name).read_text(encoding="utf-8"))
+    for node in graph:
+        if node["action_name"] == "detect_apriltags.py":
+            # Pupil's multithreaded native pool can crash after recreation.
+            # Test lifecycle ownership at one thread, not that upstream fault.
+            node["action_params"]["full_frame_nthreads"] = 1
+    config_path = tmp_path / config_name
+    config_path.write_text(json.dumps(graph), encoding="utf-8")
     baseline = set(threading.enumerate())
     references = []
     retained_records = []
     for _ in range(3):
         manager = ReplayCameraManager()
         lifecycle = build_pipeline(
-            temporal, calibration, manager=manager, solver=solver, paired=paired
+            config_path, calibration, manager=manager, solver=solver, paired=paired
         )
         with lifecycle as pipeline:
             detector = pipeline.get_operation_by_uuid("bench-detect").instance.detector
