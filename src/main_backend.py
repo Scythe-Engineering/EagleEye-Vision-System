@@ -2,6 +2,7 @@ import faulthandler
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from time import sleep
 from typing import Dict
@@ -172,7 +173,10 @@ class MainBackend:
                     f"{Colors.CYAN}Detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
         except BaseException:
-            self.shutdown()
+            try:
+                self.shutdown()
+            except Exception as shutdown_error:
+                self.logger.log(f"Shutdown after init failure incomplete: {shutdown_error}")
             raise
 
     def get_pipelines(self) -> Dict[str, Pipeline]:
@@ -182,7 +186,7 @@ class MainBackend:
         return self.pipelines
 
     def shutdown(self, restart_service: bool = False) -> None:
-        """Stop compilation, pipelines, MX3 runtimes, cameras, then optionally restart."""
+        """Drain pipelines before shared teardown; raise for a safe shutdown retry."""
         if (
             self.web_interface is not None
             and self.web_interface.mx3_compiler is not None
@@ -197,11 +201,22 @@ class MainBackend:
                 pipeline.stop()
             except Exception as error:
                 self.logger.log(f"Pipeline shutdown failed: {error}")
-        for pipeline in tuple(self.pipelines.values()):
+        failed_pipelines: list[str] = []
+        for name, pipeline in tuple(self.pipelines.items()):
             try:
                 pipeline.close()
             except Exception as error:
-                self.logger.log(f"Pipeline async close failed: {error}")
+                failed_pipelines.append(name)
+                self.logger.log(f"Pipeline {name} close failed: {error}")
+
+        if failed_pipelines:
+            message = (
+                f"Shutdown incomplete: pipelines {failed_pipelines} did not close. "
+                "Shared MX3 runtimes and cameras remain open; resolve the pipeline "
+                "failure and retry shutdown before restarting."
+            )
+            self.logger.log(message)
+            raise RuntimeError(message)
 
         if self.mx3_coordinator is not None:
             try:
@@ -262,7 +277,13 @@ def main() -> None:
         pass
     finally:
         if backend is not None:
-            backend.shutdown()
+            active_exception = sys.exc_info()[1]
+            try:
+                backend.shutdown()
+            except Exception as shutdown_error:
+                if active_exception is None:
+                    raise
+                logger.log(f"Shutdown after runtime failure incomplete: {shutdown_error}")
 
 
 if __name__ == "__main__":

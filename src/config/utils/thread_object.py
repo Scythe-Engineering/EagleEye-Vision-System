@@ -18,6 +18,7 @@ class ThreadObject:
 
         self.condition = threading.Condition()
         self.state: str = "idle"  # "idle", "processing", "done", "error"
+        self._stop_requested = False
         self.had_error: bool = False
 
         self.input_data: Any = None
@@ -57,7 +58,11 @@ class ThreadObject:
         """
         while True:
             with self.condition:
-                self.condition.wait_for(lambda: self.state == "processing")
+                self.condition.wait_for(
+                    lambda: self.state == "processing" or self._stop_requested
+                )
+                if self.state != "processing" and self._stop_requested:
+                    return
 
                 self.had_error = False
                 self.error = None
@@ -69,7 +74,7 @@ class ThreadObject:
                 if obligation is True:
                     self._set_error(
                         f"Thread should already be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}",
-                        print_error=True
+                        print_error=True,
                     )
                     self.output_data = None
                     self.had_error = True
@@ -77,7 +82,7 @@ class ThreadObject:
                 elif obligation is False:
                     self._set_error(
                         f"Thread should not be occupied at time step {time_step}, Thread obligations: {self.operation_obligations}",
-                        print_error=True
+                        print_error=True,
                     )
                     self.output_data = None
                     self.had_error = True
@@ -111,7 +116,7 @@ class ThreadObject:
                         self.had_error = True
                         self.state = "error"
 
-                self.condition.notify()
+                self.condition.notify_all()
 
     @profile
     def set_needs_processing(
@@ -127,6 +132,8 @@ class ThreadObject:
             ValueError: If the thread is already processing.
         """
         with self.condition:
+            if self._stop_requested:
+                raise RuntimeError("Worker is closed; cannot schedule more work")
             if self.state == "processing":
                 raise ValueError(
                     "Thread already processing. Something is very verrryyy wrong."
@@ -141,7 +148,31 @@ class ThreadObject:
             self.current_cycle_id = cycle_id
             self.input_data = input_data
             self.state = "processing"
-            self.condition.notify()
+            self.condition.notify_all()
+
+    def stop(self) -> None:
+        """Reject new work and wake an idle worker; finish submitted work."""
+        with self.condition:
+            self._stop_requested = True
+            self.condition.notify_all()
+
+    def close(self, timeout_s: float = 5.0) -> None:
+        """Join outside the condition, then release owned work references."""
+        self.stop()
+        if threading.current_thread() is self.processing_thread_object:
+            raise RuntimeError("Worker cannot join itself; close from its owner")
+        self.processing_thread_object.join(timeout_s)
+        if self.processing_thread_object.is_alive():
+            raise TimeoutError(
+                f"Worker at timestep {self.current_timestep} did not stop within "
+                f"{timeout_s}s; resources remain open; retry close"
+            )
+        with self.condition:
+            self.operation_obligations.clear()
+            self.input_data = None
+            self.output_data = None
+            self.state = "closed"
+            self.condition.notify_all()
 
     def get_last_cycle_timing(self, cycle_id: int) -> tuple[str | None, float | None]:
         """Get timing data for the requested cycle id.
@@ -180,7 +211,7 @@ class ThreadObject:
         """
         with self.condition:
             return self.condition.wait_for(
-                lambda: self.state in ("done", "error"), timeout=timeout_s
+                lambda: self.state in ("done", "error", "closed"), timeout=timeout_s
             )
 
     @profile
@@ -212,6 +243,8 @@ class ThreadObject:
         the thread to be reused after a failure.
         """
         with self.condition:
+            if self.state in ("processing", "closed"):
+                return
             self.had_error = False
             self.error = None
             self.output_data = None

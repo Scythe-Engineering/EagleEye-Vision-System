@@ -1,5 +1,6 @@
 """Flush completed vision branches together, never a skipped/unfinished cycle."""
 
+import threading
 from collections import deque
 from threading import Lock
 from types import SimpleNamespace
@@ -29,6 +30,9 @@ def test_flush_follows_completed_publisher_branches(
     """
     events = []
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.limit_frames_to_camera_capture_speed = False
     pipeline.operations = {
         "output": SimpleNamespace(

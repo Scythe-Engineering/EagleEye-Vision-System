@@ -85,19 +85,33 @@ class PipelineLifecycle(AbstractContextManager[Any]):
         """Close all owned resources once."""
         if self.closed:
             return
-        self.closed = True
-        pipeline, self.pipeline = self.pipeline, None
+        pipeline = self.pipeline
         if pipeline is not None:
+            # Keep ownership on failed drain so cleanup can be retried safely.
             pipeline.close()
+            self.pipeline = None
         instance, self.nt_instance = self.nt_instance, None
         if instance is not None:
             instance.stopLocal()
             ntcore.NetworkTableInstance.destroy(instance)
         self.temporary.cleanup()
+        self.closed = True
 
     def __exit__(self, *_args: object) -> None:
         """Close resources when leaving the context."""
         self.close()
+
+
+class ReplayCleanupError(ReplayError):
+    """Retain failed construction resources for an explicit lifecycle.close() retry."""
+
+    def __init__(self, lifecycle: PipelineLifecycle, cleanup_error: Exception) -> None:
+        """Expose the cleanup owner and explain why shared resources remain open."""
+        self.lifecycle = lifecycle
+        super().__init__(
+            f"Replay construction cleanup failed: {cleanup_error}; "
+            "resources remain open; retry exception.lifecycle.close()"
+        )
 
 
 def _absolute_map_paths(
@@ -220,6 +234,7 @@ def build_pipeline(
     replay = manager or ReplayCameraManager()
     instance = ntcore.NetworkTableInstance.create()
     instance.startLocal()
+    pipeline = None
     try:
         pipeline = Pipeline(
             graph,
@@ -245,10 +260,12 @@ def build_pipeline(
             raise ReplayError(
                 f"pipeline initialization errors: {pipeline.get_operation_errors()}"
             )
-    except BaseException:
-        instance.stopLocal()
-        ntcore.NetworkTableInstance.destroy(instance)
-        temporary.cleanup()
+    except BaseException as error:
+        lifecycle = PipelineLifecycle(pipeline, instance, temporary)
+        try:
+            lifecycle.close()
+        except Exception as cleanup_error:  # noqa: BLE001 - retain the owner on any cleanup failure
+            raise ReplayCleanupError(lifecycle, cleanup_error) from error
         raise
     return PipelineLifecycle(pipeline, instance, temporary)
 

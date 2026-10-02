@@ -6,7 +6,9 @@ from typing import Optional, cast
 
 import cv2
 import numpy as np
-from pupil_apriltags import Detection, Detector
+from pupil_apriltags import Detection
+
+from .native_detector import Detector
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,7 @@ class AprilTagDetector:
         self.small_roi_max_px = max(0, int(small_roi_max_px))
 
         self.ready = False
+        self._closed = False
         self._detect_lock: Lock = Lock()
         self._last_search_regions: list[np.ndarray] = []
 
@@ -161,24 +164,22 @@ class AprilTagDetector:
             decode_sharpening=float(decode_sharpening),
         )
 
-    def _disable_native_destructor(self, detector: Detector) -> None:
-        """Prevent a known unsafe pupil_apriltags destructor path during reconfigure.
-
-        pupil_apriltags.Detector.__del__ releases C pointers. On macOS this has
-        been observed to segfault while replacing a detector from the WebUI config
-        path. The old detector is no longer used after the lock-protected swap, so
-        clearing these attributes lets Python drop the wrapper without entering
-        the crashing native destroy path.
-        """
-        try:
-            if hasattr(detector, "tag_detector_ptr"):
-                detector.tag_detector_ptr = None
-            if hasattr(detector, "tag_families"):
-                detector.tag_families = {}
-        except Exception as exc:
-            logger.warning(
-                "Failed to disable old AprilTag detector destructor: %s", exc
-            )
+    def close(self) -> None:
+        """Wait for detection, then release every owned native detector."""
+        with self._detect_lock:
+            self.ready = False
+            self._closed = True
+            for detector in (
+                self.detector,
+                self._full_frame_detector,
+                self._large_roi_detector,
+                self._small_roi_detector,
+            ):
+                if detector is not None:
+                    detector.close()
+            self._gray_buffer = None
+            self._segment_gray_buffers.clear()
+            self._last_search_regions.clear()
 
     def _get_gray_buffer(self, shape: tuple[int, int]) -> np.ndarray:
         """Return a reusable grayscale conversion buffer for a frame shape."""
@@ -289,6 +290,10 @@ class AprilTagDetector:
             full_frame_nthreads: Optional thread count for direct full-frame searches.
                 Zero uses ``nthreads`` without another native detector.
         """
+        with self._detect_lock:
+            if self._closed:
+                raise RuntimeError("AprilTag detector is closed; cannot reconfigure")
+
         next_families = self.families if families is None else families
         next_nthreads = self.nthreads if nthreads is None else nthreads
         next_quad_decimate = (
@@ -320,6 +325,8 @@ class AprilTagDetector:
             else max(0, int(small_roi_max_px))
         )
 
+        new_detector = new_full_frame_detector = None
+        new_large_roi_detector = new_small_roi_detector = None
         try:
             new_detector = self._create_detector(
                 next_families,
@@ -367,12 +374,30 @@ class AprilTagDetector:
                 else None
             )
         except Exception as exc:
+            for detector in (
+                new_detector,
+                new_full_frame_detector,
+                new_large_roi_detector,
+                new_small_roi_detector,
+            ):
+                if detector is not None:
+                    detector.close()
             logger.exception(
                 "Failed to create AprilTag detector with updated parameters"
             )
             raise ValueError(f"Invalid AprilTag detector configuration: {exc}") from exc
 
         with self._detect_lock:
+            if self._closed:
+                for detector in (
+                    new_detector,
+                    new_full_frame_detector,
+                    new_large_roi_detector,
+                    new_small_roi_detector,
+                ):
+                    if detector is not None:
+                        detector.close()
+                raise RuntimeError("AprilTag detector is closed; cannot reconfigure")
             self.ready = False
             old_detector = self.detector
             old_full_frame_detector = self._full_frame_detector
@@ -398,13 +423,13 @@ class AprilTagDetector:
             self._preprocess_mode = None
             self._gray_buffer = None
             self._segment_gray_buffers.clear()
-            self._disable_native_destructor(old_detector)
+            old_detector.close()
             if old_full_frame_detector is not None:
-                self._disable_native_destructor(old_full_frame_detector)
+                old_full_frame_detector.close()
             if old_large_roi_detector is not None:
-                self._disable_native_destructor(old_large_roi_detector)
+                old_large_roi_detector.close()
             if old_small_roi_detector is not None:
-                self._disable_native_destructor(old_small_roi_detector)
+                old_small_roi_detector.close()
 
     @staticmethod
     def to_opencv_coordinates(detection: Detection) -> Detection:
@@ -486,6 +511,8 @@ class AprilTagDetector:
             if gray_image is None:
                 return None
             with self._detect_lock:
+                if not self.ready:
+                    return None
                 try:
                     detector = self._full_frame_detector or self.detector
                     detections = cast(list[Detection], detector.detect(gray_image))
@@ -498,6 +525,8 @@ class AprilTagDetector:
         else:
             detections = []
             with self._detect_lock:
+                if not self.ready:
+                    return None
                 for image, full_frame_mapping in images:
                     gray_image = self._preprocess_image(image, segment=True)
                     if gray_image is None:
