@@ -427,6 +427,87 @@ def test_variant_rejects_gate_feedback_and_identity_drift(change: str) -> None:
         benchmark_variant(graph, "2d", 1)
 
 
+@pytest.mark.parametrize("max_frames", [None, 2, 10])
+def test_cli_expected_population_respects_frame_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, max_frames: int | None
+) -> None:
+    """Run the real CLI scoring/report path with a finite deterministic source."""
+    import json
+    from contextlib import nullcontext
+
+    from benchmarks import __main__ as cli
+    from tests.test_benchmark_dataset import _manifest
+
+    calibration = {
+        "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
+        "distortion_coefficients": [0] * 5,
+    }
+    payload = json.dumps(calibration).encode()
+    manifest = _manifest(payload)
+    asset = cli.cache_path(tmp_path, manifest.assets[0])
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(payload)
+    manifest.clips[0].frame_count = 5
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(manifest.model_dump_json())
+    count = min(5, max_frames or 5)
+    graph_path = CONFIG_DIR / "full_frame.json"
+    graph = json.loads(graph_path.read_text())
+    monkeypatch.setattr(cli, "download_missing_assets", lambda *args: None)
+    monkeypatch.setattr(
+        cli,
+        "collect_provenance",
+        lambda *args: {
+            "graphs": {"full-frame": graph},
+            "graph_sha256": {"full-frame": "base"},
+        },
+    )
+    monkeypatch.setattr(
+        cli, "build_resolved_pipeline", lambda *args, **kwargs: nullcontext(object())
+    )
+    monkeypatch.setattr(
+        cli, "SequentialVideoDecoder", lambda *args: nullcontext(range(count))
+    )
+    monkeypatch.setattr(cli, "stream_annotations", lambda *args: iter(()))
+    monkeypatch.setattr(cli, "select_diagnostic_frame_ids", lambda *args: [])
+    monkeypatch.setattr(cli, "write_diagnostic_images", lambda *args: [])
+
+    def replay(*args: Any, **kwargs: Any) -> None:
+        assert kwargs["max_frames"] == max_frames
+        for index in args[0]:
+            kwargs["on_record"](
+                {
+                    "frame_index": index,
+                    "timestamp_ns": index * 10_000_000,
+                    "truth": {},
+                    "output": {},
+                    "completed": True,
+                    "failure": None,
+                }
+            )
+
+    monkeypatch.setattr(cli, "run_accuracy", replay)
+    output = tmp_path / "report"
+    arguments = [
+        "run",
+        "--dataset",
+        str(manifest_path),
+        "--cache-dir",
+        str(tmp_path),
+        "--pipeline",
+        "full-frame",
+        "--output",
+        str(output),
+    ]
+    if max_frames is not None:
+        arguments.extend(["--max-frames", str(max_frames)])
+    assert cli._run(cli._parser().parse_args(arguments)) == 0
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["expected_selected_frames_per_variant"] == count
+    assert summary["attempted"] == count
+    assert summary["partial"] is (count < 5)
+
+
 def test_failed_pipeline_is_not_reported_as_a_tag_gate_rejection() -> None:
     """Missing outputs on a failed attempt are not evidence of too few tags."""
     record = {

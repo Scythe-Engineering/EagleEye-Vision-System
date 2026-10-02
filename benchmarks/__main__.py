@@ -559,7 +559,7 @@ def _run(args: argparse.Namespace) -> int:
                 )
                 if not timed_out and len(compact) != expected_frames:
                     raise ValueError(
-                        f"clip {clip.id} decoded {len(compact)} frames, manifest declares {clip.frame_count}"
+                        f"clip {clip.id} decoded {len(compact)} frames, expected {expected_frames}"
                     )
                 if not compact:
                     break
@@ -627,7 +627,8 @@ def _run(args: argparse.Namespace) -> int:
             "timed_out": timed_out,
             "partial": timed_out or metadata["partial_requested"],
             "expected_selected_frames_per_variant": sum(
-                clip.frame_count for clip in clips
+                min(clip.frame_count, args.max_frames or clip.frame_count)
+                for clip in clips
             ),
             "processing_seconds": time.monotonic() - processing_started,
             "detection": {

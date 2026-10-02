@@ -352,8 +352,11 @@ def build_resolved_pipeline(
                     if node["uuid"] == "bench-pnp"
                 ),
             )
-        except BaseException:
-            lifecycle.close()
+        except BaseException as error:
+            try:
+                lifecycle.close()
+            except Exception as cleanup_error:  # noqa: BLE001 - hand off retained resources for retry
+                raise ReplayCleanupError(lifecycle, cleanup_error) from error
             raise
     return lifecycle
 

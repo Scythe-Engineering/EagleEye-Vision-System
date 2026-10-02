@@ -207,8 +207,9 @@ def test_accuracy_does_not_reuse_a_stale_profile() -> None:
     assert records[0]["output"]["profile"] is None
 
 
+@pytest.mark.parametrize("stage", ["validation", "shadow"])
 def test_failed_construction_retains_cleanup_owner(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
     """Retry a failed drain without destroying NT or temporary calibration early."""
     from src.config.utils.pipeline import Pipeline
@@ -220,7 +221,11 @@ def test_failed_construction_retains_cleanup_owner(
 
     def validation_errors(pipeline: Pipeline) -> list[dict[str, str]]:
         created.append(pipeline)
-        return [{"error": "construction validation failed"}]
+        return (
+            [{"error": "construction validation failed"}]
+            if stage == "validation"
+            else []
+        )
 
     def retryable_close(pipeline: Pipeline) -> None:
         if fail_close:
@@ -229,18 +234,24 @@ def test_failed_construction_retains_cleanup_owner(
 
     monkeypatch.setattr(Pipeline, "get_operation_errors", validation_errors)
     monkeypatch.setattr(Pipeline, "close", retryable_close)
+
+    def shadow_failure(*_args: object) -> None:
+        """Fail after the lifecycle owner and instrumentation have been created."""
+        raise ReplayError("shadow construction failed")
+
+    monkeypatch.setattr("benchmarks.replay.PairedSolver", shadow_failure)
     calibration = {
         "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
         "distortion_coefficients": [0] * 5,
     }
     with pytest.raises(ReplayCleanupError) as caught:
-        build_pipeline(False, calibration)
+        build_pipeline(False, calibration, paired=stage == "shadow")
     lifecycle = caught.value.lifecycle
     directory = Path(lifecycle.temporary.name)
     try:
         assert lifecycle.pipeline is created[0]
         assert isinstance(caught.value.__cause__, ReplayError)
-        assert "construction validation failed" in str(caught.value.__cause__)
+        assert "construction" in str(caught.value.__cause__)
         assert directory.exists()
         assert lifecycle.nt_instance.getNetworkMode()
         assert not lifecycle.closed
