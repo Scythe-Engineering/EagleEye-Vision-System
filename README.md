@@ -13,6 +13,7 @@ The [EagleEye documentation site](https://scythe-engineering.github.io/EagleEye-
 - [Add EagleEye to robot code](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/robot-integration)
 - [Developer docs](https://scythe-engineering.github.io/EagleEye-Docs/docs/codebase/overview)
 - [Gyro-constrained 2D localization setup](src/rust_implementations/modules/pnp_localization_2d/README.md)
+- [Synthetic gyro and localization benchmark comparisons](benchmarks/README.md)
 
 ## Development
 

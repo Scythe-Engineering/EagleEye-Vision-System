@@ -9,8 +9,34 @@ import pytest
 from benchmarks.report import (
     BOUNDARY,
     RunWriter,
+    collect_provenance,
+    file_sha256,
+    native_provenance,
     write_diagnostic_images,
 )
+
+
+def test_provenance_identifies_uncommitted_solver_sources(tmp_path: Path) -> None:
+    """A dirty revision alone must not identify the code used for a comparison."""
+    manifest = tmp_path / "manifest.json"
+    graph = tmp_path / "graph.json"
+    manifest.write_text("{}")
+    graph.write_text("[]")
+    metadata = collect_provenance(manifest, {"comparison": graph})
+    for source in (
+        "src/utils/timestamped_samples.py",
+        "src/rust_implementations/build.py",
+        "src/rust_implementations/modules/pnp_localization_2d/Cargo.toml",
+        "src/rust_implementations/modules/pnp_localization_2d/Cargo.lock",
+        "src/rust_implementations/modules/pnp_localization_2d/src/lib.rs",
+        "src/config/utils/flow_manager.py",
+        "src/config/utils/pipeline.py",
+        "src/config/utils/thread_object.py",
+    ):
+        assert metadata["source_sha256"][source] == file_sha256(
+            Path(__file__).resolve().parents[1] / source
+        )
+    assert metadata["graph_sha256"]["comparison"] == file_sha256(graph)
 
 
 def _metadata() -> dict[str, object]:
@@ -229,3 +255,127 @@ def test_writes_bounded_diagnostic_images(
     assert all(tuple(image[100, 40]) == (0, 255, 0) for image in images)
     assert all(tuple(image[80, 20]) == (0, 0, 255) for image in images)
     assert all(tuple(image[100, 150]) == (0, 0, 0) for image in images)
+
+
+def test_native_provenance_records_only_loaded_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hash genuine native inputs and the loaded binary, not nearby build artifacts."""
+    import sys
+    from importlib.machinery import EXTENSION_SUFFIXES
+    from types import SimpleNamespace
+
+    root = tmp_path / "repo"
+    native = root / "src/rust_implementations"
+    crate = native / "modules/example"
+    (crate / "src").mkdir(parents=True)
+    (native / "build.py").write_text("# builder")
+    (crate / "Cargo.toml").write_text(
+        '[package]\nname = "example"\nversion = "1.2.3"\n'
+    )
+    (crate / "Cargo.lock").write_text("# lock")
+    (crate / "src/lib.rs").write_text("// native")
+    (crate / "target").mkdir()
+    (crate / "target/unused.rs").write_text("// build output")
+    binary = tmp_path / ("example" + EXTENSION_SUFFIXES[0])
+    binary.write_bytes(b"loaded native binary")
+    monkeypatch.setitem(
+        sys.modules,
+        "example",
+        SimpleNamespace(__file__=str(binary), __version__="1.2.3"),
+    )
+    sources, builds = native_provenance(root)
+    assert len(sources) == 4
+    assert not any("target" in source for source in sources)
+    assert builds["example"]["version"] == "1.2.3"
+    assert builds["example"]["loaded_binary"]["sha256"] == file_sha256(binary)
+    assert builds["example"]["loaded_binary"]["version"] == "1.2.3"
+    monkeypatch.delitem(sys.modules, "example")
+    assert native_provenance(root)[1]["example"]["loaded_binary"] is None
+
+
+def test_finished_report_refreshes_late_loaded_native_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Initial metadata collection precedes lazy production operation imports."""
+    import json
+    import sys
+    from importlib.machinery import EXTENSION_SUFFIXES
+    from types import SimpleNamespace
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    metadata = collect_provenance(manifest, {})
+    writer = RunWriter.create(tmp_path / "run", metadata)
+    binary = tmp_path / ("pnp_localization_2d" + EXTENSION_SUFFIXES[0])
+    binary.write_bytes(b"late loaded extension")
+    monkeypatch.setitem(
+        sys.modules,
+        "pnp_localization_2d",
+        SimpleNamespace(__file__=str(tmp_path / "__init__.py")),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "pnp_localization_2d.pnp_localization_2d",
+        SimpleNamespace(__file__=str(binary), __version__="fixture"),
+    )
+    writer.finish({}, [])
+    saved = json.loads((writer.directory / "run.json").read_text())
+    assert saved["native_builds"]["pnp_localization_2d"]["loaded_binary"][
+        "sha256"
+    ] == file_sha256(binary)
+
+
+@pytest.mark.parametrize(
+    "crate_name",
+    ["pnp_localization_2d", "temporal_acceleration", "pose_outlier_filter"],
+)
+def test_native_provenance_discovers_loaded_package_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, crate_name: str
+) -> None:
+    """Maturin wrappers identify their loaded extension, never a nearby disk binary."""
+    import sys
+    from importlib.machinery import EXTENSION_SUFFIXES
+    from types import ModuleType
+
+    from benchmarks import report
+
+    native = tmp_path / "src/rust_implementations"
+    crate = native / "modules" / crate_name
+    crate.mkdir(parents=True)
+    (native / "build.py").write_text("# builder")
+    (crate / "Cargo.toml").write_text(
+        f'[package]\nname = "{crate_name}"\nversion = "1.2.3"\n'
+    )
+    package_dir = tmp_path / "site-packages" / crate_name
+    package_dir.mkdir(parents=True)
+    wrapper_file = package_dir / "__init__.py"
+    wrapper_file.write_text("raise AssertionError('provenance must not import code')")
+    binary = package_dir / (crate_name + EXTENSION_SUFFIXES[0])
+    binary.write_bytes(b"actual loaded extension")
+    (package_dir / ("unused" + EXTENSION_SUFFIXES[0])).write_bytes(b"not loaded")
+    wrapper = ModuleType(crate_name)
+    wrapper.__file__ = str(wrapper_file)
+    wrapper.__path__ = [str(package_dir)]
+    extension_name = f"{crate_name}.{crate_name}"
+    extension = ModuleType(extension_name)
+    extension.__file__ = str(binary)
+    monkeypatch.setitem(sys.modules, crate_name, wrapper)
+    monkeypatch.setitem(sys.modules, extension_name, extension)
+
+    def installed_version(distribution_name: str) -> str:
+        """Return the installed version rather than the source manifest's version."""
+        assert distribution_name == crate_name
+        return "1.2.2"
+
+    monkeypatch.setattr(report.metadata, "version", installed_version)
+    build = native_provenance(tmp_path)[1][crate_name]
+    assert build["version"] == "1.2.3"
+    assert build["loaded_binary"] == {
+        "module": extension_name,
+        "path": str(binary.resolve()),
+        "sha256": file_sha256(binary),
+        "version": "1.2.2",
+    }
+    monkeypatch.delitem(sys.modules, extension_name)
+    assert native_provenance(tmp_path)[1][crate_name]["loaded_binary"] is None
