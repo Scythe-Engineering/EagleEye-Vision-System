@@ -215,3 +215,132 @@ def availability(
         ),
         "recoveries": recoveries,
     }
+
+
+def paired_pose_metrics(
+    normal: Sequence[dict[str, Any]], constrained: Sequence[dict[str, Any]]
+) -> dict[str, Any]:
+    """Compare keyed frames, retaining failed and unavailable attempts.
+
+    Args:
+        normal: Normal-solver rows keyed by frame_index, with pose_available,
+            optional failure, and optional robot_pose error metrics.
+        constrained: 2D-solver rows with the same shape. robot_pose contains
+            translation_3d_m, translation_xy_m, rotation_rad, and
+            yaw_absolute_error_rad when scoring truth is available.
+
+    Returns:
+        Attempted, failed, matched, and unmatched frame counts; matched pose
+        availability; common/lost/gained/neither counts and lost/gained IDs;
+        common-frame accuracy and signed 2D-minus-normal error deltas;
+        large-error counts; and error summaries for lost and gained poses.
+        Accuracy summaries omit missing truth but availability retains attempts.
+    """
+    left = {row["frame_index"]: row for row in normal}
+    right = {row["frame_index"]: row for row in constrained}
+    frames = sorted(left.keys() & right.keys())
+    common = [
+        index
+        for index in frames
+        if left[index].get("pose_available") and right[index].get("pose_available")
+    ]
+    lost = [
+        index
+        for index in frames
+        if left[index].get("pose_available") and not right[index].get("pose_available")
+    ]
+    gained = [
+        index
+        for index in frames
+        if not left[index].get("pose_available") and right[index].get("pose_available")
+    ]
+    fields = (
+        "translation_3d_m",
+        "translation_xy_m",
+        "rotation_rad",
+        "yaw_absolute_error_rad",
+    )
+
+    def stats(values: Iterable[float]) -> dict[str, Any]:
+        """Add a signed mean for comparison deltas without changing historical stats."""
+        data = list(values)
+        return {**summary_stats(data), "mean": sum(data) / len(data) if data else None}
+
+    def errors(
+        rows: dict[int, dict[str, Any]], indices: Sequence[int]
+    ) -> dict[str, Any]:
+        """Summarize errors only where scoring truth and a current pose exist."""
+        return {
+            field: stats(
+                rows[index]["robot_pose"][field]
+                for index in indices
+                if rows[index].get("robot_pose") is not None
+            )
+            for field in fields
+        }
+
+    return {
+        "matched_frames": len(frames),
+        "attempted_frames": {"normal": len(left), "2d": len(right)},
+        "failed_frames": {
+            "normal": sum(bool(row.get("failure")) for row in left.values()),
+            "2d": sum(bool(row.get("failure")) for row in right.values()),
+        },
+        "matched_pose_availability": {
+            "normal": sum(bool(left[index].get("pose_available")) for index in frames)
+            / len(frames)
+            if frames
+            else None,
+            "2d": sum(bool(right[index].get("pose_available")) for index in frames)
+            / len(frames)
+            if frames
+            else None,
+        },
+        "unmatched_normal_frames": len(left.keys() - right.keys()),
+        "unmatched_2d_frames": len(right.keys() - left.keys()),
+        "common_pose_frames": len(common),
+        "lost": len(lost),
+        "gained": len(gained),
+        "neither": len(frames) - len(common) - len(lost) - len(gained),
+        "lost_frame_ids": lost,
+        "gained_frame_ids": gained,
+        "common_frame_accuracy": {
+            "normal": errors(left, common),
+            "2d": errors(right, common),
+        },
+        "common_frame_error_delta_2d_minus_normal": {
+            field: stats(
+                right[index]["robot_pose"][field] - left[index]["robot_pose"][field]
+                for index in common
+                if left[index].get("robot_pose") is not None
+                and right[index].get("robot_pose") is not None
+            )
+            for field in fields
+        },
+        "large_xy_errors_over_1m": {
+            "normal": sum(
+                bool(left[index].get("robot_pose"))
+                and left[index]["robot_pose"]["translation_xy_m"] > 1
+                for index in frames
+            ),
+            "2d": sum(
+                bool(right[index].get("robot_pose"))
+                and right[index]["robot_pose"]["translation_xy_m"] > 1
+                for index in frames
+            ),
+        },
+        "large_3d_errors_over_1m": {
+            "normal": sum(
+                bool(left[index].get("robot_pose"))
+                and left[index]["robot_pose"]["translation_3d_m"] > 1
+                for index in frames
+            ),
+            "2d": sum(
+                bool(right[index].get("robot_pose"))
+                and right[index]["robot_pose"]["translation_3d_m"] > 1
+                for index in frames
+            ),
+        },
+        "lost_normal_error": errors(left, lost),
+        "gained_2d_error": errors(right, gained),
+    }

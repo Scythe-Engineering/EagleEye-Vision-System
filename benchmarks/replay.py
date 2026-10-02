@@ -76,6 +76,7 @@ class PipelineLifecycle(AbstractContextManager[Any]):
         self.nt_instance = nt_instance
         self.temporary = temporary
         self.closed = False
+        self.measured_operation: Any = None
 
     def __enter__(self) -> Any:
         """Return the production pipeline."""
@@ -87,8 +88,17 @@ class PipelineLifecycle(AbstractContextManager[Any]):
             return
         pipeline = self.pipeline
         if pipeline is not None:
-            # Keep ownership on failed drain so cleanup can be retried safely.
+            # A failed drain must not destroy NT while a worker still uses it.
             pipeline.close()
+            if self.measured_operation is not None:
+                del self.measured_operation.run
+                self.measured_operation = None
+            publisher = getattr(pipeline, "_benchmark_gyro_publisher", None)
+            if publisher is not None:
+                publisher.close()
+                del pipeline._benchmark_gyro_publisher
+            if hasattr(pipeline, "_benchmark_shadow"):
+                del pipeline._benchmark_shadow
             self.pipeline = None
         instance, self.nt_instance = self.nt_instance, None
         if instance is not None:
@@ -120,6 +130,7 @@ def _absolute_map_paths(
     """Resolve every map-consuming operation independently of process cwd."""
     map_operations = {
         "pnp_camera_localization",
+        "pnp_camera_localization_2d",
         "temporal_acceleration_preprocessor_rust",
     }
     configured = next(
@@ -174,6 +185,9 @@ def build_pipeline(
     *,
     map_path: str | Path | None = None,
     manager: ReplayCameraManager | None = None,
+    solver: str = "normal",
+    minimum_tags: int | None = None,
+    paired: bool = False,
 ) -> PipelineLifecycle:
     """Construct the real production Pipeline with isolated collaborators.
 
@@ -183,14 +197,13 @@ def build_pipeline(
         extrinsics: Mounting values in production degrees/meters.
         map_path: Optional map override for every map-consuming operation.
         manager: Finite benchmark packet source.
+        solver: Normal PnP or separate production 2D PnP.
+        minimum_tags: Optional matched count-gate override, one or two.
+        paired: Shadow the other production solver on actual detector outputs.
 
     Returns:
         A context manager that owns the pipeline and temporary resources.
     """
-    from src.config.utils.pipeline import Pipeline
-    from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
-    from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
-
     if isinstance(config, bool):
         config_path = CONFIG_DIR / ("temporal.json" if config else "full_frame.json")
         expected_temporal = config
@@ -199,11 +212,41 @@ def build_pipeline(
         if not config_path.is_absolute():
             config_path = REPOSITORY_ROOT / config_path
         expected_temporal = config_path.stem == "temporal"
-    graph = json.loads(
-        json.dumps(load_benchmark_config(config_path, expected_temporal))
+    graph = benchmark_variant(
+        load_benchmark_config(config_path, expected_temporal),
+        solver,
+        minimum_tags,
+        gyro=paired or solver == "2d",
     )
     _absolute_map_paths(graph, map_path)
+    return build_resolved_pipeline(
+        graph, calibration, extrinsics, manager=manager, paired=paired
+    )
 
+
+def build_resolved_pipeline(
+    graph: list[dict[str, Any]],
+    calibration: str | Path | dict[str, Any],
+    extrinsics: dict[str, Any] | None = None,
+    *,
+    manager: ReplayCameraManager | None = None,
+    paired: bool = False,
+) -> PipelineLifecycle:
+    """Construct from an already validated variant with absolute map paths.
+
+    The graph is used unchanged, so execution and recorded provenance agree.
+    Path-based callers should use build_pipeline to load and resolve a preset.
+    """
+    from src.config.utils.pipeline import Pipeline
+    from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
+    from src.utils.device_registry import DeviceDescriptor, DeviceRegistry
+
+    solver = (
+        "2d"
+        if next(node for node in graph if node["uuid"] == "bench-pnp")["action_name"]
+        == "pnp_camera_localization_2d.py"
+        else "normal"
+    )
     if isinstance(calibration, dict):
         calibration_data = calibration
     else:
@@ -267,7 +310,57 @@ def build_pipeline(
         except Exception as cleanup_error:  # noqa: BLE001 - retain the owner on any cleanup failure
             raise ReplayCleanupError(lifecycle, cleanup_error) from error
         raise
-    return PipelineLifecycle(pipeline, instance, temporary)
+    lifecycle = PipelineLifecycle(pipeline, instance, temporary)
+    try:
+        if paired or solver == "2d":
+            pipeline._benchmark_gyro_publisher = (
+                instance.getTable("benchmark")
+                .getDoubleTopic("gyro")
+                .publish(ntcore.PubSubOptions(sendAll=True, keepDuplicates=True))
+            )
+        pipeline._benchmark_solver_duration_ns = None
+        pnp = pipeline.get_operation_by_uuid("bench-pnp").instance
+        original_run = pnp.run
+
+        def measured_run(value: Any) -> Any:
+            """Measure only production solver invocation, not shadow or conversion."""
+            started = time.perf_counter_ns()
+            try:
+                return original_run(value)
+            finally:
+                pipeline._benchmark_solver_duration_ns = (
+                    time.perf_counter_ns() - started
+                )
+
+        pnp.run = measured_run
+        lifecycle.measured_operation = pnp
+        if paired:
+            pipeline._benchmark_shadow = PairedSolver(
+                pipeline,
+                solver,
+                next(
+                    node["action_params"]["minimum_detections"]
+                    for node in graph
+                    if node["uuid"] == "bench-minimum"
+                ),
+                next(
+                    node["action_params"]["apriltag_map_path"]
+                    for node in graph
+                    if node["uuid"] == "bench-pnp"
+                ),
+                next(
+                    node["action_params"]["refinement_iterations"]
+                    for node in graph
+                    if node["uuid"] == "bench-pnp"
+                ),
+            )
+    except BaseException as error:
+        try:
+            lifecycle.close()
+        except Exception as cleanup_error:  # noqa: BLE001 - hand off retained resources for retry
+            raise ReplayCleanupError(lifecycle, cleanup_error) from error
+        raise
+    return lifecycle
 
 
 @dataclass(frozen=True)
@@ -500,6 +593,9 @@ def _copy_output(value: Any) -> Any:
 def collect_pipeline_outputs(pipeline: Any, frame_index: int) -> dict[str, Any]:
     """Snapshot detector, PnP, robot, timing, profile, and search regions."""
     outputs: dict[str, Any] = {"frame_index": frame_index}
+    outputs["solver_duration_ns"] = getattr(
+        pipeline, "_benchmark_solver_duration_ns", None
+    )
     requested = (
         ("bench-detect", "detections", "detections"),
         ("bench-pnp", "camera_pose", "camera_pose"),
@@ -535,6 +631,15 @@ def collect_pipeline_outputs(pipeline: Any, frame_index: int) -> dict[str, Any]:
         raw_robot = np.asarray(robot_pose, dtype=float)
         outputs["robot_pose_raw_edn"] = raw_robot.copy()
         outputs["robot_pose_nwu"] = pose_local_edn_to_nwu(raw_robot)
+    outputs["diagnostics"] = (
+        _copy_output(pipeline.get_operation_output("bench-pnp", "diagnostics"))
+        if pipeline.get_operation_by_uuid("bench-pnp").name
+        == "pnp_camera_localization_2d"
+        else None
+    )
+    shadow = getattr(pipeline, "_benchmark_shadow", None)
+    if shadow is not None:
+        outputs["paired"] = shadow.run(pipeline)
     outputs["profile"] = pipeline.get_latest_profile_snapshot()
     return outputs
 
@@ -550,6 +655,8 @@ def run_accuracy(
     on_record: Callable[[dict[str, Any]], None] | None = None,
     retain_records: bool = True,
     should_stop: Callable[[], bool] | None = None,
+    gyro: Any = None,
+    max_frames: int | None = None,
 ) -> list[Any]:
     """Attempt aligned frames until EOF or an optional clean stop request."""
     records: list[Any] = []
@@ -558,7 +665,9 @@ def run_accuracy(
     expected = 0
     try:
         for item in decoder:
-            if should_stop is not None and should_stop():
+            if (max_frames is not None and expected >= max_frames) or (
+                should_stop is not None and should_stop()
+            ):
                 manager.mark_eof()
                 return records
             if item.index != expected:
@@ -575,12 +684,22 @@ def run_accuracy(
                 item.index, fps_numerator, fps_denominator
             )
             manager.publish(item.image, item.index, timestamp)
+            gyro_record = (
+                gyro.publish(pipeline, annotation, timestamp)
+                if gyro is not None
+                else None
+            )
             manager.begin_cycle()
+            pipeline._benchmark_solver_duration_ns = None
             before = _profile_sequence(pipeline.get_latest_profile_snapshot())
             started = time.perf_counter_ns()
             try:
                 pipeline.run()
                 duration = time.perf_counter_ns() - started
+                if gyro_record is not None:
+                    gyro_record["available_samples"] = _copy_output(
+                        pipeline.get_operation_output("bench-gyro", "data") or []
+                    )
                 errors = pipeline.get_operation_errors()
                 if errors:
                     completed = False
@@ -603,6 +722,7 @@ def run_accuracy(
                     "pipeline_duration_ns": duration,
                     "decode_duration_ns": item.decode_duration_ns,
                     "truth": annotation,
+                    "gyro": gyro_record,
                     "output": value,
                 }
             finally:
@@ -654,6 +774,20 @@ def _validate_template_contract(
     data: list[dict[str, Any]], expected_temporal: bool
 ) -> None:
     """Fail visibly when production preset operation ports or feedback drift."""
+    uuids = [node.get("uuid") for node in data]
+    if any(not isinstance(uuid, str) or not uuid for uuid in uuids) or len(
+        set(uuids)
+    ) != len(uuids):
+        raise ReplayError("benchmark graph requires unique nonempty operation UUIDs")
+    for node in data:
+        for edge in node.get("connections", []):
+            if (
+                edge.get("from_uuid") != node["uuid"]
+                or edge.get("to_uuid") not in uuids
+            ):
+                raise ReplayError(
+                    "benchmark graph contains a dangling or misplaced edge"
+                )
     templates = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     name = "apriltag_localization" if expected_temporal else "basic_localization"
     template = templates[name]["nodes"]
@@ -692,3 +826,177 @@ def load_benchmark_config(
         raise ReplayError("benchmark graph contains duplicate operation identities")
     _validate_template_contract(data, expected_temporal)
     return data
+
+
+def benchmark_variant(
+    graph: list[dict[str, Any]],
+    solver: str = "normal",
+    minimum_tags: int | None = None,
+    *,
+    gyro: bool = False,
+) -> list[dict[str, Any]]:
+    """Apply sanctioned solver, count-gate, and source edits to a preset.
+
+    Args:
+        graph: Validated normal full-frame or temporal benchmark preset.
+        solver: Primary solver, normal or 2d.
+        minimum_tags: Count-gate threshold, 1 or 2; None keeps the preset value.
+        gyro: Add a timestamped gyro reader even for the normal primary solver.
+
+    Returns:
+        An independent graph copy with detector and feedback topology preserved.
+
+    Raises:
+        ReplayError: The variant is invalid or the graph violates the preset
+            topology contract.
+    """
+    if solver not in ("normal", "2d") or minimum_tags not in (None, 1, 2):
+        raise ReplayError("benchmark variants require normal/2d solver and minimum 1/2")
+    temporal = any(
+        node["action_name"] == "temporal_acceleration_preprocessor_rust.py"
+        for node in graph
+    )
+    _validate_template_contract(graph, temporal)
+    result = json.loads(json.dumps(graph))
+    for node in result:
+        if node["uuid"] == "bench-minimum" and minimum_tags is not None:
+            node["action_params"]["minimum_detections"] = minimum_tags
+        if node["uuid"] == "bench-pnp" and solver == "2d":
+            node["action_name"] = "pnp_camera_localization_2d.py"
+            node["action_params"].update(gyro_max_gap_ms=100.0, gyro_nearest_ms=20.0)
+    if gyro or solver == "2d":
+        result.insert(
+            0,
+            {
+                "uuid": "bench-gyro",
+                "action_name": "get_networktables_value.py",
+                "action_params": {
+                    "network_table_key": "gyro",
+                    "timestamped": True,
+                    "history_size": 256,
+                },
+                "connections": [
+                    {
+                        "from_uuid": "bench-gyro",
+                        "from_port": "data",
+                        "to_uuid": "bench-pnp",
+                        "to_port": "gyro_samples",
+                        "data_type": "any",
+                        "is_default": False,
+                    }
+                ]
+                if solver == "2d"
+                else [],
+            },
+        )
+    # Validate the inverse transformation too: only the sanctioned source/port
+    # and solver identity differ; every detector and temporal feedback edge stays.
+    canonical = json.loads(json.dumps(result))
+    canonical = [node for node in canonical if node["uuid"] != "bench-gyro"]
+    for node in canonical:
+        if node["uuid"] == "bench-pnp":
+            node["action_name"] = "pnp_camera_localization.py"
+    _validate_template_contract(canonical, temporal)
+    return result
+
+
+class PairedSolver:
+    """Run the other production solver on the exact same detector objects.
+
+    This shadow has its own continuity history and never drives detector feedback.
+    Independent pipeline variants remain necessary for temporal comparisons.
+    """
+
+    def __init__(
+        self,
+        pipeline: Any,
+        primary: str,
+        minimum: int,
+        map_path: str,
+        refinement_iterations: int,
+    ) -> None:
+        """Reuse calibration and map with an independent solver history.
+
+        Args:
+            pipeline: Benchmark pipeline providing the camera config registry.
+            primary: Primary solver name; the shadow uses the other solver.
+            minimum: Production minimum-detection count gate.
+            map_path: AprilTag map path shared with the primary solver.
+            refinement_iterations: Production solver refinement limit.
+        """
+        from src.main_operations.definitions.pnp_camera_localization import (
+            PnpCameraLocalizationDefinition,
+        )
+        from src.main_operations.definitions.pnp_camera_localization_2d import (
+            PnpCameraLocalization2DDefinition,
+        )
+        from src.secondary_operations.camera_to_robot_pose import CameraToRobotPose
+        from src.secondary_operations.minimum_apriltag_count import MinimumApriltagCount
+
+        self.solver = "2d" if primary == "normal" else "normal"
+        registry = pipeline.camera_config_registry
+        cls = (
+            PnpCameraLocalization2DDefinition
+            if self.solver == "2d"
+            else PnpCameraLocalizationDefinition
+        )
+        self.operation = cls(
+            camera_bus_id="benchmark-camera",
+            apriltag_map_path=map_path,
+            camera_config_registry=registry,
+            refinement_iterations=refinement_iterations,
+        )
+        self.gate = MinimumApriltagCount(minimum)
+        self.robot = CameraToRobotPose("benchmark-camera", registry)
+
+    def run(self, pipeline: Any) -> dict[str, Any]:
+        """Apply the production count gate, solver, and conversion without GT.
+
+        Args:
+            pipeline: Pipeline providing current detections and gyro outputs.
+
+        Returns:
+            Solver name, camera and robot poses, solver duration, and rejection.
+            Count rejection is minimum_tags; solver failures use the production
+            diagnostic reason or solver_rejected. Accepted poses have no
+            rejection. Solver results also include pose_meta and diagnostics.
+        """
+        from src.config.utils.operation import SKIP_PIPELINE_CYCLE
+
+        detections = pipeline.get_operation_output("bench-detect", "detections")
+        if self.gate.run(unwrap_timed(detections)) is SKIP_PIPELINE_CYCLE:
+            return {
+                "solver": self.solver,
+                "camera_pose": None,
+                "robot_pose_nwu": None,
+                "solver_duration_ns": None,
+                "rejection": "minimum_tags",
+            }
+        value = (
+            {
+                "detections": detections,
+                "gyro_samples": pipeline.get_operation_output("bench-gyro", "data"),
+            }
+            if self.solver == "2d"
+            else detections
+        )
+        started = time.perf_counter_ns()
+        output = self.operation.run(value)
+        elapsed = time.perf_counter_ns() - started
+        camera = unwrap_timed(output.get("camera_pose"))
+        robot = self.robot.run(camera)
+        return {
+            "solver": self.solver,
+            "camera_pose": _copy_output(camera),
+            "robot_pose_nwu": pose_local_edn_to_nwu(robot)
+            if robot is not None
+            else None,
+            "pose_meta": _copy_output(output.get("pose_meta")),
+            "diagnostics": _copy_output(output.get("diagnostics")),
+            "solver_duration_ns": elapsed,
+            "rejection": (unwrap_timed(output.get("diagnostics")) or {}).get(
+                "reason", "solver_rejected"
+            )
+            if camera is None
+            else None,
+        }
