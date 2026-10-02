@@ -96,6 +96,9 @@ def test_visualization_device_frame_is_unwrapped() -> None:
         ShapeOperation(), uuid="camera", name="device_input", is_data_source=True
     )
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.operations = {device_input.uuid: device_input}
     pipeline.flow_manager = cast(
         Any,
@@ -129,6 +132,9 @@ def _latency_pipeline(*packets: TimedValue) -> Pipeline:
         for index in range(len(packets))
     }
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.operations = operations
     pipeline.device_input_uuids = tuple(operations)
     pipeline.flow_manager = cast(
@@ -228,6 +234,9 @@ def test_skipped_cycle_does_not_modify_the_previous_profile() -> None:
             raise AssertionError("stale profile was modified")
 
     pipeline = Pipeline.__new__(Pipeline)
+    pipeline._run_lock = threading.Lock()
+    pipeline._closing = False
+    pipeline._closed = False
     pipeline.limit_frames_to_camera_capture_speed = False
     pipeline.flow_manager = SkippedFlowManager()
     pipeline.total_time_history = deque(maxlen=1)

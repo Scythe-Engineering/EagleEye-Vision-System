@@ -218,3 +218,79 @@ def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) ->
             manager.end_cycle()
         assert pipeline.get_operation_errors() == []
         assert pipeline.get_operation_by_uuid("bench-detect") is not None
+
+
+@pytest.mark.parametrize("temporal", [False, True])
+@pytest.mark.parametrize(
+    "solver,paired", [("normal", False), ("normal", True), ("2d", True)]
+)
+def test_repeated_production_contexts_release_workers_and_native_detectors(
+    temporal: bool, solver: str, paired: bool
+) -> None:
+    """Keep four-frame records while tearing down real graphs in every mode."""
+    import gc
+    import threading
+    import weakref
+
+    from benchmarks.gyro import GyroSettings, SyntheticGyro
+
+    calibration = {
+        "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
+        "distortion_coefficients": [0] * 5,
+    }
+    baseline = set(threading.enumerate())
+    references = []
+    retained_records = []
+    for _ in range(3):
+        manager = ReplayCameraManager()
+        lifecycle = build_pipeline(
+            temporal, calibration, manager=manager, solver=solver, paired=paired
+        )
+        with lifecycle as pipeline:
+            detector = pipeline.get_operation_by_uuid("bench-detect").instance.detector
+            references.extend(
+                (
+                    weakref.ref(pipeline),
+                    weakref.ref(detector),
+                    weakref.ref(detector.detector),
+                )
+            )
+            workers = [
+                worker.processing_thread_object
+                for worker in pipeline.flow_manager.thread_objects
+            ]
+            frames = [
+                DecodedFrame(i, np.zeros((64, 64, 3), np.uint8)) for i in range(4)
+            ]
+            gyro = SyntheticGyro(GyroSettings(), manager.epoch_ns) if paired else None
+            records = run_accuracy(
+                frames,
+                manager,
+                pipeline,
+                120,
+                aligned_truth=iter(
+                    {"frame_index": i, "T_field_from_robot": np.eye(4).tolist()}
+                    for i in range(4)
+                ),
+                gyro=gyro,
+            )
+            retained_records.append(records)
+            reader = pipeline.get_operation_by_uuid("bench-gyro")
+        lifecycle.close()
+        assert all(not worker.is_alive() for worker in workers)
+        assert len(records) == 4
+        assert all(
+            record["attempted"] and record["failure"] is None for record in records
+        )
+        assert [record["output"]["frame_index"] for record in records] == [0, 1, 2, 3]
+        if reader is not None:
+            assert reader.instance._subscriber is None
+        with pytest.raises(RuntimeError, match="closed"):
+            pipeline.run()
+        with pytest.raises(RuntimeError, match="closed"):
+            pipeline.thread_run(manager)
+        del pipeline, detector, reader
+        gc.collect()
+        assert all(reference() is None for reference in references)
+        assert set(threading.enumerate()) == baseline
+    assert sum(len(records) for records in retained_records) == 12

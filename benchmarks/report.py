@@ -108,6 +108,30 @@ def collect_provenance(
         "graph_sha256": {name: file_sha256(path) for name, path in graphs.items()},
         "revision": revision,
         "git_dirty": dirty,
+        "source_sha256": {
+            path: file_sha256(root / path)
+            for path in (
+                "benchmarks/__main__.py",
+                "benchmarks/gyro.py",
+                "benchmarks/replay.py",
+                "benchmarks/metrics.py",
+                "benchmarks/report.py",
+                "src/config/utils/flow_manager.py",
+                "src/config/utils/pipeline.py",
+                "src/config/utils/thread_object.py",
+                "src/main_operations/definitions/detect_apriltags.py",
+                "src/main_operations/modules/apriltags/apriltag_detector.py",
+                "src/main_operations/modules/apriltags/native_detector.py",
+                "src/main_operations/definitions/pnp_camera_localization.py",
+                "src/main_operations/definitions/pnp_camera_localization_2d.py",
+                "src/main_operations/modules/apriltags/pnp_localization.py",
+                "src/secondary_operations/get_networktables_value.py",
+                "src/secondary_operations/camera_to_robot_pose.py",
+                "src/utils/timestamped_samples.py",
+                "src/utils/timing.py",
+                "src/utils/camera_utils/camera_coordinate_transforms.py",
+            )
+        },
         "dependencies": dependencies,
         "python": sys.version,
         "os": platform.platform(),
@@ -617,10 +641,19 @@ def render_report(
     )
     if gallery:
         gallery = f"<h2>Diagnostics</h2><section class=gallery>{gallery}</section>"
+    gyro = run.get("gyro")
+    gyro_notice = ""
+    if isinstance(gyro, Mapping):
+        label = (
+            "Ideal oracle / oracle-equivalent"
+            if gyro.get("mode") == "ideal-oracle" or gyro.get("oracle_equivalent")
+            else "Perturbed synthetic"
+        )
+        gyro_notice = f'<p class="boundary">{label} heading derived artificially from ground truth; NOT recorded physical gyro. Only delivered measurement-timestamped samples are supplied. Settings: {html.escape(json.dumps(json_value(gyro), sort_keys=True))}</p>'
     body = f"""<!doctype html><html><head><meta charset="utf-8"><title>{html.escape(title)}</title>
 <style>body{{font:14px system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem}}table{{border-collapse:collapse;width:100%;margin:1rem 0}}th,td{{border:1px solid #bbb;padding:.4rem;text-align:left;vertical-align:top}}svg{{width:100%;border:1px solid #ccc;background:#fff}}.series{{fill:none;stroke-width:2}}.grid{{stroke:#e2e2e2;stroke-width:1}}.axis{{stroke:#555;stroke-width:1}}.tick{{fill:#444;font-size:11px}}.axis-label{{fill:#222;font-size:12px;font-weight:600}}.bar-value{{fill:#222;font-size:11px;font-weight:600}}.legend{{display:flex;flex-wrap:wrap;gap:.3rem 1rem;list-style:none;padding:0;margin:.4rem 0 1.4rem}}.legend li{{white-space:nowrap}}.swatch{{display:inline-block;width:.8rem;height:.8rem;margin-right:.3rem;vertical-align:-.05rem}}code{{white-space:pre-wrap;word-break:break-word}}.boundary{{padding:1rem;background:#fff4ce}}.gallery{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}}figure{{margin:0}}img{{max-width:100%}}details{{border:1px solid #ddd;border-radius:6px;padding:1rem;margin:1rem 0}}summary{{cursor:pointer;font-weight:600}}.chart{{margin:1.5rem 0}}</style></head><body>
 <h1>{html.escape(title)}</h1><p class="boundary">{html.escape(str(run.get("boundary", BOUNDARY)))}</p>
-<h2>Summary</h2>{_table({key: value for key, value in summary.items() if key not in ("by_clip", "by_configuration", "diagnostic_images", "diagnostic_frame_ids")})}
+{gyro_notice}<h2>Summary</h2>{_table({key: value for key, value in summary.items() if key not in ("by_clip", "by_configuration", "diagnostic_images", "diagnostic_frame_ids")})}
 <h2>Plots by clip</h2><p>Each clip has its own plots. Colors distinguish configurations; missing poses break error curves. Expand a clip to inspect it.</p>{plots}{gallery}
 <details><summary>Full summary data</summary>{_table(summary)}</details>
 <details><summary>Provenance and resolved configurations</summary>{_table(run)}</details>

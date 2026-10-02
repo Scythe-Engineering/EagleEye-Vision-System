@@ -34,9 +34,13 @@ def test_update_parameters_waits_for_in_flight_detection(
                 release_detect.wait(timeout=2)
             return []
 
-        def __del__(self) -> None:
+        def close(self) -> None:
             if self.tag_detector_ptr is not None:
                 destroyed_ids.append(self.detector_id)
+                self.tag_detector_ptr = None
+
+        def __del__(self) -> None:
+            self.close()
 
     monkeypatch.setattr(apriltag_detector, "Detector", FakeDetector)
 
@@ -64,7 +68,8 @@ def test_update_parameters_waits_for_in_flight_detection(
     assert not detect_thread.is_alive()
     assert not update_thread.is_alive()
     assert detector.quad_decimate == 1.0
-    assert 0 not in destroyed_ids
+    assert destroyed_ids == [0, 1, 2]
+    detector.close()
 
 
 def test_tiny_temporal_rois_use_decimate_one_only(monkeypatch: MonkeyPatch) -> None:
@@ -77,6 +82,9 @@ def test_tiny_temporal_rois_use_decimate_one_only(monkeypatch: MonkeyPatch) -> N
         def __init__(self, *, quad_decimate: float, **_kwargs: object) -> None:
             """Store the decimation setting supplied by the detector wrapper."""
             self.quad_decimate = quad_decimate
+
+        def close(self) -> None:
+            """Match the native detector cleanup interface."""
 
         def detect(self, image: np.ndarray) -> list[object]:
             """Record a detection call without producing a tag."""
@@ -115,6 +123,9 @@ def test_large_temporal_rois_use_the_high_decimation_detector(
         def __init__(self, *, quad_decimate: float, **_kwargs: object) -> None:
             """Store the decimation setting supplied by the detector wrapper."""
             self.quad_decimate = quad_decimate
+
+        def close(self) -> None:
+            """Match the native detector cleanup interface."""
 
         def detect(self, image: np.ndarray) -> list[object]:
             """Record a detection call without producing a tag."""

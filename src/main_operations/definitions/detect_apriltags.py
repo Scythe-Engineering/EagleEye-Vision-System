@@ -62,6 +62,10 @@ class DetectApriltagsDefinition(OperationInstance):
         self.last_search_regions: list[np.ndarray] = []
         self.last_detections_lock: Lock = Lock()
 
+    def close(self) -> None:
+        """Release the owned AprilTag detector after in-flight detection finishes."""
+        self.detector.close()
+
     def run(
         self,
         input_data: np.ndarray | tuple[list[tuple[np.ndarray, np.ndarray]], np.ndarray],

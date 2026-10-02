@@ -12,6 +12,7 @@ The [EagleEye documentation site](https://scythe-engineering.github.io/EagleEye-
 - [Build an AprilTag pipeline](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/pipeline-setup)
 - [Add EagleEye to robot code](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/robot-integration)
 - [Developer docs](https://scythe-engineering.github.io/EagleEye-Docs/docs/codebase/overview)
+- [Gyro-constrained 2D localization and benchmark comparisons](benchmarks/README.md)
 
 ## Development
 

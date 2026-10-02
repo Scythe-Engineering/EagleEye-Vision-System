@@ -161,6 +161,9 @@ class FlowManager:
             on_operation_success: Optional callback when an operation succeeds.
             pipeline_name: Optional name of the pipeline or flow for logging.
         """
+        self._run_lock = threading.Lock()
+        self._closing = False
+        self._closed = False
         self.operations: dict[str, Operation] = operations
         self.logger = logger
         self.on_operation_error = on_operation_error
@@ -248,12 +251,48 @@ class FlowManager:
         Returns:
             ``True`` when the cycle completed, otherwise ``False``.
         """
-        profile_seq_before = self._profile_seq
-        if self.num_threads == 1:
-            self._run_flow_direct()
-        else:
-            self._run_flow_threaded()
-        return self._profile_seq > profile_seq_before
+        with self._run_lock:
+            if self._closing:
+                raise RuntimeError("Flow is closed; cannot run more cycles")
+            profile_seq_before = self._profile_seq
+            if self.num_threads == 1:
+                self._run_flow_direct()
+            else:
+                self._run_flow_threaded()
+            return self._profile_seq > profile_seq_before
+
+    def close(self, timeout_s: float = 5.0) -> None:
+        """Drain execution and stop owned workers before releasing caches."""
+        self._closing = True
+        if not self._run_lock.acquire(timeout=timeout_s):
+            raise TimeoutError("Flow cycle did not finish within timeout; retry close")
+        try:
+            if self._closed:
+                return
+            for worker in self.thread_objects:
+                worker.stop()
+            # Join every worker, but never clear a graph while any still runs.
+            deadline = perf_counter() + timeout_s
+            errors = []
+            for worker in self.thread_objects:
+                try:
+                    worker.close(max(0.0, deadline - perf_counter()))
+                except (TimeoutError, RuntimeError) as error:
+                    errors.append(str(error))
+            if errors:
+                raise TimeoutError("; ".join(errors))
+            self.on_operation_error = None
+            self.on_operation_success = None
+            self.operation_outputs.clear()
+            self.previous_operation_outputs.clear()
+            self.execution_time_groups.clear()
+            self.operations_by_finish_timestep.clear()
+            for operation in self.operations.values():
+                operation.assigned_thread_object = None
+            self.operations = {}
+            self._closed = True
+        finally:
+            self._run_lock.release()
 
     @profile
     def _run_flow_direct(self) -> None:
@@ -361,7 +400,7 @@ class FlowManager:
                 )
                 not_timed_out = thread_obj.wait_done_processing(wait_timeout_s)
                 if not not_timed_out:
-                    # Reset thread state on timeout before raising error
+                    # Keep inflight state intact until the worker actually exits
                     thread_obj.reset_state()
                     sleep(1)  # wait a bit before trying again
                     raise ValueError(

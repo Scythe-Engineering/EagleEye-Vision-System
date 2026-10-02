@@ -9,8 +9,29 @@ import pytest
 from benchmarks.report import (
     BOUNDARY,
     RunWriter,
+    collect_provenance,
+    file_sha256,
     write_diagnostic_images,
 )
+
+
+def test_provenance_identifies_uncommitted_solver_sources(tmp_path: Path) -> None:
+    """A dirty revision alone must not identify the code used for a comparison."""
+    manifest = tmp_path / "manifest.json"
+    graph = tmp_path / "graph.json"
+    manifest.write_text("{}")
+    graph.write_text("[]")
+    metadata = collect_provenance(manifest, {"comparison": graph})
+    for source in (
+        "src/utils/timestamped_samples.py",
+        "src/config/utils/flow_manager.py",
+        "src/config/utils/pipeline.py",
+        "src/config/utils/thread_object.py",
+    ):
+        assert metadata["source_sha256"][source] == file_sha256(
+            Path(__file__).resolve().parents[1] / source
+        )
+    assert metadata["graph_sha256"]["comparison"] == file_sha256(graph)
 
 
 def _metadata() -> dict[str, object]:

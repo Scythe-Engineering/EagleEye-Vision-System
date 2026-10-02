@@ -95,6 +95,9 @@ class Pipeline:
             limit_frames_to_camera_capture_speed
         )
 
+        self._closed = False
+        self._closing = False
+        self._run_lock = threading.Lock()
         self.thread_running = False
         self.thread_active = False
         self.thread = None
@@ -444,10 +447,33 @@ class Pipeline:
                 raise
 
     def close(self) -> None:
-        """Close asynchronous operation bindings after the pipeline thread stops."""
-        self._set_async_operations_active(False)
-        for operation in self.async_docked_operations:
-            cast(AsyncDockedOperation, operation.instance).close()
+        """Drain the scheduler before releasing owned operation resources.
+
+        Collect outputs before closing. A timeout leaves resources open for a
+        retry, but rejects new cycles. Shared collaborators are not destroyed.
+        """
+        self._closing = True
+        self.stop()
+        if not self._run_lock.acquire(timeout=5.0):
+            raise TimeoutError("Pipeline cycle did not finish within 5s; retry close")
+        try:
+            if self._closed:
+                return
+            self.flow_manager.close()
+            for operation in self.operations.values():
+                close = getattr(operation.instance, "close", None)
+                if close is not None:
+                    close()
+            # Break owned connection cycles only after every worker has exited.
+            for operation in self.operations.values():
+                operation.input_connections.clear()
+                operation.output_connections.clear()
+            self.operations.clear()
+            self.async_docked_operations = ()
+            self.visualization_data = None
+            self._closed = True
+        finally:
+            self._run_lock.release()
 
     def _terminal_async_failure(self) -> BaseException | None:
         """Return the first terminal asynchronous backend failure."""
@@ -670,8 +696,19 @@ class Pipeline:
         except TypeError as e:
             raise ValueError(f"Invalid parameters for {action_name}: {str(e)}")
 
-    @profile
     def run(
+        self,
+        visualize: bool = False,
+        visualization_operation_uuid: str | None = None,
+    ) -> np.ndarray | None:
+        """Run one cycle, serialized against permanent teardown."""
+        with self._run_lock:
+            if self._closing:
+                raise RuntimeError("Pipeline is closed; cannot run more cycles")
+            return self._run(visualize, visualization_operation_uuid)
+
+    @profile
+    def _run(
         self,
         visualize: bool = False,
         visualization_operation_uuid: str | None = None,
@@ -713,9 +750,7 @@ class Pipeline:
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
             capture_latency_ms = self._capture_latency_ms()
             if capture_latency_ms is not None:
-                self.flow_manager.set_latest_profile_capture_latency(
-                    capture_latency_ms
-                )
+                self.flow_manager.set_latest_profile_capture_latency(capture_latency_ms)
         with self.total_time_history_lock:
             self.total_time_history.append(elapsed)
 
@@ -902,6 +937,8 @@ class Pipeline:
             camera_thread_manager: The camera thread manager.
         """
         with self.thread_state_lock:
+            if self._closing:
+                raise RuntimeError("Pipeline is closed; cannot start its thread")
             self.thread_running = True
             self.thread_active = False
             self.thread = threading.Thread(
@@ -1035,7 +1072,13 @@ class Pipeline:
             thread = self.thread
         self._set_async_operations_active(False)
         if thread is not None:
-            thread.join()
+            if thread is threading.current_thread():
+                raise RuntimeError("Pipeline cannot join itself; close from its owner")
+            thread.join(timeout=5.0)
+            if thread.is_alive():
+                raise TimeoutError(
+                    "Pipeline thread did not stop within 5s; retry close"
+                )
             with self.thread_state_lock:
                 if self.thread is thread:
                     self.thread = None
