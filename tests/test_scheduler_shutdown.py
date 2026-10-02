@@ -240,6 +240,7 @@ def test_owned_native_cleanup_order_and_partial_construction():
             calls.append(self.name)
 
     detector = Detector.__new__(Detector)
+    detector._lifecycle_lock = threading.Lock()
     detector.libc = SimpleNamespace(
         apriltag_detector_destroy=Destroy("detector"),
         tag36h11_destroy=Destroy("family"),
@@ -252,6 +253,7 @@ def test_owned_native_cleanup_order_and_partial_construction():
     assert detector.tag_detector_ptr is None
     assert detector.tag_families == {}
     partial = Detector.__new__(Detector)
+    partial._lifecycle_lock = threading.Lock()
     partial.close()
 
 
@@ -276,6 +278,12 @@ for family in families:
     detector.close()
     detector.close()
     assert detector.tag_detector_ptr is None and not detector.tag_families
+    try:
+        detector.detect(np.zeros((32, 32), np.uint8))
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('closed native detector accepted detection')
     del detector
 for family in families:
     detector = Detector(families=family, nthreads=1)

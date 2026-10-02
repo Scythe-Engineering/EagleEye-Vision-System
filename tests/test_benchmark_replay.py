@@ -14,6 +14,7 @@ import pytest
 from benchmarks.replay import (
     DecodedFrame,
     ReplayCameraManager,
+    ReplayCleanupError,
     ReplayError,
     SequentialVideoDecoder,
     build_pipeline,
@@ -199,6 +200,52 @@ def test_accuracy_does_not_reuse_a_stale_profile() -> None:
     )
     assert records[0]["skipped"] is True
     assert records[0]["output"]["profile"] is None
+
+
+def test_failed_construction_retains_cleanup_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry a failed drain without destroying NT or temporary calibration early."""
+    from src.config.utils.pipeline import Pipeline
+
+    created = []
+    original_errors = Pipeline.get_operation_errors
+    original_close = Pipeline.close
+    fail_close = True
+
+    def validation_errors(pipeline: Pipeline) -> list[dict[str, str]]:
+        created.append(pipeline)
+        return [{"error": "construction validation failed"}]
+
+    def retryable_close(pipeline: Pipeline) -> None:
+        if fail_close:
+            raise TimeoutError("worker still active")
+        original_close(pipeline)
+
+    monkeypatch.setattr(Pipeline, "get_operation_errors", validation_errors)
+    monkeypatch.setattr(Pipeline, "close", retryable_close)
+    calibration = {
+        "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
+        "distortion_coefficients": [0] * 5,
+    }
+    with pytest.raises(ReplayCleanupError) as caught:
+        build_pipeline(False, calibration)
+    lifecycle = caught.value.lifecycle
+    directory = Path(lifecycle.temporary.name)
+    try:
+        assert lifecycle.pipeline is created[0]
+        assert isinstance(caught.value.__cause__, ReplayError)
+        assert "construction validation failed" in str(caught.value.__cause__)
+        assert directory.exists()
+        assert lifecycle.nt_instance.getNetworkMode()
+        assert not lifecycle.closed
+    finally:
+        fail_close = False
+        monkeypatch.setattr(Pipeline, "get_operation_errors", original_errors)
+        lifecycle.close()
+    assert lifecycle.closed
+    assert lifecycle.pipeline is lifecycle.nt_instance is None
+    assert not directory.exists()
 
 
 @pytest.mark.parametrize("temporal", [False, True])

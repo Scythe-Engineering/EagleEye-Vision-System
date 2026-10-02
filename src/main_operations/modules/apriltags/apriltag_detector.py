@@ -290,6 +290,10 @@ class AprilTagDetector:
             full_frame_nthreads: Optional thread count for direct full-frame searches.
                 Zero uses ``nthreads`` without another native detector.
         """
+        with self._detect_lock:
+            if self._closed:
+                raise RuntimeError("AprilTag detector is closed; cannot reconfigure")
+
         next_families = self.families if families is None else families
         next_nthreads = self.nthreads if nthreads is None else nthreads
         next_quad_decimate = (
@@ -321,6 +325,8 @@ class AprilTagDetector:
             else max(0, int(small_roi_max_px))
         )
 
+        new_detector = new_full_frame_detector = None
+        new_large_roi_detector = new_small_roi_detector = None
         try:
             new_detector = self._create_detector(
                 next_families,
@@ -368,6 +374,14 @@ class AprilTagDetector:
                 else None
             )
         except Exception as exc:
+            for detector in (
+                new_detector,
+                new_full_frame_detector,
+                new_large_roi_detector,
+                new_small_roi_detector,
+            ):
+                if detector is not None:
+                    detector.close()
             logger.exception(
                 "Failed to create AprilTag detector with updated parameters"
             )
@@ -375,6 +389,14 @@ class AprilTagDetector:
 
         with self._detect_lock:
             if self._closed:
+                for detector in (
+                    new_detector,
+                    new_full_frame_detector,
+                    new_large_roi_detector,
+                    new_small_roi_detector,
+                ):
+                    if detector is not None:
+                        detector.close()
                 raise RuntimeError("AprilTag detector is closed; cannot reconfigure")
             self.ready = False
             old_detector = self.detector
