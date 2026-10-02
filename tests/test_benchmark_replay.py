@@ -6,6 +6,7 @@ import gzip
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -207,7 +208,7 @@ def test_accuracy_does_not_reuse_a_stale_profile() -> None:
     assert records[0]["output"]["profile"] is None
 
 
-@pytest.mark.parametrize("stage", ["validation", "shadow"])
+@pytest.mark.parametrize("stage", ["validation", "instrumentation", "shadow"])
 def test_failed_construction_retains_cleanup_owner(
     monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
@@ -240,6 +241,15 @@ def test_failed_construction_retains_cleanup_owner(
         raise ReplayError("shadow construction failed")
 
     monkeypatch.setattr("benchmarks.replay.PairedSolver", shadow_failure)
+    if stage == "instrumentation":
+        original_lookup = Pipeline.get_operation_by_uuid
+
+        def failed_lookup(pipeline: Pipeline, uuid: str) -> Any:
+            if uuid == "bench-pnp":
+                raise ReplayError("instrumentation construction failed")
+            return original_lookup(pipeline, uuid)
+
+        monkeypatch.setattr(Pipeline, "get_operation_by_uuid", failed_lookup)
     calibration = {
         "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
         "distortion_coefficients": [0] * 5,

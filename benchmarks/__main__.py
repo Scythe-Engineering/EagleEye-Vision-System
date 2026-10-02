@@ -252,7 +252,9 @@ def _score_accuracy_record(
     return record
 
 
-def _aggregate_accuracy(records: list[dict[str, Any]]) -> dict[str, Any]:
+def _aggregate_accuracy(
+    records: list[dict[str, Any]], *, paired: bool = False
+) -> dict[str, Any]:
     """Aggregate compact scored accuracy records with explicit denominators."""
     detection_rows = [record["metrics"]["detection"] for record in records]
     tp = sum(row["tp"] for row in detection_rows)
@@ -323,15 +325,32 @@ def _aggregate_accuracy(records: list[dict[str, Any]]) -> dict[str, Any]:
             "availability": availability(valid, timestamps),
         },
     }
-    if any("paired" in record["metrics"] for record in records):
+    if paired or any("paired" in record["metrics"] for record in records):
         normal, constrained = [], []
         for record in records:
             metric = record["metrics"]
             pair = metric.get("paired")
+            failure = bool(record.get("failure"))
             if pair is None:
+                if failure:
+                    failed_row = {
+                        "frame_index": record["frame_index"],
+                        "failure": True,
+                        "pose_available": False,
+                    }
+                    normal.append(failed_row)
+                    constrained.append(failed_row)
                 continue
-            primary_row = {"frame_index": record["frame_index"], **metric}
-            shadow_row = {"frame_index": record["frame_index"], **pair}
+            primary_row = {
+                "frame_index": record["frame_index"],
+                **metric,
+                "failure": failure,
+            }
+            shadow_row = {
+                "frame_index": record["frame_index"],
+                **pair,
+                "failure": failure,
+            }
             if pair["solver"] == "2d":
                 normal.append(primary_row)
                 constrained.append(shadow_row)
@@ -570,7 +589,7 @@ def _run(args: argparse.Namespace) -> int:
                         "attempted": len(compact),
                         "completed": sum(r["completed"] for r in compact),
                         "failed": sum(r["failure"] for r in compact),
-                        **_aggregate_accuracy(compact),
+                        **_aggregate_accuracy(compact, paired=args.solver == "both"),
                     }
                 )
                 if timed_out:

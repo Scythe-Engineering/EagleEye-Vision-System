@@ -220,7 +220,22 @@ def availability(
 def paired_pose_metrics(
     normal: Sequence[dict[str, Any]], constrained: Sequence[dict[str, Any]]
 ) -> dict[str, Any]:
-    """Compare keyed frames, including losses instead of survivor-only accuracy."""
+    """Compare keyed frames, retaining failed and unavailable attempts.
+
+    Args:
+        normal: Normal-solver rows keyed by frame_index, with pose_available,
+            optional failure, and optional robot_pose error metrics.
+        constrained: 2D-solver rows with the same shape. robot_pose contains
+            translation_3d_m, translation_xy_m, rotation_rad, and
+            yaw_absolute_error_rad when scoring truth is available.
+
+    Returns:
+        Attempted, failed, matched, and unmatched frame counts; matched pose
+        availability; common/lost/gained/neither counts and lost/gained IDs;
+        common-frame accuracy and signed 2D-minus-normal error deltas;
+        large-error counts; and error summaries for lost and gained poses.
+        Accuracy summaries omit missing truth but availability retains attempts.
+    """
     left = {row["frame_index"]: row for row in normal}
     right = {row["frame_index"]: row for row in constrained}
     frames = sorted(left.keys() & right.keys())

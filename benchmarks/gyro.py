@@ -65,7 +65,18 @@ class GyroSettings:
 
 
 def truth_heading(annotation: dict[str, Any]) -> float:
-    """Extract NWU CCW robot yaw, never robot position."""
+    """Extract NWU CCW robot yaw, never robot position.
+
+    Args:
+        annotation: Truth row containing T_field_from_robot as a 4x4 matrix,
+            flattened matrix, or dictionary with a matrix field.
+
+    Returns:
+        Robot yaw in radians.
+
+    Raises:
+        ValueError: The transform cannot be converted to a finite 4x4 matrix.
+    """
     value = annotation.get("T_field_from_robot")
     if isinstance(value, dict):
         value = value.get("matrix")
@@ -89,7 +100,21 @@ class SyntheticGyro:
         self.last_capture_ns: int | None = None
 
     def advance(self, annotation: dict[str, Any], timestamp_ns: int) -> dict[str, Any]:
-        """Accept only current truth; deliver samples available by synthetic processing."""
+        """Accept current truth and deliver samples due by synthetic processing.
+
+        Args:
+            annotation: Current capture's truth row with T_field_from_robot.
+            timestamp_ns: Strictly increasing capture time relative to the epoch.
+
+        Returns:
+            Mode, measurement, processing_timestamp_us, and delivered samples.
+            Measurement timestamps use local NT microseconds; delivery timestamps
+            are separate and never replace measurement times.
+
+        Raises:
+            ValueError: Capture times do not increase, the truth transform is
+                invalid, or the perturbed yaw is not finite.
+        """
         if self.last_capture_ns is not None and timestamp_ns <= self.last_capture_ns:
             raise ValueError("gyro capture timestamps must increase")
         self.last_capture_ns = timestamp_ns
@@ -129,7 +154,20 @@ class SyntheticGyro:
     def publish(
         self, pipeline: Any, annotation: dict[str, Any], timestamp_ns: int
     ) -> dict[str, Any]:
-        """Publish delivered yaw with its original measurement time, never delivery time."""
+        """Publish delivered yaw with measurement time, never delivery time.
+
+        Args:
+            pipeline: Benchmark pipeline owning _benchmark_gyro_publisher.
+            annotation: Current capture's truth row with T_field_from_robot.
+            timestamp_ns: Strictly increasing capture time relative to the epoch.
+
+        Returns:
+            The advance record, including measurements delivered this cycle.
+
+        Raises:
+            ValueError: Capture times do not increase, the truth transform is
+                invalid, or the perturbed yaw is not finite.
+        """
         record = self.advance(annotation, timestamp_ns)
         publisher = pipeline._benchmark_gyro_publisher
         for delivered in record["delivered"]:

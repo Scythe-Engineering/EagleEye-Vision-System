@@ -311,28 +311,30 @@ def build_resolved_pipeline(
             raise ReplayCleanupError(lifecycle, cleanup_error) from error
         raise
     lifecycle = PipelineLifecycle(pipeline, instance, temporary)
-    if paired or solver == "2d":
-        pipeline._benchmark_gyro_publisher = (
-            instance.getTable("benchmark")
-            .getDoubleTopic("gyro")
-            .publish(ntcore.PubSubOptions(sendAll=True, keepDuplicates=True))
-        )
-    pipeline._benchmark_solver_duration_ns = None
-    pnp = pipeline.get_operation_by_uuid("bench-pnp").instance
-    original_run = pnp.run
+    try:
+        if paired or solver == "2d":
+            pipeline._benchmark_gyro_publisher = (
+                instance.getTable("benchmark")
+                .getDoubleTopic("gyro")
+                .publish(ntcore.PubSubOptions(sendAll=True, keepDuplicates=True))
+            )
+        pipeline._benchmark_solver_duration_ns = None
+        pnp = pipeline.get_operation_by_uuid("bench-pnp").instance
+        original_run = pnp.run
 
-    def measured_run(value: Any) -> Any:
-        """Measure only production solver invocation, not shadow or conversion."""
-        started = time.perf_counter_ns()
-        try:
-            return original_run(value)
-        finally:
-            pipeline._benchmark_solver_duration_ns = time.perf_counter_ns() - started
+        def measured_run(value: Any) -> Any:
+            """Measure only production solver invocation, not shadow or conversion."""
+            started = time.perf_counter_ns()
+            try:
+                return original_run(value)
+            finally:
+                pipeline._benchmark_solver_duration_ns = (
+                    time.perf_counter_ns() - started
+                )
 
-    lifecycle.measured_operation = pnp
-    pnp.run = measured_run
-    if paired:
-        try:
+        pnp.run = measured_run
+        lifecycle.measured_operation = pnp
+        if paired:
             pipeline._benchmark_shadow = PairedSolver(
                 pipeline,
                 solver,
@@ -352,12 +354,12 @@ def build_resolved_pipeline(
                     if node["uuid"] == "bench-pnp"
                 ),
             )
-        except BaseException as error:
-            try:
-                lifecycle.close()
-            except Exception as cleanup_error:  # noqa: BLE001 - hand off retained resources for retry
-                raise ReplayCleanupError(lifecycle, cleanup_error) from error
-            raise
+    except BaseException as error:
+        try:
+            lifecycle.close()
+        except Exception as cleanup_error:  # noqa: BLE001 - hand off retained resources for retry
+            raise ReplayCleanupError(lifecycle, cleanup_error) from error
+        raise
     return lifecycle
 
 
@@ -833,7 +835,21 @@ def benchmark_variant(
     *,
     gyro: bool = False,
 ) -> list[dict[str, Any]]:
-    """Apply only sanctioned solver/gate/source edits to a validated preset."""
+    """Apply sanctioned solver, count-gate, and source edits to a preset.
+
+    Args:
+        graph: Validated normal full-frame or temporal benchmark preset.
+        solver: Primary solver, normal or 2d.
+        minimum_tags: Count-gate threshold, 1 or 2; None keeps the preset value.
+        gyro: Add a timestamped gyro reader even for the normal primary solver.
+
+    Returns:
+        An independent graph copy with detector and feedback topology preserved.
+
+    Raises:
+        ReplayError: The variant is invalid or the graph violates the preset
+            topology contract.
+    """
     if solver not in ("normal", "2d") or minimum_tags not in (None, 1, 2):
         raise ReplayError("benchmark variants require normal/2d solver and minimum 1/2")
     temporal = any(
@@ -899,7 +915,15 @@ class PairedSolver:
         map_path: str,
         refinement_iterations: int,
     ) -> None:
-        """Reuse the pipeline calibration and map for an independent solver history."""
+        """Reuse calibration and map with an independent solver history.
+
+        Args:
+            pipeline: Benchmark pipeline providing the camera config registry.
+            primary: Primary solver name; the shadow uses the other solver.
+            minimum: Production minimum-detection count gate.
+            map_path: AprilTag map path shared with the primary solver.
+            refinement_iterations: Production solver refinement limit.
+        """
         from src.main_operations.definitions.pnp_camera_localization import (
             PnpCameraLocalizationDefinition,
         )
@@ -926,7 +950,17 @@ class PairedSolver:
         self.robot = CameraToRobotPose("benchmark-camera", registry)
 
     def run(self, pipeline: Any) -> dict[str, Any]:
-        """Apply the production count gate, solver and robot conversion without GT."""
+        """Apply the production count gate, solver, and conversion without GT.
+
+        Args:
+            pipeline: Pipeline providing current detections and gyro outputs.
+
+        Returns:
+            Solver name, camera and robot poses, solver duration, and rejection.
+            Count rejection is minimum_tags; solver failures use the production
+            diagnostic reason or solver_rejected. Accepted poses have no
+            rejection. Solver results also include pose_meta and diagnostics.
+        """
         from src.config.utils.operation import SKIP_PIPELINE_CYCLE
 
         detections = pipeline.get_operation_output("bench-detect", "detections")

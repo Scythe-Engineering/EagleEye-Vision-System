@@ -390,6 +390,42 @@ def test_native_publisher_keeps_delayed_measurement_timestamp() -> None:
         ntcore.NetworkTableInstance.destroy(instance)
 
 
+@pytest.mark.parametrize("shadow_solver", ["normal", "2d", None])
+def test_identical_detection_comparison_keeps_failed_frames(
+    shadow_solver: str | None,
+) -> None:
+    """Keep mixed and entirely failed clips in both solver populations."""
+    records = [
+        {
+            "frame_index": index,
+            "timestamp_ns": index * 10_000_000,
+            "failure": "pipeline operation error",
+            "output": None,
+        }
+        for index in range(2)
+    ]
+    if shadow_solver is not None:
+        records.append(
+            {
+                "frame_index": 2,
+                "timestamp_ns": 20_000_000,
+                "failure": None,
+                "output": {"paired": {"solver": shadow_solver}},
+            }
+        )
+    for record in records:
+        _score_accuracy_record(record, 8)
+    result = _aggregate_accuracy(records, paired=True)[
+        "identical_detector_outputs_paired"
+    ]
+    assert result["attempted_frames"] == {"normal": len(records), "2d": len(records)}
+    assert result["failed_frames"] == {"normal": 2, "2d": 2}
+    assert result["matched_frames"] == result["neither"] == len(records)
+    assert result["matched_pose_availability"] == {"normal": 0, "2d": 0}
+    if shadow_solver is None:
+        assert "identical_detector_outputs_paired" not in _aggregate_accuracy(records)
+
+
 def test_paired_failure_denominators_include_unmatched_attempts() -> None:
     """Unavailable and failed attempts must not disappear from the populations."""
     normal = [
