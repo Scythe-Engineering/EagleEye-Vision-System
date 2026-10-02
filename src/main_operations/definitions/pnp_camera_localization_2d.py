@@ -35,7 +35,23 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
         gyro_max_gap_ms: float = 100.0,
         gyro_nearest_ms: float = 20.0,
     ) -> None:
-        """Load shared calibration/map contracts and set capture alignment limits."""
+        """Load shared calibration/map contracts and set capture alignment limits.
+
+        Args:
+            camera_bus_id: Camera identifier in the configuration registry.
+            apriltag_map_path: Field map containing global tag corners.
+            camera_config_registry: Required source of current camera calibration.
+            web_interface: Unused interface accepted for pipeline compatibility.
+            refinement_iterations: Maximum pixel-space refinement steps (0 to 100).
+            gyro_max_gap_ms: Maximum interpolation bracket width (0 to 10000 ms).
+            gyro_nearest_ms: Maximum nearest-sample distance (0 to 10000 ms).
+
+        Raises:
+            OSError: A calibration or field map file cannot be read.
+            ValueError: Registry or intrinsics are missing, settings are invalid,
+                or a calibration or field map file contains invalid JSON.
+            TypeError: A numeric setting cannot be converted to a number.
+        """
         self.uses_timed_inputs = True
         self.camera_bus_id = str(camera_bus_id)
         if camera_config_registry is None:
@@ -60,7 +76,16 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
         )
 
     def update_config(self, json_config: dict[str, Any]) -> None:
-        """Validate and apply bounded refinement/alignment settings live."""
+        """Validate and apply bounded refinement/alignment settings live.
+
+        Args:
+            json_config: Refinement or gyro alignment settings to update.
+
+        Raises:
+            ValueError: A setting is nonfinite, out of bounds, or fractional
+                when an integer refinement count is required.
+            TypeError: A setting cannot be converted to a number.
+        """
         for name, maximum in (
             ("refinement_iterations", 100),
             ("gyro_max_gap_ms", 10000),
@@ -84,11 +109,25 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
         A sole connected detection input may also arrive as a bare TimedValue.
         Always emit exactly camera_pose, pose_meta, and diagnostics. Failures have
         None pose/meta; no unconstrained solve, pose holding, or smoothing occurs.
+
+        Args:
+            input_data: Timed detections and plain gyro history, or bare detections.
+
+        Returns:
+            Camera pose, quality metadata, and diagnostics; rejected solves have
+            None pose and metadata with an explicit diagnostic reason.
         """
         diagnostics: dict[str, Any] = {}
 
         def failure(reason: str) -> dict[str, Any]:
-            """Emit explicit failure without a held or unconstrained pose."""
+            """Emit explicit failure without a held or unconstrained pose.
+
+            Args:
+                reason: Diagnostic rejection code.
+
+            Returns:
+                Empty pose and metadata with the accumulated failure diagnostics.
+            """
             return {
                 "camera_pose": None,
                 "pose_meta": None,
@@ -176,12 +215,14 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
                 estimator.distortion_coefficients,
             ).reshape(-1, 2)
             # Fixed heading/height make normalized projection equations linear in XY.
-            a = (
+            xy_coefficients = (
                 camera_rotation[:2, :2][None, :, :]
                 - rays[:, :, None] * camera_rotation[2, :2]
             ).reshape(-1, 2)
-            b = (rotated[:, :2] - rays * rotated[:, 2, None]).reshape(-1)
-            xy, _, rank, singular = np.linalg.lstsq(a, b, rcond=None)
+            xy_targets = (rotated[:, :2] - rays * rotated[:, 2, None]).reshape(-1)
+            xy, _, rank, singular = np.linalg.lstsq(
+                xy_coefficients, xy_targets, rcond=None
+            )
             condition = singular[0] / singular[-1] if singular[-1] > 0 else float("inf")
             diagnostics["condition_number"] = float(condition)
             if rank != 2 or not np.isfinite(condition) or condition > 1e8:
@@ -191,7 +232,18 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
             def project(
                 position: np.ndarray,
             ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-                """Return distorted pixel residual, XY Jacobian, and camera translation."""
+                """Return distorted pixel residual, XY Jacobian, and camera translation.
+
+                Args:
+                    position: Robot field XY coordinates in meters, at field Z=0.
+
+                Returns:
+                    Flattened pixel residual, its XY Jacobian, and camera translation.
+
+                Raises:
+                    ValueError: Points are behind the camera or residuals are nonfinite.
+                    cv2.error: The calibrated projection cannot be computed.
+                """
                 translation = -camera_rotation @ (offset + np.r_[position, 0.0])
                 depth = (obj @ camera_rotation.T + translation)[:, 2]
                 if not np.isfinite(depth).all() or np.any(depth <= 1e-6):

@@ -1,7 +1,10 @@
 """Constrained geometry, current mounting, and capture-clock regressions."""
 
 import json
+from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import cv2
 import numpy as np
@@ -16,9 +19,16 @@ from src.utils.camera_utils.camera_coordinate_transforms import (
 from src.utils.timestamped_samples import align_heading
 from src.utils.timing import TimedValue, TimingMetadata, get_timing, unwrap_timed
 
+Scene = tuple[
+    module.PnpCameraLocalization2DDefinition,
+    SimpleNamespace,
+    Callable[[], tuple[dict[str, Any], np.ndarray]],
+]
+
 
 @pytest.fixture
-def scene(tmp_path, monkeypatch):
+def scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Scene:
+    """Build distorted observations with a live six-parameter camera mount."""
     matrix = np.array([[700.0, 0, 640], [0, 710, 400], [0, 0, 1]])
     distortion = np.array([-0.12, 0.03, 0.002, -0.001, 0.005])
     path = tmp_path / "intrinsics.json"
@@ -62,7 +72,8 @@ def scene(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "load_fmap_file", lambda path: tags)
     solver = module.PnpCameraLocalization2DDefinition("camera", "map", registry)
 
-    def inputs():
+    def inputs() -> tuple[dict[str, Any], np.ndarray]:
+        """Project fresh detections using the current camera mounting."""
         current_pose = robot @ build_robot_from_camera_transform(config.extrinsics)
         rotation = current_pose[:3, :3].T
         translation = -rotation @ current_pose[:3, 3]
@@ -86,7 +97,8 @@ def scene(tmp_path, monkeypatch):
     return solver, config, inputs
 
 
-def test_exact_asymmetric_distorted_wrap_and_live_mount(scene):
+def test_exact_asymmetric_distorted_wrap_and_live_mount(scene: Scene) -> None:
+    """Recover the exact pose across yaw wrap and live mounting edits."""
     solver, config, inputs = scene
     for new_offset in (0.3, 0.45):
         config.extrinsics.x_offset = new_offset
@@ -103,7 +115,8 @@ def test_exact_asymmetric_distorted_wrap_and_live_mount(scene):
         assert result["pose_meta"][2] < 1e-7
 
 
-def test_wrapper_preserves_detection_capture_only(scene):
+def test_wrapper_preserves_detection_capture_only(scene: Scene) -> None:
+    """Propagate detection capture metadata to every solver output."""
     solver, _, inputs = scene
     data, _ = inputs()
     operation = Operation(
@@ -130,7 +143,8 @@ def test_wrapper_preserves_detection_capture_only(scene):
         ([{"timestamp_us": True, "value": 0}], "invalid_gyro"),
     ],
 )
-def test_missing_stale_invalid(scene, samples, reason):
+def test_missing_stale_invalid(scene: Scene, samples: object, reason: str) -> None:
+    """Reject absent, stale, or invalid gyro measurements explicitly."""
     solver, _, inputs = scene
     data, _ = inputs()
     data["gyro_samples"] = samples
@@ -139,7 +153,8 @@ def test_missing_stale_invalid(scene, samples, reason):
     assert result["diagnostics"]["reason"] == reason
 
 
-def test_capture_and_geometry_rejection(scene):
+def test_capture_and_geometry_rejection(scene: Scene) -> None:
+    """Reject invalid capture clocks and degenerate image geometry."""
     solver, _, inputs = scene
     data, _ = inputs()
     data["detections"] = unwrap_timed(data["detections"])
@@ -160,7 +175,8 @@ def test_capture_and_geometry_rejection(scene):
     assert solver.run(data)["diagnostics"]["reason"] == "invalid_points"
 
 
-def test_gap_nearest_and_no_extrapolation():
+def test_gap_nearest_and_no_extrapolation() -> None:
+    """Bound interpolation gaps and nearest alignment without extrapolation."""
     samples = [{"timestamp_us": 2, "value": 1}, {"timestamp_us": 200_000, "value": 2}]
     with pytest.raises(ValueError, match="gyro_gap_too_large"):
         align_heading(samples, 100_000, 100_000, 20_000)
@@ -172,7 +188,8 @@ def test_gap_nearest_and_no_extrapolation():
         align_heading(samples, 221_000, 100_000, 20_000)
 
 
-def test_heading_recovers_with_unused_invalid_history():
+def test_heading_recovers_with_unused_invalid_history() -> None:
+    """Ignore unused bad yaw while validating every history envelope."""
     for invalid in (float("nan"), float("inf"), True, "bad", None, 10**400):
         samples = [
             {"timestamp_us": 10_000, "value": invalid},
@@ -221,7 +238,8 @@ def test_heading_recovers_with_unused_invalid_history():
             )
 
 
-def test_pixel_refinement_reduces_noisy_reprojection(scene):
+def test_pixel_refinement_reduces_noisy_reprojection(scene: Scene) -> None:
+    """Reduce squared pixel error with bounded refinement."""
     solver, _, inputs = scene
     data, _ = inputs()
     data["detections"].value[0].corners += np.array(
@@ -234,7 +252,8 @@ def test_pixel_refinement_reduces_noisy_reprojection(scene):
     assert refined["diagnostics"]["reason"] == "ok"
 
     # Optimizer minimizes squared pixel error, not the metadata's mean norm.
-    def squared(pose):
+    def squared(pose: np.ndarray) -> np.floating[Any]:
+        """Measure total squared distorted-pixel reprojection error."""
         estimator = solver.pose_estimator
         inverse = estimator.fast_se3_inverse(pose)
         points = np.vstack(
@@ -254,7 +273,8 @@ def test_pixel_refinement_reduces_noisy_reprojection(scene):
     assert squared(refined["camera_pose"]) < squared(linear["camera_pose"])
 
 
-def test_behind_camera_rejected(scene):
+def test_behind_camera_rejected(scene: Scene) -> None:
+    """Reject mapped points behind the calibrated camera."""
     solver, _, inputs = scene
     _, pose = inputs()
     for tag in solver.pose_estimator.apriltag_map.values():
@@ -265,7 +285,8 @@ def test_behind_camera_rejected(scene):
     assert result["diagnostics"]["reason"] == "behind_camera"
 
 
-def test_near_horizontal_rays_ill_conditioned(scene):
+def test_near_horizontal_rays_ill_conditioned(scene: Scene) -> None:
+    """Reject XY geometry with insufficient numerical conditioning."""
     solver, config, inputs = scene
     config.extrinsics.pitch = config.extrinsics.yaw = config.extrinsics.roll = 0
     _, pose = inputs()
@@ -280,7 +301,8 @@ def test_near_horizontal_rays_ill_conditioned(scene):
     assert result["diagnostics"]["reason"] == "ill_conditioned_geometry"
 
 
-def test_unknown_ids_ignored_and_invalid_mount_rejected(scene):
+def test_unknown_ids_ignored_and_invalid_mount_rejected(scene: Scene) -> None:
+    """Ignore unmapped detections and reject invalid live mounting."""
     solver, config, inputs = scene
     data, expected = inputs()
     data["detections"].value.append(
@@ -295,7 +317,8 @@ def test_unknown_ids_ignored_and_invalid_mount_rejected(scene):
     )
 
 
-def test_wrapper_single_detection_connection_preserves_capture(scene):
+def test_wrapper_single_detection_connection_preserves_capture(scene: Scene) -> None:
+    """Preserve bare routed detection timing on missing-gyro rejection."""
     solver, _, inputs = scene
     data, _ = inputs()
     operation = Operation(
@@ -317,7 +340,8 @@ def test_wrapper_single_detection_connection_preserves_capture(scene):
     assert get_timing(result["diagnostics"]) == data["detections"].timing
 
 
-def test_requires_registry_and_intrinsics(scene):
+def test_requires_registry_and_intrinsics(scene: Scene) -> None:
+    """Require current registry calibration at construction."""
     _, config, _ = scene
     with pytest.raises(ValueError, match="registry"):
         module.PnpCameraLocalization2DDefinition("camera", "map")

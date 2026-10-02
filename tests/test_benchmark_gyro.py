@@ -1,6 +1,8 @@
 """Causal artificial gyro replay through production operations."""
 
 import math
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -21,14 +23,16 @@ from benchmarks.replay import (
 from src.utils.timing import monotonic_ns_to_nt_us
 
 
-def truth(yaw, position=12345):
+def truth(yaw: float, position: int = 12345) -> dict[str, list[list[float]]]:
+    """Build a field-from-robot pose with the requested yaw and position."""
     matrix = np.eye(4)
     matrix[:2, :2] = [[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]]
     matrix[:3, 3] = position
     return {"T_field_from_robot": matrix.tolist()}
 
 
-def test_heading_noise_bias_wrap_delay_and_no_future_truth():
+def test_heading_noise_bias_wrap_delay_and_no_future_truth() -> None:
+    """Replay deterministic noisy yaw with causal delayed delivery."""
     settings = GyroSettings(
         seed=17, noise_std_rad=0.01, bias_rad=0.1, delivery_delay_ms=15
     )
@@ -54,7 +58,8 @@ def test_heading_noise_bias_wrap_delay_and_no_future_truth():
         gyro.advance(truth(0), 20_000_000)
 
 
-def test_processing_offset_and_oracle_are_explicit():
+def test_processing_offset_and_oracle_are_explicit() -> None:
+    """Validate explicit processing offsets and ideal-oracle settings."""
     gyro = SyntheticGyro(
         GyroSettings(delivery_delay_ms=15, processing_offset_ms=20), 1_000_000_000
     )
@@ -74,8 +79,9 @@ def test_processing_offset_and_oracle_are_explicit():
 @pytest.mark.parametrize("minimum", [1, 2])
 @pytest.mark.parametrize("solver", ["normal", "2d"])
 def test_real_variants_replay_causal_source_on_blank_frames(
-    monkeypatch, temporal, minimum, solver
-):
+    monkeypatch: pytest.MonkeyPatch, temporal: bool, minimum: int, solver: str
+) -> None:
+    """Drain causal gyro data once across paired production variants."""
     manager = ReplayCameraManager()
     calibration = {
         "camera_matrix": [[100, 0, 32], [0, 100, 32], [0, 0, 1]],
@@ -95,7 +101,8 @@ def test_real_variants_replay_causal_source_on_blank_frames(
         original_read = reader.run
         reads = []
 
-        def read_once(value):
+        def read_once(value: Any) -> list[dict[str, Any]]:
+            """Record each production queue drain for paired-replay assertions."""
             samples = original_read(value)
             reads.append(samples)
             return samples
@@ -126,7 +133,8 @@ def test_real_variants_replay_causal_source_on_blank_frames(
         assert summary["rejections"] == {"minimum_tags": 3}
 
 
-def test_variant_keeps_detector_feedback_and_rejects_drift():
+def test_variant_keeps_detector_feedback_and_rejects_drift() -> None:
+    """Preserve detector feedback and reject invalid variant wiring."""
     graph = load_benchmark_config(CONFIG_DIR / "temporal.json", True)
     variant = benchmark_variant(graph, "2d", 1)
     for uuid in ("bench-input", "bench-temporal", "bench-detect", "bench-robot"):
@@ -140,8 +148,11 @@ def test_variant_keeps_detector_feedback_and_rejects_drift():
     assert (args.solver, args.minimum_tags, args.pipeline) == ("normal", "2", "both")
 
 
-def test_paired_metrics_include_losses_gains_and_large_error_tails():
-    def row(index, error):
+def test_paired_metrics_include_losses_gains_and_large_error_tails() -> None:
+    """Include pose losses, gains, and large errors in paired metrics."""
+
+    def row(index: int, error: float | None) -> dict[str, Any]:
+        """Build a scored frame with optional pose availability."""
         return {
             "frame_index": index,
             "pose_available": error is not None,
@@ -181,8 +192,8 @@ def test_paired_metrics_include_losses_gains_and_large_error_tails():
 @pytest.mark.parametrize("delay_ms", [0, 100])
 @pytest.mark.parametrize("minimum", [1, 2])
 def test_projected_detections_replay_real_solver_and_alignment(
-    monkeypatch, delay_ms, minimum
-):
+    monkeypatch: pytest.MonkeyPatch, delay_ms: int, minimum: int
+) -> None:
     """Use production graph/NT/alignment with known distorted detector points."""
     from types import SimpleNamespace
 
@@ -266,7 +277,8 @@ def test_projected_detections_replay_real_solver_and_alignment(
         original = primary.run
         observed = []
 
-        def spy(value):
+        def spy(value: Any) -> dict[str, Any]:
+            """Verify the primary solver receives the original detections and gyro input."""
             assert set(value) == {"detections", "gyro_samples"}
             assert all(
                 actual is expected
@@ -303,7 +315,10 @@ def test_projected_detections_replay_real_solver_and_alignment(
         assert record["metrics"]["paired"]["pose_available"]
 
 
-def test_report_labels_oracle_and_keeps_solver_count_variants_separate(tmp_path):
+def test_report_labels_oracle_and_keeps_solver_count_variants_separate(
+    tmp_path: Path,
+) -> None:
+    """Label oracle provenance and keep solver/count reports distinct."""
     from benchmarks.report import RunWriter
 
     directory = tmp_path / "report"
@@ -331,7 +346,7 @@ def test_report_labels_oracle_and_keeps_solver_count_variants_separate(tmp_path)
     assert '"seed": 0' in (directory / "run.json").read_text()
 
 
-def test_native_publisher_keeps_delayed_measurement_timestamp():
+def test_native_publisher_keeps_delayed_measurement_timestamp() -> None:
     """The wire carries a double and the old measurement time, not send time."""
     from types import SimpleNamespace
 
@@ -363,7 +378,7 @@ def test_native_publisher_keeps_delayed_measurement_timestamp():
         ntcore.NetworkTableInstance.destroy(instance)
 
 
-def test_paired_failure_denominators_include_unmatched_attempts():
+def test_paired_failure_denominators_include_unmatched_attempts() -> None:
     """Unavailable and failed attempts must not disappear from the populations."""
     normal = [
         {"frame_index": 0, "pose_available": False, "failure": "reader"},
@@ -379,7 +394,7 @@ def test_paired_failure_denominators_include_unmatched_attempts():
 
 
 @pytest.mark.parametrize("change", ["gate", "feedback", "duplicate", "dangling"])
-def test_variant_rejects_gate_feedback_and_identity_drift(change):
+def test_variant_rejects_gate_feedback_and_identity_drift(change: str) -> None:
     """Strict preset validation includes the count gate and feedback branch."""
     graph = load_benchmark_config(CONFIG_DIR / "temporal.json", True)
     by_id = {node["uuid"]: node for node in graph}
@@ -400,7 +415,7 @@ def test_variant_rejects_gate_feedback_and_identity_drift(change):
         benchmark_variant(graph, "2d", 1)
 
 
-def test_failed_pipeline_is_not_reported_as_a_tag_gate_rejection():
+def test_failed_pipeline_is_not_reported_as_a_tag_gate_rejection() -> None:
     """Missing outputs on a failed attempt are not evidence of too few tags."""
     record = {
         "frame_index": 0,

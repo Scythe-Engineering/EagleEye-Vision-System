@@ -2,7 +2,9 @@
 
 import itertools
 import socket
+import threading
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +17,8 @@ from src.utils.timing import TimedValue, TimingMetadata
 
 
 @pytest.fixture
-def local_nt():
+def local_nt() -> Iterator[ntcore.NetworkTable]:
+    """Provide an isolated native table and release its instance afterward."""
     instance = ntcore.NetworkTableInstance.create()
     instance.startLocal()
     yield instance.getTable("timestamp_tests")
@@ -23,7 +26,8 @@ def local_nt():
     ntcore.NetworkTableInstance.destroy(instance)
 
 
-def test_queued_samples_key_update_and_bounds(local_nt):
+def test_queued_samples_key_update_and_bounds(local_nt: ntcore.NetworkTable) -> None:
+    """Bound native history and discard it when the source key changes."""
     reader = GetNetworktablesValue(local_nt, "a", timestamped=True, history_size=3)
     publisher = local_nt.getDoubleTopic("a").publish(
         ntcore.PubSubOptions(keepDuplicates=True, sendAll=True)
@@ -62,7 +66,12 @@ def test_queued_samples_key_update_and_bounds(local_nt):
         ("Raw", b"\x00\xff"),
     ],
 )
-def test_native_types_and_future_measurement(local_nt, topic, value):
+def test_native_types_and_future_measurement(
+    local_nt: ntcore.NetworkTable,
+    topic: str,
+    value: float | bool | str | list[float] | list[bool] | list[str] | bytes,
+) -> None:
+    """Retain native payload types and future measurement timestamps."""
     reader = GetNetworktablesValue(local_nt, topic, timestamped=True)
     native_topic = getattr(local_nt, f"get{topic}Topic")(topic)
     publisher = (
@@ -78,7 +87,8 @@ def test_native_types_and_future_measurement(local_nt, topic, value):
         publisher.close()
 
 
-def test_existing_publisher_reverse_contract(local_nt):
+def test_existing_publisher_reverse_contract(local_nt: ntcore.NetworkTable) -> None:
+    """Read the existing publisher measurement time without relabeling."""
     reader = GetNetworktablesValue(local_nt, "yaw", timestamped=True)
     publisher = PublishToNetworktables(local_nt, "yaw", "double")
     try:
@@ -90,7 +100,8 @@ def test_existing_publisher_reverse_contract(local_nt):
         publisher._publisher.close()
 
 
-def test_legacy_mode_hotupdates(local_nt):
+def test_legacy_mode_hotupdates(local_nt: ntcore.NetworkTable) -> None:
+    """Keep scalar reads working across key and mode updates."""
     reader = GetNetworktablesValue(local_nt, "first")
     assert reader.run(None) is None
     local_nt.getEntry("first").setDouble(3)
@@ -105,14 +116,18 @@ def test_legacy_mode_hotupdates(local_nt):
         reader.close()
 
 
-def test_invalid_bounds(local_nt):
+def test_invalid_bounds(local_nt: ntcore.NetworkTable) -> None:
+    """Reject noninteger and out-of-range history sizes."""
     for size in (0, 4097, True, 1.5):
         with pytest.raises(ValueError, match="history_size"):
             GetNetworktablesValue(local_nt, "x", timestamped=True, history_size=size)
 
 
-def test_client_unsynced_disconnect_and_reconnect(local_nt):
+def test_client_unsynced_disconnect_and_reconnect(
+    local_nt: ntcore.NetworkTable,
+) -> None:
     # Use real native queue/publisher; fake only the production clock interface.
+    """Drop queued history across unsafe client clock transitions."""
     reader = GetNetworktablesValue(local_nt, "clock", timestamped=True)
     publisher = local_nt.getDoubleTopic("clock").publish()
     clock = SimpleNamespace(connected=True, offset=None)
@@ -146,7 +161,10 @@ def test_client_unsynced_disconnect_and_reconnect(local_nt):
 
 
 @pytest.mark.parametrize("timestamp", [0, 1, -1, 2**63])
-def test_invalid_native_timestamp_clears_history(local_nt, timestamp):
+def test_invalid_native_timestamp_clears_history(
+    local_nt: ntcore.NetworkTable, timestamp: int
+) -> None:
+    """Discard retained history when a native timestamp is invalid."""
     reader = GetNetworktablesValue(local_nt, "bad", timestamped=True)
     # Native set(time=0) means now; use a production-interface queue double
     # only to exercise timestamps that the public publisher cannot emit.
@@ -163,7 +181,110 @@ def test_invalid_native_timestamp_clears_history(local_nt, timestamp):
         reader.close()
 
 
-def wait_until(predicate, timeout=5):
+@pytest.mark.parametrize("pause_at", ["clock", "queue"])
+@pytest.mark.parametrize("change", ["update", "close"])
+def test_consumption_serializes_source_update_and_close(
+    pause_at: str, change: str
+) -> None:
+    """A live mutation waits for the old poll, then cannot retain its history."""
+    entered = threading.Event()
+    release = threading.Event()
+    mutation_started = threading.Event()
+    mutation_done = threading.Event()
+    errors = []
+    outputs = []
+
+    def pause() -> None:
+        """Block consumption until the test releases the worker."""
+        entered.set()
+        assert release.wait(5), "test did not release the blocked reader"
+
+    class Subscriber:
+        def __init__(self, timestamp: int) -> None:
+            """Record the timestamp returned by the subscription double."""
+            self.timestamp = timestamp
+
+        def readQueue(self) -> list[SimpleNamespace]:
+            """Return one sample, optionally pausing the old-source drain."""
+            if self.timestamp == 20 and pause_at == "queue":
+                pause()
+            return [
+                SimpleNamespace(
+                    isValid=lambda: True,
+                    time=lambda: self.timestamp,
+                    value=lambda: float(self.timestamp),
+                )
+            ]
+
+    def network_mode() -> ntcore.NetworkTableInstance.NetworkMode:
+        """Pause at clock inspection when requested by the regression."""
+        if pause_at == "clock":
+            pause()
+        return ntcore.NetworkTableInstance.NetworkMode.kNetModeLocal
+
+    instance = SimpleNamespace(
+        getNetworkMode=network_mode,
+        isConnected=lambda: True,
+        getServerTimeOffset=lambda: 0,
+    )
+    table = SimpleNamespace(
+        getInstance=lambda: instance,
+        getTopic=lambda key: SimpleNamespace(
+            genericSubscribe=lambda options: Subscriber(20 if key == "old" else 30)
+        ),
+    )
+    reader = GetNetworktablesValue(table, "old", timestamped=True)
+
+    def consume() -> None:
+        """Collect the poll result or report its failure to the test thread."""
+        try:
+            outputs.append(reader.run(None))
+        except Exception as exc:  # noqa: BLE001 - report worker failures in the test thread
+            errors.append(exc)
+
+    def mutate() -> None:
+        """Change the source or close it and signal mutation completion."""
+        mutation_started.set()
+        try:
+            if change == "update":
+                reader.update_config({"network_table_key": "new"})
+            else:
+                reader.close()
+        except Exception as exc:  # noqa: BLE001 - report worker failures in the test thread
+            errors.append(exc)
+        finally:
+            mutation_done.set()
+
+    consumer = threading.Thread(target=consume)
+    mutation = threading.Thread(target=mutate)
+    consumer.start()
+    try:
+        assert entered.wait(5)
+        mutation.start()
+        assert mutation_started.wait(5)
+        assert not mutation_done.wait(0.1), "mutation bypassed active consumption"
+    finally:
+        release.set()
+        consumer.join(5)
+        if mutation.ident is not None:
+            mutation.join(5)
+    try:
+        assert not consumer.is_alive() and not mutation.is_alive()
+        assert not errors
+        assert outputs == [[{"timestamp_us": 20, "value": 20.0}]]
+        if change == "close":
+            assert reader.run(None) == []
+            assert "closed" in reader.last_error
+            reader.close()  # Idempotent; no implicit reopening.
+            reader.update_config({"network_table_key": "new"})
+        assert reader.run(None) == [{"timestamp_us": 30, "value": 30.0}]
+        assert reader.last_error is None
+    finally:
+        reader.close()
+
+
+def wait_until(predicate: Callable[[], bool], timeout: float = 5) -> None:
+    """Wait for a native NT condition or fail after the timeout."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -172,7 +293,8 @@ def wait_until(predicate, timeout=5):
     pytest.fail("NT connection/clock/queued sample did not become ready")
 
 
-def test_real_server_client_conversion(tmp_path):
+def test_real_server_client_conversion(tmp_path: Path) -> None:
+    """Keep measurement times through native server-to-client clock conversion."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -199,7 +321,8 @@ def test_real_server_client_conversion(tmp_path):
         server.flush()
         output = []
 
-        def received():
+        def received() -> bool:
+            """Poll until the fresh server measurement arrives."""
             nonlocal output
             output = reader.run(None)
             return any(sample["value"] == 0.75 for sample in output)

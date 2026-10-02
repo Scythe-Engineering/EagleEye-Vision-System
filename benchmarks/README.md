@@ -56,9 +56,9 @@ uv run --no-sync pytest tests/test_benchmark_gyro.py tests/test_benchmark_replay
   tests/test_benchmark_metrics.py tests/test_benchmark_report.py -q
 ```
 
-## Native dependency limitation
+## Native resource limits
 
-Validation uses the existing one-thread detector presets without changing their settings. Local controlled two-thread runs also segfaulted with raw Pupil AprilTag 1.0.4.post11 after cleanup/recreation, not just with the owned wrapper. The wrapper fixes the separate detector/family destruction-order bug; it does not fix the native worker-pool race. These results do not establish multithreaded reliability or authorize deployment. Large stock families also have substantial decoding-table memory requirements: `tagCircle49h12` construction used roughly 6.2 GiB on the Pi. Cleanup regressions therefore cover the target family, a small family, and their combined ownership rather than allocating every family on limited hardware.
+Use the existing one-thread detector presets for these comparisons. Native multithreading has an unresolved upstream reliability issue. Large tag families can require substantial decoding-table memory. The cleanup wrapper does not fix either limitation.
 
 ## Production wiring and calibration
 

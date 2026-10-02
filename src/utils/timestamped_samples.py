@@ -6,7 +6,18 @@ from typing import Any
 
 
 def validate_sample(sample: object) -> dict[str, Any]:
-    """Validate the sample shape; values remain generic native NT data."""
+    """Validate the sample shape; values remain generic native NT data.
+
+    Args:
+        sample: Measurement envelope containing only timestamp_us and value.
+
+    Returns:
+        The original sample dictionary with a valid native measurement timestamp.
+
+    Raises:
+        ValueError: The envelope is malformed or its timestamp is not a signed
+            64-bit integer greater than 1.
+    """
     if not isinstance(sample, dict) or set(sample) != {"timestamp_us", "value"}:
         raise ValueError("Expected {'timestamp_us': integer, 'value': native value}")
     timestamp = sample["timestamp_us"]
@@ -18,7 +29,21 @@ def validate_sample(sample: object) -> dict[str, Any]:
 def align_heading(
     samples: object, capture_us: int, max_gap_us: int, nearest_us: int
 ) -> tuple[float, dict[str, str | int]]:
-    """Circularly interpolate finite selected NWU yaw radians; never extrapolate."""
+    """Circularly interpolate finite selected NWU yaw radians; never extrapolate.
+
+    Args:
+        samples: Nonempty list of native timestamped yaw measurements.
+        capture_us: Capture time in the synchronized NT clock, in microseconds.
+        max_gap_us: Maximum permitted interpolation bracket width.
+        nearest_us: Maximum nearest-sample distance outside the history range.
+
+    Returns:
+        Wrapped NWU yaw in radians and exact, interpolated, or nearest diagnostics.
+
+    Raises:
+        ValueError: Capture or gyro data is invalid, the interpolation gap is too
+            large, or no sufficiently recent measurement is available.
+    """
     if type(capture_us) is not int or not 1 < capture_us <= 2**63 - 1:
         raise ValueError("missing_capture")
     if not isinstance(samples, list) or not samples:
@@ -32,7 +57,17 @@ def align_heading(
         headings[sample["timestamp_us"]] = sample["value"]
 
     def heading(timestamp: int) -> float:
-        """Validate only the measurement selected for alignment."""
+        """Validate only the measurement selected for alignment.
+
+        Args:
+            timestamp: Timestamp of an existing measurement in the history.
+
+        Returns:
+            Finite NWU yaw wrapped with a circular remainder in radians.
+
+        Raises:
+            ValueError: The selected yaw is not a finite numeric measurement.
+        """
         yaw = headings[timestamp]
         try:
             if (
