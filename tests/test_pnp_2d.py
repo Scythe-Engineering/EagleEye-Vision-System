@@ -10,6 +10,7 @@ from typing import Any
 import cv2
 import numpy as np
 import pytest
+from pnp_localization_2d import align_heading as native_align_heading
 
 from src.config.utils.operation import Connection, Operation
 from src.main_operations.definitions import pnp_camera_localization_2d as module
@@ -491,6 +492,150 @@ def test_wrapper_validates_live_configuration(
     """Keep bounded wrapper configuration independent of native argument coercion."""
     with pytest.raises(ValueError):
         scene.solver.update_config(settings)
+
+
+@pytest.mark.parametrize("limits", [(-1, 20_000), (100_000, -1), (-1, -1)])
+@pytest.mark.parametrize(
+    "capture,samples",
+    [
+        (1_000_000, [{"timestamp_us": 1_000_000, "value": 0}]),
+        (
+            1_000_000,
+            [
+                {"timestamp_us": 990_000, "value": 0},
+                {"timestamp_us": 1_010_000, "value": 0},
+            ],
+        ),
+        (1_000_000, [{"timestamp_us": 990_000, "value": 0}]),
+        (1_000_000, None),
+        (1_000_000, [{"timestamp_us": True, "value": 0}]),
+        (None, None),
+    ],
+)
+def test_native_negative_limits_raise_before_input_validation(
+    capture: Any, samples: Any, limits: tuple[int, int]
+) -> None:
+    """Reject either negative limit before exact/bracket/nearest or bad inputs."""
+    solver = module.PnpLocalization2D(np.eye(3).reshape(-1).tolist(), [], [], [])
+    with pytest.raises(ValueError, match="gyro limits must be nonnegative"):
+        native_align_heading(samples, capture, *limits)
+    with pytest.raises(ValueError, match="gyro limits must be nonnegative"):
+        solver.solve(capture, samples, None, None, 10, *limits)
+
+
+@pytest.mark.parametrize("capture", [None, 1_000_000])
+def test_native_refinement_limit_raises_before_input_validation(capture: Any) -> None:
+    """Reject 101 iterations even when capture, gyro, detections or mount are absent."""
+    solver = module.PnpLocalization2D(np.eye(3).reshape(-1).tolist(), [], [], [])
+    with pytest.raises(
+        ValueError, match="refinement_iterations must be between 0 and 100"
+    ):
+        solver.solve(capture, None, None, None, 101, 100_000, 20_000)
+
+
+@pytest.mark.parametrize("iterations,limit", [(0, 0), (100, 10_000_000)])
+def test_native_valid_setting_boundaries(
+    scene: Scene, iterations: int, limit: int
+) -> None:
+    """Accept zero gyro limits on exact samples and both refinement endpoints."""
+    data, expected = scene.inputs()
+    samples = [{"timestamp_us": 1_000_000, "value": np.pi}]
+    assert native_align_heading(samples, 1_000_000, limit, limit)[1] == {
+        "alignment": "exact",
+        "gyro_delta_us": 0,
+    }
+    result = scene.solver.native_solver.solve(
+        1_000_000,
+        samples,
+        unwrap_timed(data["detections"]),
+        build_robot_from_camera_transform(scene.config.extrinsics).reshape(-1).tolist(),
+        iterations,
+        limit,
+        limit,
+    )
+    assert result["diagnostics"]["reason"] == "ok"
+    np.testing.assert_allclose(
+        np.reshape(result["camera_pose"], (4, 4)), expected, atol=1e-7
+    )
+
+
+@pytest.mark.parametrize(
+    "settings,error,message",
+    [
+        (
+            {
+                "refinement_iterations": 20,
+                "gyro_max_gap_ms": 200,
+                "gyro_nearest_ms": -1,
+            },
+            ValueError,
+            "gyro_nearest_ms must be finite and between 0 and 10000",
+        ),
+        (
+            {"refinement_iterations": 20, "gyro_max_gap_ms": "bad"},
+            ValueError,
+            "could not convert string to float",
+        ),
+        (
+            {
+                "refinement_iterations": 20,
+                "gyro_max_gap_ms": 200,
+                "gyro_nearest_ms": None,
+            },
+            TypeError,
+            "float",
+        ),
+        (
+            {"refinement_iterations": 1.5, "gyro_max_gap_ms": 200},
+            ValueError,
+            "refinement_iterations must be an integer",
+        ),
+    ],
+)
+def test_wrapper_failed_configuration_leaves_all_settings_unchanged(
+    settings: dict[str, Any], error: type[Exception], message: str
+) -> None:
+    """Keep every setting unchanged if any conversion or validation fails."""
+    solver = module.PnpCameraLocalization2DDefinition.__new__(
+        module.PnpCameraLocalization2DDefinition
+    )
+    solver.update_config(
+        {"refinement_iterations": 10, "gyro_max_gap_ms": 100, "gyro_nearest_ms": 20}
+    )
+    before = vars(solver).copy()
+    with pytest.raises(error, match=message):
+        solver.update_config(settings)
+    assert vars(solver) == before
+
+
+def test_wrapper_configuration_converts_partial_full_and_unknown_settings() -> None:
+    """Preserve conversions, partial updates, ignored keys and valid boundaries."""
+    solver = module.PnpCameraLocalization2DDefinition.__new__(
+        module.PnpCameraLocalization2DDefinition
+    )
+    solver.update_config(
+        {
+            "refinement_iterations": "100",
+            "gyro_max_gap_ms": "10000",
+            "gyro_nearest_ms": 0,
+        }
+    )
+    assert vars(solver) == {
+        "refinement_iterations": 100,
+        "gyro_max_gap_ms": 10000.0,
+        "gyro_nearest_ms": 0.0,
+    }
+    assert type(solver.refinement_iterations) is int
+    assert type(solver.gyro_nearest_ms) is float
+    solver.update_config({"gyro_nearest_ms": "12.5", "unknown": object()})
+    assert vars(solver) == {
+        "refinement_iterations": 100,
+        "gyro_max_gap_ms": 10000.0,
+        "gyro_nearest_ms": 12.5,
+    }
+    solver.update_config({"refinement_iterations": 0, "gyro_max_gap_ms": 0})
+    assert solver.refinement_iterations == solver.gyro_max_gap_ms == 0
+    assert solver.gyro_nearest_ms == 12.5
 
 
 def test_missing_native_module_has_actionable_error(

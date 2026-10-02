@@ -108,7 +108,7 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
         )
 
     def update_config(self, json_config: dict[str, Any]) -> None:
-        """Validate and apply bounded refinement/alignment settings live.
+        """Validate all supplied settings before applying any live changes.
 
         Args:
             json_config: Refinement or gyro alignment settings to update.
@@ -118,6 +118,7 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
                 when an integer refinement count is required.
             TypeError: A setting cannot be converted to a number.
         """
+        converted: dict[str, float | int] = {}
         for name, maximum in (
             ("refinement_iterations", 100),
             ("gyro_max_gap_ms", 10000),
@@ -133,7 +134,9 @@ class PnpCameraLocalization2DDefinition(OperationInstance):
                     if value != int(value):
                         raise ValueError("refinement_iterations must be an integer")
                     value = int(value)
-                setattr(self, name, value)
+                converted[name] = value
+        for name, value in converted.items():
+            setattr(self, name, value)
 
     def run(self, input_data: Any) -> dict[str, Any]:
         """Consume {'detections': TimedValue, 'gyro_samples': plain sample list}.

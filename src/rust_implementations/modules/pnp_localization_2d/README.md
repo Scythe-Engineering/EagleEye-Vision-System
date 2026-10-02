@@ -29,6 +29,10 @@ values must be finite numeric yaw radians. Last duplicate timestamp wins.
 
 Outputs are exactly `camera_pose` (row-major 16 floats), `pose_meta`
 (`[tag_count, mean_tag_distance_m, mean_corner_pixel_error]`) and `diagnostics`.
+Negative gyro limits or refinement iterations above 100 raise `ValueError`
+before measurement validation. Refinement iterations must be in `[0, 100]`;
+negative counts fail native unsigned-integer conversion. Valid arguments preserve
+measurement/geometry rejection precedence.
 Rejections return `None` for pose/meta and a diagnostic reason. Optional
 `align_heading(samples, capture_us, max_gap_us, nearest_us)` returns yaw and
 alignment diagnostics, raising `ValueError` on rejected alignment.

@@ -185,6 +185,14 @@ impl PnpLocalization2D {
         gyro_max_gap_us: i64,
         gyro_nearest_us: i64,
     ) -> PyResult<Bound<'py, PyDict>> {
+        if gyro_max_gap_us < 0 || gyro_nearest_us < 0 {
+            return Err(PyValueError::new_err("gyro limits must be nonnegative"));
+        }
+        if refinement_iterations > 100 {
+            return Err(PyValueError::new_err(
+                "refinement_iterations must be between 0 and 100",
+            ));
+        }
         let diagnostics = PyDict::new(py);
         if capture_us <= 1 {
             return output(py, diagnostics, Err("missing_capture"));
@@ -209,9 +217,6 @@ impl PnpLocalization2D {
                 return Err("degenerate_geometry");
             }
             let mount = mounting_transform.as_deref().ok_or("invalid_mounting")?;
-            if refinement_iterations > 100 || gyro_max_gap_us < 0 || gyro_nearest_us < 0 {
-                return Err("invalid_geometry");
-            }
             solver::solve(
                 &self.calibration,
                 &points,
@@ -237,6 +242,9 @@ fn align_heading<'py>(
     max_gap_us: i64,
     nearest_us: i64,
 ) -> PyResult<(f64, Bound<'py, PyDict>)> {
+    if max_gap_us < 0 || nearest_us < 0 {
+        return Err(PyValueError::new_err("gyro limits must be nonnegative"));
+    }
     let aligned = alignment::parse(samples, capture_us, max_gap_us, nearest_us)
         .map_err(PyValueError::new_err)?;
     let diagnostics = PyDict::new(py);
