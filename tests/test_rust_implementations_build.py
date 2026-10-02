@@ -109,3 +109,49 @@ def test_release_builds_replace_cached_debug_builds(tmp_path, monkeypatch) -> No
     assert builder.build_module(module)
     assert builder.reinstall_package(module)
     assert commands == [[*builder._maturin_command(), "develop", "--release"]] * 2
+
+
+def test_lockfile_changes_invalidate_build_cache(tmp_path: Path) -> None:
+    """Lock-only edits rebuild; unchanged contents and file timestamps do not."""
+    builder = RustModuleBuilder(tmp_path / "rust_implementations")
+    module = builder.modules_dir / "pnp_localization_2d"
+    sources = module / "src"
+    sources.mkdir(parents=True)
+    cargo = b'[package]\nname = "pnp_localization_2d"\n'
+    (module / "Cargo.toml").write_bytes(cargo)
+    (sources / "lib.rs").write_bytes(b"// native")
+    without_lock = builder.get_module_hash(module)
+    assert (
+        without_lock
+        == hashlib.md5(b"maturin-develop-release" + cargo + b"// native").hexdigest()
+    )
+    lockfile = module / "Cargo.lock"
+    lockfile.write_bytes(b"# lock version 1")
+    original_hash = builder.get_module_hash(module)
+    assert original_hash != without_lock
+    cache = {module.name: {"hash": original_hash}}
+    builder.save_build_cache(cache)
+    assert not builder.needs_rebuild(module, builder.load_build_cache())
+    os.utime(lockfile, (1, 1))
+    assert builder.get_module_hash(module) == original_hash
+    lockfile.write_bytes(b"# lock version 2")
+    assert builder.needs_rebuild(module, builder.load_build_cache())
+    lockfile.write_bytes(b"# lock version 1")
+    assert builder.get_module_hash(module) == original_hash
+    lockfile.unlink()
+    assert builder.get_module_hash(module) == without_lock
+
+
+def test_module_hash_sorts_rust_sources(tmp_path: Path) -> None:
+    """Source traversal order must not change a cache key."""
+    builder = RustModuleBuilder(tmp_path / "rust_implementations")
+    module = builder.modules_dir / "example"
+    sources = module / "src"
+    sources.mkdir(parents=True)
+    # Create files in reverse order to avoid relying on filesystem enumeration.
+    (sources / "z.rs").write_bytes(b"// last")
+    (sources / "a.rs").write_bytes(b"// first")
+    assert (
+        builder.get_module_hash(module)
+        == hashlib.md5(b"maturin-develop-release// first// last").hexdigest()
+    )
