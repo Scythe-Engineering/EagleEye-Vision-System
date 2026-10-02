@@ -2,6 +2,7 @@ import faulthandler
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from time import sleep
 from typing import Dict
@@ -172,7 +173,10 @@ class MainBackend:
                     f"{Colors.CYAN}Detected {len(self.known_cameras)} cameras: {list(self.known_cameras)}{Colors.RESET}"
                 )
         except BaseException:
-            self.shutdown()
+            try:
+                self.shutdown()
+            except Exception as shutdown_error:
+                self.logger.log(f"Shutdown after init failure incomplete: {shutdown_error}")
             raise
 
     def get_pipelines(self) -> Dict[str, Pipeline]:
@@ -273,7 +277,13 @@ def main() -> None:
         pass
     finally:
         if backend is not None:
-            backend.shutdown()
+            active_exception = sys.exc_info()[1]
+            try:
+                backend.shutdown()
+            except Exception as shutdown_error:
+                if active_exception is None:
+                    raise
+                logger.log(f"Shutdown after runtime failure incomplete: {shutdown_error}")
 
 
 if __name__ == "__main__":

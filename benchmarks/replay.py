@@ -112,6 +112,18 @@ class PipelineLifecycle(AbstractContextManager[Any]):
         self.close()
 
 
+class ReplayCleanupError(ReplayError):
+    """Retain failed construction resources for an explicit lifecycle.close() retry."""
+
+    def __init__(self, lifecycle: PipelineLifecycle, cleanup_error: Exception) -> None:
+        """Expose the cleanup owner and explain why shared resources remain open."""
+        self.lifecycle = lifecycle
+        super().__init__(
+            f"Replay construction cleanup failed: {cleanup_error}; "
+            "resources remain open; retry exception.lifecycle.close()"
+        )
+
+
 def _absolute_map_paths(
     config: list[dict[str, Any]], map_path: str | Path | None
 ) -> None:
@@ -291,12 +303,12 @@ def build_resolved_pipeline(
             raise ReplayError(
                 f"pipeline initialization errors: {pipeline.get_operation_errors()}"
             )
-    except BaseException:
-        if pipeline is not None:
-            pipeline.close()
-        instance.stopLocal()
-        ntcore.NetworkTableInstance.destroy(instance)
-        temporary.cleanup()
+    except BaseException as error:
+        lifecycle = PipelineLifecycle(pipeline, instance, temporary)
+        try:
+            lifecycle.close()
+        except Exception as cleanup_error:  # noqa: BLE001 - retain the owner on any cleanup failure
+            raise ReplayCleanupError(lifecycle, cleanup_error) from error
         raise
     lifecycle = PipelineLifecycle(pipeline, instance, temporary)
     if paired or solver == "2d":
