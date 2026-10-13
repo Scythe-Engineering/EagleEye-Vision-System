@@ -2,8 +2,13 @@
 
 Requires WPILib 2027.0.0-alpha-7, Gradle 9.4.1, and JDK 25.
 The build follows the tagged WPILib alpha-7 Java template with desktop support enabled. Open this folder in WPILib VS Code
-and run **WPILib: Simulate Robot Code** with **Sim GUI** enabled. The Systemcore deployment template uses team 0 by default; configure your actual team
-before deployment. Physical controller deployment has not been validated.
+and run **WPILib: Simulate Robot Code** with **Sim GUI** enabled.
+
+This example is a desktop simulation with synthetic odometry and camera readings and no drivetrain
+code, so do not deploy it as a robot program. Its `.wpilib/wpilib_preferences.json` uses team
+number `0`, which suits simulation. For a robot, copy the SDK into your own project, which needs
+your real team number. Physical controller deployment has not been validated. For controller
+setup and the coprocessor address, see [Use EagleEye with Systemcore](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/systemcore).
 
 ```sh
 ./gradlew test build

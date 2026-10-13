@@ -15,6 +15,11 @@ A 2026 Python coprocessor can publish to either robot version over NT4; installi
 Python is optional. Alpha APIs may change in later releases. The examples below use 2026
 WPILib names unless explicitly identified as 2027.
 
+For a Systemcore robot, see the user guide
+[Use EagleEye with Systemcore](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/systemcore)
+for the controller image, Driver Station, team number, and coprocessor address. It describes a
+separate-coprocessor setup; running EagleEye on the Systemcore itself is not supported.
+
 There is no vendordep. One file with no dependencies beyond WPILib is less to maintain than a
 maven repository, and copying it lets a team read and tune the thing that decides where their
 robot thinks it is.
@@ -204,8 +209,10 @@ robot; keep the SDK’s stale-sample rejection enabled.
 ## Simulation
 
 For a runnable desktop project and Java contract tests, see
-[`examples/localization-sim`](examples/localization-sim). It compiles this SDK directly
-and displays the estimated pose and ground truth in AdvantageScope.
+[`examples/localization-sim`](examples/localization-sim) for WPILib 2026 or
+[`examples/localization-sim-2027`](examples/localization-sim-2027) for 2027 alpha-7.
+Each compiles its matching SDK directly and displays the estimated pose and ground truth
+in AdvantageScope.
 
 
 `EagleEyeCameraSim` publishes the same three topics with the same shared timestamp from a simulated
@@ -213,6 +220,7 @@ robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unc
 simulation with no camera and no coprocessor.
 
 ```java
+// WPILib 2026 types. For alpha-7, see the 2027 layout below.
 // simulationInit, one per source your real robot has:
 EagleEyeCameraSim frontSim =
     new EagleEyeCameraSim(

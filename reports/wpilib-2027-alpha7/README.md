@@ -33,9 +33,9 @@ For robot consumers, dividing alpha received timestamps by `1e9` matches the **d
 - **Python:** `wpilib2026` is a default dependency group alongside development dependencies. `wpilib2027-alpha7` is mutually exclusive and pins both native packages to `2027.0.0a7`. Adapter import rejects unsupported versions and mixed binding/version families before runtime initialization.
 - **Installation:** `bash install.sh --wpilib 2026|2027-alpha7` chooses the environment. `.wpilib-variant` preserves the choice for repair/upgrade. The Linux alpha installer requires glibc ≥ 2.39 and gives Debian 13 / Raspberry Pi OS Trixie or Ubuntu 24.04 guidance when the gate fails; it does not attempt a source build.
 - **Timing and transport:** Internal capture timing, NT4 wire microseconds, table/topic names, payload layouts, NWU coordinates, and pose/meta joins remain unchanged. Publishing scales only at the alpha native boundary. Both values retain the same capture timestamp, and completed branches flush together.
-- **Controller setup:** UI and docs refer to the robot controller (roboRIO/Systemcore) or simulation. No unverified Systemcore hostname/IP or new team-number mode is introduced.
+- **Controller setup:** The UI and docs refer to the robot controller (roboRIO/Systemcore) or simulation. EagleEye adds no Systemcore-specific hostname, IP default, or team-number mode. The [Systemcore user guide](#systemcore-documentation) reports the addresses that WPILib publishes and tells users to choose one the coprocessor can reach.
 - **Pi image:** The image remains a 2026 coprocessor build. Its build metadata records the actual base OS, glibc, and WPILib variant. The existing configurable/latest base-image URL remains; this change does not claim a pinned Bookworm image.
-- **Documentation:** The root README, SDK/example guidance, validation notes, and EagleEye-Docs now distinguish both versions, installation choices, API spellings, native timestamp units, default robot time source, and simulation telemetry paths.
+- **Documentation:** The root README, SDK/example guidance, validation notes, and EagleEye-Docs now distinguish both versions, installation choices, API spellings, native timestamp units, default robot time source, and simulation telemetry paths. EagleEye-Docs also has a dedicated Systemcore guide.
 
 Python environment commands:
 
@@ -72,7 +72,13 @@ Java regressions check a 20 ms-old observation is accepted, ±600 ms data is rej
 
 ## Final independent review
 
-The final Opus review found no blocking migration gaps. It identified a scheduler sensitivity in the initial single 5 ms clock-rate check: a pause between clock reads could reject a valid installation. The check now uses 50 ms windows, accepts any valid attempt across up to three attempts, and fails only when all attempts report an invalid rate. A deterministic regression injects a skewed first attempt followed by a valid retry; the existing wrong-unit regression still rejects an actual rate mismatch. Version-selected option keyword dictionaries also resolve native-stub typing differences. Startup diagnostics now distinguish unmanaged developer environments from persisted installer selections while continuing to enforce managed selections; a real-binding subprocess test verifies version reporting. The subprocess code string also resolves the flagged lint issue. Java CI path filters were removed so root-level parity-affecting changes run the contract checks, and the parity script executable bit was corrected. Both full Python suites were rerun after these fixes (**411 passed, 8 skipped** each); scoped mypy checks passed for the compatibility and timing modules in both environments.
+The final Opus review found no blocking migration gaps. Its findings and the fixes:
+
+- **Clock-rate check.** A single 5 ms check was sensitive to the scheduler: a pause between clock reads could reject a valid installation. The check now uses 50 ms windows, accepts any valid attempt across up to three attempts, and fails only when all attempts report an invalid rate. A deterministic regression injects a skewed first attempt followed by a valid retry. The existing wrong-unit regression still rejects an actual rate mismatch.
+- **Typing and diagnostics.** Version-selected option keyword dictionaries resolve native-stub typing differences. Startup diagnostics distinguish unmanaged developer environments from persisted installer selections and still enforce managed selections. A real-binding subprocess test verifies version reporting, and its code string resolves the flagged lint issue.
+- **CI.** Java CI path filters were removed so root-level changes that affect parity run the contract checks. The parity script's executable bit was corrected.
+
+Both full Python suites were rerun after these fixes (**411 passed, 8 skipped** each). Scoped mypy checks passed for the compatibility and timing modules in both environments.
 
 ## Historical interoperability evidence
 
@@ -84,6 +90,17 @@ The **original audit**, before the final compatibility adapter and production Ja
 This is historical mixed-version transport evidence, not a new final-production mixed Java/hardware run. Tagged source retains the Pose3d struct schema and converts native alpha nanoseconds to wire microseconds and back, explaining the observed interoperability.
 
 The original report, review, raw logs, and diagnostic probes were copied and checksum-verified to an ephemeral local archive before removing raw evidence/probes from the publication tree. That archive is machine-local, ephemeral, and not required to run the committed regression suites.
+
+## Systemcore documentation
+
+The EagleEye-Docs page *Use EagleEye with Systemcore* describes an external-coprocessor setup: EagleEye stays on a Raspberry Pi and connects to the robot program on Systemcore over NT4. It was written from published sources read on October 13, 2026, not from hardware testing:
+
+- The [SystemcoreTesting README](https://github.com/wpilibsuite/SystemcoreTesting) supplies the compatibility table (image 14 and later pairs with WPILib alpha-7 and later), the address table, team-number setup, and first-deployment steps.
+- The [alpha-7 release notes](https://github.com/wpilibsuite/allwpilib/releases/tag/v2027.0.0-alpha-7) state that Systemcore image 14 and Driver Station alpha-7 are required.
+- WPILib's 2027 [imaging](https://docs.wpilib.org/en/2027/docs/zero-to-robot/step-3/imaging-your-systemcore.html) and [SSH](https://docs.wpilib.org/en/2027/docs/software/systemcore-info/systemcore-ssh.html) pages supply the flashing flow and the address and password details. The 2027 web dashboard page is still a placeholder.
+- The [Systemcore OS repository](https://github.com/LimelightVision/systemcore-os-public) shows a Linux-based OS with its own package manager.
+
+Running EagleEye on the Systemcore itself is not supported, and the guide lists no onboard installation commands. It does not guess a Systemcore address: the USB and Wi-Fi access-point addresses are labeled as links the Pi may not be on, and the Ethernet address is read from the controller display. For web flashing it recommends image 12 or later (WPILib's imaging guide says 11, the SystemcoreTesting README says 12) and points older images to flash mode.
 
 ## Limits and outstanding validation
 
