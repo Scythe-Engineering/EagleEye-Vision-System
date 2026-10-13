@@ -319,6 +319,9 @@ def test_system_status_includes_network_table_connection(
         def getConnections(self) -> list[object]:  # noqa: N802
             return [object()]
 
+        is_connected = isConnected
+        get_connections = getConnections
+
     interface = EagleEyeInterface.__new__(EagleEyeInterface)
     interface.network_table_instance = _FakeNetworkTableInstance()
 

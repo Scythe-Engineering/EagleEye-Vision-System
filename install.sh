@@ -23,6 +23,8 @@ CAMERA_GROUPS="video plugdev dialout"
 
 APT_PACKAGES="git curl ca-certificates gnupg build-essential pkg-config cmake libssl-dev python3 python3-dev python3-venv v4l-utils libgl1 libglib2.0-0"
 
+WPILIB_VARIANT="2026"
+
 STEP_NUMBER=0
 STEP_TOTAL=11
 
@@ -64,6 +66,47 @@ check_platform() {
         [ "$detected_os_version" != "$SUPPORTED_OS_VERSION" ]; then
         log_warn "Untested OS '$detected_os_id $detected_os_version' (tested: Raspberry Pi OS Lite 64-bit / Debian 12). Continuing anyway."
     fi
+}
+
+# Alpha RobotPy wheels require manylinux_2_39; never try an unknown source build.
+parse_arguments() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --wpilib)
+                [ "$#" -ge 2 ] || { log_error "--wpilib requires 2026 or 2027-alpha7"; return 1; }
+                WPILIB_VARIANT="$2"
+                shift 2
+                ;;
+            --help|-h)
+                printf 'Usage: bash install.sh [--wpilib 2026|2027-alpha7]\nDefault: 2026. Alpha requires Linux glibc >= 2.39.\n'
+                return 2
+                ;;
+            *) log_error "Unknown argument: $1"; return 1 ;;
+        esac
+    done
+    case "$WPILIB_VARIANT" in
+        2026|2027-alpha7) ;;
+        *) log_error "Unsupported WPILib variant '$WPILIB_VARIANT'; choose 2026 or 2027-alpha7."; return 1 ;;
+    esac
+}
+
+check_wpilib_platform() {
+    local variant="$1"
+    local detected_system="${2:-$(uname -s)}"
+    local libc_version="${3:-$(getconf GNU_LIBC_VERSION 2>/dev/null || true)}"
+    [ "$variant" = "2027-alpha7" ] || return 0
+    [ "$detected_system" = "Linux" ] || return 0
+    local libc_major libc_minor
+    if [[ "$libc_version" =~ ^glibc[[:space:]]+([0-9]+)\.([0-9]+)$ ]]; then
+        libc_major="${BASH_REMATCH[1]}"
+        libc_minor="${BASH_REMATCH[2]}"
+        if (( libc_major > 2 || (libc_major == 2 && libc_minor >= 39) )); then
+            return 0
+        fi
+    fi
+    log_error "WPILib 2027-alpha7 requires glibc >= 2.39 Linux wheels (detected: ${libc_version:-unknown})."
+    log_error "Use Debian 13 / Raspberry Pi OS Trixie or Ubuntu 24.04; Debian 12 / Bookworm supports the default --wpilib 2026. No source-build fallback is available."
+    return 1
 }
 
 # Refuse to touch an existing install; updates belong to the Web UI updater.
@@ -238,9 +281,13 @@ clone_repository() {
 install_python_dependencies() {
     local install_dir="$1"
     log_step "Installing Python dependencies (includes MemryX; this takes a while)"
-    # pyproject.toml declares memryx for linux with its own index, so a plain
-    # sync installs it on every install here.
-    (cd "$install_dir" && uv sync)
+    check_wpilib_platform "$WPILIB_VARIANT" || return $?
+    local group_args=(--group wpilib2026)
+    if [ "$WPILIB_VARIANT" = "2027-alpha7" ]; then
+        group_args=(--no-group wpilib2026 --group wpilib2027-alpha7 --no-build-package pyntcore --no-build-package robotpy-wpimath)
+    fi
+    (cd "$install_dir" && uv sync --locked "${group_args[@]}") || return $?
+    printf '%s\n' "$WPILIB_VARIANT" > "$install_dir/.wpilib-variant"
 }
 
 install_frontend() {
@@ -361,6 +408,11 @@ print_summary() {
 }
 
 main() {
+    local argument_status=0
+    parse_arguments "$@" || argument_status=$?
+    [ "$argument_status" -ne 2 ] || return 0
+    [ "$argument_status" -eq 0 ] || return "$argument_status"
+    check_wpilib_platform "$WPILIB_VARIANT" || return $?
     check_user
 
     service_user="$(id -un)"
@@ -375,6 +427,7 @@ main() {
     printf '\033[36mEagleEye Vision System installer\033[0m\n'
     log_info "user:    $service_user"
     log_info "install: $install_dir"
+    log_info "WPILib: $WPILIB_VARIANT"
 
     detected_arch="$(uname -m)"
     detected_os_id="$(os_release_value ID)"

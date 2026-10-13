@@ -35,6 +35,7 @@ jobs:
           path: |
             eagleeye-*.img.xz
             eagleeye-*.rpi-imager-manifest
+            eagleeye-*.build-metadata.json
           if-no-files-found: error
           compression-level: 0
 
@@ -43,7 +44,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          assets=(eagleeye-*.img.xz eagleeye-*.rpi-imager-manifest)
+          assets=(eagleeye-*.img.xz eagleeye-*.rpi-imager-manifest eagleeye-*.build-metadata.json)
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
           else

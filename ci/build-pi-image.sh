@@ -123,7 +123,7 @@ chroot "$MNT" su - "$IMAGE_USER" -c "
     git config --global --add safe.directory '*' 2>/dev/null || true
     export EAGLEEYE_IMAGE_BUILD=1
     export EAGLEEYE_REPO_URL=/tmp/eagleeye-src
-    bash /tmp/eagleeye-src/install.sh
+    bash /tmp/eagleeye-src/install.sh --wpilib 2026
     git -C '/home/$IMAGE_USER/EagleEye-Vision-System' remote set-url origin \
         https://github.com/Scythe-Engineering/EagleEye-Vision-System.git
 "
@@ -190,6 +190,24 @@ grep -Fq 'org.freedesktop.NetworkManager.settings.modify.system' "$MNT/etc/polki
 grep -Fq 'org.freedesktop.NetworkManager.wifi.scan' "$MNT/etc/polkit-1/rules.d/49-eagleeye-network-manager.rules"
 find "$MNT/usr/lib/python3/dist-packages/cloudinit/config" -name cc_raspberry_pi.py -print -quit | grep -q .
 
+# Capture the actual cached/downloaded base, rather than assuming latest is Bookworm.
+BASE_OS_RELEASE="$(cat "$MNT/etc/os-release")"
+BASE_GLIBC="$(chroot "$MNT" getconf GNU_LIBC_VERSION)"
+BUILD_METADATA="$BUILD_DIR/${OUT_NAME%.img}.build-metadata.json"
+BASE_OS_RELEASE="$BASE_OS_RELEASE" BASE_GLIBC="$BASE_GLIBC" BASE_IMAGE_URL="$BASE_IMAGE_URL" \
+    python3 - "$BUILD_METADATA" <<'PYMETA'
+import json
+import os
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    "base_image_url": os.environ["BASE_IMAGE_URL"],
+    "os_release": os.environ["BASE_OS_RELEASE"],
+    "glibc": os.environ["BASE_GLIBC"],
+    "wpilib_variant": "2026",
+}, indent=2) + "\n")
+PYMETA
+
 phase "Unmounting image"
 sync
 umount "$MNT/home/$IMAGE_USER/.npm"
@@ -227,7 +245,7 @@ xz -T0 "-$XZ_PRESET" "$OUT_IMG"
 DOWNLOAD_SIZE="$(stat -c %s "$OUT_IMG.xz")"
 DOWNLOAD_SHA256="$(sha256sum "$OUT_IMG.xz" | cut -d' ' -f1)"
 OUTPUT_DIR="${GITHUB_WORKSPACE:-$REPO_SRC}"
-mv "$OUT_IMG.xz" "$OUTPUT_DIR/"
+mv "$OUT_IMG.xz" "$BUILD_METADATA" "$OUTPUT_DIR/"
 
 if [ -n "$RELEASE_URL" ]; then
     MANIFEST="$OUTPUT_DIR/${OUT_NAME%.img}.rpi-imager-manifest"

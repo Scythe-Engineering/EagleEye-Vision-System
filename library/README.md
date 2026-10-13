@@ -1,9 +1,19 @@
 # EagleEye robot library
 
-Robot-side code for consuming EagleEye localization on a roboRIO. Copy
-`java/frc/robot/vision/EagleEyeCamera.java` into your robot project and adjust the package
-declaration if your vision code lives elsewhere. Copy `EagleEyeCameraSim.java` too if you develop
-in WPILib simulation.
+Robot-side code for consuming EagleEye localization on a robot controller
+(roboRIO with WPILib 2026, Systemcore with WPILib 2027 alpha-7).
+Choose the source tree matching your robot project and copy its two files into your project;
+adjust the package declaration if your vision code lives elsewhere.
+
+| Robot WPILib | SDK source | Desktop example | Java |
+| --- | --- | --- | --- |
+| 2026 | `java/frc/robot/vision/` | [`examples/localization-sim`](examples/localization-sim) | 17 |
+| 2027.0.0-alpha-7 | `java-2027/frc/robot/vision/` | [`examples/localization-sim-2027`](examples/localization-sim-2027) | 25 |
+
+Existing 2026 copy paths stay supported. The examples compile the corresponding SDK directly.
+A 2026 Python coprocessor can publish to either robot version over NT4; installing alpha
+Python is optional. Alpha APIs may change in later releases. The examples below use 2026
+WPILib names unless explicitly identified as 2027.
 
 There is no vendordep. One file with no dependencies beyond WPILib is less to maintain than a
 maven repository, and copying it lets a team read and tune the thing that decides where their
@@ -11,7 +21,7 @@ robot thinks it is.
 
 ## The NetworkTables contract
 
-EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each detection-enabled
+EagleEye runs as a NetworkTables **client**; the robot controller is the server. Each detection-enabled
 localization source publishes three topics under its own subtable. The Basic localization template
 publishes only `pose` and `meta`:
 
@@ -229,7 +239,24 @@ What it does not simulate: pipeline latency (samples are stamped "now" rather th
 instant in the past) and solver failure modes like reprojection outliers. It validates your robot
 code's consumption, filtering, and dead-zone handling — not the solver.
 
+For WPILib 2027 alpha-7 the layout is
+`org.wpilib.fields.Field.loadField(org.wpilib.fields.Fields.DEFAULT_FIELD)`;
+pass that `Field` to the alpha simulator. The example logs field and counts through
+`org.wpilib.telemetry.Telemetry`, at `Telemetry/EagleEye` and
+`Telemetry/EagleEye/Accepted`, every robot loop. Missing-topic warnings use
+`org.wpilib.driverstation.DriverStationErrors.reportWarning` and retain the five-second throttle.
+
 ## Time synchronization
+
+The 2026 SDK converts NT microseconds with `/ 1e6`. The alpha-7 SDK converts NT
+nanoseconds with `/ 1e9` for sample ages, joins, detection freshness, warning throttles,
+and observation timestamps. NT4 wire timestamps remain microseconds.
+On alpha-7, local sample timestamps use robot monotonic time (HAL simulated time during
+simulation), matching the default `Timer.getTimestamp()` time base. If robot code calls
+`RobotController.setTimeSource`, preserve that time base or translate observation timestamps
+before passing them to the estimator. The SDK retains the direct timestamp conversion.
+
+The following clock description applies to 2026 on a roboRIO:
 
 You do not need to compensate for latency. Do not subtract one, and do not pass
 `Timer.getFPGATimestamp()` as the measurement time.
@@ -256,7 +283,7 @@ Two consequences worth knowing:
   offset and timestamps can be nonsense, including timestamps in the future. `poll()` drops
   anything that is negative-age or older than `maximumSampleAgeSeconds`.
 - If you ever reconfigure EagleEye to be the NetworkTables *server*, this breaks. Keep the
-  roboRIO as the server.
+  robot controller as the server.
 
 If you measure the offset jitter and find it unacceptable, the upgrade path is a dedicated UDP
 time-sync channel of the kind PhotonVision uses. On a wired connection it is very unlikely to be

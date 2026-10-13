@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
-import ntcore
+from src.utils import wpilib_compat as wpi
 
 T = TypeVar("T")
 
@@ -13,12 +13,12 @@ _nt_monotonic_offset_us: int | None = None
 
 
 def now_nt_us() -> int:
-    """Return the current NetworkTables timestamp in microseconds.
+    """Return NT time normalized to microseconds.
 
-    Wraps the one private ntcore entry point the project depends on so a
-    pyntcore change is contained to this module.
+    2026 desktop NT uses a Unix-anchored clock; alpha-7 uses monotonic time.
+    The native alpha-7 nanoseconds are normalized before entering pipelines.
     """
-    return ntcore._now()
+    return wpi.raw_nt_now() // wpi.NT_TIME_UNITS_PER_US
 
 
 def _measure_nt_monotonic_offset_us(samples: int = 11) -> int:
@@ -34,6 +34,18 @@ def _measure_nt_monotonic_offset_us(samples: int = 11) -> int:
     Returns:
         Microseconds to add to a monotonic timestamp to reach the NT clock.
     """
+    # A scheduler pause between paired clock reads can skew one interval.
+    # Use a longer window and accept any valid attempt before rejecting units.
+    for _ in range(3):
+        first_mono = time.monotonic_ns() // 1000
+        first_nt = now_nt_us()
+        time.sleep(0.05)
+        delta_nt = now_nt_us() - first_nt
+        delta_mono = time.monotonic_ns() // 1000 - first_mono
+        if delta_mono > 0 and 0.5 <= delta_nt / delta_mono <= 2:
+            break
+    else:
+        raise RuntimeError("ntcore clock unit mismatch")
     deltas = sorted(
         now_nt_us() - time.monotonic_ns() // 1000 for _ in range(samples)
     )

@@ -7,8 +7,6 @@ requires-python = ">=3.11"
 dependencies = [
   "opencv-contrib-python",
   "numpy",
-  "pyntcore",
-  "robotpy-wpimath",
   "ultralytics",
   "torch",
   "torchvision",
@@ -49,6 +47,8 @@ explicit = true
 memryx = { index = "memryx" }
 
 [dependency-groups]
+wpilib2026 = ["pyntcore>=2026.2.2,<2027", "robotpy-wpimath>=2026.2.2,<2027"]
+wpilib2027-alpha7 = ["pyntcore==2027.0.0a7", "robotpy-wpimath==2027.0.0a7"]
 dev = [
   "pytest>=7.4",
   "pytest-anyio",
@@ -57,6 +57,8 @@ dev = [
 ]
 
 [tool.uv]
+default-groups = ["dev", "wpilib2026"]
+conflicts = [[{ group = "wpilib2026" }, { group = "wpilib2027-alpha7" }]]
 required-environments = [
     "sys_platform == 'linux'"
 ]

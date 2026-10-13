@@ -7,6 +7,10 @@ on:
 
 jobs:
     test:
+        strategy:
+            fail-fast: false
+            matrix:
+                wpilib: [2026, 2027-alpha7]
         runs-on: ubuntu-24.04
         defaults:
             run:
@@ -26,6 +30,7 @@ jobs:
               with:
                   enable-cache: true
                   cache-dependency-glob: uv.lock
+                  cache-suffix: wpilib-${{ matrix.wpilib }}
 
             - name: Set up Node.js
               uses: actions/setup-node@v4
@@ -42,7 +47,12 @@ jobs:
                   workspaces: src/rust_implementations/modules
 
             - name: Install dependencies
-              run: uv sync --locked --no-build
+              run: |
+                  if [ "${{ matrix.wpilib }}" = "2027-alpha7" ]; then
+                      uv sync --locked --no-build --no-group wpilib2026 --group wpilib2027-alpha7
+                  else
+                      uv sync --locked --no-build
+                  fi
 
             - name: Build WebUI assets
               run: |
@@ -50,4 +60,4 @@ jobs:
                   npm run build
 
             - name: Run pytest
-              run: uv run pytest
+              run: uv run --no-sync pytest

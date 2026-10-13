@@ -77,3 +77,36 @@ Position standard deviations were about [2.1, 4.9, 3.5] cm for full-frame detect
 motion or rule out every temporal issue. The feedback edge consumes the original PnP camera
 pose, before mounting compensation. With the saved zero-angle mount and 0.25 m Z offset,
 the previous and corrected backend mounting matrices are exactly equal.
+
+## WPILib 2027 alpha-7 migration (October 13, 2026)
+
+The version-specific Java SDK and examples were built using real GradleRIO dependencies
+and desktop HAL on macOS. WPILib 2026 with JDK 17 passed 13 contract tests;
+WPILib 2027.0.0-alpha-7 with Gradle 9.4.1 and JDK 25 passed 15 tests.
+Both include the original ten contract cases, 20 ms acceptance and ±600 ms rejection,
+default robot-clock agreement within 1 ms, and five-second warning throttling through
+actual Driver Station reporting. The alpha suite also checks detection freshness and
+expiration of poses awaiting metadata; its simulator additionally skips a tag with no
+planar bearing. The SDK parity check allows only explicit WPILib API and time-unit changes.
+
+From the repository root:
+
+```sh
+python3 library/tools/check_java_sdk_parity.py
+# Set JAVA_HOME to JDK 17 for 2026, then:
+(cd library/examples/localization-sim && ./gradlew test build)
+# Set JAVA_HOME to JDK 25 for alpha-7, then:
+(cd library/examples/localization-sim-2027 && ./gradlew test build)
+```
+
+The Java CI matrix runs both projects on Ubuntu 24.04 with their matching JDKs.
+These are desktop contract and build checks. Physical Systemcore/Driver Station alpha-7
+deployment, camera exposure accuracy, and measured robot localization remain unverified.
+The alpha clock check assumes the default `RobotController` time source; custom
+`setTimeSource` integrations must translate timestamps or preserve that time base.
+
+An additional 2026.2.1 detection-queue probe on macOS hit a native ntcore JNI crash in
+`readQueueStringArray`. The upstream 2026.2.1 native constructor signature uses
+`Object[]` where `TimestampedStringArray` expects `String[]`. This pre-existing WPILib
+issue is outside the passing 2026 pose/meta contract suite; alpha-7's real detection-queue
+regression test passes. No 2026 detection-queue or hardware validation is claimed here.

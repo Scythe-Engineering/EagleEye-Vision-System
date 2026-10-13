@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from src.utils import wpilib_compat as wpi
 from scipy.spatial.transform import Rotation
 from src.secondary_operations.camera_to_robot_pose import CameraToRobotPose
 from src.secondary_operations.publish_to_networktables import _matrix_to_pose3d
@@ -63,11 +64,11 @@ def test_mount_recovers_known_robot_pose(
     camera = robot @ mount
     result = _matrix_to_pose3d(CameraToRobotPose("cam", registry).run(camera))
     np.testing.assert_allclose(
-        [result.X(), result.Y(), result.Z()], robot[:3, 3], atol=1e-9
+        wpi.pose_xyz(result), robot[:3, 3], atol=1e-9
     )
-    quaternion = result.rotation().getQuaternion()
+    qw, qx, qy, qz = wpi.quaternion_wxyz(result.rotation())
     actual = Rotation.from_quat(
-        [quaternion.X(), quaternion.Y(), quaternion.Z(), quaternion.W()]
+        [qx, qy, qz, qw]
     ).as_matrix()
     np.testing.assert_allclose(actual, robot[:3, :3], atol=1e-9)
 
@@ -93,5 +94,5 @@ def test_saved_extrinsics_refresh_existing_operation(tmp_path: Path) -> None:
     )
     result = _matrix_to_pose3d(operation.run(camera))
     np.testing.assert_allclose(
-        [result.X(), result.Y(), result.Z()], [3.7, 2, 0], atol=1e-9
+        wpi.pose_xyz(result), [3.7, 2, 0], atol=1e-9
     )

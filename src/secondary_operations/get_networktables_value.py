@@ -2,6 +2,7 @@ import math
 from typing import Any
 
 import ntcore
+from src.utils import wpilib_compat as wpi
 
 from src.main_operations.definitions.base.base_class import OperationInstance
 
@@ -30,7 +31,7 @@ class GetNetworktablesValue(OperationInstance):
         Returns:
             The value read from NetworkTable, or None if key not found.
         """
-        val = self.network_table.getEntry(self.network_table_key).getDouble(float("nan"))
+        val = wpi.read_double(self.network_table, self.network_table_key, float("nan"))
         return None if math.isnan(val) else val
 
     def update_config(self, json_config: dict) -> None:

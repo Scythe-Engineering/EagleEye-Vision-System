@@ -28,7 +28,7 @@ from src.utils.device_registry import DeviceRegistry  # noqa: E402
 from src.utils.model_library import ModelLibrary  # noqa: E402
 from src.utils.mx3_runtime import Mx3RuntimeCoordinator  # noqa: E402
 from src.webui.web_server import DEFAULT_GENERAL_CONF, EagleEyeInterface  # noqa: E402
-import ntcore  # noqa: E402
+from src.utils import wpilib_compat as wpi  # noqa: E402
 
 # Bootstrap Rust modules (removed during uv sync)
 logger.log(
@@ -74,11 +74,14 @@ class MainBackend:
                 f"{Colors.YELLOW}Initializing EagleEye backend...{Colors.RESET}"
             )
 
+            from src.utils.timing import nt_monotonic_offset_us
+            nt_monotonic_offset_us()
+            self.logger.log(f"WPILib {wpi.API}: pyntcore {wpi.NT_VERSION}, wpimath {wpi.MATH_VERSION}")
+
             # NetworkTables wiring
-            network_tables_inst = ntcore.NetworkTableInstance.getDefault()
-            network_tables_inst.startClient4("EagleEye")
-            network_tables_inst.setServer(general_conf["network_table_address"])
-            self.network_table = network_tables_inst.getTable("EagleEye")
+            network_tables_inst = wpi.default_instance()
+            wpi.start_client(network_tables_inst, "EagleEye", general_conf["network_table_address"])
+            self.network_table = wpi.get_table(network_tables_inst, "EagleEye")
 
             # Hardware discovery happens once during backend initialization.
             self.device_registry = DeviceRegistry.discover(logger=self.logger)
