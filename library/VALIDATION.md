@@ -77,3 +77,99 @@ Position standard deviations were about [2.1, 4.9, 3.5] cm for full-frame detect
 motion or rule out every temporal issue. The feedback edge consumes the original PnP camera
 pose, before mounting compensation. With the saved zero-angle mount and 0.25 m Z offset,
 the previous and corrected backend mounting matrices are exactly equal.
+
+## WPILib 2027 alpha-7 migration (October 13, 2026)
+
+The version-specific Java SDK and examples were built using real GradleRIO dependencies
+and desktop HAL on macOS. WPILib 2026 with JDK 17 passed 13 contract tests;
+WPILib 2027.0.0-alpha-7 with Gradle 9.4.1 and JDK 25 passed 15 tests.
+Both include the original ten contract cases, 20 ms acceptance and ±600 ms rejection,
+default robot-clock agreement within 1 ms, and five-second warning throttling through
+actual Driver Station reporting. The alpha suite also checks detection freshness and
+expiration of poses awaiting metadata; its simulator additionally skips a tag with no
+planar bearing. The SDK parity check allows only explicit WPILib API and time-unit changes.
+
+From the repository root:
+
+```sh
+python3 library/tools/check_java_sdk_parity.py
+# Set JAVA_HOME to JDK 17 for 2026, then:
+(cd library/examples/localization-sim && ./gradlew test build)
+# Set JAVA_HOME to JDK 25 for alpha-7, then:
+(cd library/examples/localization-sim-2027 && ./gradlew test build)
+```
+
+The Java CI matrix runs both projects on Ubuntu 24.04 with their matching JDKs.
+These are desktop contract and build checks. Physical Systemcore/Driver Station alpha-7
+deployment, camera exposure accuracy, and measured robot localization remain unverified.
+The alpha clock check assumes the default `RobotController` time source; custom
+`setTimeSource` integrations must translate timestamps or preserve that time base.
+
+An additional 2026.2.1 detection-queue probe on macOS hit a native ntcore JNI crash in
+`readQueueStringArray`. The upstream 2026.2.1 native constructor signature uses
+`Object[]` where `TimestampedStringArray` expects `String[]`. This pre-existing WPILib
+issue is outside the passing 2026 pose/meta contract suite; alpha-7's real detection-queue
+regression test passes. No 2026 detection-queue or hardware validation is claimed here.
+
+### Fresh-install check (October 14, 2026)
+
+The October 13 results above come from the original implementation and covered software
+checks only (unit tests, contract tests, and probes against the alpha-7 jars), with no GUI,
+reconnection, or load testing. A second pass on October 14 added a fresh official install, a
+native editor and simulator run, a web-interface check, and loopback runtime probes. It
+installed the official WPILib alpha-7 macOS (arm64) package on macOS 26.6.2, with its
+JDK 25 and a new Gradle home. It found that the example's `settings.gradle` still looked for
+the plugin under `~/wpilib/2027/maven`, which the alpha-7 installer does not create. The
+original project failed an offline build, unable to resolve `org.wpilib.GradleRIO:2027.0.0-alpha-7`,
+though it built when online. The example now uses the tagged alpha-7 settings template, which searches the
+installer's own folder first, and `projectYear` in `.wpilib/wpilib_preferences.json` is
+`2027_alpha7`. With those changes, a clean offline build with a new Gradle home passed all 15
+tests. The Gradle wrapper had been downloaded online first, so this does not show a build on a
+blank machine with no internet.
+
+In the native WPILib VS Code window, the original `projectYear` of `2027` made the extension offer
+to import the example; after the change and a window reload, it did not, and Java support
+loaded. **WPILib: Simulate Robot Code** ran with Sim GUI selected and started a JDK 25
+`frc.robot.Main` process serving NetworkTables on port 5810. The process loaded the Sim GUI
+extension and logged "Simulator GUI Initialized!", but we did not inspect the Java simulator
+window itself (the native window inventory did not list it), so this shows the GUI extension
+initialized, not what it displayed. A Glass window connected to the simulator and showed
+`Telemetry/EagleEye/Accepted` rising (3,667 to 4,301) and `GroundTruth` and `Robot` as
+`Pose2d[]` structs. We did not check whether Glass drew the field widget.
+
+The EagleEye web interface showed Settings as Disconnected before the simulator started and
+Connected after, first on the default 2026 backend and then on a backend using the alpha-7
+Python packages. On the alpha-7 backend, Settings then showed Disconnected after the simulator
+process was terminated and Connected again after `./gradlew run` restarted the simulator; the
+simulator log recorded Glass and EagleEye connecting. The terminal-side restart used the
+command line, not the editor. No pipelines or cameras were configured, so no camera ran through
+a pipeline.
+
+While trying to stop the simulator from the editor, a WPILib deploy for team 0 started by
+mistake. No robot was connected, discovery timed out, and nothing was deployed.
+
+Targeted Python tests passed (41) and the frontend production build passed. Real Python
+publishers sent to the alpha-7 Java SDK over NetworkTables 4 on one computer, using both the
+2026 and alpha-7 Python stacks. Each run sent three blocks of 180 frames and counted accepted
+frames cumulatively: 180 before the pipeline was disabled, still 180 during the disable, 360
+after re-enable, and 540 after a server restart. Polling every 20 ms against a 90 Hz publisher
+also accepted 540 of 540. A 60-second run with no catch-up bursts accepted 4,420 of 4,420 frames, but the
+publisher averaged 73.67 frames per second rather than the 90 requested, so it does not show
+sustained 90 Hz delivery.
+
+A five-minute (311.8 s) run at a 90 Hz target, with a publisher that caught up after delays and
+an SDK polled every 3 ms, **failed** its exact-count check: 26,974 of 27,000 frames were
+accepted, all 26 misses in the first third of the run. Every frame reached separate test
+subscribers, and they logged bursts of 22 and 26 frames. The SDK keeps 20 samples per topic
+between polls, so queue overflow is consistent with the misses, but we did not trace each missing
+frame to it. The same limit exists in the 2026 SDK, so this is not a regression from the
+migration, and no queue change was made. Robot code should poll every loop; see
+[Poll every robot loop](README.md#poll-every-robot-loop). The
+[alpha-7 report](../reports/wpilib-2027-alpha7/README.md#fresh-install-and-live-runtime-validation-october-14-2026)
+has the full results.
+
+The probes ran the Python publisher, the Java SDK, and NetworkTables on one computer, using a
+50 ms synthetic capture offset. They do not measure camera exposure delay. No camera was
+authorized on macOS, and no physical Systemcore, roboRIO, Driver Station, Raspberry Pi image, or
+field network was used. Creating a new project from the VS Code extension was tried but not
+verified, and AdvantageScope and Elastic were not tested.

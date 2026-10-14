@@ -36,7 +36,8 @@ def test_flush_follows_completed_publisher_branches(
         )
     }
     pipeline.network_table = SimpleNamespace(
-        getInstance=lambda: SimpleNamespace(flush=lambda: events.append("flush"))
+        getInstance=lambda: SimpleNamespace(flush=lambda: events.append("flush")),
+        get_instance=lambda: SimpleNamespace(flush=lambda: events.append("flush"))
     )
     pipeline.total_time_history = deque(maxlen=5)
     pipeline.total_time_history_lock = Lock()

@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any, Self, TypeVar
 
 import cv2
-import ntcore
 import numpy as np
 
+from src.utils import wpilib_compat as wpi
 from src.utils.camera_utils.camera_coordinate_transforms import (
     pose_local_edn_to_nwu,
 )
@@ -91,8 +91,8 @@ class PipelineLifecycle(AbstractContextManager[Any]):
             pipeline.close()
         instance, self.nt_instance = self.nt_instance, None
         if instance is not None:
-            instance.stopLocal()
-            ntcore.NetworkTableInstance.destroy(instance)
+            wpi.stop_local(instance)
+            wpi.destroy_instance(instance)
         self.temporary.cleanup()
 
     def __exit__(self, *_args: object) -> None:
@@ -218,13 +218,13 @@ def build_pipeline(
         raise ReplayError("isolated camera calibration did not load")
 
     replay = manager or ReplayCameraManager()
-    instance = ntcore.NetworkTableInstance.create()
-    instance.startLocal()
+    instance = wpi.create_instance()
+    wpi.start_local(instance)
     try:
         pipeline = Pipeline(
             graph,
             _HeadlessWeb(),  # type: ignore[arg-type]
-            instance.getTable("benchmark"),
+            wpi.get_table(instance, "benchmark"),
             _Logger(),  # type: ignore[arg-type]
             DeviceRegistry([DeviceDescriptor("cpu", "CPU", "cpu", None)]),
             _ModelLibrary(),  # type: ignore[arg-type]
@@ -246,8 +246,8 @@ def build_pipeline(
                 f"pipeline initialization errors: {pipeline.get_operation_errors()}"
             )
     except BaseException:
-        instance.stopLocal()
-        ntcore.NetworkTableInstance.destroy(instance)
+        wpi.stop_local(instance)
+        wpi.destroy_instance(instance)
         temporary.cleanup()
         raise
     return PipelineLifecycle(pipeline, instance, temporary)

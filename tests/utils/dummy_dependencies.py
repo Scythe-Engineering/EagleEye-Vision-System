@@ -139,6 +139,14 @@ class FakeNetworkTable:
                 value = table.values.get(key, default)
                 return value if isinstance(value, float | int) else default
 
+            get_double = getDouble
+
+            def getBoolean(self, default: bool) -> bool:
+                value = table.values.get(key, default)
+                return value if isinstance(value, bool) else default
+
+            get_boolean = getBoolean
+
         return _Entry()
 
     def putRaw(self, key: str, value: bytes) -> None:
@@ -239,6 +247,16 @@ class FakeNetworkTable:
             Any: Topic stub.
         """
         return self._make_topic(key)
+
+    get_entry = getEntry
+    get_struct_topic = getStructTopic
+    get_struct_array_topic = getStructArrayTopic
+    get_double_topic = getDoubleTopic
+    get_boolean_topic = getBooleanTopic
+    get_string_topic = getStringTopic
+    get_double_array_topic = getDoubleArrayTopic
+    get_boolean_array_topic = getBooleanArrayTopic
+    get_string_array_topic = getStringArrayTopic
 
     def _make_topic(self, key: str) -> Any:
         """Create a topic stub that persists published values.

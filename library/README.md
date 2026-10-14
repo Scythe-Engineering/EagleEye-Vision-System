@@ -1,9 +1,35 @@
 # EagleEye robot library
 
-Robot-side code for consuming EagleEye localization on a roboRIO. Copy
-`java/frc/robot/vision/EagleEyeCamera.java` into your robot project and adjust the package
-declaration if your vision code lives elsewhere. Copy `EagleEyeCameraSim.java` too if you develop
-in WPILib simulation.
+Robot-side code for consuming EagleEye localization on a robot controller
+(roboRIO with WPILib 2026, Systemcore with WPILib 2027 alpha-7).
+Choose the source tree matching your robot project and copy its two files into your project;
+adjust the package declaration if your vision code lives elsewhere.
+
+| Robot WPILib | SDK source | Desktop example | Java |
+| --- | --- | --- | --- |
+| 2026 | `java/frc/robot/vision/` | [`examples/localization-sim`](examples/localization-sim) | 17 |
+| 2027.0.0-alpha-7 | `java-2027/frc/robot/vision/` | [`examples/localization-sim-2027`](examples/localization-sim-2027) | 25 |
+
+Existing 2026 copy paths stay supported. The examples compile the corresponding SDK directly.
+A 2026 Python coprocessor can publish to either robot version over NT4; installing alpha
+Python is optional. Alpha APIs may change in later releases. The examples below use 2026
+WPILib names unless explicitly identified as 2027.
+
+For a Systemcore robot, see the user guide
+[Use EagleEye with Systemcore](https://scythe-engineering.github.io/EagleEye-Docs/docs/user-guide/systemcore)
+for the controller image, Driver Station, team number, and coprocessor address. It describes a
+separate-coprocessor setup; running EagleEye on the Systemcore itself is not supported.
+
+The official WPILib alpha-7 installer puts its tools, Maven folder, and JDK 25 in a
+`2027_alpha7` folder: `~/.wpilib/2027_alpha7` on macOS (with `~/wpilib/2027_alpha7` kept as a
+link), `$XDG_DATA_HOME/wpilib/2027_alpha7` on Linux when `XDG_DATA_HOME` is an absolute path
+(otherwise `~/.local/share/wpilib/2027_alpha7`), and `C:\Users\Public\wpilib\2027_alpha7` on
+Windows. Only the macOS install was run; the Linux and Windows folders come from WPILib's
+project template. To build from a terminal on macOS, point `JAVA_HOME` at that JDK:
+
+```sh
+export JAVA_HOME="$HOME/.wpilib/2027_alpha7/jdk"
+```
 
 There is no vendordep. One file with no dependencies beyond WPILib is less to maintain than a
 maven repository, and copying it lets a team read and tune the thing that decides where their
@@ -11,7 +37,7 @@ robot thinks it is.
 
 ## The NetworkTables contract
 
-EagleEye runs as a NetworkTables **client**; the roboRIO is the server. Each detection-enabled
+EagleEye runs as a NetworkTables **client**; the robot controller is the server. Each detection-enabled
 localization source publishes three topics under its own subtable. The Basic localization template
 publishes only `pose` and `meta`:
 
@@ -128,6 +154,25 @@ Call it from a subsystem's `periodic()`, not from a NetworkTables listener threa
 Use `camera.poll()` directly if you want the raw observations for logging or for your own
 filtering; it returns them in capture order with the quality metrics attached.
 
+### Poll every robot loop
+
+Each camera keeps the 20 most recent pose samples and the 20 most recent metadata samples
+between polls. Call `update()` or `poll()` every robot loop (20 ms by default) so the queues stay
+nearly empty. At 90 frames per second, 20 samples cover about 220 ms. If robot code stalls
+longer than that, or more than 20 frames arrive in one burst, the oldest unread samples are
+dropped, and a pose that loses its matching metadata (or the reverse) is not accepted. The
+2026 and alpha-7 SDKs both work this way, so the alpha-7 move did not introduce the limit.
+
+A five-minute desktop test **failed** its exact-count check. A 90 Hz publisher that caught up
+after delays sent bursts of 22 and 26 frames, and the SDK accepted 26,974 of 27,000 frames, even
+though the SDK was polled every 3 ms and a test subscriber with a large queue received every
+frame. A separate 60-second test, polled every 20 ms, accepted all 4,420 frames, but its
+publisher never sent catch-up bursts and averaged about 74 frames per second rather than 90, so
+it does not show sustained 90 Hz delivery. The two runs differ in more than one way, so the
+comparison is not a controlled experiment. The
+[alpha-7 report](../reports/wpilib-2027-alpha7/README.md#python-to-java-runtime-probes)
+has the details, including what the failed run does and does not show.
+
 ## Optional enhancement: lower-latency ingestion
 
 The simple 20 ms integration above remains supported and is the default. For faster
@@ -194,8 +239,10 @@ robot; keep the SDK’s stale-sample rejection enabled.
 ## Simulation
 
 For a runnable desktop project and Java contract tests, see
-[`examples/localization-sim`](examples/localization-sim). It compiles this SDK directly
-and displays the estimated pose and ground truth in AdvantageScope.
+[`examples/localization-sim`](examples/localization-sim) for WPILib 2026 or
+[`examples/localization-sim-2027`](examples/localization-sim-2027) for 2027 alpha-7.
+Each compiles its matching SDK directly and displays the estimated pose and ground truth
+in AdvantageScope.
 
 
 `EagleEyeCameraSim` publishes the same three topics with the same shared timestamp from a simulated
@@ -203,6 +250,7 @@ robot pose, so `EagleEyeCamera` — and everything downstream of it — runs unc
 simulation with no camera and no coprocessor.
 
 ```java
+// WPILib 2026 types. For alpha-7, see the 2027 layout below.
 // simulationInit, one per source your real robot has:
 EagleEyeCameraSim frontSim =
     new EagleEyeCameraSim(
@@ -229,7 +277,24 @@ What it does not simulate: pipeline latency (samples are stamped "now" rather th
 instant in the past) and solver failure modes like reprojection outliers. It validates your robot
 code's consumption, filtering, and dead-zone handling — not the solver.
 
+For WPILib 2027 alpha-7 the layout is
+`org.wpilib.fields.Field.loadField(org.wpilib.fields.Fields.DEFAULT_FIELD)`;
+pass that `Field` to the alpha simulator. The example logs field and counts through
+`org.wpilib.telemetry.Telemetry`, at `Telemetry/EagleEye` and
+`Telemetry/EagleEye/Accepted`, every robot loop. Missing-topic warnings use
+`org.wpilib.driverstation.DriverStationErrors.reportWarning` and retain the five-second throttle.
+
 ## Time synchronization
+
+The 2026 SDK converts NT microseconds with `/ 1e6`. The alpha-7 SDK converts NT
+nanoseconds with `/ 1e9` for sample ages, joins, detection freshness, warning throttles,
+and observation timestamps. NT4 wire timestamps remain microseconds.
+On alpha-7, local sample timestamps use robot monotonic time (HAL simulated time during
+simulation), matching the default `Timer.getTimestamp()` time base. If robot code calls
+`RobotController.setTimeSource`, preserve that time base or translate observation timestamps
+before passing them to the estimator. The SDK retains the direct timestamp conversion.
+
+The following clock description applies to 2026 on a roboRIO:
 
 You do not need to compensate for latency. Do not subtract one, and do not pass
 `Timer.getFPGATimestamp()` as the measurement time.
@@ -256,7 +321,7 @@ Two consequences worth knowing:
   offset and timestamps can be nonsense, including timestamps in the future. `poll()` drops
   anything that is negative-age or older than `maximumSampleAgeSeconds`.
 - If you ever reconfigure EagleEye to be the NetworkTables *server*, this breaks. Keep the
-  roboRIO as the server.
+  robot controller as the server.
 
 If you measure the offset jitter and find it unacceptable, the upgrade path is a dedicated UDP
 time-sync channel of the kind PhotonVision uses. On a wired connection it is very unlikely to be
@@ -301,8 +366,10 @@ port; every pose is dropped, because a pose without metrics cannot be weighted.
 error before changing anything else.
 
 **Everything arrives in bursts, and the estimate lags.** Confirm the pipeline is actually keeping
-up on the coprocessor. `sendAll` means the robot sees every frame EagleEye produces, so investigate coprocessor stalls, network/TCP backlog, and robot scheduling when
-frames arrive in bursts.
+up on the coprocessor. `sendAll` asks NetworkTables to deliver every frame EagleEye produces, but
+each camera holds only 20 samples per topic between polls. Look for coprocessor stalls, network
+backlog, and robot loops that run long, and make sure `update()` or `poll()` runs every loop.
+Frames that arrive in a burst larger than 20 can be lost.
 
 Publisher operations expose `publish_period_seconds` (default `0.01`). Set `0.1`
 for slower non-vision telemetry. This is a requested interval, not a strict rate limit:

@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 import pytest
+from src.utils import wpilib_compat as wpi
 
 from src.secondary_operations.publish_to_networktables import (
     PublishToNetworktables,
@@ -31,12 +32,12 @@ def test_matrix_to_pose3d_converts_opencv_camera_axes_to_wpilib_body_axes() -> N
 
     pose = _matrix_to_pose3d(transform)
 
-    assert pose.X() == pytest.approx(1.0)
-    assert pose.Y() == pytest.approx(2.0)
-    assert pose.Z() == pytest.approx(3.0)
-    assert math.isclose(math.degrees(pose.rotation().X()), 0.0, abs_tol=1e-9)
-    assert math.isclose(math.degrees(pose.rotation().Y()), 0.0, abs_tol=1e-9)
-    assert math.isclose(math.degrees(pose.rotation().Z()), 0.0, abs_tol=1e-9)
+    assert wpi.pose_xyz(pose)[0] == pytest.approx(1.0)
+    assert wpi.pose_xyz(pose)[1] == pytest.approx(2.0)
+    assert wpi.pose_xyz(pose)[2] == pytest.approx(3.0)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[0]), 0.0, abs_tol=1e-9)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[1]), 0.0, abs_tol=1e-9)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[2]), 0.0, abs_tol=1e-9)
 
 
 def test_matrix_to_pose3d_preserves_wpilib_yaw_after_basis_conversion() -> None:
@@ -64,9 +65,9 @@ def test_matrix_to_pose3d_preserves_wpilib_yaw_after_basis_conversion() -> None:
 
     pose = _matrix_to_pose3d(transform)
 
-    assert math.isclose(math.degrees(pose.rotation().X()), 0.0, abs_tol=1e-9)
-    assert math.isclose(math.degrees(pose.rotation().Y()), 0.0, abs_tol=1e-9)
-    assert math.isclose(math.degrees(pose.rotation().Z()), 45.0, abs_tol=1e-9)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[0]), 0.0, abs_tol=1e-9)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[1]), 0.0, abs_tol=1e-9)
+    assert math.isclose(math.degrees(wpi.rotation_xyz(pose.rotation())[2]), 45.0, abs_tol=1e-9)
 
 
 def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
@@ -78,7 +79,7 @@ def test_publish_uses_capture_timestamp_when_value_is_timed() -> None:
     publisher.run(TimedValue(transform, timing))
 
     assert "RobotPose2D" in table.values
-    assert table.values["RobotPose2D:timestamp"] == 123456
+    assert table.values["RobotPose2D:timestamp"] == wpi.to_nt_publish_time(123456)
 
 
 def test_publish_serializes_field_detections_with_capture_timestamp() -> None:
@@ -101,7 +102,7 @@ def test_publish_serializes_field_detections_with_capture_timestamp() -> None:
     )
 
     assert table.values["detections"] == ["coral", "1.25", "2.5", "0.0"]
-    assert table.values["detections:timestamp"] == 246810
+    assert table.values["detections:timestamp"] == wpi.to_nt_publish_time(246810)
 
 
 def test_publish_drops_detections_with_unconvertible_coordinates() -> None:
@@ -120,7 +121,7 @@ def test_publish_drops_detections_with_unconvertible_coordinates() -> None:
     )
 
     assert table.values["detections"] == ["coral", "1.0", "2.0", "0.0"]
-    assert table.values["detections:timestamp"] == 13579
+    assert table.values["detections:timestamp"] == wpi.to_nt_publish_time(13579)
 
 
 def test_publish_drops_non_finite_detection_coordinates() -> None:
@@ -189,7 +190,7 @@ def test_publish_supports_detection_json_with_capture_timestamp() -> None:
         '[{"class_name":"game-piece","confidence":0.9,'
         '"position_3d":[1.0,2.0,0.0]}]'
     )
-    assert table.values["detections/front:timestamp"] == 222333
+    assert table.values["detections/front:timestamp"] == wpi.to_nt_publish_time(222333)
 
 
 def test_publish_supports_primitive_double_arrays() -> None:
@@ -200,7 +201,7 @@ def test_publish_supports_primitive_double_arrays() -> None:
     publisher.run(TimedValue([1, 2.5], timing))
 
     assert table.values["values"] == [1.0, 2.5]
-    assert table.values["values:timestamp"] == 654321
+    assert table.values["values:timestamp"] == wpi.to_nt_publish_time(654321)
 
 
 def test_schema_change_recreates_the_typed_publisher() -> None:
@@ -232,6 +233,8 @@ def test_schema_change_recreates_the_typed_publisher() -> None:
         def getStringTopic(self, _key: str) -> _Topic:
             return _Topic("string", self.publishers)
 
+    _NetworkTable.get_double_topic = _NetworkTable.getDoubleTopic
+    _NetworkTable.get_string_topic = _NetworkTable.getStringTopic
     table = _NetworkTable()
     operation = PublishToNetworktables(table, "value", schema="double")
 
@@ -249,22 +252,22 @@ def test_schema_change_recreates_the_typed_publisher() -> None:
 
 def test_repeated_frame_values_keep_distinct_capture_timestamps() -> None:
     """A stationary camera still needs pose/meta for every capture, using real ntcore."""
-    import ntcore
-    from wpimath.geometry import Pose3d
-    instance = ntcore.NetworkTableInstance.create()
-    instance.startLocal()
+    from src.utils.wpilib_compat import Pose3d
+    instance = wpi.create_instance()
+    wpi.start_local(instance)
     try:
-        table = instance.getTable("contract")
-        opts = ntcore.PubSubOptions(keepDuplicates=True, sendAll=True, pollStorage=20)
-        poses = table.getStructTopic("pose", Pose3d).subscribe(Pose3d(), opts)
-        metas = table.getDoubleArrayTopic("meta").subscribe([], opts)
+        table = wpi.get_table(instance, "contract")
+        opts = wpi.pubsub_options(keep_duplicates=True, send_all=True, poll_storage=20)
+        poses = wpi.topic(table, "struct", "pose", Pose3d).subscribe(Pose3d(), opts)
+        metas = wpi.topic(table, "double_array", "meta").subscribe([], opts)
         posepub = PublishToNetworktables(table, "pose", "pose3d")
         metapub = PublishToNetworktables(table, "meta", "auto")
         for timestamp in (10000, 20000, 30000):
             timing = TimingMetadata(timestamp, timestamp * 1000)
             posepub.run(TimedValue(np.eye(4), timing))
             metapub.run(TimedValue([2., 3., .5], timing))
-        assert [sample.time for sample in poses.readQueue()] == [10000, 20000, 30000]
-        assert [sample.time for sample in metas.readQueue()] == [10000, 20000, 30000]
+        assert [wpi.sample_timestamp(sample) // wpi.NT_TIME_UNITS_PER_US for sample in wpi.read_queue(poses)] == [10000, 20000, 30000]
+        assert [wpi.sample_timestamp(sample) // wpi.NT_TIME_UNITS_PER_US for sample in wpi.read_queue(metas)] == [10000, 20000, 30000]
     finally:
-        instance.stopLocal()
+        wpi.stop_local(instance)
+        wpi.destroy_instance(instance)

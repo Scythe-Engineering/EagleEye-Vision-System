@@ -279,3 +279,64 @@ def test_fresh_install_has_no_preconfigured_pipelines() -> None:
     """Verify the wizard is the only fresh-install pipeline setup path."""
     with PIPELINE_CONFIG.open("r", encoding="utf-8") as handle:
         assert handle.read().strip() == "{}"
+
+
+def test_wpilib_arguments_default_and_alpha_selection() -> None:
+    """Verify WPILib defaults to 2026 and accepts the alpha-7 selection."""
+    result = _run_installer_function(
+        'parse_arguments; echo "DEFAULT=$WPILIB_VARIANT"; '
+        'parse_arguments --wpilib 2027-alpha7; echo "ALPHA=$WPILIB_VARIANT"'
+    )
+    assert "DEFAULT=2026" in result.stdout
+    assert "ALPHA=2027-alpha7" in result.stdout
+
+
+def test_wpilib_arguments_reject_invalid_or_missing_choice() -> None:
+    """Verify missing, unsupported, and unknown arguments exit with status 1."""
+    for argument in ("--wpilib", "--wpilib 2027", "--unknown"):
+        result = _run_installer_function(f'parse_arguments {argument}; echo "EXIT=$?"')
+        assert "EXIT=1" in result.stdout
+        assert "ERROR" in result.stderr
+
+
+def test_alpha_glibc_gate_accepts_supported_linux_and_refuses_bookworm() -> None:
+    """Verify alpha-7 requires glibc 2.39 or newer on Linux."""
+    for version, expected in (("2.36", 1), ("2.38", 1), ("2.39", 0), ("2.41", 0)):
+        result = _run_installer_function(
+            f'check_wpilib_platform 2027-alpha7 Linux "glibc {version}"; echo "EXIT=$?"'
+        )
+        assert f"EXIT={expected}" in result.stdout
+        if expected:
+            assert "Debian 13" in result.stderr
+            assert "Ubuntu 24.04" in result.stderr
+            assert "Bookworm" in result.stderr
+
+
+def test_alpha_glibc_gate_refuses_unknown_libc_and_leaves_2026_supported() -> None:
+    """Verify unknown or musl libc blocks alpha-7 while 2026 remains supported."""
+    for libc in ("unknown", "musl 1.2.5"):
+        result = _run_installer_function(
+            f'check_wpilib_platform 2027-alpha7 Linux "{libc}"; echo "ALPHA=$?"; '
+            f'check_wpilib_platform 2026 Linux "{libc}"; echo "DEFAULT=$?"'
+        )
+        assert "ALPHA=1" in result.stdout
+        assert "DEFAULT=0" in result.stdout
+
+
+def test_installer_sync_uses_selected_group_and_persists_choice(tmp_path: Path) -> None:
+    """Verify dependency sync uses and persists the selected WPILib variant."""
+    for variant in ("2026", "2027-alpha7"):
+        result = _run_installer_function(
+            f"WPILIB_VARIANT={variant}; check_wpilib_platform() {{ :; }}; "
+            'uv() { printf "UV:%s\\n" "$*"; }; '
+            f'install_python_dependencies "{tmp_path}"'
+        )
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / ".wpilib-variant").read_text().strip() == variant
+        if variant == "2027-alpha7":
+            assert (
+                "UV:sync --locked --no-group wpilib2026 --group wpilib2027-alpha7 --no-build-package pyntcore --no-build-package robotpy-wpimath"
+                in result.stdout
+            )
+        else:
+            assert "UV:sync --locked --group wpilib2026" in result.stdout

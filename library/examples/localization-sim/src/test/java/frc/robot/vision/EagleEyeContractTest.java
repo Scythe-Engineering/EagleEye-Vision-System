@@ -73,4 +73,42 @@ class EagleEyeContractTest {
     var obs=new EagleEyeCamera.Observation(new Pose2d(),1,2,3,0.5);
     assertEquals(0.09,EagleEyeCamera.standardDeviations(obs).get(0,0),1e-12);
   }
+
+  @Test void freshTwentyMillisecondsAcceptedAndSixHundredMillisecondsRejected() {
+    long current = NetworkTablesJNI.now();
+    publish(p(0), new double[]{2,3,0.5}, current - 20 * 1000L);
+    publish(p(0), new double[]{2,3,0.5}, current - 600 * 1000L);
+    publish(p(0), new double[]{2,3,0.5}, current + 600 * 1000L);
+    var result = camera.poll();
+    assertEquals(1, result.size());
+    assertEquals((current - 20 * 1000L) / 1e6, result.get(0).timestampSeconds(), 1e-9);
+  }
+  @Test void timestampMatchesDefaultRobotClock() {
+    double robotBefore = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
+    long captured = NetworkTablesJNI.now();
+    double robotAfter = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
+    publish(p(0), new double[]{2,3,0.5}, captured);
+    var result = camera.poll();
+    assertEquals(1, result.size());
+    assertTrue(result.get(0).timestampSeconds() >= robotBefore - 0.001);
+    assertTrue(result.get(0).timestampSeconds() <= robotAfter + 0.001);
+  }
+  @Test void unresolvedWarningUsesDriverStationAndFiveSecondThrottle() {
+    var warnings = new ArrayList<String>();
+    var missing = new EagleEyeCamera("missing/" + UUID.randomUUID(), "missing/" + UUID.randomUUID()) {
+      @Override void reportWarning(String message) {
+        warnings.add(message);
+        super.reportWarning(message); // Exercise the actual Driver Station reporting path too.
+      }
+    };
+    long initial = NetworkTablesJNI.now();
+    missing.warnIfKeysUnresolved(initial);
+    missing.warnIfKeysUnresolved(initial + 1 * 1000L);
+    missing.warnIfKeysUnresolved(initial + 4999 * 1000L);
+    assertEquals(1, warnings.size());
+    missing.warnIfKeysUnresolved(initial + 5000 * 1000L);
+    assertEquals(2, warnings.size());
+    assertTrue(warnings.get(0).contains("EagleEye"));
+  }
+
 }

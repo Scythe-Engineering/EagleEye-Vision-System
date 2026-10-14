@@ -166,6 +166,6 @@ export function guidedStepCopy(step, cameraName, cameraNumber) {
         progress: "NetworkTables",
         title: "Connect to the robot",
         instructions:
-            "Enter the roboRIO or simulation IP under Network Table, then click Save Settings. Click Continue when the address is set. EagleEye will generate pipelines and restart once.",
+            "Enter the robot controller (roboRIO/Systemcore) or simulation IP under Network Table, then click Save Settings. Click Continue when the address is set. EagleEye will generate pipelines and restart once.",
     };
 }

@@ -1,5 +1,7 @@
 # Localization desktop example
 
+For WPILib 2027 alpha-7, use [the alpha example](../localization-sim-2027).
+
 Requires WPILib 2026 (GradleRIO 2026.2.1) and its JDK. Open this folder in WPILib VS Code
 and run **WPILib: Simulate Robot Code** with **Sim GUI** enabled. There is no robot deployment target.
 

@@ -7,13 +7,29 @@ on:
 
 jobs:
     test:
+        name: WPILib ${{ matrix.wpilib }}
         runs-on: ubuntu-24.04
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - wpilib: '2026'
+                      java: '17'
+                      project: localization-sim
+                    - wpilib: '2027-alpha7'
+                      java: '25'
+                      project: localization-sim-2027
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-java@v4
               with:
                   distribution: temurin
-                  java-version: '17'
+                  java-version: ${{ matrix.java }}
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: '3.x'
+            - name: Verify SDK source parity
+              run: python library/tools/check_java_sdk_parity.py
             - name: Build desktop example and run contract tests
-              working-directory: library/examples/localization-sim
+              working-directory: library/examples/${{ matrix.project }}
               run: ./gradlew test build

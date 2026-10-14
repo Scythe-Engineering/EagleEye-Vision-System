@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, Protocol, cast
 import numpy as np
 from line_profiler import profile
 import ntcore
+from src.utils import wpilib_compat as wpi
 
 from src.config.utils.async_docking import AsyncDockedOperation
 from src.config.utils.cyclical_loop_detection import detect_connection_cycles
@@ -709,7 +710,7 @@ class Pipeline:
                 operation.name == "publish_to_networktables"
                 for operation in self.operations.values()
             ):
-                self.network_table.getInstance().flush()
+                wpi.flush(wpi.table_instance(self.network_table))
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
             capture_latency_ms = self._capture_latency_ms()
             if capture_latency_ms is not None:
@@ -979,7 +980,7 @@ class Pipeline:
         command_topic = f"{NT_COMMAND_PREFIX}/{self.pipeline_name}/{NT_ACTIVE_COMMAND}"
         try:
             active_value = bool(
-                self.network_table.getEntry(command_topic).getBoolean(True)
+                wpi.read_bool(self.network_table, command_topic, True)
             )
         except Exception:
             return True

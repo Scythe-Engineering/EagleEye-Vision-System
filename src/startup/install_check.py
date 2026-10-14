@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -33,7 +36,11 @@ class StartupInstallChecker:
     def __init__(self, logger: _LoggerLike, repo_root: Path | None = None) -> None:
         self.logger = logger
         self.repo_root = repo_root or Path(__file__).resolve().parents[2]
-        self.venv_dir = self.repo_root / ".venv"
+        self.venv_dir = Path(
+            os.environ.get("UV_PROJECT_ENVIRONMENT", self.repo_root / ".venv")
+        )
+        if not self.venv_dir.is_absolute():
+            self.venv_dir = self.repo_root / self.venv_dir
         self.venv_python = self.venv_dir / "bin" / "python"
         self.package_json = self.repo_root / "package.json"
         self.node_modules_dir = self.repo_root / "node_modules"
@@ -82,6 +89,8 @@ class StartupInstallChecker:
 
         self._log(f"{Colors.CYAN}uv executable:{Colors.RESET} {uv_path}")
 
+        variant = self._wpilib_variant()
+        self._check_wpilib_platform(variant)
         current_python = Path(sys.executable)
         if not self.venv_python.exists() or not self._imports_available(current_python):
             reason = "current Python environment is missing required packages"
@@ -91,7 +100,9 @@ class StartupInstallChecker:
                 f"{Colors.YELLOW}Python environment is not ready ({reason}); "
                 f"running `uv sync`...{Colors.RESET}"
             )
-            self._run_command(["uv", "sync"], cwd=self.repo_root, timeout=1800)
+            self._run_command(
+                self._uv_sync_command(variant), cwd=self.repo_root, timeout=1800
+            )
 
             if not self.venv_python.exists():
                 raise RuntimeError(
@@ -102,6 +113,7 @@ class StartupInstallChecker:
                 self._log(
                     f"{Colors.GREEN}Current Python environment is ready after uv sync.{Colors.RESET}"
                 )
+                self._check_wpilib_runtime(current_python, variant)
                 return True
 
             if self.venv_python.exists() and self._imports_available(self.venv_python):
@@ -129,7 +141,125 @@ class StartupInstallChecker:
                 f"{Colors.GREEN}Python environment is ready without running uv sync.{Colors.RESET}"
             )
 
+        self._check_wpilib_runtime(current_python, variant)
         return False
+
+    def _wpilib_variant(self) -> str:
+        """Read .wpilib-variant, defaulting to 2026 when the file is absent.
+
+        Returns:
+            The selected "2026" or "2027-alpha7" variant.
+
+        Raises:
+            RuntimeError: If the persisted selection is unsupported.
+        """
+        selection = self.repo_root / ".wpilib-variant"
+        variant = (
+            selection.read_text(encoding="utf-8").strip()
+            if selection.exists()
+            else "2026"
+        )
+        if variant not in {"2026", "2027-alpha7"}:
+            raise RuntimeError(f"Invalid WPILib variant in {selection}: {variant!r}")
+        return variant
+
+    @staticmethod
+    def _uv_sync_command(variant: str) -> list[str]:
+        """Build the locked dependency sync command for a WPILib variant.
+
+        Args:
+            variant: Selected "2026" or "2027-alpha7" variant.
+
+        Returns:
+            The uv command with the selected dependency group and build restrictions.
+        """
+        command = ["uv", "sync", "--locked"]
+        if variant == "2027-alpha7":
+            command.extend(
+                [
+                    "--no-group",
+                    "wpilib2026",
+                    "--group",
+                    "wpilib2027-alpha7",
+                    "--no-build-package",
+                    "pyntcore",
+                    "--no-build-package",
+                    "robotpy-wpimath",
+                ]
+            )
+        else:
+            command.extend(["--group", "wpilib2026"])
+        return command
+
+    @staticmethod
+    def _check_wpilib_platform(variant: str) -> None:
+        """Validate Linux platform support for the selected WPILib variant.
+
+        Args:
+            variant: Selected "2026" or "2027-alpha7" variant.
+
+        Raises:
+            RuntimeError: If Linux alpha-7 does not report glibc 2.39 or newer,
+                including musl or an undetectable libc version.
+        """
+        if variant != "2027-alpha7" or platform.system() != "Linux":
+            return
+        libc, version = platform.libc_ver()
+        try:
+            supported = libc == "glibc" and tuple(
+                int(part) for part in version.split(".")[:2]
+            ) >= (2, 39)
+        except ValueError:
+            supported = False
+        if not supported:
+            raise RuntimeError(
+                f"WPILib 2027-alpha7 requires glibc >= 2.39 (detected {libc} {version}). "
+                "Use Debian 13 / Raspberry Pi OS Trixie or Ubuntu 24.04; "
+                "Debian 12 / Bookworm supports WPILib 2026. No source-build fallback is available."
+            )
+
+    def _check_wpilib_runtime(self, python_executable: Path, variant: str) -> None:
+        """Report binding versions and validate a managed install selection.
+
+        Args:
+            python_executable: Interpreter used to inspect the installed bindings.
+            variant: Selected "2026" or "2027-alpha7" variant.
+
+        Raises:
+            RuntimeError: If the inspection command exits nonzero or a managed
+                runtime uses an API that differs from the persisted selection.
+        """
+        result = self._run_command(
+            [
+                str(python_executable),
+                "-c",
+                (
+                    "import json; from src.utils import wpilib_compat as w; "
+                    "print(json.dumps({'api': w.API, 'ntcore': w.NT_VERSION, 'wpimath': w.MATH_VERSION}))"
+                ),
+            ],
+            cwd=self.repo_root,
+            timeout=30,
+        )
+        details = json.loads(result.stdout)
+        expected_api = "2027" if variant == "2027-alpha7" else "2026"
+        # A developer's explicitly selected dependency group can run without an
+        # installer file; enforce the persisted choice only on managed installs.
+        managed_install = (self.repo_root / ".wpilib-variant").exists()
+        if managed_install and details["api"] != expected_api:
+            raise RuntimeError(
+                f"Persisted WPILib variant {variant} does not match runtime API {details['api']}. "
+                f"Repair with `{' '.join(self._uv_sync_command(variant))}`."
+            )
+        selection_description = (
+            f"persisted install selection: {variant}"
+            if managed_install
+            else "unmanaged developer environment; no persisted install selection"
+        )
+        self._log(
+            f"WPILib API {details['api']}: pyntcore={details['ntcore']}, "
+            f"robotpy-wpimath={details['wpimath']} ({selection_description})"
+        )
 
     def _ensure_rust_toolchain(self) -> None:
         self._log(f"{Colors.CYAN}Checking Rust and maturin toolchain...{Colors.RESET}")

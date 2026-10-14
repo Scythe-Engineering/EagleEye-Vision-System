@@ -108,6 +108,7 @@ public class EagleEyeCamera {
   private static final String TABLE = "EagleEye";
 
   private static final int POLL_STORAGE = 20;
+  private static final double NT_TIME_UNITS_PER_SECOND = 1e6;
 
   private final String poseKey;
   private final String metaKey;
@@ -208,7 +209,7 @@ public class EagleEyeCamera {
     var unmatched = new ArrayList<TimestampedObject<Pose3d>>();
 
     for (var sample : carriedPoses) {
-      double ageSeconds = (nowMicros - sample.timestamp) / 1e6;
+      double ageSeconds = (nowMicros - sample.timestamp) / NT_TIME_UNITS_PER_SECOND;
       if (ageSeconds < 0.0 || ageSeconds > maximumSampleAgeSeconds) {
         continue;
       }
@@ -224,7 +225,7 @@ public class EagleEyeCamera {
       }
       var observation =
           new Observation(
-              sample.value.toPose2d(), sample.timestamp / 1e6, (int) meta[0], meta[1], meta[2]);
+              sample.value.toPose2d(), sample.timestamp / NT_TIME_UNITS_PER_SECOND, (int) meta[0], meta[1], meta[2]);
       if (isTrustworthy(observation)) {
         observations.add(observation);
         recentPoses.add(new CapturedPose(sample.timestamp, observation.pose()));
@@ -237,10 +238,10 @@ public class EagleEyeCamera {
     // would accept, so drop them; without the future bound a skewed publisher grows these lists
     // forever.
     carriedMetas.removeIf(
-        meta -> Math.abs(nowMicros - meta.timestamp) / 1e6 > maximumSampleAgeSeconds);
+        meta -> Math.abs(nowMicros - meta.timestamp) / NT_TIME_UNITS_PER_SECOND > maximumSampleAgeSeconds);
     joinDetections(nowMicros);
     recentPoses.removeIf(
-        pose -> (nowMicros - pose.timestampMicros()) / 1e6 > maximumSampleAgeSeconds);
+        pose -> (nowMicros - pose.timestampMicros()) / NT_TIME_UNITS_PER_SECOND > maximumSampleAgeSeconds);
     observations.sort(Comparator.comparingDouble(Observation::timestampSeconds));
     return observations;
   }
@@ -264,7 +265,7 @@ public class EagleEyeCamera {
    * @return the nearest matching field-space game piece, or empty when none is fresh.
    */
   public Optional<GamePiece> nearestGamePiece(String className) {
-    double ageSeconds = (NetworkTablesJNI.now() - latestDetectionsTimestamp) / 1e6;
+    double ageSeconds = (NetworkTablesJNI.now() - latestDetectionsTimestamp) / NT_TIME_UNITS_PER_SECOND;
     if (latestDetectionsTimestamp == 0L
         || ageSeconds < 0.0
         || ageSeconds > maximumSampleAgeSeconds) {
@@ -336,7 +337,7 @@ public class EagleEyeCamera {
    * <p>Rate limited to one report per {@link #warningIntervalSeconds}, and reset once both topics
    * appear so a coprocessor reboot warns again.
    */
-  private void warnIfKeysUnresolved(long nowMicros) {
+  void warnIfKeysUnresolved(long nowMicros) {
     boolean poseMissing = !poseSubscriber.getTopic().exists();
     boolean metaMissing = !metaSubscriber.getTopic().exists();
     boolean detectionsMissing =
@@ -346,12 +347,16 @@ public class EagleEyeCamera {
       return;
     }
     if (lastWarningMicros != 0L
-        && (nowMicros - lastWarningMicros) / 1e6 < warningIntervalSeconds) {
+        && (nowMicros - lastWarningMicros) / NT_TIME_UNITS_PER_SECOND < warningIntervalSeconds) {
       return;
     }
     lastWarningMicros = nowMicros;
-    DriverStation.reportWarning(
-        unresolvedKeyMessage(poseMissing, metaMissing, detectionsMissing), false);
+    reportWarning(unresolvedKeyMessage(poseMissing, metaMissing, detectionsMissing));
+  }
+
+  // Package-private so contract tests can observe throttling without replacing the DS backend.
+  void reportWarning(String message) {
+    DriverStation.reportWarning(message, false);
   }
 
   /** Say which key is missing and what to compare it against. */
@@ -362,7 +367,7 @@ public class EagleEyeCamera {
     if (!NetworkTableInstance.getDefault().isConnected()) {
       return "EagleEye: nothing is connected to NetworkTables, so "
           + posePath
-          + " cannot arrive. Check the coprocessor is powered and pointed at this roboRIO.";
+          + " cannot arrive. Check the coprocessor is powered and pointed at this robot controller.";
     }
     if (poseMissing && metaMissing) {
       return "EagleEye: nothing publishes "
@@ -416,7 +421,7 @@ public class EagleEyeCamera {
       }
     }
     carriedDetections.removeIf(
-        sample -> Math.abs(nowMicros - sample.timestamp) / 1e6 > maximumSampleAgeSeconds);
+        sample -> Math.abs(nowMicros - sample.timestamp) / NT_TIME_UNITS_PER_SECOND > maximumSampleAgeSeconds);
   }
 
   /** Find the accepted pose captured at an exact NetworkTables timestamp. */

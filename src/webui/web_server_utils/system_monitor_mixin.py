@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
+from src.utils import wpilib_compat as wpi
 from src.utils.colors import Colors
 from src.webui.web_server_utils.constants import (
     DEFAULT_GENERAL_CONF,
@@ -1029,13 +1030,13 @@ class SystemMonitorMixin:
             }
 
         try:
-            connected = bool(instance.isConnected())
-            connections = instance.getConnections()
+            connected = wpi.is_connected(instance)
+            connections = wpi.connection_count(instance)
             return {
                 "status": "ok",
                 "connected": connected,
                 "server": server_address,
-                "connection_count": len(connections),
+                "connection_count": connections,
             }
         except Exception as error:
             return {

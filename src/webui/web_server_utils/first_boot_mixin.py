@@ -13,6 +13,7 @@ from typing import Any
 
 from flask import request
 
+from src.utils import wpilib_compat as wpi
 from src.utils.model_library import ModelLibraryError
 from src.webui.web_server_utils.constants import GENERAL_CONF_PATH, SRC_DIR
 
@@ -393,7 +394,7 @@ class FirstBootMixin:
         if instance is None:
             return set()
         try:
-            names = {str(topic.getName()) for topic in instance.getTopics()}
+            names = wpi.topic_names(instance)
         except (AttributeError, RuntimeError) as error:
             self.log(
                 f"Failed reading NetworkTables topics for setup verification: {error}"
