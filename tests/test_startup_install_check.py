@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from src.startup.install_check import StartupInstallChecker, WEBUI_REQUIRED_ASSETS
 
 
@@ -131,57 +133,98 @@ def test_repo_venv_interpreter_detection_accepts_unresolved_venv_python(
 
 
 def test_startup_reads_persisted_alpha_for_sync(tmp_path: Path) -> None:
+    """Verify startup sync uses the persisted alpha-7 dependency selection."""
     checker = _make_checker(tmp_path)
     (checker.repo_root / ".wpilib-variant").write_text("2027-alpha7\n")
     assert checker._wpilib_variant() == "2027-alpha7"
     assert checker._uv_sync_command(checker._wpilib_variant()) == [
-        "uv", "sync", "--locked", "--no-group", "wpilib2026",
-        "--group", "wpilib2027-alpha7", "--no-build-package", "pyntcore",
-        "--no-build-package", "robotpy-wpimath",
+        "uv",
+        "sync",
+        "--locked",
+        "--no-group",
+        "wpilib2026",
+        "--group",
+        "wpilib2027-alpha7",
+        "--no-build-package",
+        "pyntcore",
+        "--no-build-package",
+        "robotpy-wpimath",
     ]
 
 
 def test_startup_rejects_invalid_persisted_variant(tmp_path: Path) -> None:
-    import pytest
+    """Verify startup rejects an unsupported persisted WPILib selection."""
     checker = _make_checker(tmp_path)
     (checker.repo_root / ".wpilib-variant").write_text("2027\n")
     with pytest.raises(RuntimeError, match="Invalid WPILib variant"):
         checker._wpilib_variant()
 
 
-def test_startup_alpha_linux_requires_glibc_239(monkeypatch) -> None:
-    import pytest
+def test_startup_alpha_linux_requires_glibc_239(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify Linux alpha-7 startup requires glibc 2.39 or newer."""
     monkeypatch.setattr("src.startup.install_check.platform.system", lambda: "Linux")
-    monkeypatch.setattr("src.startup.install_check.platform.libc_ver", lambda: ("glibc", "2.36"))
+    monkeypatch.setattr(
+        "src.startup.install_check.platform.libc_ver", lambda: ("glibc", "2.36")
+    )
     with pytest.raises(RuntimeError, match="glibc >= 2.39"):
         StartupInstallChecker._check_wpilib_platform("2027-alpha7")
     StartupInstallChecker._check_wpilib_platform("2026")
-    monkeypatch.setattr("src.startup.install_check.platform.libc_ver", lambda: ("glibc", "2.39"))
+    monkeypatch.setattr(
+        "src.startup.install_check.platform.libc_ver", lambda: ("glibc", "2.39")
+    )
     StartupInstallChecker._check_wpilib_platform("2027-alpha7")
 
 
-def test_startup_rejects_runtime_different_from_persisted_choice(tmp_path: Path, monkeypatch) -> None:
-    import pytest
+def test_startup_rejects_runtime_different_from_persisted_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify startup rejects bindings that conflict with a managed selection."""
     checker = _make_checker(tmp_path)
     (checker.repo_root / ".wpilib-variant").write_text("2027-alpha7\n")
-    monkeypatch.setattr(checker, "_run_command", lambda command, **kwargs:
-        subprocess.CompletedProcess(command, 0, '{"api":"2026","ntcore":"2026.2.2","wpimath":"2026.2.2"}', ""))
+    monkeypatch.setattr(
+        checker,
+        "_run_command",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, '{"api":"2026","ntcore":"2026.2.2","wpimath":"2026.2.2"}', ""
+        ),
+    )
     with pytest.raises(RuntimeError, match="does not match runtime API"):
         checker._check_wpilib_runtime(Path(sys.executable), "2027-alpha7")
 
 
-def test_startup_reports_actual_binding_api(tmp_path: Path, monkeypatch) -> None:
+def test_startup_reports_actual_binding_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify unmanaged startup reports the actual installed binding API."""
     checker = _make_checker(tmp_path)
-    monkeypatch.setattr(checker, "_run_command", lambda command, **kwargs:
-        subprocess.CompletedProcess(command, 0, '{"api":"2027","ntcore":"2027.0.0a7","wpimath":"2027.0.0a7"}', ""))
+    monkeypatch.setattr(
+        checker,
+        "_run_command",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            '{"api":"2027","ntcore":"2027.0.0a7","wpimath":"2027.0.0a7"}',
+            "",
+        ),
+    )
     checker._check_wpilib_runtime(Path(sys.executable), "2026")
-    assert any("WPILib API 2027: pyntcore=2027.0.0a7" in message for message in checker.logger.messages)
-    assert any("unmanaged developer environment; no persisted install selection" in message
-               for message in checker.logger.messages)
+    assert any(
+        "WPILib API 2027: pyntcore=2027.0.0a7" in message
+        for message in checker.logger.messages
+    )
+    assert any(
+        "unmanaged developer environment; no persisted install selection" in message
+        for message in checker.logger.messages
+    )
     assert not any("selection: 2026" in message for message in checker.logger.messages)
 
 
-def test_startup_honors_isolated_uv_project_environment(tmp_path: Path, monkeypatch) -> None:
+def test_startup_honors_isolated_uv_project_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify startup uses the explicitly selected uv project environment."""
     environment = tmp_path / "isolated-alpha"
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(environment))
     checker = StartupInstallChecker(logger=_LoggerStub(), repo_root=tmp_path)
@@ -190,6 +233,7 @@ def test_startup_honors_isolated_uv_project_environment(tmp_path: Path, monkeypa
 
 
 def test_startup_reports_installed_binding_versions() -> None:
+    """Verify startup reports installed WPILib binding versions."""
     from src.utils import wpilib_compat as wpi
 
     checker = StartupInstallChecker(
@@ -199,5 +243,6 @@ def test_startup_reports_installed_binding_versions() -> None:
     checker._check_wpilib_runtime(Path(sys.executable), variant)
     assert any(
         f"WPILib API {wpi.API}: pyntcore={wpi.NT_VERSION}, robotpy-wpimath={wpi.MATH_VERSION}"
-        in message for message in checker.logger.messages
+        in message
+        for message in checker.logger.messages
     )
