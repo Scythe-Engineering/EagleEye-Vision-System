@@ -1,6 +1,6 @@
 # WPILib 2026 and 2027 alpha-7 support
 
-Implemented and validated October 13, 2026. EagleEye now supports **WPILib 2026 and 2027.0.0-alpha-7** through version-specific Java SDKs and a Python compatibility boundary. The default coprocessor environment remains 2026; the alpha Python environment is an explicit, platform-gated choice. A 2026 coprocessor can also communicate with an alpha-7 robot over NT4.
+Implemented and validated October 13, 2026; fresh-install, simulator, and live-runtime checks added October 14, 2026 (see [that section](#fresh-install-and-live-runtime-validation-october-14-2026)). EagleEye now supports **WPILib 2026 and 2027.0.0-alpha-7** through version-specific Java SDKs and a Python compatibility boundary. The default coprocessor environment remains 2026; the alpha Python environment is an explicit, platform-gated choice. A 2026 coprocessor can also communicate with an alpha-7 robot over NT4.
 
 This report records the original audit findings, the independent Opus 5.5 review corrections, the adopted implementation, and final software validation. It supersedes the initial audit's assessment of the unchanged source. [The historical review and adopted-decisions appendix](opus-review-plan.md) retain the review context.
 
@@ -80,6 +80,59 @@ The final Opus review found no blocking migration gaps. Its findings and the fix
 
 Both full Python suites were rerun after these fixes (**411 passed, 8 skipped** each). Scoped mypy checks passed for the compatibility and timing modules in both environments.
 
+## Fresh-install and live-runtime validation (October 14, 2026)
+
+The sections above record the October 13 audit and implementation. This section records a second pass on October 14 on macOS 26.6.2 (arm64), run against commit `b652eee` plus uncommitted changes to the alpha-7 example (`settings.gradle`, `.wpilib/wpilib_preferences.json`, `.gitignore`). The raw logs and probes were kept in a temporary directory outside the repository and are not committed. A compressed copy (`wpilib-alpha7-validation-20261014.tar.gz`, SHA-256 `642255a4960dc1c551efc19c2e764f496f3dd11630ad898f490bf7cfd8182a4c`) was saved in this machine's user cache folder. It leaves out the installer DMG and the Gradle homes, and a local cache is not a durable record, so treat these results as unreproducible from the repository alone.
+
+**What changed since October 13.** The October 13 work was software validation: unit and contract tests and probes against the alpha-7 jars, with no GUI, reconnection, or load testing. October 14 added a fresh official install and build, the editor and simulator, Glass, the web interface (including a disconnect and reconnect), and the loopback runtime probes below. The uncommitted changes from this pass touch only the alpha-7 example project and the documentation, not production code.
+
+### Fresh install and build
+
+- **Install.** The official macOS arm64 WPILib alpha-7 installer (DMG SHA-256 `2bcdd506537dc4efea058285f2065c30d413ba2ae56fc8d5b4cbbe9286f11a2e`) was run through its own window, choosing **Everything**, for the current user, with VS Code downloaded. It created `~/.wpilib/2027_alpha7` with JDK 25.0.4.1, VS Code 1.134.0, and the WPILib extension 2027.0.0-alpha-7.
+- **Defect found.** The example's `settings.gradle` looked for the GradleRIO plugin under `~/wpilib/2027/maven`, which this installer does not create. With a new Gradle home and `--offline`, plugin lookup failed for `org.wpilib.GradleRIO:2027.0.0-alpha-7`. The same original project built when online, because Gradle fetched the plugin from the plugin portal.
+- **Fix.** `settings.gradle` is now byte-identical to the vscode-wpilib `v2027.0.0-alpha-7` template. It searches the installer's `2027_alpha7` folder first, then local Maven, then the plugin portal. The macOS folder is `~/.wpilib/2027_alpha7` (`~/wpilib/2027_alpha7` is a link to it); the Linux and Windows folders are listed in the [example README](../../library/examples/localization-sim-2027/README.md). Only the macOS install was run. The other two folders come from the same template.
+- **Result.** With the fixed file, a clean offline `./gradlew test build` using a new Gradle home passed all 15 contract tests. The Gradle wrapper had been downloaded online first, and `--offline` does not cover that download, so this is not a build on a blank machine with no network.
+- **Preferences.** `projectYear` in `.wpilib/wpilib_preferences.json` changed from `2027` to `2027_alpha7`, and `bin/` is now ignored.
+- **Other checks.** The 41 targeted Python tests (compatibility, timing, publishing, startup checks) passed, and the frontend production build passed. The full Python suites were not rerun on October 14.
+
+### Editor and simulator (native windows)
+
+- **Project import.** With `projectYear` set to `2027`, the WPILib extension offered to import the example when it was opened. With `2027_alpha7` and a **Developer: Reload Window**, the prompt no longer appeared and Java support finished loading.
+- **Simulation.** The extension's **WPILib: Simulate Robot Code** command ran the `simulateExternalJava` task successfully, and **Sim GUI** was selected. A JDK 25 process running `frc.robot.Main` served NetworkTables on port 5810, and the extension log showed the launch arguments and the Sim GUI extension. The command-line logs show the Sim GUI extension loaded and "Simulator GUI Initialized!"; the Java simulator window itself was not seen (the native window inventory did not list it), so the evidence is that the extension initialized, not what it displayed. The IDE launch, the NetworkTables server, and Glass were each observed directly.
+- **Command line.** In alpha-7 the GradleRIO Java simulation task is `simulateExternalJava`; the plugin sources define no task named `simulateJava`, but Gradle accepts `./gradlew simulateJava` as an abbreviation (a `--dry-run` resolved it to `simulateExternalJava`). That task only builds and writes `build/sim/java.json`, the launch description the extension reads. It does not start the robot program. Running `./gradlew run` with the Sim GUI extension in `HALSIM_EXTENSIONS` loaded the extension and listened on 5810; the process was then terminated from outside, which is why Gradle printed exit value 143.
+- **Accidental deploy.** While trying to stop the simulator from the editor with a keyboard shortcut, a WPILib deploy for team 0 started. No robot was connected, discovery timed out, and nothing was deployed. The owned simulator process was then stopped directly.
+- **Glass.** A fresh Glass window connected to `127.0.0.1:5810`. `Telemetry/EagleEye/Accepted` rose from 3,667 to 4,301 while it was open. The `GroundTruth` and `Robot` topics were present as `Pose2d[]` structs, with a `.type` of `Field2d`. Whether Glass drew the field widget was not checked.
+
+### EagleEye backend and web interface
+
+The default 2026 backend served the web interface with an empty camera list (the first-boot wizard was skipped), live system information, and the pipeline editor. Settings reported **Disconnected** before the simulator started and **Connected** afterward. The 2026 backend was then stopped and the full backend was started from an existing isolated Python environment with the alpha-7 packages (`2027.0.0a7`). After a reload in Safari, Settings reported **Connected**.
+
+On the alpha-7 backend, the full sequence was then observed in Safari (native accessibility readout): Settings **Connected**, then the simulator process was terminated and Settings showed **Disconnected**, then the simulator was restarted with `./gradlew run` and Settings showed **Connected** again. The backend log recorded NT4 connected, disconnected ("remote end closed connection"), and connected again, and the restarted simulator's log shows both `glass@1` and `EagleEye@2` connecting. This is one pass of one sequence on the alpha-7 backend, and the restart was from the command line rather than the editor.
+
+No pipelines were configured and no camera was authorized, so this did not run a camera through a pipeline. The publisher and the pipeline enable/disable command were covered only by the separate runtime probes below. The backend did try to open a camera and logged an OpenCV authorization failure.
+
+### Python-to-Java runtime probes
+
+These probes run Python production code against the checked-in alpha-7 Java SDK on one computer over NetworkTables 4 on a nonstandard port. They do not start the backend, a camera, a GUI, a real Driver Station, or any controller hardware. The 50 ms difference between capture and publication is synthetic, so the reported ages do not measure camera exposure delay.
+
+| Run | Result |
+| --- | --- |
+| Python 2026.2.2 publisher to alpha-7 Java SDK | 540 of 540 frames accepted |
+| Python 2027.0.0a7 publisher to alpha-7 Java SDK | 540 of 540 frames accepted |
+| Alpha-7 Java SDK polled every 20 ms, 90 Hz publisher (short run) | 540 of 540 frames accepted; largest raw burst 3 |
+| 60 seconds with no catch-up bursts, polled every 20 ms | 4,420 of 4,420 frames accepted; largest raw burst 4 |
+| About 5 minutes (311.8 s), 90 Hz target, catch-up after delays, polled every 3 ms | **26,974 of 27,000 accepted. This run failed its exact-count check.** |
+
+- **Short runs.** Each of the first two runs sent three blocks of 180 frames. The accepted counts are cumulative: 180 before the Java side disabled the pipeline, still 180 during the disable, 360 after re-enable, and 540 after a server restart (180 per block, not 360 in one block). Pose X/Y/yaw stayed at 2/3/0.5. Three stale and three future capture times were rejected, and the real Python pipeline command gate read false while disabled and true after re-enable.
+- **No-catch-up control.** The publisher set each deadline from its actual send time, so it never sent frames back to back to make up lost time. It achieved 73.67 frames per second, not 90 (minimum gap 11.1 ms, median 13.9 ms, maximum 42.1 ms), so it is not evidence of sustained 90 Hz delivery. Independent raw subscribers also received all 4,420. Its largest raw burst was 4, below the SDK's 20-sample queue. It differs from the five-minute run in duration (60 s against about 312 s), pacing, SDK polling interval (20 ms against 3 ms), and the absence of disable, reconnect, and restart phases, so it does not isolate one cause of the loss in that run.
+- **Five-minute run.** The publisher kept its original 90 Hz schedule, so after a delay it sent several frames at once. The first block accepted 8,974 of 9,000. After a re-enable and a deliberate client reconnect, the second block accepted 9,000 of 9,000. After a server restart, the third accepted 9,000 of 9,000. Raw subscribers with 1,024-entry queues received all 27,000 pose and metadata pairs, plus two retained values replayed after the reconnects (which the SDK correctly rejected), and their timestamp sets were identical. Accepted frames were 50 to 288 ms old including the synthetic 50 ms offset, inside the SDK's 500 ms limit.
+- **Queue evidence.** The raw subscribers logged two bursts, of 22 and 26 frames, both in the first block, where all 26 missing frames occurred. The SDK keeps 20 samples per topic between polls, so those bursts exceed it. That is consistent with queue overflow, but individual missing frames were not traced through the SDK, so overflow is not proven for each one. The run overlapped the WPILib installation on a heavily loaded computer, so the cause of the pauses is also unknown. A separate check that withheld polling while 90 frames arrived confirmed the SDK keeps exactly 20.
+- **Disposition.** The failed run is preserved as a failure; no check was loosened to pass it. The 20-sample limit is unchanged in both the 2026 and alpha-7 SDKs, following the review's recommendation to document it rather than change it. The [library guide](../../library/README.md#poll-every-robot-loop) tells teams to poll every loop.
+
+### Not covered
+
+The VS Code new-project creator was tried, but its window stayed blank under automation and native screenshots were intermittently stale, so project creation is not reported as passing. AdvantageScope and Elastic were not tested. The built-in T3 browser preview timed out twice, so the web interface was exercised through native Safari. Driver Station controls in the Java simulator window, a physical controller, and the Driver Station itself were not tested.
+
 ## Historical interoperability evidence
 
 The **original audit**, before the final compatibility adapter and production Java migration, exercised a 2026 Python client against alpha-7 servers:
@@ -104,7 +157,7 @@ Running EagleEye on the Systemcore itself is not supported, and the guide lists 
 
 ## Limits and outstanding validation
 
-No physical Systemcore/roboRIO deployment, Driver Station alpha-7/controller integration, camera exposure timestamp verification, radio/network field test, or dashboard GUI test was performed for this migration. No Pi image build/flash/boot or long-duration clock, reconnection, or load test was performed. The eight Python skips cover optional hardware/model, Blender, pipeline configuration, and Linux ABI checks. Passing desktop/loopback checks establish software behavior within that scope, not measured localization accuracy or field certification.
+No physical Systemcore/roboRIO deployment, Driver Station alpha-7/controller integration, camera exposure timestamp verification, radio/network field test, or camera-to-pipeline run was performed for this migration. No Pi image build/flash/boot was performed, and EagleEye was not installed or run on a Systemcore. The October 13 pass had no GUI, reconnection, or load testing. October 14 added a desktop simulator and web interface check (including one simulator stop, a Disconnected reading, and a restart back to Connected), a five-minute loopback soak that failed its exact-count check, and server-restart and reconnect probes. Those do not replace multi-hour, field-network, or hardware testing. The eight Python skips cover optional hardware/model, Blender, pipeline configuration, and Linux ABI checks. Passing desktop/loopback checks establish software behavior within that scope, not measured localization accuracy or field certification.
 
 A separate macOS probe exposed a **pre-existing WPILib 2026.2.1 native JNI detection-queue defect**: `readQueueStringArray` uses an `Object[]` constructor signature where `TimestampedStringArray` expects `String[]`, causing a native crash. The passing 2026 pose/meta contract suite does not validate that failing detection-queue path. Alpha-7's real detection-queue regression passes. This migration does not fix the upstream 2026 native defect.
 

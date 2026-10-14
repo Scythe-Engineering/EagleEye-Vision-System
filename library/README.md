@@ -20,6 +20,17 @@ For a Systemcore robot, see the user guide
 for the controller image, Driver Station, team number, and coprocessor address. It describes a
 separate-coprocessor setup; running EagleEye on the Systemcore itself is not supported.
 
+The official WPILib alpha-7 installer puts its tools, Maven folder, and JDK 25 in a
+`2027_alpha7` folder: `~/.wpilib/2027_alpha7` on macOS (with `~/wpilib/2027_alpha7` kept as a
+link), `$XDG_DATA_HOME/wpilib/2027_alpha7` on Linux when `XDG_DATA_HOME` is an absolute path
+(otherwise `~/.local/share/wpilib/2027_alpha7`), and `C:\Users\Public\wpilib\2027_alpha7` on
+Windows. Only the macOS install was run; the Linux and Windows folders come from WPILib's
+project template. To build from a terminal on macOS, point `JAVA_HOME` at that JDK:
+
+```sh
+export JAVA_HOME="$HOME/.wpilib/2027_alpha7/jdk"
+```
+
 There is no vendordep. One file with no dependencies beyond WPILib is less to maintain than a
 maven repository, and copying it lets a team read and tune the thing that decides where their
 robot thinks it is.
@@ -142,6 +153,25 @@ Call it from a subsystem's `periodic()`, not from a NetworkTables listener threa
 
 Use `camera.poll()` directly if you want the raw observations for logging or for your own
 filtering; it returns them in capture order with the quality metrics attached.
+
+### Poll every robot loop
+
+Each camera keeps the 20 most recent pose samples and the 20 most recent metadata samples
+between polls. Call `update()` or `poll()` every robot loop (20 ms by default) so the queues stay
+nearly empty. At 90 frames per second, 20 samples cover about 220 ms. If robot code stalls
+longer than that, or more than 20 frames arrive in one burst, the oldest unread samples are
+dropped, and a pose that loses its matching metadata (or the reverse) is not accepted. The
+2026 and alpha-7 SDKs both work this way, so the alpha-7 move did not introduce the limit.
+
+A five-minute desktop test **failed** its exact-count check. A 90 Hz publisher that caught up
+after delays sent bursts of 22 and 26 frames, and the SDK accepted 26,974 of 27,000 frames, even
+though the SDK was polled every 3 ms and a test subscriber with a large queue received every
+frame. A separate 60-second test, polled every 20 ms, accepted all 4,420 frames, but its
+publisher never sent catch-up bursts and averaged about 74 frames per second rather than 90, so
+it does not show sustained 90 Hz delivery. The two runs differ in more than one way, so the
+comparison is not a controlled experiment. The
+[alpha-7 report](../reports/wpilib-2027-alpha7/README.md#python-to-java-runtime-probes)
+has the details, including what the failed run does and does not show.
 
 ## Optional enhancement: lower-latency ingestion
 
@@ -336,8 +366,10 @@ port; every pose is dropped, because a pose without metrics cannot be weighted.
 error before changing anything else.
 
 **Everything arrives in bursts, and the estimate lags.** Confirm the pipeline is actually keeping
-up on the coprocessor. `sendAll` means the robot sees every frame EagleEye produces, so investigate coprocessor stalls, network/TCP backlog, and robot scheduling when
-frames arrive in bursts.
+up on the coprocessor. `sendAll` asks NetworkTables to deliver every frame EagleEye produces, but
+each camera holds only 20 samples per topic between polls. Look for coprocessor stalls, network
+backlog, and robot loops that run long, and make sure `update()` or `poll()` runs every loop.
+Frames that arrive in a burst larger than 20 can be lost.
 
 Publisher operations expose `publish_period_seconds` (default `0.01`). Set `0.1`
 for slower non-vision telemetry. This is a requested interval, not a strict rate limit:
