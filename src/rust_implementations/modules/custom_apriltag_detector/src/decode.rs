@@ -2,7 +2,7 @@
 
 use crate::detection::Detection;
 use crate::families::IndexedFamily;
-use crate::geometry::{dot, homography, min_f64, norm, project, Point, Quad, Homography};
+use crate::geometry::{dot, homography, min_f64, norm, project, Homography, Point, Quad};
 use crate::image::Image;
 
 /// Rotate a unit-square coordinate clockwise by quarter turns.
@@ -239,6 +239,91 @@ fn refine_grid(
         *h = next;
     }
     true
+}
+
+/// Cheap screen of an unrefined proposal before edge refinement and decoding.
+///
+/// Takes one sample per border cell, per adjacent exterior cell and per payload cell.
+/// Accepts when most border cells are darker than most exterior cells (lighter for
+/// reversed families) and the payload shows both dark and light cells. Thresholds are
+/// looser than `decode` because the quad has not been refined yet.
+pub(crate) fn plausible(quad: &Quad, image: &Image<'_>, indexed: &IndexedFamily) -> bool {
+    let f = indexed.family;
+    let Some(h) = homography(quad) else {
+        return false;
+    };
+    let width = f64::from(f.width);
+    let sample = |x: i32, y: i32| -> f64 {
+        image.sample(project(
+            &h,
+            (f64::from(x) + 0.5) / width,
+            (f64::from(y) + 0.5) / width,
+        ))
+    };
+    let mut border = [0.0f64; 64];
+    let mut exterior = [0.0f64; 64];
+    let (mut nb, mut ne) = (0, 0);
+    for side in 0..4 {
+        for i in 0..f.width {
+            let (x, y, ox, oy) = match side {
+                1 => (f.width - 1, i, f.width, i),
+                2 => (i, f.width - 1, i, f.width),
+                3 => (0, i, -1, i),
+                _ => (i, 0, i, -1),
+            };
+            let v = sample(x, y);
+            if v.is_finite() && nb < border.len() {
+                border[nb] = v;
+                nb += 1;
+            }
+            let v = if indexed.bit_at(ox, oy).is_some() {
+                f64::NAN
+            } else {
+                sample(ox, oy)
+            };
+            if v.is_finite() && ne < exterior.len() {
+                exterior[ne] = v;
+                ne += 1;
+            }
+        }
+    }
+    let total = (4 * f.width) as usize;
+    if nb * 2 < total || ne < 4 {
+        return false;
+    }
+    let (border, exterior) = (&border[..nb], &exterior[..ne]);
+    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len() as f64;
+    let (inner, outer) = (mean(border), mean(exterior));
+    let (black, white) = if f.reversed {
+        (outer, inner)
+    } else {
+        (inner, outer)
+    };
+    if white - black < 10.0 {
+        return false;
+    }
+    let threshold = (black + white) * 0.5;
+    let is_dark = |v: f64| v < threshold;
+    let dark_border = border.iter().filter(|&&v| is_dark(v) != f.reversed).count();
+    let light_exterior = exterior
+        .iter()
+        .filter(|&&v| is_dark(v) == f.reversed)
+        .count();
+    if dark_border * 2 < nb || light_exterior * 2 < ne {
+        return false;
+    }
+    let (mut dark, mut light) = (0, 0);
+    for b in 0..f.nbits {
+        let v = sample(f.bit_x[b], f.bit_y[b]);
+        if v.is_finite() {
+            if is_dark(v) {
+                dark += 1;
+            } else {
+                light += 1;
+            }
+        }
+    }
+    dark > 0 && light > 0
 }
 
 /// Decode all rotations using observed border evidence and optionally verify a grid fit.

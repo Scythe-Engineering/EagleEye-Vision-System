@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::candidates::{prepare, proposals, Proposal, Scratch};
-use crate::decode::decode;
+use crate::decode::{decode, plausible};
 use crate::detection::Detection;
 use crate::families::{select_families, IndexedFamily};
 use crate::geometry::{max_f64, Homography, Quad};
@@ -164,6 +164,11 @@ impl Detector {
     /// Refine and decode one proposal; returns whether any family decoded it.
     fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> bool {
         let mut quad = proposal.quad;
+        if !self.selected.iter().any(|family| {
+            i32::from(family.family.reversed) == proposal.color && plausible(&quad, image, family)
+        }) {
+            return false;
+        }
         if self.settings.refine_edges
             && !crate::geometry::refine(
                 &mut quad,
