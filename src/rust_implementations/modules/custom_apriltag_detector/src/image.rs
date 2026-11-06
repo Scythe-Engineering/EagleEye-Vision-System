@@ -1,4 +1,4 @@
-use crate::geometry::{max_f64, min_f64, Point, Homography};
+use crate::geometry::{max_f64, min_f64, Homography, Point};
 
 /// Borrowed grayscale pixels with an optional integer-center physical-source map.
 #[derive(Clone, Copy)]
@@ -10,9 +10,105 @@ pub(crate) struct Image<'a> {
     pub(crate) source_map: Option<Homography>,
     pub(crate) source_width: u32,
     pub(crate) source_height: u32,
+    /// Per-row `[first, end)` integer pixels that `valid` accepts, when mapped.
+    pub(crate) row_spans: Option<&'a [(usize, usize)]>,
 }
 
 impl Image<'_> {
+    /// `valid` for an integer pixel, using precomputed row spans when available.
+    #[inline(always)]
+    pub(crate) fn valid_pixel(&self, x: usize, y: usize) -> bool {
+        match self.row_spans {
+            Some(spans) => {
+                let (first, end) = spans[y];
+                x >= first && x < end
+            }
+            None => self.valid(Point {
+                x: x as f64,
+                y: y as f64,
+            }),
+        }
+    }
+
+    /// Fill per-row spans of valid integer pixels. Returns false when a row's valid
+    /// pixels are not contiguous (a projective pole crosses it) or nothing is mapped.
+    pub(crate) fn compute_row_spans(&self, spans: &mut Vec<(usize, usize)>) -> bool {
+        spans.clear();
+        let Some(m) = self.source_map else {
+            return false;
+        };
+        let width = self.width;
+        let max_x = (self.source_width - 1) as f64;
+        let max_y = (self.source_height - 1) as f64;
+        for y in 0..self.height {
+            let yf = y as f64;
+            let ok = |x: usize| self.valid(Point { x: x as f64, y: yf });
+            let cz = m[7].mul_add(yf, m[8]);
+            let z_last = m[6].mul_add((width - 1) as f64, cz);
+            let linear = cz.is_finite()
+                && z_last.is_finite()
+                && cz != 0.0
+                && z_last != 0.0
+                && (cz > 0.0) == (z_last > 0.0);
+            if !linear {
+                // Rare: scan the row and give up on spans if it is not one interval.
+                let first = (0..width).find(|&x| ok(x)).unwrap_or(width);
+                let end = (first..width).find(|&x| !ok(x)).unwrap_or(width);
+                if (end..width).any(ok) {
+                    spans.clear();
+                    return false;
+                }
+                spans.push((first, end));
+                continue;
+            }
+            // With z of fixed sign, each source bound is a half-line in x.
+            let sign = if cz > 0.0 { 1.0 } else { -1.0 };
+            let cx = m[1].mul_add(yf, m[2]);
+            let cy = m[4].mul_add(yf, m[5]);
+            let (mut lo, mut hi) = (0.0f64, (width - 1) as f64);
+            for (a, b) in [
+                (m[0], cx),
+                (max_x * m[6] - m[0], max_x * cz - cx),
+                (m[3], cy),
+                (max_y * m[6] - m[3], max_y * cz - cy),
+            ] {
+                let (a, b) = (sign * a, sign * b);
+                if a > 0.0 {
+                    lo = lo.max(-b / a);
+                } else if a < 0.0 {
+                    hi = hi.min(-b / a);
+                } else if b < 0.0 {
+                    lo = f64::INFINITY;
+                }
+            }
+            // Snap to integers, then confirm the boundaries with the exact test.
+            let mut first = if lo.is_finite() && lo <= hi {
+                (lo.ceil().max(0.0) as usize).min(width)
+            } else {
+                width
+            };
+            while first > 0 && ok(first - 1) {
+                first -= 1;
+            }
+            while first < width && !ok(first) {
+                first += 1;
+            }
+            let mut end = if first < width && hi.is_finite() {
+                ((hi.floor().max(0.0) as usize) + 1).clamp(first, width)
+            } else {
+                first
+            };
+            while end < width && ok(end) {
+                end += 1;
+            }
+            while end > first && !ok(end - 1) {
+                end -= 1;
+            }
+            spans.push((first, end));
+        }
+        true
+    }
+
     /// Test crop bounds and, when mapped, availability in the physical source.
     pub(crate) fn valid(&self, q: Point) -> bool {
         if !q.x.is_finite()
@@ -121,28 +217,16 @@ impl Image<'_> {
         let a = q.x - x as f64;
         let b = q.y - y as f64;
         if self.source_map.is_some()
-            && !(self.valid(Point {
-                x: x as f64,
-                y: y as f64,
-            }) && self.valid(Point {
-                x: xx as f64,
-                y: y as f64,
-            }) && self.valid(Point {
-                x: x as f64,
-                y: yy as f64,
-            }) && self.valid(Point {
-                x: xx as f64,
-                y: yy as f64,
-            }))
+            && !(self.valid_pixel(x, y)
+                && self.valid_pixel(xx, y)
+                && self.valid_pixel(x, yy)
+                && self.valid_pixel(xx, yy))
         {
             let mut value = 0.0;
             let mut weight = 0.0;
             for (row, row_weight) in [(y, 1.0 - b), (yy, b)] {
                 for (col, col_weight) in [(x, 1.0 - a), (xx, a)] {
-                    if self.valid(Point {
-                        x: col as f64,
-                        y: row as f64,
-                    }) {
+                    if self.valid_pixel(col, row) {
                         let t = row_weight * col_weight;
                         value = t.mul_add(self.pixels[row * self.stride + col] as f64, value);
                         weight += t;

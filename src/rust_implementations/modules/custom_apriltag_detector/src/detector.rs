@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
 
-use crate::candidates::{prepare, proposals, Scratch};
+use crate::candidates::{prepare, proposals, Proposal, Scratch};
 use crate::decode::decode;
 use crate::detection::Detection;
 use crate::families::{select_families, IndexedFamily};
-use crate::geometry::{max_f64, Homography};
+use crate::geometry::{max_f64, Homography, Quad};
 use crate::image::Image;
 use crate::workers::Workers;
 
@@ -39,6 +39,9 @@ pub(crate) struct Detector {
     pub(crate) results: Vec<Detection>,
     workers: Workers,
     scratch: Scratch,
+    row_spans: Vec<(usize, usize)>,
+    /// Grown bounding boxes of primary proposals that did not decode this frame.
+    failed: Vec<[f64; 4]>,
 }
 
 impl Detector {
@@ -52,6 +55,8 @@ impl Detector {
             results: Vec::new(),
             workers,
             scratch: Scratch::new(),
+            row_spans: Vec::new(),
+            failed: Vec::new(),
         })
     }
 
@@ -60,6 +65,24 @@ impl Detector {
         if image.fully_observed() {
             image.source_map = None;
         }
+        // Partially observed crops: precompute valid pixel spans once instead of
+        // projecting every resampled pixel and bilinear neighbour through the map.
+        let mut spans = std::mem::take(&mut self.row_spans);
+        let image = if image.compute_row_spans(&mut spans) {
+            Image {
+                row_spans: Some(&spans),
+                ..image
+            }
+        } else {
+            image
+        };
+        self.detect_prepared(image);
+        self.row_spans = spans;
+        &self.results
+    }
+
+    fn detect_prepared(&mut self, image: Image<'_>) {
+        self.failed.clear();
         let light = self.selected.iter().any(|family| family.family.reversed);
         let prepared = prepare(
             &image,
@@ -74,18 +97,20 @@ impl Detector {
             &self.workers,
             light,
             false,
+            &[],
         );
         self.decode_proposals(&image, &primary);
-        if self.results.is_empty() {
-            let recovery = proposals(
-                &prepared,
-                &mut self.scratch,
-                &self.workers,
-                light,
-                true,
-            );
-            self.decode_proposals(&image, &recovery);
-        }
+        // Recovery runs every frame so one decoded tag cannot hide the rest, but only
+        // around primary quads that failed to decode, reusing the primary tile ranges.
+        let recovery = proposals(
+            &prepared,
+            &mut self.scratch,
+            &self.workers,
+            light,
+            true,
+            &self.failed,
+        );
+        self.decode_proposals(&image, &recovery);
         self.results.sort_unstable_by(|a, b| {
             a.family_index
                 .cmp(&b.family_index)
@@ -101,62 +126,108 @@ impl Detector {
                         .unwrap_or(Ordering::Equal)
                 })
         });
-        &self.results
     }
 
-    fn decode_proposals(&mut self, image: &Image<'_>, found: &[crate::candidates::Proposal]) {
+    /// Whether a proposal sits on a tag already decoded this frame, using the same
+    /// centre-distance rule as duplicate suppression.
+    fn covers_decoded(&self, quad: &Quad) -> bool {
+        let cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) * 0.25 + 0.5;
+        let cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) * 0.25 + 0.5;
+        self.results.iter().any(|old| {
+            let size = (old.corners[0] - old.corners[4]).hypot(old.corners[1] - old.corners[5]);
+            (old.center[0] - cx).hypot(old.center[1] - cy) < max_f64(2.0, size * 0.2)
+        })
+    }
+
+    /// Whether a recovery quad's centre lies inside a primary quad that failed to decode.
+    fn inside_failed(&self, quad: &Quad) -> bool {
+        let cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) * 0.25;
+        let cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) * 0.25;
+        self.failed
+            .iter()
+            .any(|&[x0, y0, x1, y1]| cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)
+    }
+
+    fn decode_proposals(&mut self, image: &Image<'_>, found: &[Proposal]) {
         for proposal in found {
-            let mut quad = proposal.quad;
-            if self.settings.refine_edges
-                && !crate::geometry::refine(
-                    &mut quad,
-                    image,
-                    self.settings.quad_decimate + 1.0,
-                    if proposal.color != 0 { -1 } else { 1 },
-                )
+            if proposal.recovery
+                && (self.covers_decoded(&proposal.quad) || !self.inside_failed(&proposal.quad))
             {
                 continue;
             }
-            for (index, family) in self.selected.iter().enumerate() {
-                if i32::from(family.family.reversed) != proposal.color {
-                    continue;
-                }
-                let Some(detection) = decode(
-                    &quad,
-                    image,
-                    family,
-                    index as u32,
-                    self.settings.decode_sharpening,
-                    self.settings.refine_edges,
-                ) else {
-                    continue;
-                };
-                let mut duplicate = false;
-                for old in &mut self.results {
-                    let distance = (old.center[0] - detection.center[0])
-                        .hypot(old.center[1] - detection.center[1]);
-                    let size = (detection.corners[0] - detection.corners[2])
-                        .hypot(detection.corners[1] - detection.corners[3]);
-                    if old.family_index == detection.family_index
-                        && distance < max_f64(2.0, size * 0.2)
-                    {
-                        duplicate = true;
-                        if !proposal.recovery
-                            && (detection.hamming < old.hamming
-                                || (detection.hamming == old.hamming
-                                    && detection.decision_margin > old.decision_margin))
-                        {
-                            *old = detection;
-                        }
-                        break;
-                    }
-                }
-                if !duplicate {
-                    self.results.push(detection);
-                }
+            if !self.decode_one(image, proposal) && !proposal.recovery {
+                self.failed.push(grown_bounds(&proposal.quad, 0.25));
             }
         }
     }
+
+    /// Refine and decode one proposal; returns whether any family decoded it.
+    fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> bool {
+        let mut quad = proposal.quad;
+        if self.settings.refine_edges
+            && !crate::geometry::refine(
+                &mut quad,
+                image,
+                self.settings.quad_decimate + 1.0,
+                if proposal.color != 0 { -1 } else { 1 },
+            )
+        {
+            return false;
+        }
+        let mut decoded = false;
+        for (index, family) in self.selected.iter().enumerate() {
+            if i32::from(family.family.reversed) != proposal.color {
+                continue;
+            }
+            let Some(detection) = decode(
+                &quad,
+                image,
+                family,
+                index as u32,
+                self.settings.decode_sharpening,
+                self.settings.refine_edges,
+            ) else {
+                continue;
+            };
+            decoded = true;
+            let mut duplicate = false;
+            for old in &mut self.results {
+                let distance = (old.center[0] - detection.center[0])
+                    .hypot(old.center[1] - detection.center[1]);
+                let size = (detection.corners[0] - detection.corners[2])
+                    .hypot(detection.corners[1] - detection.corners[3]);
+                if old.family_index == detection.family_index && distance < max_f64(2.0, size * 0.2)
+                {
+                    duplicate = true;
+                    if !proposal.recovery
+                        && (detection.hamming < old.hamming
+                            || (detection.hamming == old.hamming
+                                && detection.decision_margin > old.decision_margin))
+                    {
+                        *old = detection;
+                    }
+                    break;
+                }
+            }
+            if !duplicate {
+                self.results.push(detection);
+            }
+        }
+        decoded
+    }
+}
+
+/// Axis-aligned bounds of a quad, grown on every side by `fraction` of its larger extent.
+fn grown_bounds(quad: &Quad, fraction: f64) -> [f64; 4] {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for point in quad {
+        x0 = x0.min(point.x);
+        y0 = y0.min(point.y);
+        x1 = x1.max(point.x);
+        y1 = y1.max(point.y);
+    }
+    let pad = fraction * (x1 - x0).max(y1 - y0);
+    [x0 - pad, y0 - pad, x1 + pad, y1 + pad]
 }
 
 pub(crate) fn image_span(width: usize, height: usize, stride: usize) -> Result<usize, String> {
@@ -212,5 +283,6 @@ pub(crate) fn mapped_image<'a>(
         source_map,
         source_width,
         source_height,
+        row_spans: None,
     })
 }

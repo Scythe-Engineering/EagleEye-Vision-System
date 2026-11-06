@@ -80,4 +80,60 @@ impl CustomAprilTagDetector {
         py.detach(|| catch_unwind(AssertUnwindSafe(|| detector.detect(image).to_vec())))
             .map_err(|_| PyRuntimeError::new_err("native detector panicked"))
     }
+
+    /// Re-decode and grid-fit corners from another detector.
+    ///
+    /// `corners` holds eight values in pupil_apriltags order and pixel-edge
+    /// coordinates. Returns None when the quad does not decode as the first family.
+    #[pyo3(signature = (gray, corners))]
+    fn refine(
+        &mut self,
+        py: Python<'_>,
+        gray: &Bound<'_, PyAny>,
+        corners: Vec<f64>,
+    ) -> PyResult<Option<Detection>> {
+        if corners.len() != 8 || corners.iter().any(|value| !value.is_finite()) {
+            return Err(PyValueError::new_err("corners must be eight finite values"));
+        }
+        let buffer = PyBuffer::<u8>::get(gray)
+            .map_err(|_| PyValueError::new_err("detector requires a 2D uint8 grayscale image"))?;
+        if buffer.dimensions() != 2
+            || buffer.suboffsets().is_some()
+            || buffer.strides()[1] != 1
+            || buffer.strides()[0] < 0
+        {
+            return Err(PyValueError::new_err(
+                "detector requires positive row strides and contiguous pixels",
+            ));
+        }
+        let height = buffer.shape()[0];
+        let width = buffer.shape()[1];
+        let stride = buffer.strides()[0] as usize;
+        let span = image_span(width, height, stride).map_err(PyValueError::new_err)?;
+        // SAFETY: as in `run`, the exporter keeps these validated rows alive.
+        let pixels = unsafe { slice::from_raw_parts(buffer.buf_ptr().cast::<u8>(), span) };
+        let image = mapped_image(pixels, width, height, stride, None, None)
+            .map_err(PyValueError::new_err)?;
+        // Output order traverses unit corners (0,1),(1,1),(1,0),(0,0); decode expects the reverse.
+        let mut quad = [crate::geometry::Point::default(); 4];
+        for (i, point) in quad.iter_mut().enumerate() {
+            let k = 3 - i;
+            point.x = corners[2 * k] - 0.5;
+            point.y = corners[2 * k + 1] - 0.5;
+        }
+        let detector = &self.detector;
+        py.detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                crate::decode::decode(
+                    &quad,
+                    &image,
+                    &detector.selected[0],
+                    0,
+                    detector.settings.decode_sharpening,
+                    true,
+                )
+            }))
+        })
+        .map_err(|_| PyRuntimeError::new_err("native refine panicked"))
+    }
 }

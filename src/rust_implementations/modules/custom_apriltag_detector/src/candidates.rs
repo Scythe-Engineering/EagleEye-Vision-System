@@ -13,6 +13,9 @@ pub(crate) struct Proposal {
 pub(crate) struct Scratch {
     gray: Vec<f32>,
     binary: Vec<u8>,
+    /// Per-tile (min, max) over each 3x3 tile neighbourhood, shared by both passes.
+    ranges: Vec<(f32, f32)>,
+    active: Vec<bool>,
 }
 
 impl Scratch {
@@ -20,6 +23,8 @@ impl Scratch {
         Self {
             gray: Vec::new(),
             binary: Vec::new(),
+            ranges: Vec::new(),
+            active: Vec::new(),
         }
     }
 }
@@ -101,8 +106,7 @@ fn resample(image: &Image<'_>, width: usize, height: usize, workers: &Workers, g
                     .zip(top.as_chunks::<2>().0.iter())
                     .zip(bottom.as_chunks::<2>().0.iter())
                 {
-                    let sum =
-                        top[0] as u32 + top[1] as u32 + bottom[0] as u32 + bottom[1] as u32;
+                    let sum = top[0] as u32 + top[1] as u32 + bottom[0] as u32 + bottom[1] as u32;
                     *value = sum as f32 * 0.25;
                 }
                 return;
@@ -141,7 +145,8 @@ fn resample(image: &Image<'_>, width: usize, height: usize, workers: &Workers, g
                     let mut value = 0.0;
                     for (j, wy) in y_weights.iter().enumerate() {
                         let row = (y_span.first + j) * image.stride;
-                        let pixels = &image.pixels[row + x_span.first..row + x_span.first + x_span.count];
+                        let pixels =
+                            &image.pixels[row + x_span.first..row + x_span.first + x_span.count];
                         for (wx, pixel) in x_weights.iter().zip(pixels) {
                             value += wx * wy * *pixel as f32;
                         }
@@ -161,10 +166,7 @@ fn resample(image: &Image<'_>, width: usize, height: usize, workers: &Workers, g
                     let wy = y1.min((yy + 1) as f32) - y0.max(yy as f32);
                     for xx in x0 as usize..image.width.min(x1.ceil() as usize) {
                         let wx = x1.min((xx + 1) as f32) - x0.max(xx as f32);
-                        if image.valid(Point {
-                            x: xx as f64,
-                            y: yy as f64,
-                        }) {
+                        if image.valid_pixel(xx, yy) {
                             value += wx * wy * image.pixels[yy * image.stride + xx] as f32;
                             weight += wx * wy;
                         }
@@ -414,38 +416,70 @@ pub(crate) fn proposals(
     workers: &Workers,
     light: bool,
     recovery: bool,
+    regions: &[[f64; 4]],
 ) -> Vec<Proposal> {
     let width = prepared.width;
     let height = prepared.height;
     let tile_width = width.div_ceil(8);
     let tile_height = height.div_ceil(8);
-    let mut lo = vec![255.0f32; tile_width * tile_height];
-    let mut hi = vec![0.0f32; tile_width * tile_height];
-    for (y, row) in scratch.gray.chunks_exact(width).enumerate() {
-        let lows = &mut lo[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-        let highs = &mut hi[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-        for ((low, high), pixels) in lows.iter_mut().zip(highs).zip(row.chunks(8)) {
-            for &value in pixels {
-                *low = low.min(value);
-                *high = high.max(value);
-            }
-        }
-    }
-    let mut ranges = Vec::with_capacity(tile_width * tile_height);
-    for tile_y in 0..tile_height {
-        for tile_x in 0..tile_width {
-            let mut low: f32 = 255.0;
-            let mut high: f32 = 0.0;
-            for yy in tile_y.saturating_sub(1)..=(tile_height - 1).min(tile_y + 1) {
-                for xx in tile_x.saturating_sub(1)..=(tile_width - 1).min(tile_x + 1) {
-                    let i = yy * tile_width + xx;
-                    low = low.min(lo[i]);
-                    high = high.max(hi[i]);
+    if !recovery || scratch.ranges.len() != tile_width * tile_height {
+        let mut lo = vec![255.0f32; tile_width * tile_height];
+        let mut hi = vec![0.0f32; tile_width * tile_height];
+        for (y, row) in scratch.gray.chunks_exact(width).enumerate() {
+            let lows = &mut lo[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
+            let highs = &mut hi[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
+            for ((low, high), pixels) in lows.iter_mut().zip(highs).zip(row.chunks(8)) {
+                for &value in pixels {
+                    *low = low.min(value);
+                    *high = high.max(value);
                 }
             }
-            ranges.push((low, high));
+        }
+        scratch.ranges.clear();
+        for tile_y in 0..tile_height {
+            for tile_x in 0..tile_width {
+                let mut low: f32 = 255.0;
+                let mut high: f32 = 0.0;
+                for yy in tile_y.saturating_sub(1)..=(tile_height - 1).min(tile_y + 1) {
+                    for xx in tile_x.saturating_sub(1)..=(tile_width - 1).min(tile_x + 1) {
+                        let i = yy * tile_width + xx;
+                        low = low.min(lo[i]);
+                        high = high.max(hi[i]);
+                    }
+                }
+                scratch.ranges.push((low, high));
+            }
         }
     }
+    // Recovery only thresholds tiles overlapping regions where the primary pass failed.
+    scratch.active.clear();
+    scratch.active.resize(tile_width * tile_height, !recovery);
+    if recovery {
+        if regions.is_empty() {
+            return Vec::new();
+        }
+        let to_tile = |v: f64, scale: f64, tiles: usize| -> usize {
+            let decimated = (v + 0.5) / scale - 0.5;
+            ((decimated / 8.0).floor().max(0.0) as usize).min(tiles - 1)
+        };
+        for &[x0, y0, x1, y1] in regions {
+            let (tx0, tx1) = (
+                to_tile(x0, prepared.scale_x, tile_width),
+                to_tile(x1, prepared.scale_x, tile_width),
+            );
+            let (ty0, ty1) = (
+                to_tile(y0, prepared.scale_y, tile_height),
+                to_tile(y1, prepared.scale_y, tile_height),
+            );
+            for ty in ty0..=ty1 {
+                for tx in tx0..=tx1 {
+                    scratch.active[ty * tile_width + tx] = true;
+                }
+            }
+        }
+    }
+    let ranges = scratch.ranges.as_slice();
+    let active = scratch.active.as_slice();
     let fraction = if recovery { 0.3f32 } else { 0.5 };
     let pass_light = light && !recovery;
     scratch.binary.resize(scratch.gray.len(), 0);
@@ -460,10 +494,14 @@ pub(crate) fn proposals(
             |y: usize, output: &mut [u8]| {
                 let row = &gray[y * width..(y + 1) * width];
                 let tile_ranges = &ranges[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-                for ((pixels, output), &(low, high)) in
-                    row.chunks(8).zip(output.chunks_mut(8)).zip(tile_ranges)
+                let tile_active = &active[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
+                for (((pixels, output), &(low, high)), &on) in row
+                    .chunks(8)
+                    .zip(output.chunks_mut(8))
+                    .zip(tile_ranges)
+                    .zip(tile_active)
                 {
-                    if high - low < 12.0 {
+                    if !on || high - low < 12.0 {
                         continue;
                     }
                     let dark = low + fraction * (high - low);
