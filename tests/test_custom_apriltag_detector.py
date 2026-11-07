@@ -100,6 +100,28 @@ def test_corners_stay_on_the_tag_outline_under_blur_and_gamma() -> None:
     assert error < 0.15
 
 
+def test_track_refinds_a_moved_tag_and_rejects_other_ids() -> None:
+    """track() confirms the expected tag near a stale prediction and nothing else."""
+    frame = _tag_scene()
+    detector = CustomAprilTagDetector(quad_decimate=1.0)
+    (reference,) = detector.run(frame)
+    corners = _corners(reference)
+    # The grid fit alone moves corners at most a quarter cell; a larger miss needs
+    # the edge-snap retry.
+    cell = np.linalg.norm(corners[0] - corners[1]) / 8.0
+    for shift in (np.array([0.4, -0.3]), np.array([0.3 * cell, -0.2 * cell])):
+        stale = (corners + shift).ravel().tolist()
+
+        tracked = detector.track(frame, stale, reference.tag_id)
+
+        assert tracked is not None and tracked.tag_id == reference.tag_id
+        error = np.linalg.norm(_corners(tracked) - corners, axis=1)
+        assert error.max() < 0.1
+    assert detector.track(frame, corners.ravel().tolist(), reference.tag_id + 1) is None
+    blank = np.full_like(frame, 255)
+    assert detector.track(blank, corners.ravel().tolist(), reference.tag_id) is None
+
+
 def test_refine_recovers_corners_from_a_rough_external_quad() -> None:
     """refine() re-decodes and grid-fits corners supplied by another detector."""
     frame = _tag_scene()

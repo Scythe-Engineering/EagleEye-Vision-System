@@ -9,6 +9,7 @@ mod family_data;
 mod geometry;
 mod image;
 mod python;
+mod track;
 mod workers;
 
 use pyo3::prelude::*;

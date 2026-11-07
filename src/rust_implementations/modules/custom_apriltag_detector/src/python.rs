@@ -6,11 +6,83 @@ use std::slice;
 
 use crate::detection::Detection;
 use crate::detector::{image_span, mapped_image, Detector, Settings};
-use crate::geometry::Homography;
+use crate::geometry::{Homography, Point, Quad};
+use crate::image::Image;
 
 #[pyclass(module = "custom_apriltag_detector")]
 pub(crate) struct CustomAprilTagDetector {
     detector: Detector,
+}
+
+/// A validated 2D uint8 buffer: positive row strides and contiguous pixels.
+struct GrayBuffer {
+    buffer: PyBuffer<u8>,
+    width: usize,
+    height: usize,
+    stride: usize,
+    span: usize,
+}
+
+impl GrayBuffer {
+    fn new(gray: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let buffer = PyBuffer::<u8>::get(gray)
+            .map_err(|_| PyValueError::new_err("detector requires a 2D uint8 grayscale image"))?;
+        if buffer.dimensions() != 2
+            || buffer.suboffsets().is_some()
+            || buffer.strides()[1] != 1
+            || buffer.strides()[0] < 0
+        {
+            return Err(PyValueError::new_err(
+                "detector requires positive row strides and contiguous pixels",
+            ));
+        }
+        let height = buffer.shape()[0];
+        let width = buffer.shape()[1];
+        let stride = buffer.strides()[0] as usize;
+        let span = image_span(width, height, stride).map_err(PyValueError::new_err)?;
+        Ok(Self {
+            buffer,
+            width,
+            height,
+            stride,
+            span,
+        })
+    }
+
+    fn image(
+        &self,
+        mapping: Option<Homography>,
+        source_shape: Option<(u32, u32)>,
+    ) -> PyResult<Image<'_>> {
+        // SAFETY: The buffer exporter owns these validated positive-stride rows and
+        // stays alive while `self` holds the buffer.
+        let pixels =
+            unsafe { slice::from_raw_parts(self.buffer.buf_ptr().cast::<u8>(), self.span) };
+        mapped_image(
+            pixels,
+            self.width,
+            self.height,
+            self.stride,
+            mapping,
+            source_shape,
+        )
+        .map_err(PyValueError::new_err)
+    }
+}
+
+/// Convert eight output-order pixel-edge corner values into a decode-order quad.
+fn decode_quad(corners: &[f64]) -> PyResult<Quad> {
+    if corners.len() != 8 || corners.iter().any(|value| !value.is_finite()) {
+        return Err(PyValueError::new_err("corners must be eight finite values"));
+    }
+    // Output order traverses unit corners (0,1),(1,1),(1,0),(0,0); decode expects the reverse.
+    let mut quad = [Point::default(); 4];
+    for (i, point) in quad.iter_mut().enumerate() {
+        let k = 3 - i;
+        point.x = corners[2 * k] - 0.5;
+        point.y = corners[2 * k + 1] - 0.5;
+    }
+    Ok(quad)
 }
 
 #[pymethods]
@@ -50,32 +122,14 @@ impl CustomAprilTagDetector {
         source_map: Option<Vec<f64>>,
         source_shape: Option<(u32, u32)>,
     ) -> PyResult<Vec<Detection>> {
-        let buffer = PyBuffer::<u8>::get(gray)
-            .map_err(|_| PyValueError::new_err("detector requires a 2D uint8 grayscale image"))?;
-        if buffer.dimensions() != 2
-            || buffer.suboffsets().is_some()
-            || buffer.strides()[1] != 1
-            || buffer.strides()[0] < 0
-        {
-            return Err(PyValueError::new_err(
-                "detector requires positive row strides and contiguous pixels",
-            ));
-        }
-        let height = buffer.shape()[0];
-        let width = buffer.shape()[1];
-        let stride = buffer.strides()[0] as usize;
-        let span = image_span(width, height, stride).map_err(PyValueError::new_err)?;
         let mapping: Option<Homography> = source_map
             .map(|map| {
                 map.try_into()
                     .map_err(|_| PyValueError::new_err("source_map must have nine elements"))
             })
             .transpose()?;
-        // SAFETY: The buffer exporter owns these validated positive-stride rows and
-        // stays alive until detached detection has completed.
-        let pixels = unsafe { slice::from_raw_parts(buffer.buf_ptr().cast::<u8>(), span) };
-        let image = mapped_image(pixels, width, height, stride, mapping, source_shape)
-            .map_err(PyValueError::new_err)?;
+        let gray = GrayBuffer::new(gray)?;
+        let image = gray.image(mapping, source_shape)?;
         let detector = &mut self.detector;
         py.detach(|| catch_unwind(AssertUnwindSafe(|| detector.detect(image).to_vec())))
             .map_err(|_| PyRuntimeError::new_err("native detector panicked"))
@@ -92,35 +146,9 @@ impl CustomAprilTagDetector {
         gray: &Bound<'_, PyAny>,
         corners: Vec<f64>,
     ) -> PyResult<Option<Detection>> {
-        if corners.len() != 8 || corners.iter().any(|value| !value.is_finite()) {
-            return Err(PyValueError::new_err("corners must be eight finite values"));
-        }
-        let buffer = PyBuffer::<u8>::get(gray)
-            .map_err(|_| PyValueError::new_err("detector requires a 2D uint8 grayscale image"))?;
-        if buffer.dimensions() != 2
-            || buffer.suboffsets().is_some()
-            || buffer.strides()[1] != 1
-            || buffer.strides()[0] < 0
-        {
-            return Err(PyValueError::new_err(
-                "detector requires positive row strides and contiguous pixels",
-            ));
-        }
-        let height = buffer.shape()[0];
-        let width = buffer.shape()[1];
-        let stride = buffer.strides()[0] as usize;
-        let span = image_span(width, height, stride).map_err(PyValueError::new_err)?;
-        // SAFETY: as in `run`, the exporter keeps these validated rows alive.
-        let pixels = unsafe { slice::from_raw_parts(buffer.buf_ptr().cast::<u8>(), span) };
-        let image = mapped_image(pixels, width, height, stride, None, None)
-            .map_err(PyValueError::new_err)?;
-        // Output order traverses unit corners (0,1),(1,1),(1,0),(0,0); decode expects the reverse.
-        let mut quad = [crate::geometry::Point::default(); 4];
-        for (i, point) in quad.iter_mut().enumerate() {
-            let k = 3 - i;
-            point.x = corners[2 * k] - 0.5;
-            point.y = corners[2 * k + 1] - 0.5;
-        }
+        let quad = decode_quad(&corners)?;
+        let gray = GrayBuffer::new(gray)?;
+        let image = gray.image(None, None)?;
         let detector = &self.detector;
         py.detach(|| {
             catch_unwind(AssertUnwindSafe(|| {
@@ -135,5 +163,36 @@ impl CustomAprilTagDetector {
             }))
         })
         .map_err(|_| PyRuntimeError::new_err("native refine panicked"))
+    }
+
+    /// Re-find a tracked tag of the first family from predicted corners.
+    ///
+    /// `corners` holds the predicted position in pupil_apriltags order and
+    /// pixel-edge coordinates. Returns None unless `tag_id` decodes there.
+    #[pyo3(signature = (gray, corners, tag_id))]
+    fn track(
+        &mut self,
+        py: Python<'_>,
+        gray: &Bound<'_, PyAny>,
+        corners: Vec<f64>,
+        tag_id: i32,
+    ) -> PyResult<Option<Detection>> {
+        let quad = decode_quad(&corners)?;
+        let gray = GrayBuffer::new(gray)?;
+        let image = gray.image(None, None)?;
+        let detector = &self.detector;
+        py.detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                crate::track::track(
+                    &quad,
+                    &image,
+                    &detector.selected[0],
+                    0,
+                    detector.settings.decode_sharpening,
+                    tag_id,
+                )
+            }))
+        })
+        .map_err(|_| PyRuntimeError::new_err("native track panicked"))
     }
 }

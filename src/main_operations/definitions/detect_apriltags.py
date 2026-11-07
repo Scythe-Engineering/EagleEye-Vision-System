@@ -27,6 +27,7 @@ class DetectApriltagsDefinition(OperationInstance):
         small_roi_max_px: int = 32,
         *,
         rust_backend: bool = False,
+        track_tags: bool = False,
     ) -> None:
         """Initialize the AprilTag detection definition.
 
@@ -47,6 +48,8 @@ class DetectApriltagsDefinition(OperationInstance):
             small_roi_max_px: Shorter-side threshold in pixels for decimate-1 temporal
                 ROI detection. Zero disables the override.
             rust_backend: Use the Rust detector; set by the separate Rust operation.
+            track_tags: Re-find previous-frame tags at predicted corners before the
+                temporal segment search; Rust backend only.
         """
         self.detector = AprilTagDetector(
             families=families,
@@ -60,6 +63,7 @@ class DetectApriltagsDefinition(OperationInstance):
             large_roi_min_px=large_roi_min_px,
             small_roi_max_px=small_roi_max_px,
             rust_backend=rust_backend,
+            track_tags=track_tags,
         )
 
         self.last_detections: Optional[List[Detection] | List[CustomDetection]] = None

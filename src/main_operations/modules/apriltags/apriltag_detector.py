@@ -9,6 +9,7 @@ import numpy as np
 from pupil_apriltags import Detection, Detector
 
 from .custom_native import CustomNativeDetector
+from .tag_tracker import TagTracker, segment_center
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class AprilTagDetector:
     """
 
     rust_backend = False
+    _tracker: TagTracker | None = None
 
     def __init__(
         self,
@@ -49,6 +51,7 @@ class AprilTagDetector:
         small_roi_max_px: int = 32,
         *,
         rust_backend: bool = False,
+        track_tags: bool = False,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -79,8 +82,12 @@ class AprilTagDetector:
                 Zero disables the extra detector.
             rust_backend: Use the built custom_apriltag_detector module instead of
                 pupil_apriltags for every detector bank.
+            track_tags: With the Rust backend and temporal segments, re-find tags
+                from the previous frame at their predicted corners and skip their
+                segments. Missed tags fall back to the segment search.
         """
         self.rust_backend = rust_backend
+        self._tracker = TagTracker() if track_tags and rust_backend else None
         self.families = families
         self.nthreads = nthreads
         self.quad_decimate = quad_decimate
@@ -411,6 +418,8 @@ class AprilTagDetector:
             self._preprocess_mode = None
             self._gray_buffer = None
             self._segment_gray_buffers.clear()
+            if self._tracker is not None:
+                self._tracker.reset()
             self._disable_native_destructor(old_detector)
             if old_full_frame_detector is not None:
                 self._disable_native_destructor(old_full_frame_detector)
@@ -583,6 +592,14 @@ class AprilTagDetector:
             the full frame is searched once before returning no detections.
         """
         temporal_segments = not isinstance(images, np.ndarray)
+        tracked: dict[int, np.ndarray] = {}
+        if (
+            self._tracker is not None
+            and temporal_segments
+            and full_frame is not None
+            and self._is_valid_image(full_frame)
+        ):
+            tracked, images = self._track(images, full_frame)
         search_regions = (
             [
                 self._segment_search_region(image, mapping)
@@ -601,6 +618,13 @@ class AprilTagDetector:
             and self._is_valid_image(full_frame)
             else self.run_detection(images)
         )
+        if tracked:
+            searched = [d for d in detections or [] if d.tag_id not in tracked]
+            detections = [
+                CustomDetection(tag_id=tag_id, corners=corners)
+                for tag_id, corners in tracked.items()
+            ] + searched
+            search_regions = search_regions + list(tracked.values())
         if (
             full_frame is not None
             and self._is_valid_image(full_frame)
@@ -624,4 +648,35 @@ class AprilTagDetector:
 
         with self._detect_lock:
             self._last_search_regions = search_regions
+            if self._tracker is not None:
+                self._tracker.update(detections or [])
         return detections
+
+    def _track(
+        self, images: list[tuple[np.ndarray, np.ndarray]], full_frame: np.ndarray
+    ) -> tuple[dict[int, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
+        """Confirm tracked tags and drop the segments centred on them.
+
+        Returns:
+            Confirmed full-frame corners by tag ID, and the segments still to search.
+        """
+        with self._detect_lock:
+            if not self.ready or self._tracker is None:
+                return {}, images
+            tracked = self._tracker.find(self.detector, full_frame)
+        if not tracked:
+            return tracked, images
+        # Segments are centred on one projected tag each; half an edge tolerates pose lag.
+        corners = np.stack(list(tracked.values()))
+        centers = corners.mean(axis=1)
+        radii = (
+            0.5 * np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1) / np.sqrt(2.0)
+        )
+        remaining = [
+            (image, mapping)
+            for image, mapping in images
+            if not np.any(
+                np.linalg.norm(centers - segment_center(image, mapping), axis=1) < radii
+            )
+        ]
+        return tracked, remaining

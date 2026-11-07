@@ -94,6 +94,13 @@
             "min": 0,
             "max": 4096,
             "restart_for_change": false
+        },
+        "track_tags": {
+            "type": "bool",
+            "description": "Re-find tags seen last frame at their predicted corners before searching temporal ROIs",
+            "default": false,
+            "required": false,
+            "restart_for_change": true
         }
     }
 }

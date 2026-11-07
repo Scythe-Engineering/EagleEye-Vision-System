@@ -19,13 +19,34 @@ fn rotate(mut point: Point, rotation: i32) -> Point {
 /// Grid-fit least-squares unknowns: homography updates plus the edge bias.
 const UNKNOWNS: usize = 9;
 
-/// Fit independent template edges for two iterations, restoring the input on failure.
+/// Grid-fit effort: Gauss-Newton iterations and the edge-profile centroid step.
+#[derive(Clone, Copy)]
+pub(crate) struct GridFit {
+    pub(crate) iterations: usize,
+    pub(crate) walk_step: f64,
+}
+
+/// The detector's grid fit, starting from edge-refined corners.
+pub(crate) const FULL_FIT: GridFit = GridFit {
+    iterations: 2,
+    walk_step: 0.125,
+};
+
+/// The tracker's grid fit, starting from last frame's grid-fitted corners. On the
+/// temporal replay it matches FULL_FIT's corner error at under half the cost.
+pub(crate) const TRACK_FIT: GridFit = GridFit {
+    iterations: 1,
+    walk_step: 0.25,
+};
+
+/// Fit independent template edges, restoring the input on failure.
 fn refine_grid(
     h: &mut Homography,
     image: &Image<'_>,
     indexed: &IndexedFamily,
     id: i32,
     rotation: i32,
+    fit: GridFit,
 ) -> bool {
     let family = indexed.family;
     if family.total != family.width + 2 || family.reversed {
@@ -58,7 +79,7 @@ fn refine_grid(
     if cell < 1.5 {
         return false;
     }
-    for _iteration in 0..2 {
+    for _iteration in 0..fit.iterations {
         // Unknowns: eight homography updates, then one shared shift of every edge
         // toward its dark side (blur, gamma or exposure bias), solved and discarded.
         let mut system = [[0.0f64; UNKNOWNS + 1]; UNKNOWNS];
@@ -158,7 +179,7 @@ fn refine_grid(
                     let mut mass = best;
                     let mut moment = offset * best;
                     for direction in [-1, 1] {
-                        let mut t = 0.125;
+                        let mut t = fit.walk_step;
                         while t <= 2.0 {
                             let s = offset + f64::from(direction) * t;
                             let g = gradient(s);
@@ -167,7 +188,7 @@ fn refine_grid(
                             }
                             mass += g;
                             moment = s.mul_add(g, moment);
-                            t += 0.125;
+                            t += fit.walk_step;
                         }
                     }
                     let residual = moment / mass;
@@ -248,6 +269,33 @@ fn refine_grid(
         *h = next;
     }
     true
+}
+
+/// Grid-fit a quad already known to show `id` upright, then confirm it decodes as `id`.
+///
+/// Skips the rotation search that `decode` runs before its grid fit. Returns None
+/// when the grid fit fails, so unrefined corners are never reported.
+pub(crate) fn decode_known(
+    quad: &Quad,
+    image: &Image<'_>,
+    indexed: &IndexedFamily,
+    family_index: u32,
+    sharpening: f64,
+    id: i32,
+    fit: GridFit,
+) -> Option<Detection> {
+    let mut h = homography(quad)?;
+    if !refine_grid(&mut h, image, indexed, id, 0, fit) {
+        return None;
+    }
+    let fitted = [
+        project(&h, 0.0, 0.0),
+        project(&h, 1.0, 0.0),
+        project(&h, 1.0, 1.0),
+        project(&h, 0.0, 1.0),
+    ];
+    decode(&fitted, image, indexed, family_index, sharpening, false)
+        .filter(|detection| detection.tag_id == id)
 }
 
 /// Cheap screen of an unrefined proposal before edge refinement and decoding.
@@ -529,7 +577,7 @@ pub(crate) fn decode(
     }
     if grid {
         let mut refined = h;
-        if refine_grid(&mut refined, image, indexed, id, rotation) {
+        if refine_grid(&mut refined, image, indexed, id, rotation, FULL_FIT) {
             let refined_quad = [
                 project(&refined, 0.0, 0.0),
                 project(&refined, 1.0, 0.0),

@@ -93,3 +93,20 @@ class CustomNativeDetector:
             detection.homography = np.array(native.homography).reshape(3, 3)
             detections.append(detection)
         return detections
+
+    def track(
+        self, gray: np.ndarray, corners: list[float], tag_id: int
+    ) -> np.ndarray | None:
+        """Confirm a tag at predicted corners and return its grid-fitted corners.
+
+        Args:
+            gray: 2D uint8 grayscale image around the prediction.
+            corners: Eight predicted values in pupil_apriltags corner order and
+                pixel-edge coordinates of ``gray``.
+            tag_id: Tag expected at the prediction.
+
+        Returns:
+            Shape-(4, 2) pixel-edge corners, or None when the tag is not confirmed.
+        """
+        native = self._detector.track(gray, corners, tag_id)
+        return None if native is None else np.array(native.corners).reshape(4, 2)

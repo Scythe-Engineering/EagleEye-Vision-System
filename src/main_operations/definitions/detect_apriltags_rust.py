@@ -18,6 +18,7 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 2,
         small_roi_max_px: int = 0,
+        track_tags: bool = False,
     ) -> None:
         """Initialize the Rust AprilTag detection definition.
 
@@ -32,6 +33,8 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
             large_roi_min_px: Minimum ROI side for large_roi_decimate; zero disables it.
             full_frame_nthreads: Thread count for full-frame searches; zero uses nthreads.
             small_roi_max_px: ROIs smaller than this use decimate one; zero disables it.
+            track_tags: Re-find previous-frame tags at predicted corners before the
+                temporal ROI search.
         """
         super().__init__(
             families=families,
@@ -45,4 +48,5 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
             full_frame_nthreads=full_frame_nthreads,
             small_roi_max_px=small_roi_max_px,
             rust_backend=True,
+            track_tags=track_tags,
         )
