@@ -17,6 +17,8 @@ pub(crate) struct Scratch {
     /// Per-tile (min, max) over each 3x3 tile neighbourhood, shared by both passes.
     ranges: Vec<(f32, f32)>,
     active: Vec<bool>,
+    /// Minimum 3x3-tile contrast to threshold a tile, shared by both passes.
+    floor: f32,
 }
 
 impl Scratch {
@@ -26,8 +28,35 @@ impl Scratch {
             masks: [Vec::new(), Vec::new()],
             ranges: Vec::new(),
             active: Vec::new(),
+            floor: MIN_CONTRAST,
         }
     }
+}
+
+/// Fixed contrast floor; also the floor for images too small to estimate noise from.
+const MIN_CONTRAST: f32 = 12.0;
+/// Cap on the adaptive floor so heavy texture cannot hide low-contrast tags.
+const MAX_CONTRAST: f32 = 18.0;
+/// Floor per unit of estimated noise range.
+const NOISE_GAIN: f32 = 3.5;
+
+/// Contrast floor that scales with sensor noise, estimated from the flattest tiles.
+///
+/// The 10th percentile of single-tile ranges measures noise when most tiles are
+/// background; small images such as tag crops fall back to the fixed floor.
+fn contrast_floor(lo: &[f32], hi: &[f32]) -> f32 {
+    let mut ranges: Vec<f32> = lo
+        .iter()
+        .zip(hi)
+        .filter(|(low, high)| high >= low)
+        .map(|(low, high)| high - low)
+        .collect();
+    if ranges.len() < 256 {
+        return MIN_CONTRAST;
+    }
+    let k = ranges.len() / 10;
+    let noise = *ranges.select_nth_unstable_by(k, f32::total_cmp).1;
+    (NOISE_GAIN * noise).clamp(MIN_CONTRAST, MAX_CONTRAST)
 }
 
 pub(crate) struct PreparedImage {
@@ -452,6 +481,7 @@ pub(crate) fn proposals(
                 }
             }
         }
+        scratch.floor = contrast_floor(&lo, &hi);
         scratch.ranges.clear();
         for tile_y in 0..tile_height {
             for tile_x in 0..tile_width {
@@ -498,6 +528,7 @@ pub(crate) fn proposals(
     let ranges = scratch.ranges.as_slice();
     let active = scratch.active.as_slice();
     let fraction = if recovery { 0.3f32 } else { 0.5 };
+    let floor = scratch.floor;
     let pass_light = light && !recovery;
     // One bit per pixel; eight-pixel tiles map to one byte of a little-endian word.
     let words = width.div_ceil(64);
@@ -526,7 +557,7 @@ pub(crate) fn proposals(
                     for (tile, ((pixels, &(low, high)), &on)) in
                         row.chunks(8).zip(tile_ranges).zip(tile_active).enumerate()
                     {
-                        if !on || high - low < 12.0 {
+                        if !on || high - low < floor {
                             continue;
                         }
                         let mut bits = 0u64;
