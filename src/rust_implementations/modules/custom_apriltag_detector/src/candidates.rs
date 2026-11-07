@@ -19,6 +19,8 @@ pub(crate) struct Scratch {
     active: Vec<bool>,
     /// Minimum 3x3-tile contrast to threshold a tile, shared by both passes.
     floor: f32,
+    /// Dark bit plane of one fragment window.
+    window: Vec<u64>,
 }
 
 impl Scratch {
@@ -29,6 +31,7 @@ impl Scratch {
             ranges: Vec::new(),
             active: Vec::new(),
             floor: MIN_CONTRAST,
+            window: Vec::new(),
         }
     }
 }
@@ -341,7 +344,7 @@ fn next_bit(row: &[u64], x: usize, set: bool) -> usize {
 }
 
 /// Union-find runs of set bits; `masks[color]` holds `words` u64 words per row.
-fn components(masks: &[Vec<u64>; 2], words: usize, width: usize, light: bool) -> Vec<Run> {
+fn components(masks: [&[u64]; 2], words: usize, width: usize, light: bool) -> Vec<Run> {
     let mut runs = Vec::new();
     let mut previous: Vec<usize> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
@@ -520,6 +523,132 @@ impl Blob {
     }
 }
 
+/// Tile index holding full-resolution coordinate `v`, clamped to the grid.
+fn to_tile(v: f64, scale: f64, tiles: usize) -> usize {
+    let decimated = (v + 0.5) / scale - 0.5;
+    ((decimated / 8.0).floor().max(0.0) as usize).min(tiles - 1)
+}
+
+/// Append quads of the run components as proposals; `origin` is the decimated
+/// pixel offset of the runs' coordinates.
+fn blob_proposals(
+    runs: &mut [Run],
+    origin: (usize, usize),
+    prepared: &PreparedImage,
+    recovery: bool,
+    out: &mut Vec<Proposal>,
+) {
+    let mut blobs: Vec<Blob> = vec![Blob::default(); runs.len()];
+    for i in 0..runs.len() {
+        let id = root(runs, i);
+        blobs[id].add(&runs[i]);
+    }
+    let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
+    for i in 0..runs.len() {
+        let id = root(runs, i);
+        if blobs[id].rows > HULL_MAX_ROWS {
+            continue;
+        }
+        let run = runs[i];
+        for y in [run.y as f64 - 0.5, run.y as f64 + 0.5] {
+            points[id].push(Point {
+                x: run.x0 as f64 - 0.5,
+                y,
+            });
+            points[id].push(Point {
+                x: run.x1 as f64 + 0.5,
+                y,
+            });
+        }
+    }
+    for (i, blob) in blobs.iter().enumerate() {
+        if blob.area < 12 || blob.rows < 3 {
+            continue;
+        }
+        let rough = if blob.rows > HULL_MAX_ROWS {
+            blob.quad()
+        } else {
+            let boundary = hull(std::mem::take(&mut points[i]));
+            if boundary.len() < 4 {
+                continue;
+            }
+            fit_quad(&boundary)
+        };
+        let Some(mut quad) = rough else {
+            continue;
+        };
+        for point in &mut quad {
+            point.x = (point.x + origin.0 as f64 + 0.5) * prepared.scale_x - 0.5;
+            point.y = (point.y + origin.1 as f64 + 0.5) * prepared.scale_y - 0.5;
+        }
+        let mut top_left = 0;
+        for k in 1..4 {
+            if quad[k].x + quad[k].y < quad[top_left].x + quad[top_left].y {
+                top_left = k;
+            }
+        }
+        quad.rotate_left(top_left);
+        out.push(Proposal {
+            quad,
+            color: runs[i].color,
+            recovery,
+        });
+    }
+}
+
+/// Dark-side cut of the fragment pass. Above the primary 0.5 so a blurred border
+/// one decimated pixel wide stays connected instead of splitting the tag.
+pub(crate) const FRAGMENT_FRACTION: f32 = 0.65;
+
+/// Proposals from re-thresholding only the tiles under each window at `fraction`,
+/// each window segmented on its own. Reuses the tile ranges of the primary pass.
+pub(crate) fn window_proposals(
+    prepared: &PreparedImage,
+    scratch: &mut Scratch,
+    windows: &[[f64; 4]],
+    fraction: f32,
+) -> Vec<Proposal> {
+    let mut out = Vec::new();
+    let width = prepared.width;
+    let height = prepared.height;
+    let tile_width = width.div_ceil(8);
+    let tile_height = height.div_ceil(8);
+    if scratch.ranges.len() != tile_width * tile_height {
+        return out;
+    }
+    for &[x0, y0, x1, y1] in windows {
+        let (tx0, tx1) = (
+            to_tile(x0, prepared.scale_x, tile_width),
+            to_tile(x1, prepared.scale_x, tile_width),
+        );
+        let (ty0, ty1) = (
+            to_tile(y0, prepared.scale_y, tile_height),
+            to_tile(y1, prepared.scale_y, tile_height),
+        );
+        let (left, top) = (tx0 * 8, ty0 * 8);
+        let window_width = width.min((tx1 + 1) * 8) - left;
+        let window_height = height.min((ty1 + 1) * 8) - top;
+        let words = window_width.div_ceil(64);
+        scratch.window.clear();
+        scratch.window.resize(words * window_height, 0);
+        for y in 0..window_height {
+            let row =
+                &scratch.gray[(top + y) * width + left..(top + y) * width + left + window_width];
+            let tile_row = ((top + y) / 8) * tile_width;
+            let bits = &mut scratch.window[y * words..(y + 1) * words];
+            for (x, &value) in row.iter().enumerate() {
+                let (low, high) = scratch.ranges[tile_row + (left + x) / 8];
+                if high - low >= scratch.floor && value < low + fraction * (high - low) {
+                    bits[x / 64] |= 1 << (x % 64);
+                }
+            }
+        }
+        let mut runs = components([&scratch.window, &[]], words, window_width, false);
+        blob_proposals(&mut runs, (left, top), prepared, true, &mut out);
+    }
+    out
+}
+
 pub(crate) fn prepare(
     image: &Image<'_>,
     decimate: f64,
@@ -596,10 +725,6 @@ pub(crate) fn proposals(
         if regions.is_empty() {
             return Vec::new();
         }
-        let to_tile = |v: f64, scale: f64, tiles: usize| -> usize {
-            let decimated = (v + 0.5) / scale - 0.5;
-            ((decimated / 8.0).floor().max(0.0) as usize).min(tiles - 1)
-        };
         for &[x0, y0, x1, y1] in regions {
             let (tx0, tx1) = (
                 to_tile(x0, prepared.scale_x, tile_width),
@@ -674,63 +799,9 @@ pub(crate) fn proposals(
             threshold_rows(bright, true);
         }
     }
-    let mut runs = components(&scratch.masks, words, width, pass_light);
-    let mut blobs: Vec<Blob> = vec![Blob::default(); runs.len()];
-    for i in 0..runs.len() {
-        let id = root(&mut runs, i);
-        blobs[id].add(&runs[i]);
-    }
-    let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
-    for i in 0..runs.len() {
-        let id = root(&mut runs, i);
-        if blobs[id].rows > HULL_MAX_ROWS {
-            continue;
-        }
-        let run = runs[i];
-        for y in [run.y as f64 - 0.5, run.y as f64 + 0.5] {
-            points[id].push(Point {
-                x: run.x0 as f64 - 0.5,
-                y,
-            });
-            points[id].push(Point {
-                x: run.x1 as f64 + 0.5,
-                y,
-            });
-        }
-    }
+    let [dark, bright] = &scratch.masks;
+    let mut runs = components([dark, bright], words, width, pass_light);
     let mut out = Vec::new();
-    for (i, blob) in blobs.iter().enumerate() {
-        if blob.area < 12 || blob.rows < 3 {
-            continue;
-        }
-        let rough = if blob.rows > HULL_MAX_ROWS {
-            blob.quad()
-        } else {
-            let boundary = hull(std::mem::take(&mut points[i]));
-            if boundary.len() < 4 {
-                continue;
-            }
-            fit_quad(&boundary)
-        };
-        let Some(mut quad) = rough else {
-            continue;
-        };
-        for point in &mut quad {
-            point.x = (point.x + 0.5) * prepared.scale_x - 0.5;
-            point.y = (point.y + 0.5) * prepared.scale_y - 0.5;
-        }
-        let mut top_left = 0;
-        for k in 1..4 {
-            if quad[k].x + quad[k].y < quad[top_left].x + quad[top_left].y {
-                top_left = k;
-            }
-        }
-        quad.rotate_left(top_left);
-        out.push(Proposal {
-            quad,
-            color: runs[i].color,
-            recovery,
-        });
-    }
+    blob_proposals(&mut runs, (0, 0), prepared, recovery, &mut out);
     out
 }

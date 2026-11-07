@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use crate::candidates::{prepare, proposals, Proposal, Scratch};
+use crate::candidates::{
+    prepare, proposals, window_proposals, Proposal, Scratch, FRAGMENT_FRACTION,
+};
 use crate::decode::{decode, plausible};
 use crate::detection::Detection;
 use crate::families::{select_families, IndexedFamily};
@@ -42,7 +44,25 @@ pub(crate) struct Detector {
     row_spans: Vec<(usize, usize)>,
     /// Grown bounding boxes of primary proposals that did not decode this frame.
     failed: Vec<[f64; 4]>,
+    /// Windows around small primary proposals that passed the plausibility screen
+    /// but did not decode: likely pieces of a tag whose blurred border split.
+    fragments: Vec<[f64; 4]>,
 }
+
+/// How far one proposal got through refinement and decoding.
+#[derive(PartialEq)]
+enum Outcome {
+    Implausible,
+    Failed,
+    Decoded,
+}
+
+/// Largest failed quad, in pixels, treated as a possible piece of a split tag.
+/// Splitting happens where the border is about one decimated pixel wide.
+const FRAGMENT_MAX_EXTENT: f64 = 48.0;
+/// Growth of a fragment window: a piece can be half its tag, so the rest of
+/// the tag lies within half the piece's extent.
+const FRAGMENT_GROWTH: f64 = 0.5;
 
 impl Detector {
     pub(crate) fn new(names: &str, settings: Settings) -> Result<Self, String> {
@@ -57,6 +77,7 @@ impl Detector {
             scratch: Scratch::new(),
             row_spans: Vec::new(),
             failed: Vec::new(),
+            fragments: Vec::new(),
         })
     }
 
@@ -83,6 +104,7 @@ impl Detector {
 
     fn detect_prepared(&mut self, image: Image<'_>) {
         self.failed.clear();
+        self.fragments.clear();
         let light = self.selected.iter().any(|family| family.family.reversed);
         let prepared = prepare(
             &image,
@@ -99,7 +121,7 @@ impl Detector {
             false,
             &[],
         );
-        self.decode_proposals(&image, &primary);
+        self.decode_proposals(&image, &primary, false);
         // Recovery runs every frame so one decoded tag cannot hide the rest, but only
         // around primary quads that failed to decode, reusing the primary tile ranges.
         let recovery = proposals(
@@ -110,7 +132,24 @@ impl Detector {
             true,
             &self.failed,
         );
-        self.decode_proposals(&image, &recovery);
+        self.decode_proposals(&image, &recovery, false);
+        // Fragment pass: a higher cut around likely tag pieces reconnects borders
+        // that blur split, segmenting only small windows.
+        let results = &self.results;
+        self.fragments.retain(|region| {
+            !results
+                .iter()
+                .any(|old| inside(region, old.center[0] - 0.5, old.center[1] - 0.5))
+        });
+        if !self.fragments.is_empty() {
+            let found = window_proposals(
+                &prepared,
+                &mut self.scratch,
+                &self.fragments,
+                FRAGMENT_FRACTION,
+            );
+            self.decode_proposals(&image, &found, true);
+        }
         self.results.sort_unstable_by(|a, b| {
             a.family_index
                 .cmp(&b.family_index)
@@ -139,35 +178,46 @@ impl Detector {
         })
     }
 
-    /// Whether a recovery quad's centre lies inside a primary quad that failed to decode.
-    fn inside_failed(&self, quad: &Quad) -> bool {
-        let cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) * 0.25;
-        let cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) * 0.25;
-        self.failed
-            .iter()
-            .any(|&[x0, y0, x1, y1]| cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)
-    }
-
-    fn decode_proposals(&mut self, image: &Image<'_>, found: &[Proposal]) {
+    /// Decode proposals. Recovery proposals must centre inside a failed region:
+    /// a fragment window when `fragment`, otherwise a failed primary quad.
+    fn decode_proposals(&mut self, image: &Image<'_>, found: &[Proposal], fragment: bool) {
         for proposal in found {
-            if proposal.recovery
-                && (self.covers_decoded(&proposal.quad) || !self.inside_failed(&proposal.quad))
-            {
+            if proposal.recovery {
+                let regions = if fragment {
+                    &self.fragments
+                } else {
+                    &self.failed
+                };
+                let (cx, cy) = centre(&proposal.quad);
+                if self.covers_decoded(&proposal.quad)
+                    || !regions.iter().any(|region| inside(region, cx, cy))
+                {
+                    continue;
+                }
+            }
+            let outcome = self.decode_one(image, proposal);
+            if outcome == Outcome::Decoded || proposal.recovery {
                 continue;
             }
-            if !self.decode_one(image, proposal) && !proposal.recovery {
-                self.failed.push(grown_bounds(&proposal.quad, 0.25));
+            self.failed.push(grown_bounds(&proposal.quad, 0.25));
+            // The fragment pass thresholds dark pixels only, like the 0.3 recovery.
+            if outcome == Outcome::Failed
+                && proposal.color == 0
+                && extent(&proposal.quad) <= FRAGMENT_MAX_EXTENT
+            {
+                self.fragments
+                    .push(grown_bounds(&proposal.quad, FRAGMENT_GROWTH));
             }
         }
     }
 
-    /// Refine and decode one proposal; returns whether any family decoded it.
-    fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> bool {
+    /// Refine and decode one proposal.
+    fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> Outcome {
         let mut quad = proposal.quad;
         if !self.selected.iter().any(|family| {
             i32::from(family.family.reversed) == proposal.color && plausible(&quad, image, family)
         }) {
-            return false;
+            return Outcome::Implausible;
         }
         if self.settings.refine_edges
             && !crate::geometry::refine(
@@ -177,7 +227,7 @@ impl Detector {
                 if proposal.color != 0 { -1 } else { 1 },
             )
         {
-            return false;
+            return Outcome::Failed;
         }
         let mut decoded = false;
         for (index, family) in self.selected.iter().enumerate() {
@@ -218,8 +268,29 @@ impl Detector {
                 self.results.push(detection);
             }
         }
-        decoded
+        if decoded {
+            Outcome::Decoded
+        } else {
+            Outcome::Failed
+        }
     }
+}
+
+fn centre(quad: &Quad) -> (f64, f64) {
+    (
+        (quad[0].x + quad[1].x + quad[2].x + quad[3].x) * 0.25,
+        (quad[0].y + quad[1].y + quad[2].y + quad[3].y) * 0.25,
+    )
+}
+
+fn inside(&[x0, y0, x1, y1]: &[f64; 4], x: f64, y: f64) -> bool {
+    x >= x0 && x <= x1 && y >= y0 && y <= y1
+}
+
+/// Larger side of a quad's axis-aligned bounds.
+fn extent(quad: &Quad) -> f64 {
+    let [x0, y0, x1, y1] = grown_bounds(quad, 0.0);
+    (x1 - x0).max(y1 - y0)
 }
 
 /// Axis-aligned bounds of a quad, grown on every side by `fraction` of its larger extent.

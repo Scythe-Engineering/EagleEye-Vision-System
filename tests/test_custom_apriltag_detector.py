@@ -41,6 +41,18 @@ def test_recovery_still_runs_after_another_tag_decodes() -> None:
     assert sorted(detection.tag_id for detection in detections) == [17, 19, 20]
 
 
+def test_small_tag_with_a_split_border_decodes() -> None:
+    """A rendered 16 px tag whose border breaks apart at the primary threshold."""
+    gray = cv2.imread(
+        str(FIXTURES / "apriltag_split_border_crop.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert gray is not None
+
+    detections = CustomAprilTagDetector(quad_decimate=2.0).run(gray)
+
+    assert [detection.tag_id for detection in detections] == [17]
+
+
 def test_partially_observed_crop_matches_full_frame_corners() -> None:
     """Masked crops that extend past the frame edge still decode the same corners."""
     frame = _tag_scene()
