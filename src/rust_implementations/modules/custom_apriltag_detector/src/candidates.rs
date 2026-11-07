@@ -12,7 +12,8 @@ pub(crate) struct Proposal {
 
 pub(crate) struct Scratch {
     gray: Vec<f32>,
-    binary: Vec<u8>,
+    /// Row-major bit planes, `words_per_row` u64 words per row: dark, then bright.
+    masks: [Vec<u64>; 2],
     /// Per-tile (min, max) over each 3x3 tile neighbourhood, shared by both passes.
     ranges: Vec<(f32, f32)>,
     active: Vec<bool>,
@@ -22,7 +23,7 @@ impl Scratch {
     pub(crate) fn new() -> Self {
         Self {
             gray: Vec::new(),
-            binary: Vec::new(),
+            masks: [Vec::new(), Vec::new()],
             ranges: Vec::new(),
             active: Vec::new(),
         }
@@ -292,27 +293,43 @@ fn root(runs: &mut [Run], mut i: usize) -> usize {
     i
 }
 
-fn components(binary: &[u8], width: usize, height: usize, light: bool) -> Vec<Run> {
+/// First pixel at or after `x` whose bit equals `set`, or the row's bit length.
+fn next_bit(row: &[u64], x: usize, set: bool) -> usize {
+    let mut k = x / 64;
+    if k >= row.len() {
+        return row.len() * 64;
+    }
+    let flip = if set { 0 } else { u64::MAX };
+    let mut word = (row[k] ^ flip) & (u64::MAX << (x % 64));
+    while word == 0 {
+        k += 1;
+        if k == row.len() {
+            return row.len() * 64;
+        }
+        word = row[k] ^ flip;
+    }
+    k * 64 + word.trailing_zeros() as usize
+}
+
+/// Union-find runs of set bits; `masks[color]` holds `words` u64 words per row.
+fn components(masks: &[Vec<u64>; 2], words: usize, width: usize, light: bool) -> Vec<Run> {
     let mut runs = Vec::new();
     let mut previous: Vec<usize> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
     for color in 0..=i32::from(light) {
         previous.clear();
-        for y in 0..height {
+        for (y, row) in masks[color as usize].chunks_exact(words).enumerate() {
             current.clear();
             let mut cursor = 0;
-            let mut x = 0;
-            while x < width as i32 {
-                while x < width as i32 && binary[y * width + x as usize] & (1 << color) == 0 {
-                    x += 1;
+            let mut position = 0;
+            loop {
+                let start = next_bit(row, position, true);
+                if start >= width {
+                    break;
                 }
-                let x0 = x;
-                while x < width as i32 && binary[y * width + x as usize] & (1 << color) != 0 {
-                    x += 1;
-                }
-                if x0 == x {
-                    continue;
-                }
+                position = next_bit(row, start, false).min(width);
+                // `x` is one past the run's last pixel.
+                let (x0, x) = (start as i32, position as i32);
                 let id = runs.len();
                 runs.push(Run {
                     y: y as i32,
@@ -482,38 +499,60 @@ pub(crate) fn proposals(
     let active = scratch.active.as_slice();
     let fraction = if recovery { 0.3f32 } else { 0.5 };
     let pass_light = light && !recovery;
-    scratch.binary.resize(scratch.gray.len(), 0);
-    scratch.binary.fill(0);
-    {
-        let gray = scratch.gray.as_slice();
-        let binary = scratch.binary.as_mut_slice();
-        workers.rows(
-            binary,
-            width,
-            width * height > 65536,
-            |y: usize, output: &mut [u8]| {
-                let row = &gray[y * width..(y + 1) * width];
-                let tile_ranges = &ranges[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-                let tile_active = &active[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-                for (((pixels, output), &(low, high)), &on) in row
-                    .chunks(8)
-                    .zip(output.chunks_mut(8))
-                    .zip(tile_ranges)
-                    .zip(tile_active)
-                {
-                    if !on || high - low < 12.0 {
-                        continue;
-                    }
-                    let dark = low + fraction * (high - low);
-                    let bright = low + 0.5 * (high - low);
-                    for (&value, out) in pixels.iter().zip(output) {
-                        *out = u8::from(value < dark) | (u8::from(value > bright) << 1);
-                    }
-                }
+    // One bit per pixel; eight-pixel tiles map to one byte of a little-endian word.
+    let words = width.div_ceil(64);
+    for (color, mask) in scratch.masks.iter_mut().enumerate() {
+        mask.clear();
+        mask.resize(
+            if color == 0 || pass_light {
+                words * height
+            } else {
+                0
             },
+            0,
         );
     }
-    let mut runs = components(&scratch.binary, width, height, pass_light);
+    {
+        let gray = scratch.gray.as_slice();
+        let threshold_rows = |mask: &mut [u64], bright: bool| {
+            workers.rows(
+                mask,
+                words,
+                width * height > 65536,
+                |y: usize, output: &mut [u64]| {
+                    let row = &gray[y * width..(y + 1) * width];
+                    let tile_ranges = &ranges[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
+                    let tile_active = &active[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
+                    for (tile, ((pixels, &(low, high)), &on)) in
+                        row.chunks(8).zip(tile_ranges).zip(tile_active).enumerate()
+                    {
+                        if !on || high - low < 12.0 {
+                            continue;
+                        }
+                        let mut bits = 0u64;
+                        if bright {
+                            let cut = low + 0.5 * (high - low);
+                            for (i, &value) in pixels.iter().enumerate() {
+                                bits |= u64::from(value > cut) << i;
+                            }
+                        } else {
+                            let cut = low + fraction * (high - low);
+                            for (i, &value) in pixels.iter().enumerate() {
+                                bits |= u64::from(value < cut) << i;
+                            }
+                        }
+                        output[tile / 8] |= bits << (8 * (tile % 8));
+                    }
+                },
+            );
+        };
+        let [dark, bright] = &mut scratch.masks;
+        threshold_rows(dark, false);
+        if pass_light {
+            threshold_rows(bright, true);
+        }
+    }
+    let mut runs = components(&scratch.masks, words, width, pass_light);
     let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
     let mut area = vec![0; runs.len()];
     for i in 0..runs.len() {
