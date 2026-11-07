@@ -1,6 +1,6 @@
 //! Area resampling, local thresholding, and ordered run-component proposals.
 
-use crate::geometry::{fit_quad, hull, Point, Quad};
+use crate::geometry::{cross, fit_quad, hull, norm, Point, Quad};
 use crate::image::Image;
 use crate::workers::Workers;
 
@@ -429,6 +429,97 @@ fn components(masks: &[Vec<u64>; 2], words: usize, width: usize, light: bool) ->
     runs
 }
 
+/// Blobs up to this many rows get a hull line fit; small tags need the precision
+/// and their hulls are cheap. Taller blobs use their extreme points.
+const HULL_MAX_ROWS: i32 = 32;
+
+/// Directions in clockwise image order starting at top-left; the farthest blob
+/// point in each is a hull vertex, so together they outline the blob.
+const EXTREME_DIRECTIONS: [(f64, f64); 8] = [
+    (-1.0, -1.0),
+    (0.0, -1.0),
+    (1.0, -1.0),
+    (1.0, 0.0),
+    (1.0, 1.0),
+    (0.0, 1.0),
+    (-1.0, 1.0),
+    (-1.0, 0.0),
+];
+
+/// Pixel count, row count and extreme pixel-edge points of one component.
+#[derive(Clone, Copy)]
+struct Blob {
+    area: i32,
+    rows: i32,
+    extremes: [(f64, Point); 8],
+}
+
+impl Default for Blob {
+    fn default() -> Self {
+        Self {
+            area: 0,
+            rows: 0,
+            extremes: [(f64::NEG_INFINITY, Point::default()); 8],
+        }
+    }
+}
+
+impl Blob {
+    fn add(&mut self, run: &Run) {
+        self.area += run.x1 - run.x0 + 1;
+        self.rows += 1;
+        let (left, right) = (run.x0 as f64 - 0.5, run.x1 as f64 + 0.5);
+        let (top, bottom) = (run.y as f64 - 0.5, run.y as f64 + 0.5);
+        for ((dx, dy), extreme) in EXTREME_DIRECTIONS.iter().zip(&mut self.extremes) {
+            let x = if *dx < 0.0 { left } else { right };
+            let y = if *dy < 0.0 { top } else { bottom };
+            let score = dx * x + dy * y;
+            if score > extreme.0 {
+                *extreme = (score, Point { x, y });
+            }
+        }
+    }
+
+    /// Reduce the extreme-point octagon to its four most corner-like vertices.
+    fn quad(&self) -> Option<Quad> {
+        let mut polygon: Vec<Point> = Vec::with_capacity(8);
+        for &(_, point) in &self.extremes {
+            if polygon.last() != Some(&point) && polygon.first() != Some(&point) {
+                polygon.push(point);
+            }
+        }
+        while polygon.len() > 4 {
+            let n = polygon.len();
+            let flattest = (0..n)
+                .min_by(|&a, &b| {
+                    let turn = |j: usize| {
+                        cross(
+                            polygon[j] - polygon[(j + n - 1) % n],
+                            polygon[(j + 1) % n] - polygon[j],
+                        )
+                        .abs()
+                    };
+                    turn(a).total_cmp(&turn(b))
+                })
+                .unwrap();
+            polygon.remove(flattest);
+        }
+        if polygon.len() < 4 {
+            return None;
+        }
+        let quad: Quad = [polygon[0], polygon[1], polygon[2], polygon[3]];
+        let mut area = 0.0;
+        for k in 0..4 {
+            let (a, b, c) = (quad[k], quad[(k + 1) % 4], quad[(k + 2) % 4]);
+            if norm(b - a) < 3.0 || cross(b - a, c - b) <= 0.0 {
+                return None;
+            }
+            area += cross(a, b);
+        }
+        (area >= 25.0).then_some(quad)
+    }
+}
+
 pub(crate) fn prepare(
     image: &Image<'_>,
     decimate: f64,
@@ -584,12 +675,18 @@ pub(crate) fn proposals(
         }
     }
     let mut runs = components(&scratch.masks, words, width, pass_light);
-    let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
-    let mut area = vec![0; runs.len()];
+    let mut blobs: Vec<Blob> = vec![Blob::default(); runs.len()];
     for i in 0..runs.len() {
         let id = root(&mut runs, i);
+        blobs[id].add(&runs[i]);
+    }
+    let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
+    for i in 0..runs.len() {
+        let id = root(&mut runs, i);
+        if blobs[id].rows > HULL_MAX_ROWS {
+            continue;
+        }
         let run = runs[i];
-        area[id] += run.x1 - run.x0 + 1;
         for y in [run.y as f64 - 0.5, run.y as f64 + 0.5] {
             points[id].push(Point {
                 x: run.x0 as f64 - 0.5,
@@ -602,15 +699,20 @@ pub(crate) fn proposals(
         }
     }
     let mut out = Vec::new();
-    for i in 0..points.len() {
-        if area[i] < 12 || points[i].len() < 12 {
+    for (i, blob) in blobs.iter().enumerate() {
+        if blob.area < 12 || blob.rows < 3 {
             continue;
         }
-        let boundary = hull(std::mem::take(&mut points[i]));
-        if boundary.len() < 4 {
-            continue;
-        }
-        let Some(mut quad) = fit_quad(&boundary) else {
+        let rough = if blob.rows > HULL_MAX_ROWS {
+            blob.quad()
+        } else {
+            let boundary = hull(std::mem::take(&mut points[i]));
+            if boundary.len() < 4 {
+                continue;
+            }
+            fit_quad(&boundary)
+        };
+        let Some(mut quad) = rough else {
             continue;
         };
         for point in &mut quad {
