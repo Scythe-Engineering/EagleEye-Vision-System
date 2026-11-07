@@ -60,6 +60,46 @@ def test_partially_observed_crop_matches_full_frame_corners() -> None:
     np.testing.assert_allclose(_corners(masked) - offset, _corners(full), atol=0.05)
 
 
+def test_corners_stay_on_the_tag_outline_under_blur_and_gamma() -> None:
+    """Blur in linear light then gamma encoding shifts edges toward dark cells."""
+    tag = cv2.imread(
+        "src/webui/assets/apriltags/tag36_11_00001.webp", cv2.IMREAD_GRAYSCALE
+    )
+    assert tag is not None
+    scale = 4
+    canonical = np.full((400, 400), 255, dtype=np.uint8)
+    canonical[100:300, 100:300] = cv2.resize(
+        tag, (200, 200), interpolation=cv2.INTER_NEAREST
+    )
+    # Outer corners of the black border (the image has a one-cell white margin),
+    # in pixel-edge coordinates, and where they land in the output frame.
+    outline = np.array([[120, 120], [280, 120], [280, 280], [120, 280]], np.float32)
+    truth = np.array([[40.3, 30.7], [101.2, 36.1], [97.8, 95.4], [36.6, 90.2]])
+    edge_to_centre = np.array([[1, 0, -0.5], [0, 1, -0.5], [0, 0, 1.0]])
+    warp = (
+        edge_to_centre
+        @ cv2.getPerspectiveTransform(outline, (truth * scale).astype(np.float32))
+        @ np.linalg.inv(edge_to_centre)
+    )
+    linear = (canonical.astype(np.float32) / 255) ** 2.2 * 0.9 + 0.02
+    fine = cv2.warpPerspective(
+        linear, warp, (140 * scale, 130 * scale), borderValue=0.92
+    )
+    fine = cv2.GaussianBlur(fine, (0, 0), 1.2 * scale)
+    frame = cv2.resize(fine, (140, 130), interpolation=cv2.INTER_AREA)
+    gray = np.clip(255 * frame ** (1 / 2.2), 0, 255).astype(np.uint8)
+
+    (detection,) = CustomAprilTagDetector(quad_decimate=2.0).run(gray)
+
+    corners = _corners(detection)
+    error = min(
+        np.linalg.norm(np.roll(ordering, k, axis=0) - truth, axis=1).max()
+        for ordering in (corners, corners[::-1])
+        for k in range(4)
+    )
+    assert error < 0.15
+
+
 def test_refine_recovers_corners_from_a_rough_external_quad() -> None:
     """refine() re-decodes and grid-fits corners supplied by another detector."""
     frame = _tag_scene()

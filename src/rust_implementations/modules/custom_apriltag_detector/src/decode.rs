@@ -16,6 +16,9 @@ fn rotate(mut point: Point, rotation: i32) -> Point {
     point
 }
 
+/// Grid-fit least-squares unknowns: homography updates plus the edge bias.
+const UNKNOWNS: usize = 9;
+
 /// Fit independent template edges for two iterations, restoring the input on failure.
 fn refine_grid(
     h: &mut Homography,
@@ -56,7 +59,9 @@ fn refine_grid(
         return false;
     }
     for _iteration in 0..2 {
-        let mut system = [[0.0f64; 9]; 8];
+        // Unknowns: eight homography updates, then one shared shift of every edge
+        // toward its dark side (blur, gamma or exposure bias), solved and discarded.
+        let mut system = [[0.0f64; UNKNOWNS + 1]; UNKNOWNS];
         let mut count = 0;
         for axis in 0..2 {
             for edge in 0..=family.width {
@@ -176,12 +181,14 @@ fn refine_grid(
                         n.y / z,
                         -dot(n, p) * uv.x / z,
                         -dot(n, p) * uv.y / z,
+                        // A positive bias moves the observed edge into its dark cell.
+                        f64::from(before - after),
                     ];
-                    for a in 0..8 {
-                        for b in 0..8 {
+                    for a in 0..UNKNOWNS {
+                        for b in 0..UNKNOWNS {
                             system[a][b] = j[a].mul_add(j[b], system[a][b]);
                         }
-                        system[a][8] = j[a].mul_add(residual, system[a][8]);
+                        system[a][UNKNOWNS] = j[a].mul_add(residual, system[a][UNKNOWNS]);
                     }
                     count += 1;
                 }
@@ -191,14 +198,16 @@ fn refine_grid(
             *h = initial;
             return false;
         }
-        for a in 0..8 {
+        // Weak prior of no bias keeps the solve stable when edges cannot separate it.
+        system[UNKNOWNS - 1][UNKNOWNS - 1] += 1e-3 * f64::from(count);
+        for a in 0..UNKNOWNS {
             let mut pivot = a;
-            for b in a + 1..8 {
+            for b in a + 1..UNKNOWNS {
                 if system[b][a].abs() > system[pivot][a].abs() {
                     pivot = b;
                 }
             }
-            for b in a..=8 {
+            for b in a..=UNKNOWNS {
                 let value = system[a][b];
                 system[a][b] = system[pivot][b];
                 system[pivot][b] = value;
@@ -208,13 +217,13 @@ fn refine_grid(
                 *h = initial;
                 return false;
             }
-            for b in a..=8 {
+            for b in a..=UNKNOWNS {
                 system[a][b] /= scale;
             }
-            for row in 0..8 {
+            for row in 0..UNKNOWNS {
                 if row != a {
                     let factor = system[row][a];
-                    for b in a..=8 {
+                    for b in a..=UNKNOWNS {
                         system[row][b] -= factor * system[a][b];
                     }
                 }
@@ -222,7 +231,7 @@ fn refine_grid(
         }
         let mut next = *h;
         for a in 0..8 {
-            next[a] += system[a][8];
+            next[a] += system[a][UNKNOWNS];
         }
         for uv in [
             Point { x: 0.0, y: 0.0 },
