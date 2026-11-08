@@ -153,15 +153,31 @@ fn refine_grid(
                     }
                     let aperture = min_f64(0.75, cell * 0.2);
                     let radius = min_f64(1.5, cell * 0.3);
+                    // Taps reach |s| <= radius + 2 (search plus walk), then the aperture.
+                    let reach = radius + 2.0 + aperture + 0.01;
+                    let interior = image.interior_segment(
+                        Point {
+                            x: n.x.mul_add(-reach, p.x),
+                            y: n.y.mul_add(-reach, p.y),
+                        },
+                        Point {
+                            x: n.x.mul_add(reach, p.x),
+                            y: n.y.mul_add(reach, p.y),
+                        },
+                    );
+                    let tap = |u: f64| {
+                        let q = Point {
+                            x: n.x.mul_add(u, p.x),
+                            y: n.y.mul_add(u, p.y),
+                        };
+                        if interior {
+                            image.sample_interior(q)
+                        } else {
+                            image.sample(q)
+                        }
+                    };
                     let gradient = |s: f64| -> f64 {
-                        f64::from(after - before)
-                            * (image.sample(Point {
-                                x: n.x.mul_add(s + aperture, p.x),
-                                y: n.y.mul_add(s + aperture, p.y),
-                            }) - image.sample(Point {
-                                x: n.x.mul_add(s - aperture, p.x),
-                                y: n.y.mul_add(s - aperture, p.y),
-                            }))
+                        f64::from(after - before) * (tap(s + aperture) - tap(s - aperture))
                     };
                     let mut best = 4.0;
                     let mut offset = 0.0;

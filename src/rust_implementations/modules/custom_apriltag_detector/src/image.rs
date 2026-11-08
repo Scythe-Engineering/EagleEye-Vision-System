@@ -204,6 +204,35 @@ impl Image<'_> {
         max_f64(0.0, t)
     }
 
+    /// Whether every point of segment `a`-`b` lies in the unmapped interior, where
+    /// `sample_interior` gives exactly what `sample` gives. Both ends must be finite
+    /// and at least one pixel inside the right and bottom edges; the segment is then too.
+    pub(crate) fn interior_segment(&self, a: Point, b: Point) -> bool {
+        let inside = |q: Point| {
+            q.x >= 0.0
+                && q.y >= 0.0
+                && q.x <= (self.width - 2) as f64
+                && q.y <= (self.height - 2) as f64
+        };
+        self.source_map.is_none() && inside(a) && inside(b)
+    }
+
+    /// `sample` for a point known to be interior (see `interior_segment`): no validity
+    /// test, and the neighbour clamps are no-ops there, so the arithmetic is identical.
+    #[inline(always)]
+    pub(crate) fn sample_interior(&self, q: Point) -> f64 {
+        debug_assert!(self.interior_segment(q, q));
+        let x = q.x as usize;
+        let y = q.y as usize;
+        let a = q.x - x as f64;
+        let b = q.y - y as f64;
+        let top = &self.pixels[y * self.stride + x..y * self.stride + x + 2];
+        let bottom = &self.pixels[(y + 1) * self.stride + x..(y + 1) * self.stride + x + 2];
+        let top = (1.0 - a).mul_add(top[0] as f64, a * top[1] as f64);
+        let bottom = (1.0 - a).mul_add(bottom[0] as f64, a * bottom[1] as f64);
+        (1.0 - b).mul_add(top, b * bottom)
+    }
+
     /// Bilinearly sample, excluding and renormalizing unavailable physical contributors.
     #[inline(always)]
     pub(crate) fn sample(&self, q: Point) -> f64 {
@@ -248,5 +277,50 @@ impl Image<'_> {
             a * self.pixels[yy * self.stride + xx] as f64,
         );
         (1.0 - b).mul_add(top, b * bottom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::detector::mapped_image;
+    use crate::geometry::Point;
+
+    #[test]
+    fn interior_samples_match_checked_samples() {
+        let (width, height, stride) = (37, 23, 40);
+        let pixels: Vec<u8> = (0..stride * height).map(|i| (i * 97 % 251) as u8).collect();
+        let image = mapped_image(&pixels, width, height, stride, None, None).unwrap();
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut unit = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for _ in 0..20_000 {
+            // Include the exact interior bounds as well as random points.
+            let q = Point {
+                x: if unit() < 0.05 {
+                    (width - 2) as f64
+                } else {
+                    unit() * (width - 2) as f64
+                },
+                y: if unit() < 0.05 {
+                    0.0
+                } else {
+                    unit() * (height - 2) as f64
+                },
+            };
+            assert!(image.interior_segment(q, q));
+            assert_eq!(
+                image.sample_interior(q).to_bits(),
+                image.sample(q).to_bits()
+            );
+        }
+        let edge = Point {
+            x: (width - 1) as f64,
+            y: 1.0,
+        };
+        assert!(!image.interior_segment(edge, edge));
     }
 }
