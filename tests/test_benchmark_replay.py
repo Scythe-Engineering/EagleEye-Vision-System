@@ -67,7 +67,8 @@ def test_sequential_decoder_stops_at_finite_eof(tmp_path: Path) -> None:
 
 
 def test_fmap_corner_order_matches_detector_contract() -> None:
-    """Map corners should use pupil-apriltags' canonical decoded order."""
+    """Map corners follow pupil-apriltags' order for an upright printed tag:
+    bottom-left, bottom-right, top-right, top-left, seen from in front (+X)."""
     tag = Apriltag(
         tag_id=1,
         family="apriltag3_36h11_classic",
@@ -80,10 +81,10 @@ def test_fmap_corner_order_matches_detector_contract() -> None:
     np.testing.assert_allclose(
         tag.global_corners,
         [
-            [0.0, 0.5, 0.5],
-            [0.0, -0.5, 0.5],
             [0.0, -0.5, -0.5],
             [0.0, 0.5, -0.5],
+            [0.0, 0.5, 0.5],
+            [0.0, -0.5, 0.5],
         ],
     )
 

@@ -36,7 +36,6 @@ class Apriltag:
         transform_matrix = np.array(self.transform, dtype=np.float64).reshape((4, 4))
         # The welded fmap uses +X out of the printed face and +Z up.
         # A tag image plane uses +X image-right, +Y image-up, +Z outward.
-        # A lone Y rotation made the printed face point into its CAD support.
         fmap_from_tag_plane = np.array(
             [
                 [0, 0, 1, 0],
@@ -81,14 +80,16 @@ class Apriltag:
             np.ndarray: An array of shape (4, 3) containing the global positions of the tag's corners in field space.
         """
         half_size = self.size / 2
-        # For the independently decoded tag36h11 bitmap, pupil-apriltags gives
-        # top-right, top-left, bottom-left, bottom-right in this image plane.
+        # pupil-apriltags returns an upright printed tag's corners as bottom-left,
+        # bottom-right, top-right, top-left. Checked against printed tags on a
+        # real camera; the Blender benchmark renders tags rotated 180 degrees and
+        # compensates in benchmarks/replay.py.
         local_corners = np.array(
             [
-                [half_size, half_size, 0, 1],
-                [-half_size, half_size, 0, 1],
                 [-half_size, -half_size, 0, 1],
                 [half_size, -half_size, 0, 1],
+                [half_size, half_size, 0, 1],
+                [-half_size, half_size, 0, 1],
             ]
         )
 

@@ -16,14 +16,18 @@ from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_fi
 from src.utils.timing import TimedValue, TimingMetadata, get_timing, unwrap_timed
 
 # North-lane replay frame 639: both IPPE solutions have subpixel image error,
-# but the image-only winner puts the camera almost eight meters away.
-CORNERS = np.array(
+# but the image-only winner puts the camera almost eight meters away. The render
+# draws tags rotated 180 degrees, so its detected corners are shifted by two to
+# match an upright printed tag.
+CORNERS = np.roll(
     [
         [267.22445559413995, 326.37355491258336],
         [250.54890965049898, 326.15967427091465],
         [250.20466603295745, 343.78973478998216],
         [266.7490824815759, 343.44239448349384],
-    ]
+    ],
+    2,
+    axis=0,
 )
 PREVIOUS = np.array(
     [

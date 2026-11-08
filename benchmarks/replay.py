@@ -100,10 +100,27 @@ class PipelineLifecycle(AbstractContextManager[Any]):
         self.close()
 
 
+# The cached Blender renders draw every tag image rotated 180 degrees within its
+# plane, unlike printed tags. Replay localizes against a copy of the map with each
+# tag rolled to match; the rendered pixels and truth are unchanged.
+_RENDERED_TAG_ROLL = np.diag([1.0, -1.0, -1.0, 1.0])
+
+
+def _rendered_tag_map(source: Path, directory: Path) -> Path:
+    """Write a copy of ``source`` with each tag rolled like the renders."""
+    fmap = json.loads(source.read_text(encoding="utf-8"))
+    for fiducial in fmap["fiducials"]:
+        transform = np.asarray(fiducial["transform"], dtype=float).reshape(4, 4)
+        fiducial["transform"] = (transform @ _RENDERED_TAG_ROLL).ravel().tolist()
+    rolled = directory / source.name
+    rolled.write_text(json.dumps(fmap), encoding="utf-8")
+    return rolled
+
+
 def _absolute_map_paths(
-    config: list[dict[str, Any]], map_path: str | Path | None
+    config: list[dict[str, Any]], map_path: str | Path | None, directory: Path
 ) -> None:
-    """Resolve every map-consuming operation independently of process cwd."""
+    """Point every map-consuming operation at a render-matched copy of the map."""
     map_operations = {
         "pnp_camera_localization",
         "temporal_acceleration_preprocessor_rust",
@@ -120,7 +137,9 @@ def _absolute_map_paths(
     if selected is None:
         raise ReplayError("benchmark graph requires an apriltag map")
     path = Path(selected)
-    absolute = path if path.is_absolute() else REPOSITORY_ROOT / path
+    absolute = _rendered_tag_map(
+        path if path.is_absolute() else REPOSITORY_ROOT / path, directory
+    )
     for node in config:
         name = str(node.get("action_name", "")).removesuffix(".py")
         if name in map_operations:
@@ -188,7 +207,6 @@ def build_pipeline(
     graph = json.loads(
         json.dumps(load_benchmark_config(config_path, expected_temporal))
     )
-    _absolute_map_paths(graph, map_path)
 
     if isinstance(calibration, dict):
         calibration_data = calibration
@@ -206,6 +224,13 @@ def build_pipeline(
     }
 
     temporary = tempfile.TemporaryDirectory(prefix="eagleeye-replay-")
+    try:
+        map_dir = Path(temporary.name) / "benchmark-map"
+        map_dir.mkdir()
+        _absolute_map_paths(graph, map_path, map_dir)
+    except BaseException:
+        temporary.cleanup()
+        raise
     camera_dir = Path(temporary.name) / "benchmark-camera"
     camera_dir.mkdir()
     (camera_dir / "intrinsics.json").write_text(
