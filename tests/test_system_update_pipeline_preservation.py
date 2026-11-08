@@ -222,6 +222,7 @@ def test_branch_checkout_moves_local_edits_aside_and_keeps_device_settings(
         working / "src/general_conf.json": b'{"network_table_address": "10.0.0.2"}\n',
         calibration: b'{"fx": 900}\n',
         new_calibration: b'{"fx": 800}\n',
+        working / "files/apriltag_map_path/field.fmap": b'{"fiducials": []}\n',
     }
     for path, contents in device_files.items():
         path.parent.mkdir(parents=True, exist_ok=True)

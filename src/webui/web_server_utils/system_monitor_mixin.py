@@ -44,11 +44,14 @@ SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
 SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
 SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
 SYSTEM_UPDATE_DEFAULT_TARGET = "release"
-# Device settings kept across updates; directories cover every file inside them.
+# Device settings and uploads kept across updates; directories cover every file
+# inside them.
 SYSTEM_UPDATE_DEVICE_PATHS = (
     "src/config/pipeline_config.json",
     "src/general_conf.json",
     "src/utils/camera_utils/camera_calibrations",
+    "files/apriltag_map_path",
+    "files/models/manifest.json",
 )
 _GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-+]+$")
 _GITHUB_REMOTE_PATTERN = re.compile(
@@ -691,7 +694,7 @@ class SystemMonitorMixin:
                     phase_index=0,
                     phase_count=phase_count,
                     percent=30,
-                    line="Restored pipeline, general settings and camera calibrations",
+                    line="Restored device settings, calibrations and field maps",
                 )
 
         if stash_created:
