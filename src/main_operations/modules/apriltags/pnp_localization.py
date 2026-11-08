@@ -155,7 +155,7 @@ class PnpLocalization:
         geometry: TagSetGeometry,
         image_points: np.ndarray,
         previous_pose: Optional[np.ndarray] = None,
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray | None]]:
         """Initialize with planar IPPE or multi-tag SQPnP, then refine valid candidates.
 
         Candidate ranking uses squared reprojection error. An optional previous field
@@ -170,7 +170,9 @@ class PnpLocalization:
             previous_pose: Recent field-from-camera pose used only for single-tag ties.
 
         Returns:
-            Best rotation and translation vectors, or None if no candidate is valid.
+            Best rotation and translation vectors with the squared per-corner pixel
+            distances measured while scoring them, or None if no candidate is valid.
+            The distances are None when the winner was scored from OpenCV's RMS.
         """
         if geometry.is_degenerate:
             return None
@@ -212,7 +214,7 @@ class PnpLocalization:
 
         def score(
             rvec: np.ndarray, tvec: np.ndarray, coordinate_rms: float | None = None
-        ) -> float:
+        ) -> tuple[float, np.ndarray | None]:
             """Measure reprojection error for a physically valid candidate.
 
             Args:
@@ -222,19 +224,20 @@ class PnpLocalization:
                     equals sqrt(mean squared error / 2). None projects the points.
 
             Returns:
-                Mean squared pixel error, or infinity for an invalid candidate.
+                Mean squared pixel error, or infinity for an invalid candidate, and
+                the squared per-corner distances when the points were projected.
             """
             # Plain-float checks: numpy's per-call overhead dominates on six values.
             if not all(
                 map(math.isfinite, rvec.ravel().tolist() + tvec.ravel().tolist())
             ):
-                return float("inf")
+                return float("inf"), None
             rotation = cv2.Rodrigues(rvec)[0]
             # Only camera-space depth matters: every corner must be in front.
             if (object_points @ rotation[2] + tvec.flat[2]).min() <= 0:
-                return float("inf")
+                return float("inf"), None
             if coordinate_rms is not None:
-                return 2.0 * float(coordinate_rms) ** 2
+                return 2.0 * float(coordinate_rms) ** 2, None
             projected = cv2.projectPoints(
                 object_points,
                 rvec,
@@ -242,13 +245,14 @@ class PnpLocalization:
                 self.camera_matrix,
                 self.distortion_coefficients,
             )[0]
-            return float(
-                ((projected.reshape(-1, 2) - image_points) ** 2).sum(axis=1).mean()
+            squared_distances = ((projected.reshape(-1, 2) - image_points) ** 2).sum(
+                axis=1
             )
+            return float(squared_distances.mean()), squared_distances
 
         if tag_count == 1 and previous_pose is not None:
             valid = [
-                (rotation, translation, score(rotation, translation, rms))
+                (rotation, translation, score(rotation, translation, rms)[0])
                 for rotation, translation, rms in zip(
                     rotations, translations, initial_rms
                 )
@@ -296,7 +300,7 @@ class PnpLocalization:
             if not bounded:
                 return self._solve(geometry, image_points)
             _, rotation, translation, error = min(bounded, key=lambda c: c[0])
-            refined = False
+            distances = None
             if iterations:
                 try:
                     refined_rotation, refined_translation = cv2.solvePnPRefineLM(
@@ -312,22 +316,25 @@ class PnpLocalization:
                             1e-9,
                         ),
                     )
-                    if score(refined_rotation, refined_translation) <= error:
+                    refined_error, refined_distances = score(
+                        refined_rotation, refined_translation
+                    )
+                    if refined_error <= error:
                         rotation, translation = refined_rotation, refined_translation
-                        refined = True
+                        distances = refined_distances
                 except cv2.error:
                     pass
             # The unrefined pick already passed the bounds check.
-            if refined and not is_near_previous(
+            if distances is not None and not is_near_previous(
                 *separation(pose_for(rotation, translation))
             ):
                 return self._solve(geometry, image_points)
-            return rotation, translation
+            return rotation, translation, distances
 
         best = None
         best_error = float("inf")
         for rotation, translation, rms in zip(rotations, translations, initial_rms):
-            error = score(rotation, translation, rms)
+            error, distances = score(rotation, translation, rms)
             if not math.isfinite(error):
                 continue
             if iterations:
@@ -345,17 +352,20 @@ class PnpLocalization:
                             1e-9,
                         ),
                     )
-                    refined_error = score(refined_rotation, refined_translation)
+                    refined_error, refined_distances = score(
+                        refined_rotation, refined_translation
+                    )
                     if refined_error <= error:
-                        rotation, translation, error = (
+                        rotation, translation, error, distances = (
                             refined_rotation,
                             refined_translation,
                             refined_error,
+                            refined_distances,
                         )
                 except cv2.error:
                     pass  # A valid initializer is preferable to dropping this frame.
             if error < best_error:
-                best = rotation, translation
+                best = rotation, translation, distances
                 best_error = error
         return best
 
@@ -368,12 +378,14 @@ class PnpLocalization:
         rotation_matrix: np.ndarray,
         translation_vector: np.ndarray,
         tag_count: int,
+        squared_distances: np.ndarray | None = None,
     ) -> List[float]:
         """Measure how much a solved pose can be trusted.
 
         The robot-side pose estimator needs standard deviations, and these three
-        numbers are what it derives them from. Cost is one ``projectPoints`` call
-        over at most a few dozen points, which is noise next to tag detection.
+        numbers are what it derives them from. The solver's own scoring
+        projection is reused when available; otherwise this costs one
+        ``projectPoints`` call over at most a few dozen points.
 
         Args:
             object_points: Stacked field-space tag corners, shape (4 * tags, 3).
@@ -383,19 +395,23 @@ class PnpLocalization:
             rotation_matrix: Same rotation as a 3x3 matrix.
             translation_vector: Translation from ``solvePnP``.
             tag_count: Number of mapped tags that contributed to the solve.
+            squared_distances: Squared per-corner reprojection distances already
+                measured for this pose, or None to project the points here.
 
         Returns:
             ``[tag_count, mean_tag_distance_m, mean_reprojection_error_px]``.
         """
-        reprojected, _ = cv2.projectPoints(
-            object_points,
-            rotation_vector,
-            translation_vector,
-            self.camera_matrix,
-            self.distortion_coefficients,
-        )
-        residuals = reprojected.reshape(-1, 2) - image_points
-        reprojection_error = float(np.sqrt((residuals * residuals).sum(axis=1)).mean())
+        if squared_distances is None:
+            reprojected, _ = cv2.projectPoints(
+                object_points,
+                rotation_vector,
+                translation_vector,
+                self.camera_matrix,
+                self.distortion_coefficients,
+            )
+            residuals = reprojected.reshape(-1, 2) - image_points
+            squared_distances = (residuals * residuals).sum(axis=1)
+        reprojection_error = float(np.sqrt(squared_distances).mean())
 
         camera_space_centers = (
             tag_centers @ rotation_matrix.T + translation_vector.reshape(3)
@@ -449,7 +465,7 @@ class PnpLocalization:
         solution = self._solve(geometry, image_points, previous_pose=previous_pose)
         if solution is None:
             return None
-        rotation_vector, translation_vector = solution
+        rotation_vector, translation_vector, squared_distances = solution
         rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
         translation_vector = translation_vector.reshape(3, 1) - (
             rotation_matrix @ geometry.origin
@@ -472,5 +488,6 @@ class PnpLocalization:
             rotation_matrix,
             translation_vector,
             geometry.tag_count,
+            squared_distances,
         )
         return global_camera_transform, quality
