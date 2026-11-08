@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, List, Optional, Tuple
+from collections import OrderedDict
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -8,6 +9,25 @@ from pupil_apriltags import Detection
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
 
 logger = logging.getLogger(__name__)
+
+# Distinct ordered tag-id tuples seen recently; a field yields far fewer in practice.
+TAG_SET_CACHE_SIZE = 256
+
+
+class TagSetGeometry(NamedTuple):
+    """Field geometry that depends only on which tags were seen, in detection order."""
+
+    field_points: np.ndarray
+    """Stacked field-space corners, shape (4 * tags, 3)."""
+    origin: np.ndarray
+    """Mean of ``field_points``; solving around it improves conditioning."""
+    object_points: np.ndarray
+    """``field_points - origin``."""
+    tag_count: int
+    is_degenerate: bool
+    """Fewer than two independent directions, so no pose is recoverable."""
+    is_coplanar: bool
+    """All corners lie in one plane, so IPPE's planar hypotheses also apply."""
 
 
 class PnpLocalization:
@@ -38,7 +58,51 @@ class PnpLocalization:
             dist = dist.reshape((-1, 1))
         self.distortion_coefficients = dist
         self.apriltag_map = apriltag_map
+        self._field_corners = self._usable_field_corners(apriltag_map)
+        self._tag_set_cache: OrderedDict[tuple, TagSetGeometry] = OrderedDict()
         self.set_refinement_iterations(refinement_iterations)
+
+    @staticmethod
+    def _usable_field_corners(
+        apriltag_map: dict[int, Apriltag],
+    ) -> dict[int, np.ndarray]:
+        """Convert each mapped tag's corners to float64 once, dropping unusable tags."""
+        usable = {}
+        for tag_id, apriltag_obj in apriltag_map.items():
+            corners = apriltag_obj.global_corners.astype(np.float64, copy=False)
+            if corners.shape == (4, 3) and np.isfinite(corners).all():
+                usable[tag_id] = corners
+        return usable
+
+    def _tag_set_geometry(self, tag_ids: tuple) -> TagSetGeometry:
+        """Return cached geometry for an ordered tag set, computing it on a miss."""
+        geometry = self._tag_set_cache.get(tag_ids)
+        if geometry is not None:
+            self._tag_set_cache.move_to_end(tag_ids)
+            return geometry
+
+        field_points = np.vstack([self._field_corners[tag_id] for tag_id in tag_ids])
+        origin = field_points.mean(axis=0)
+        object_points = field_points - origin
+        centered_points = object_points - object_points.mean(axis=0)
+        singular_values = np.linalg.svd(centered_points, compute_uv=False)
+        rank_tolerance = (
+            singular_values[0]
+            * max(centered_points.shape)
+            * np.finfo(centered_points.dtype).eps
+        )
+        geometry = TagSetGeometry(
+            field_points=field_points,
+            origin=origin,
+            object_points=object_points,
+            tag_count=len(tag_ids),
+            is_degenerate=bool(np.count_nonzero(singular_values > rank_tolerance) < 2),
+            is_coplanar=bool(singular_values[-1] < 1e-6 * singular_values[0]),
+        )
+        self._tag_set_cache[tag_ids] = geometry
+        if len(self._tag_set_cache) > TAG_SET_CACHE_SIZE:
+            self._tag_set_cache.popitem(last=False)
+        return geometry
 
     @staticmethod
     def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
@@ -84,11 +148,9 @@ class PnpLocalization:
 
     def _solve(
         self,
-        object_points: np.ndarray,
+        geometry: TagSetGeometry,
         image_points: np.ndarray,
-        tag_count: int,
         previous_pose: Optional[np.ndarray] = None,
-        object_origin: Optional[np.ndarray] = None,
     ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """Initialize with planar IPPE or multi-tag SQPnP, then refine valid candidates.
 
@@ -98,24 +160,19 @@ class PnpLocalization:
         local corner order. No field/camera basis conversion occurs in this solver.
 
         Args:
-            object_points: Mean-centered tag corners in meters, shape (4 * tags, 3).
+            geometry: Tag-set geometry; rotation and translation are solved for its
+                mean-centered ``object_points``.
             image_points: Corresponding image corners in pixels, shape (4 * tags, 2).
-            tag_count: Number of contributing tags.
             previous_pose: Recent field-from-camera pose used only for single-tag ties.
-            object_origin: Field origin subtracted from the object points.
 
         Returns:
             Best rotation and translation vectors, or None if no candidate is valid.
         """
-        centered_points = object_points - object_points.mean(axis=0)
-        singular_values = np.linalg.svd(centered_points, compute_uv=False)
-        rank_tolerance = (
-            singular_values[0]
-            * max(centered_points.shape)
-            * np.finfo(centered_points.dtype).eps
-        )
-        if np.count_nonzero(singular_values > rank_tolerance) < 2:
+        if geometry.is_degenerate:
             return None
+        object_points = geometry.object_points
+        object_origin = geometry.origin
+        tag_count = geometry.tag_count
         iterations = self.refinement_iterations
         try:
             solved = cv2.solvePnPGeneric(
@@ -133,7 +190,7 @@ class PnpLocalization:
         initial_rms = list(solved[3].ravel())
         # Coplanar multi-tag layouts can have two plausible minima. SQPnP alone
         # need not expose both; evaluate IPPE's planar hypotheses as well.
-        if tag_count > 1 and singular_values[-1] < 1e-6 * singular_values[0]:
+        if tag_count > 1 and geometry.is_coplanar:
             try:
                 planar = cv2.solvePnPGeneric(
                     object_points,
@@ -181,7 +238,7 @@ class PnpLocalization:
                 np.mean(np.sum((projected.reshape(-1, 2) - image_points) ** 2, axis=1))
             )
 
-        if tag_count == 1 and previous_pose is not None and object_origin is not None:
+        if tag_count == 1 and previous_pose is not None:
             valid = [
                 (rotation, translation, score(rotation, translation, rms))
                 for rotation, translation, rms in zip(
@@ -236,7 +293,7 @@ class PnpLocalization:
                 if is_near_previous(pose_for(candidate[0], candidate[1]))
             ]
             if not bounded:
-                return self._solve(object_points, image_points, tag_count)
+                return self._solve(geometry, image_points)
             rotation, translation, error = min(bounded, key=continuity)
             if iterations:
                 try:
@@ -259,7 +316,7 @@ class PnpLocalization:
                     pass
             pose = pose_for(rotation, translation)
             if not is_near_previous(pose):
-                return self._solve(object_points, image_points, tag_count)
+                return self._solve(geometry, image_points)
             return rotation, translation
 
         best = None
@@ -359,53 +416,33 @@ class PnpLocalization:
             or None if pose estimation failed.
         """
         image_points_list = []
-        object_points_list = []
-        valid_tags_found = 0
-        seen_ids = set()
+        tag_ids = []
 
         for detection in detections:
             tag_id = detection.tag_id
-            if tag_id not in self.apriltag_map or tag_id in seen_ids:
+            # Unusable map entries are absent from _field_corners, so they are skipped.
+            if tag_id not in self._field_corners or tag_id in tag_ids:
                 continue
 
             corners = detection.corners.astype(np.float64, copy=False)
-            apriltag_obj = self.apriltag_map[tag_id]
-            global_corners = apriltag_obj.global_corners.astype(np.float64, copy=False)
-
-            if corners.shape != (4, 2) or global_corners.shape != (4, 3):
-                continue
-            if not np.all(np.isfinite(corners)) or not np.all(
-                np.isfinite(global_corners)
-            ):
+            if corners.shape != (4, 2) or not np.isfinite(corners).all():
                 continue
 
-            seen_ids.add(tag_id)
+            tag_ids.append(tag_id)
             image_points_list.append(corners)
-            object_points_list.append(global_corners)
-            valid_tags_found += 1
 
-        if valid_tags_found == 0:
+        if not tag_ids:
             return None
 
-        image_points = np.vstack(image_points_list).astype(np.float64, copy=False)
-        object_points = np.vstack(object_points_list).astype(np.float64, copy=False)
-
-        if not (
-            np.all(np.isfinite(image_points)) and np.all(np.isfinite(object_points))
-        ):
-            return None
-
+        image_points = np.concatenate(image_points_list)
         # Optimize around nearby tag geometry rather than the distant field origin.
         # This improves rotation/translation conditioning, particularly in older
         # OpenCV LM builds, without changing the published field coordinates.
-        object_origin = object_points.mean(axis=0)
-        solution = self._solve(
-            object_points - object_origin,
-            image_points,
-            valid_tags_found,
-            previous_pose=previous_pose,
-            object_origin=object_origin,
-        )
+        geometry = self._tag_set_geometry(tuple(tag_ids))
+        object_points = geometry.field_points
+        object_origin = geometry.origin
+        valid_tags_found = geometry.tag_count
+        solution = self._solve(geometry, image_points, previous_pose=previous_pose)
         if solution is None:
             return None
         rotation_vector, translation_vector = solution
