@@ -530,7 +530,7 @@ fn to_tile(v: f64, scale: f64, tiles: usize) -> usize {
 /// Append quads of the run components as proposals; `origin` is the decimated
 /// pixel offset of the runs' coordinates.
 fn blob_proposals(
-    runs: &mut [Run],
+    runs: &[Run],
     origin: (usize, usize),
     prepared: &PreparedImage,
     recovery: bool,
@@ -540,13 +540,19 @@ fn blob_proposals(
     let start = profile::clock();
     // Size every component first with compact counters, then outline only those
     // big enough to propose, in root order.
-    let mut roots = Vec::with_capacity(runs.len());
+    // `components` always hangs the older root under the newest run, so a
+    // parent's index is never below its child's: resolving from the last run
+    // back finds every root in one pass.
+    let mut roots = vec![0usize; runs.len()];
+    for i in (0..runs.len()).rev() {
+        let parent = runs[i].parent;
+        debug_assert!(parent >= i);
+        roots[i] = if parent == i { i } else { roots[parent] };
+    }
     let mut area = vec![0i32; runs.len()];
     let mut count = vec![0i32; runs.len()];
     let mut top = vec![i32::MAX; runs.len()];
-    for i in 0..runs.len() {
-        let id = root(runs, i);
-        roots.push(id);
+    for (i, &id) in roots.iter().enumerate() {
         area[id] += runs[i].x1 - runs[i].x0 + 1;
         count[id] += 1;
         top[id] = top[id].min(runs[i].y);
@@ -689,10 +695,10 @@ pub(crate) fn window_proposals(
             }
         }
         profile::since(Stage::Threshold, start);
-        let mut runs = profile::timed(Stage::Components, || {
+        let runs = profile::timed(Stage::Components, || {
             components([&scratch.window, &[]], words, window_width, false)
         });
-        blob_proposals(&mut runs, (left, top), prepared, true, &mut out);
+        blob_proposals(&runs, (left, top), prepared, true, &mut out);
     }
     out
 }
@@ -934,11 +940,11 @@ pub(crate) fn proposals(
     }
     profile::since(Stage::Threshold, start);
     let [dark, bright] = &scratch.masks;
-    let mut runs = profile::timed(Stage::Components, || {
+    let runs = profile::timed(Stage::Components, || {
         components([dark, bright], words, width, pass_light)
     });
     let mut out = Vec::new();
-    blob_proposals(&mut runs, (0, 0), prepared, recovery, &mut out);
+    blob_proposals(&runs, (0, 0), prepared, recovery, &mut out);
     out
 }
 
