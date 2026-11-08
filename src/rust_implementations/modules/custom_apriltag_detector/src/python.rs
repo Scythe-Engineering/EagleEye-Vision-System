@@ -6,8 +6,10 @@ use std::slice;
 
 use crate::detection::Detection;
 use crate::detector::{image_span, mapped_image, Detector, Settings};
-use crate::geometry::{Homography, Point, Quad};
+use crate::frame::Frame;
+use crate::geometry::{Homography, Quad};
 use crate::image::Image;
+use crate::track::{decode_quad as quad_from_corners, track_in_frame};
 
 #[pyclass(module = "custom_apriltag_detector")]
 pub(crate) struct CustomAprilTagDetector {
@@ -70,19 +72,68 @@ impl GrayBuffer {
     }
 }
 
+/// A validated 2D grayscale or 3D packed-BGR uint8 frame with positive row strides.
+struct FrameBuffer {
+    buffer: PyBuffer<u8>,
+    width: usize,
+    height: usize,
+    stride: usize,
+    channels: usize,
+    span: usize,
+}
+
+impl FrameBuffer {
+    fn new(frame: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let invalid =
+            || PyValueError::new_err("frame must be a 2D grayscale or 3D BGR uint8 image");
+        let buffer = PyBuffer::<u8>::get(frame).map_err(|_| invalid())?;
+        let (shape, strides) = (buffer.shape(), buffer.strides());
+        let channels = match buffer.dimensions() {
+            2 => 1,
+            3 if shape[2] == 3 && strides[2] == 1 => 3,
+            _ => return Err(invalid()),
+        };
+        if buffer.suboffsets().is_some() || strides[1] != channels as isize || strides[0] < 0 {
+            return Err(PyValueError::new_err(
+                "frame requires positive row strides and packed pixels",
+            ));
+        }
+        let (height, width, stride) = (shape[0], shape[1], strides[0] as usize);
+        // Validate the frame as a `channels`-times wider grayscale image.
+        let span = image_span(width * channels, height, stride).map_err(PyValueError::new_err)?;
+        Ok(Self {
+            buffer,
+            width,
+            height,
+            stride,
+            channels,
+            span,
+        })
+    }
+
+    fn frame(&self) -> Frame<'_> {
+        // SAFETY: The buffer exporter owns these validated positive-stride rows and
+        // stays alive while `self` holds the buffer.
+        let pixels =
+            unsafe { slice::from_raw_parts(self.buffer.buf_ptr().cast::<u8>(), self.span) };
+        Frame {
+            pixels,
+            width: self.width,
+            height: self.height,
+            stride: self.stride,
+            channels: self.channels,
+        }
+    }
+}
+
 /// Convert eight output-order pixel-edge corner values into a decode-order quad.
 fn decode_quad(corners: &[f64]) -> PyResult<Quad> {
-    if corners.len() != 8 || corners.iter().any(|value| !value.is_finite()) {
-        return Err(PyValueError::new_err("corners must be eight finite values"));
-    }
-    // Output order traverses unit corners (0,1),(1,1),(1,0),(0,0); decode expects the reverse.
-    let mut quad = [Point::default(); 4];
-    for (i, point) in quad.iter_mut().enumerate() {
-        let k = 3 - i;
-        point.x = corners[2 * k] - 0.5;
-        point.y = corners[2 * k + 1] - 0.5;
-    }
-    Ok(quad)
+    let corners: &[f64; 8] = corners
+        .try_into()
+        .ok()
+        .filter(|values: &&[f64; 8]| values.iter().all(|value| value.is_finite()))
+        .ok_or_else(|| PyValueError::new_err("corners must be eight finite values"))?;
+    Ok(quad_from_corners(corners))
 }
 
 #[pymethods]
@@ -190,6 +241,54 @@ impl CustomAprilTagDetector {
                     0,
                     detector.settings.decode_sharpening,
                     tag_id,
+                )
+            }))
+        })
+        .map_err(|_| PyRuntimeError::new_err("native track panicked"))
+    }
+
+    /// Re-find tracked tags of the first family around predicted full-frame corners.
+    ///
+    /// `predictions` holds eight OpenCV pixel-centre values per tag, in
+    /// pupil_apriltags corner order, matching `tag_ids`. Each tag is confirmed in a
+    /// grayscale window of `frame` (2D grayscale or packed BGR) under one GIL release,
+    /// spread over the detector's `nthreads` workers when there are several.
+    /// Returns per tag its full-frame pixel-centre corners, or None when unconfirmed.
+    #[pyo3(signature = (frame, predictions, tag_ids))]
+    fn track_many(
+        &mut self,
+        py: Python<'_>,
+        frame: &Bound<'_, PyAny>,
+        predictions: Vec<f64>,
+        tag_ids: Vec<i32>,
+    ) -> PyResult<Vec<Option<[f64; 8]>>> {
+        if predictions.len() != 8 * tag_ids.len() {
+            return Err(PyValueError::new_err(
+                "predictions must hold eight values per tag ID",
+            ));
+        }
+        let frame = FrameBuffer::new(frame)?;
+        let frame = frame.frame();
+        let detector = &self.detector;
+        py.detach(|| {
+            catch_unwind(AssertUnwindSafe(|| {
+                let (predictions, _) = predictions.as_chunks::<8>();
+                let items: Vec<_> = predictions.iter().zip(&tag_ids).collect();
+                // Tags are independent, so the result does not depend on the thread count.
+                detector.workers.map(
+                    &items,
+                    items.len() > 1,
+                    |scratch: &mut Vec<u8>, &(predicted, &tag_id)| {
+                        track_in_frame(
+                            &frame,
+                            predicted,
+                            &detector.selected[0],
+                            0,
+                            detector.settings.decode_sharpening,
+                            tag_id,
+                            scratch,
+                        )
+                    },
                 )
             }))
         })

@@ -24,7 +24,8 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
 
         Args:
             families: AprilTag family to detect.
-            nthreads: Detector threads for temporal ROIs.
+            nthreads: Detector threads for temporal ROIs; with several, tracked tags
+                are also re-found in parallel within the frame.
             quad_decimate: Decimation for quad detection; decoding uses full resolution.
             quad_sigma: Gaussian blur standard deviation in pixels for quad detection.
             refine_edges: When non-zero, quad edges snap to nearby image gradients.

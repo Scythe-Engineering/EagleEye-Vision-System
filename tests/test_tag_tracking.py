@@ -5,6 +5,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from src.main_operations.definitions.temporal_acceleration_preprocessor_rust import (
+    TemporalAccelerationPreprocessorRustDefinition,
+)
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
 from tests.test_custom_apriltag_detector import _tag_scene
 
@@ -46,3 +49,18 @@ def test_tracked_tag_skips_its_segment_and_matches_the_search() -> None:
     # Frame 0 is searched; frames 1-3 are tracked; the blank frame and the frame
     # after it are searched because the miss dropped the track.
     assert searched_segments == [1, 0, 0, 0, 1, 1]
+
+
+def test_tracked_tag_never_warps_its_lazy_segment() -> None:
+    """Only segments left after tracking are rectified from the frame."""
+    scene = _tag_scene()
+    detector = AprilTagDetector(rust_backend=True, track_tags=True)
+    quad = np.array([30, 30, 370, 30, 370, 350, 30, 350], dtype=np.float32)
+    for index, frame in enumerate([_shifted(scene, 1.5 * i, 0.0) for i in range(3)]):
+        segment = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
+            frame, quad
+        )
+        (tag,) = detector.detect([segment], frame)
+        assert tag.tag_id == 1
+        # Frame 0 has no track yet, so only it searches (and builds) the crop.
+        assert (segment._image is not None) == (index == 0)

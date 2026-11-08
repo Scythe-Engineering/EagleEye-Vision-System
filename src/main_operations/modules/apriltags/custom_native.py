@@ -110,3 +110,29 @@ class CustomNativeDetector:
         """
         native = self._detector.track(gray, corners, tag_id)
         return None if native is None else np.array(native.corners).reshape(4, 2)
+
+    def track_many(
+        self, frame: np.ndarray, predictions: list[np.ndarray], tag_ids: list[int]
+    ) -> list[np.ndarray | None]:
+        """Confirm several tags around predicted full-frame corners in one call.
+
+        Each tag is searched in a grayscale window of ``frame`` that covers its
+        white quiet zone and the edge-snap retry; BGR is converted only there.
+
+        Args:
+            frame: Full 2D grayscale or packed BGR uint8 frame.
+            predictions: Shape-(4, 2) predicted corners per tag, in pupil_apriltags
+                order and OpenCV pixel-centre coordinates.
+            tag_ids: Tag expected at each prediction.
+
+        Returns:
+            Per tag, shape-(4, 2) grid-fitted pixel-centre corners, or None when the
+            tag is not confirmed.
+        """
+        if not frame.flags["C_CONTIGUOUS"]:
+            frame = np.ascontiguousarray(frame)
+        flat = np.asarray(predictions, dtype=np.float64).ravel().tolist()
+        return [
+            None if corners is None else np.array(corners).reshape(4, 2)
+            for corners in self._detector.track_many(frame, flat, tag_ids)
+        ]

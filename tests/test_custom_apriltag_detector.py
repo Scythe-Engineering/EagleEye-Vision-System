@@ -134,6 +134,32 @@ def test_track_refinds_a_moved_tag_and_rejects_other_ids() -> None:
     assert detector.track(blank, corners.ravel().tolist(), reference.tag_id) is None
 
 
+def test_track_many_reads_bgr_windows_as_opencv_grayscale() -> None:
+    """track_many() on a noisy colour frame equals the cv2 grayscale result."""
+    gray = _tag_scene()
+    noise = np.random.default_rng(7).integers(-40, 40, (*gray.shape, 3))
+    bgr = np.clip(gray[..., None].astype(np.int64) + noise, 0, 255).astype(np.uint8)
+    detector = CustomAprilTagDetector(quad_decimate=1.0)
+    (reference,) = detector.run(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+    # Pixel-centre predictions, a lost tag far off-frame, and a wrong ID.
+    corners = _corners(reference) - 0.5
+    predictions = [*(corners + [0.4, -0.3]).ravel(), *(corners + 900).ravel()] * 2
+    tag_ids = [reference.tag_id, reference.tag_id, reference.tag_id + 1, 1]
+
+    from_bgr = detector.track_many(bgr, predictions, tag_ids)
+    from_gray = detector.track_many(
+        cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), predictions, tag_ids
+    )
+
+    assert from_bgr == from_gray
+    threaded = CustomAprilTagDetector(quad_decimate=1.0, nthreads=4)
+    assert threaded.track_many(bgr, predictions, tag_ids) == from_bgr
+    assert from_bgr[1:] == [None, None, None]
+    np.testing.assert_allclose(
+        np.reshape(from_bgr[0], (4, 2)), corners, atol=0.1, rtol=0
+    )
+
+
 def test_refine_recovers_corners_from_a_rough_external_quad() -> None:
     """refine() re-decodes and grid-fits corners supplied by another detector."""
     frame = _tag_scene()
