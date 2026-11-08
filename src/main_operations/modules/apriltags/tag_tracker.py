@@ -83,9 +83,9 @@ class TagTracker:
         return window if window.ndim == 2 else cv2.cvtColor(window, cv2.COLOR_BGR2GRAY)
 
 
-def segment_center(image: np.ndarray, mapping: np.ndarray) -> np.ndarray:
+def segment_center(shape: tuple[int, ...], mapping: np.ndarray) -> np.ndarray:
     """Full-frame position of a segment's center for a 2D offset or 3x3 map."""
-    height, width = image.shape[:2]
+    height, width = shape[:2]
     center = np.array([(width - 1) * 0.5, (height - 1) * 0.5])
     mapping = np.asarray(mapping, dtype=np.float64)
     if mapping.shape == (2,):

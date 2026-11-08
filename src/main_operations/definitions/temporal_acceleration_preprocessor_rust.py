@@ -10,6 +10,7 @@ try:
 except ImportError:
     TemporalAcceleration = None
 
+from src.main_operations.modules.apriltags.lazy_segment import LazySegment
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
@@ -72,9 +73,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 f"{camera_bus_id}/intrinsics.json"
             )
 
-        camera_matrix, distortion_coefficients = load_camera_parameters(
-            intrinsics_path
-        )
+        camera_matrix, distortion_coefficients = load_camera_parameters(intrinsics_path)
         apriltag_map = load_fmap_file(apriltag_map_path)
 
         # Convert data for Rust consumption
@@ -120,7 +119,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
 
     def run(
         self, input_data: Any
-    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray] | LazySegment], np.ndarray]:
         """Generate predicted ROIs for the current frame using Rust implementation.
 
         Args:
@@ -130,6 +129,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             Tuple containing the cropped images and original frame. Each crop is
             paired with either a shape-(2,) XY offset for an unwarped crop or a
             shape-(3, 3) transform from crop coordinates to full-frame coordinates.
+            Rectified crops are `LazySegment`s, warped only when their pixels are
+            read.
         """
         if isinstance(input_data, dict):
             frame = input_data.get("frame")
@@ -156,7 +157,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         height, width = frame.shape[:2]
         crop_quads, crop_regions = self._rust_impl.process_frame(width, height)
 
-        cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
+        cropped_images: List[Tuple[np.ndarray, np.ndarray] | LazySegment] = []
         visualization_quads: List[np.ndarray] = []
         use_perspective_crops = len(crop_quads) == len(crop_regions)
         for index, region in enumerate(crop_regions):
@@ -170,8 +171,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
 
             if use_perspective_crops:
                 quad = np.asarray(crop_quads[index], dtype=np.float32).reshape(4, 2)
-                crop, full_frame_from_crop = self._perspective_crop(frame, quad)
-                cropped_images.append((crop, full_frame_from_crop))
+                cropped_images.append(self._perspective_segment(frame, quad))
                 visualization_quads.append(quad)
             else:
                 crop = frame[top:bottom, left:right]
@@ -189,10 +189,10 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         return (cropped_images, frame)
 
     @staticmethod
-    def _perspective_crop(
+    def _perspective_segment(
         frame: np.ndarray, flattened_quad: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Rectify a projected tag region and return its full-frame mapping.
+    ) -> LazySegment:
+        """Describe a rectified projected tag region and its full-frame mapping.
 
         Args:
             frame: Source camera frame.
@@ -200,8 +200,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 full frame with shape `(8,)` or `(4, 2)`.
 
         Returns:
-            Square rectified crop and a shape-(3, 3) transform from crop
-            coordinates to full-frame coordinates.
+            Square rectified segment, warped when first read, with a shape-(3, 3)
+            transform from crop coordinates to full-frame coordinates.
         """
         source = flattened_quad.reshape(4, 2)
         edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
@@ -214,10 +214,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         # Preserve winding because mirrored AprilTags cannot be decoded.
         if cv2.contourArea(source, oriented=True) < 0:
             destination = destination[::-1].copy()
-        crop_from_full_frame = cv2.getPerspectiveTransform(source, destination)
         full_frame_from_crop = cv2.getPerspectiveTransform(destination, source)
-        crop = cv2.warpPerspective(frame, crop_from_full_frame, (side, side))
-        return crop, full_frame_from_crop
+        return LazySegment(frame, source, destination, full_frame_from_crop)
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update live configuration for the temporal acceleration.

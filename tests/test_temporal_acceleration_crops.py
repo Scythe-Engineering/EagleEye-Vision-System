@@ -13,7 +13,15 @@ from src.main_operations.definitions.detect_apriltags import (
 from src.main_operations.definitions.temporal_acceleration_preprocessor_rust import (
     TemporalAccelerationPreprocessorRustDefinition,
 )
+from src.main_operations.modules.apriltags import lazy_segment
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
+from src.utils.timing import (
+    TimedValue,
+    TimingMetadata,
+    attach_output_timing,
+    collect_timings,
+    unwrap_timed_deep,
+)
 
 
 def _no_detections(input_images: object) -> list[object]:
@@ -34,7 +42,7 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     source_quad = np.array([[10, 20], [70, 10], [80, 80], [20, 90]], dtype=np.float32)
 
     crop, full_frame_from_crop = (
-        TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+        TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
             frame, source_quad.flatten()
         )
     )
@@ -45,7 +53,9 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     )
 
     restored = AprilTagDetector._map_segment_corners(crop_corners, full_frame_from_crop)
-    search_region = AprilTagDetector._segment_search_region(crop, full_frame_from_crop)
+    search_region = AprilTagDetector._segment_search_region(
+        crop.shape, full_frame_from_crop
+    )
 
     np.testing.assert_allclose(restored, source_quad, atol=1e-4)
     np.testing.assert_allclose(search_region, source_quad, atol=1e-4)
@@ -76,7 +86,7 @@ def test_crop_pixels_and_maps_match_original_perimeter_math() -> None:
                 image, cv2.getPerspectiveTransform(quad, destination), (side, side)
             )
             actual_crop, actual_map = (
-                TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+                TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
                     image, quad
                 )
             )
@@ -106,7 +116,7 @@ def test_temporal_run_keeps_roi_order_channels_maps_and_unwarped_fallback() -> N
     assert original is frame
     assert len(segments) == 2
     for (crop, mapping), quad in zip(segments, quads):
-        expected_crop, expected_mapping = operation._perspective_crop(
+        expected_crop, expected_mapping = operation._perspective_segment(
             frame, np.array(quad, dtype=np.float32)
         )
         np.testing.assert_array_equal(crop, expected_crop)
@@ -120,6 +130,26 @@ def test_temporal_run_keeps_roi_order_channels_maps_and_unwarped_fallback() -> N
     assert np.shares_memory(segments[0][0], frame)
     np.testing.assert_array_equal(segments[0][0], frame)
     np.testing.assert_array_equal(segments[0][1], [0, 0])
+
+
+def test_timing_utilities_pass_lazy_segments_through_unbuilt(monkeypatch) -> None:
+    """Moving processed_frame between operations never warps a lazy crop."""
+    frame = np.zeros((100, 120, 3), dtype=np.uint8)
+    quad = np.array([10, 20, 70, 10, 80, 80, 20, 90], dtype=np.float32)
+    segment = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
+        frame, quad
+    )
+
+    def no_warp(*args, **kwargs):
+        raise AssertionError("crop was built")
+
+    monkeypatch.setattr(lazy_segment.cv2, "warpPerspective", no_warp)
+    timing = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=2)
+    output = attach_output_timing(([segment], frame), TimedValue(frame, timing))
+
+    assert collect_timings(output) == [timing]
+    segments, original = unwrap_timed_deep({"frame": output})["frame"]
+    assert segments[0] is segment and original is frame
 
 
 def test_perspective_crop_preserves_decodable_tag_winding() -> None:
@@ -144,7 +174,7 @@ def test_perspective_crop_preserves_decodable_tag_winding() -> None:
         canonical, frame_from_canonical, (400, 400), borderValue=255
     )
 
-    crop, _ = TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+    crop, _ = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
         frame, projected_quad
     )
     detections = Detector(families="tag36h11", quad_decimate=1).detect(crop)

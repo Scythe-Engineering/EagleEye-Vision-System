@@ -9,6 +9,7 @@ import numpy as np
 from pupil_apriltags import Detection, Detector
 
 from .custom_native import CustomNativeDetector
+from .lazy_segment import segment_shape_and_mapping
 from .tag_tracker import TagTracker, segment_center
 
 logger = logging.getLogger(__name__)
@@ -216,12 +217,15 @@ class AprilTagDetector:
 
     def _is_valid_image(self, image: np.ndarray) -> bool:
         """Return whether an image is large enough for AprilTag processing."""
+        return image is not None and self._is_valid_shape(image.shape)
+
+    def _is_valid_shape(self, shape: tuple[int, ...]) -> bool:
+        """Return whether an image of this shape is large enough for detection."""
         return (
-            image is not None
-            and image.size != 0
-            and image.ndim >= 2
-            and image.shape[0] >= self._min_input_dimension
-            and image.shape[1] >= self._min_input_dimension
+            len(shape) >= 2
+            and 0 not in shape
+            and shape[0] >= self._min_input_dimension
+            and shape[1] >= self._min_input_dimension
         )
 
     def _preprocess_image(
@@ -472,18 +476,18 @@ class AprilTagDetector:
 
     @staticmethod
     def _segment_search_region(
-        image: np.ndarray, full_frame_mapping: np.ndarray
+        shape: tuple[int, ...], full_frame_mapping: np.ndarray
     ) -> np.ndarray:
         """Return an image segment's oriented boundary in full-frame coordinates.
 
         Args:
-            image: Image segment sent to the detector.
+            shape: Shape of the image segment sent to the detector.
             full_frame_mapping: Segment offset or perspective transform.
 
         Returns:
             Four perimeter-ordered full-frame corners.
         """
-        height, width = image.shape[:2]
+        height, width = shape[:2]
         corners = np.array(
             [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
             dtype=np.float32,
@@ -600,11 +604,12 @@ class AprilTagDetector:
             and self._is_valid_image(full_frame)
         ):
             tracked, images = self._track(images, full_frame)
+        # Shapes and mappings only, so lazy segments are not warped here.
         search_regions = (
             [
-                self._segment_search_region(image, mapping)
-                for image, mapping in images
-                if self._is_valid_image(image)
+                self._segment_search_region(shape, mapping)
+                for shape, mapping in map(segment_shape_and_mapping, images)
+                if self._is_valid_shape(shape)
             ]
             if temporal_segments
             else []
@@ -655,7 +660,7 @@ class AprilTagDetector:
     def _track(
         self, images: list[tuple[np.ndarray, np.ndarray]], full_frame: np.ndarray
     ) -> tuple[dict[int, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
-        """Confirm tracked tags and drop the segments centred on them.
+        """Confirm tracked tags and drop the segments centred on them, unbuilt.
 
         Returns:
             Confirmed full-frame corners by tag ID, and the segments still to search.
@@ -673,10 +678,14 @@ class AprilTagDetector:
             0.5 * np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1) / np.sqrt(2.0)
         )
         remaining = [
-            (image, mapping)
-            for image, mapping in images
+            segment
+            for segment in images
             if not np.any(
-                np.linalg.norm(centers - segment_center(image, mapping), axis=1) < radii
+                np.linalg.norm(
+                    centers - segment_center(*segment_shape_and_mapping(segment)),
+                    axis=1,
+                )
+                < radii
             )
         ]
         return tracked, remaining
