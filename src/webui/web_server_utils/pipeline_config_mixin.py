@@ -575,15 +575,16 @@ class PipelineConfigMixin:
             self.log(f"Failed to read pipelines for error batching: {error}")
 
         for pipeline_name, payload in cached_payloads.items():
-            if pipeline_name not in dirty_pipelines:
-                continue
-
             current_frame_seq = frame_seq_by_pipeline.get(pipeline_name, 0)
             previously_sent_seq = last_seq_sent.get(pipeline_name, 0)
             previously_sent_ts = last_publish_ts.get(pipeline_name, 0.0)
 
+            # Dirty pipelines go out every few frames. Every cached pipeline is
+            # also resent on the fallback interval, so a dropped SSE event
+            # (including the one that cleared the last error) self-corrects.
             frame_gate_open = (
-                current_frame_seq > 0
+                pipeline_name in dirty_pipelines
+                and current_frame_seq > 0
                 and current_frame_seq - previously_sent_seq
                 >= PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL
             )

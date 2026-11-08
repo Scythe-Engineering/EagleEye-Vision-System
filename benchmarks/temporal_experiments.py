@@ -102,6 +102,7 @@ def compact_record(record: dict[str, Any], clip: str) -> dict[str, Any]:
         "pipeline_ms": record.get("pipeline_duration_ns", 0) / 1_000_000,
         "decode_ms": record.get("decode_duration_ns", 0) / 1_000_000,
         "operation_ms": _operation_timings(output.get("profile")),
+        "skipped": bool(record.get("skipped")),
         "provisional_truth_tags": len(provisional),
         "provisional_matched": sum(bool(tag.get("detected")) for tag in provisional),
         "total_matched": len(detection.get("matches", [])),
@@ -246,7 +247,22 @@ def summarize(
         pose_available = sum(bool(row["pose_available"]) for row in data)
         errors = [row["robot_errors"] for row in data if row["robot_errors"]]
         timed = [row for row in data if row["frame_index"] >= timing_start]
+        # operation_ms keeps its completed-cycle meaning; skipped cycles (for
+        # example no tags in view) also carry the timings of the ops that ran.
+        timed_completed = [row for row in timed if not row.get("skipped", False)]
         stage_names = {name for row in timed for name in row["operation_ms"]}
+
+        def operation_stats(source: list[dict[str, Any]]) -> dict[str, Any]:
+            """Per-operation timing statistics over rows that ran each op."""
+            return {
+                name: _stats(
+                    row["operation_ms"][name]
+                    for row in source
+                    if name in row["operation_ms"]
+                )
+                for name in sorted(stage_names)
+            }
+
         return {
             "frames_denominator": len(data),
             "failure_count": sum(row["failure"] is not None for row in data),
@@ -280,14 +296,9 @@ def summarize(
             "corner_error_px": _stats(
                 value for row in data for value in row.get("corner_errors_px", [])
             ),
-            "operation_ms": {
-                name: _stats(
-                    row["operation_ms"][name]
-                    for row in timed
-                    if name in row["operation_ms"]
-                )
-                for name in sorted(stage_names)
-            },
+            "skipped_count": sum(bool(row.get("skipped")) for row in data),
+            "operation_ms": operation_stats(timed_completed),
+            "operation_ms_all_frames": operation_stats(timed),
             "robot_errors": {
                 name: _stats(error[name] for error in errors if name in error)
                 for name in (

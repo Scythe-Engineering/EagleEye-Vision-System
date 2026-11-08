@@ -571,10 +571,14 @@ def run_accuracy(
                     failure = f"pipeline operation errors: {errors}"
                 else:
                     value = collector(pipeline, item.index)
-                    after = _profile_sequence(pipeline.get_latest_profile_snapshot())
-                    completed = after is not None and after != before
+                    profile = pipeline.get_latest_profile_snapshot()
+                    after = _profile_sequence(profile)
+                    # A new snapshot belongs to this cycle; skipped cycles are
+                    # profiled too but flagged, so completion reads the flag.
+                    profiled = after is not None and after != before
+                    completed = profiled and not profile.get("skipped", False)
                     failure = None
-                    if isinstance(value, dict) and not completed:
+                    if isinstance(value, dict) and not profiled:
                         value["profile"] = None
                 record = {
                     "frame_index": expected,

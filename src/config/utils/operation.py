@@ -39,6 +39,10 @@ class Operation:
             output_ports: Declared output port names.
         """
         self.instance: OperationInstance = instance
+        # Operations opt in from their constructor; read once, not per frame.
+        self.uses_timed_inputs: bool = bool(
+            getattr(instance, "uses_timed_inputs", False)
+        )
         self.uuid: str = uuid
         self.name: str = name
         self.is_data_source: bool = is_data_source
@@ -74,12 +78,10 @@ class Operation:
 
         Operations receive raw unwrapped values by default so existing image/dict
         processors remain compatible. Operations that need timing metadata may set
-        ``uses_timed_inputs = True`` on the instance.
+        ``uses_timed_inputs = True`` on the instance before it is wrapped.
         """
         call_input = (
-            input_data
-            if getattr(self.instance, "uses_timed_inputs", False)
-            else unwrap_timed_deep(input_data)
+            input_data if self.uses_timed_inputs else unwrap_timed_deep(input_data)
         )
 
         if line_profiling_manager.is_active_for(self.uuid):

@@ -61,6 +61,9 @@ class LineProfilingManager:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._active_session: LineProfilingSession | None = None
+        # Mirrors the active session's operation UUID for the unlocked per-call
+        # check in Operation.run; profile_operation_call re-checks under the lock.
+        self._active_operation_uuid: str | None = None
         self._reports: dict[tuple[str, str], LineProfilingSession] = {}
 
     def start_session(
@@ -83,6 +86,7 @@ class LineProfilingManager:
                 profiler=profiler,
             )
             self._active_session = session
+            self._active_operation_uuid = operation.uuid
             return {"success": True, **session.public_status()}, 200
 
     def stop_session(
@@ -106,6 +110,7 @@ class LineProfilingManager:
                     "active_session": session.public_status(),
                 }, 409
             self._active_session = None
+            self._active_operation_uuid = None
             session.status = "stopped"
             session.stop_time = _utc_now()
             session.report_text = self._build_report(session)
@@ -117,11 +122,13 @@ class LineProfilingManager:
             }, 200
 
     def is_active_for(self, operation_uuid: str) -> bool:
-        with self._lock:
-            return (
-                self._active_session is not None
-                and self._active_session.operation_uuid == operation_uuid
-            )
+        """Return whether line profiling targets this operation.
+
+        Called on every operation run, so it reads a single attribute without
+        taking the lock. A session that starts or stops concurrently is seen
+        on the next call, exactly as with a locked read.
+        """
+        return self._active_operation_uuid == operation_uuid
 
     def profile_operation_call(
         self, operation: "Operation", call: Callable[[], Any]

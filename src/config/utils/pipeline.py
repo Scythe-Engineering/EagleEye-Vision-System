@@ -116,6 +116,12 @@ class Pipeline:
             )
         )
         self._last_device_input_tokens: dict[str, FrameToken] = {}
+        # The operation set is fixed for a pipeline's lifetime; graph edits
+        # build a new Pipeline.
+        self.has_networktables_publisher = any(
+            operation.name == "publish_to_networktables"
+            for operation in self.operations.values()
+        )
         self.async_docked_operations = tuple(
             operation
             for operation in self.operations.values()
@@ -519,11 +525,14 @@ class Pipeline:
         Returns:
             Latency in milliseconds, or None when the cycle produced no timing.
         """
-        capture_times_ns = [
-            timing.capture_monotonic_ns
-            for output in self.flow_manager.operation_outputs.values()
-            for timing in collect_timings(output)
-        ]
+        capture_times_ns: list[int] = []
+        for output in self.flow_manager.operation_outputs.values():
+            if type(output) is TimedValue:
+                capture_times_ns.append(output.timing.capture_monotonic_ns)
+            else:
+                capture_times_ns.extend(
+                    timing.capture_monotonic_ns for timing in collect_timings(output)
+                )
         if not capture_times_ns:
             return None
         return (time.monotonic_ns() - min(capture_times_ns)) / 1_000_000.0
@@ -705,10 +714,7 @@ class Pipeline:
         if completed:
             # Flush after all branches finish so pose and metadata travel together.
             # ntcore rate-limits this; faster periodic options alone are quantized.
-            if any(
-                operation.name == "publish_to_networktables"
-                for operation in self.operations.values()
-            ):
+            if self.has_networktables_publisher:
                 self.network_table.getInstance().flush()
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
             capture_latency_ms = self._capture_latency_ms()
@@ -1114,10 +1120,18 @@ class Pipeline:
     def clear_operation_error(self, operation: Operation) -> None:
         """Clear an operation error entry after success.
 
+        Runs after every successful operation, so it publishes only when an
+        error was actually removed. The web server's periodic resend repairs
+        any update the browser missed.
+
         Args:
             operation: The operation that succeeded.
         """
         if operation is None:
+            return
+        # Unlocked membership test: only this pipeline's thread records runtime
+        # errors for its operations, so a missing entry cannot appear concurrently.
+        if operation.uuid not in self.operation_errors:
             return
         with self.operation_errors_lock:
             self.operation_errors.pop(operation.uuid, None)
