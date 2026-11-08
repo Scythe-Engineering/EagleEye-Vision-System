@@ -98,7 +98,7 @@
         "track_tags": {
             "type": "bool",
             "description": "Re-find tags seen last frame at their predicted corners before searching temporal ROIs",
-            "default": false,
+            "default": true,
             "required": false,
             "restart_for_change": true
         }

@@ -20,7 +20,7 @@ def test_tracked_tag_skips_its_segment_and_matches_the_search() -> None:
     """A moving tag is re-found from its prediction; a lost tag is searched again."""
     scene = _tag_scene()
     tracking = AprilTagDetector(rust_backend=True, track_tags=True)
-    searching = AprilTagDetector(rust_backend=True)
+    searching = AprilTagDetector(rust_backend=True, track_tags=False)
     searched_segments: list[int] = []
     run_detection = tracking.run_detection
 

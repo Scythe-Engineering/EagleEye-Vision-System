@@ -51,7 +51,7 @@ class AprilTagDetector:
         small_roi_max_px: int = 32,
         *,
         rust_backend: bool = False,
-        track_tags: bool = False,
+        track_tags: bool = True,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 

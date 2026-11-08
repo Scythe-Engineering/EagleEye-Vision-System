@@ -18,7 +18,7 @@ class DetectApriltagsRustDefinition(DetectApriltagsDefinition):
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 2,
         small_roi_max_px: int = 0,
-        track_tags: bool = False,
+        track_tags: bool = True,
     ) -> None:
         """Initialize the Rust AprilTag detection definition.
 
