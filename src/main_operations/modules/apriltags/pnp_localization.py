@@ -1,4 +1,5 @@
 import logging
+import math
 from collections import OrderedDict
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
@@ -220,10 +221,14 @@ class PnpLocalization:
             Returns:
                 Mean squared pixel error, or infinity for an invalid candidate.
             """
-            if not np.isfinite(rvec).all() or not np.isfinite(tvec).all():
+            # Plain-float checks: numpy's per-call overhead dominates on six values.
+            if not all(
+                map(math.isfinite, rvec.ravel().tolist() + tvec.ravel().tolist())
+            ):
                 return float("inf")
             rotation = cv2.Rodrigues(rvec)[0]
-            if np.any((object_points @ rotation.T + tvec.reshape(3))[:, 2] <= 0):
+            # Only camera-space depth matters: every corner must be in front.
+            if (object_points @ rotation[2] + tvec.flat[2]).min() <= 0:
                 return float("inf")
             if coordinate_rms is not None:
                 return 2.0 * float(coordinate_rms) ** 2
@@ -235,7 +240,7 @@ class PnpLocalization:
                 self.distortion_coefficients,
             )[0]
             return float(
-                np.mean(np.sum((projected.reshape(-1, 2) - image_points) ** 2, axis=1))
+                ((projected.reshape(-1, 2) - image_points) ** 2).sum(axis=1).mean()
             )
 
         if tag_count == 1 and previous_pose is not None:
@@ -245,17 +250,19 @@ class PnpLocalization:
                     rotations, translations, initial_rms
                 )
             ]
-            valid = [candidate for candidate in valid if np.isfinite(candidate[2])]
+            valid = [candidate for candidate in valid if math.isfinite(candidate[2])]
             if not valid:
                 return None
             # A subpixel fit tie is not enough on its own: both the initializer and
             # refined result must stay within the bounded neighborhood of the prior.
-            best_rms = np.sqrt(min(candidate[2] for candidate in valid))
+            best_rms = math.sqrt(min(candidate[2] for candidate in valid))
             tied = [
                 candidate
                 for candidate in valid
-                if np.sqrt(candidate[2]) <= best_rms + 0.25
+                if math.sqrt(candidate[2]) <= best_rms + 0.25
             ]
+            previous_rotation = previous_pose[:3, :3]
+            previous_translation = previous_pose[:3, 3]
 
             def pose_for(rvec: np.ndarray, tvec: np.ndarray) -> np.ndarray:
                 """Undo object centering before comparing field-space camera poses."""
@@ -265,36 +272,28 @@ class PnpLocalization:
                 pose[:3, 3] = object_origin - rotation.T @ tvec.reshape(3)
                 return pose
 
-            def rotation_delta(pose: np.ndarray) -> float:
-                """Measure SO(3) separation from the previous camera orientation."""
-                cosine = np.clip(
-                    (np.trace(pose[:3, :3].T @ previous_pose[:3, :3]) - 1) / 2,
-                    -1.0,
-                    1.0,
-                )
-                return float(np.arccos(cosine))
+            def separation(pose: np.ndarray) -> tuple[float, float]:
+                """Return field translation and SO(3) rotation from the previous pose."""
+                distance = np.linalg.norm(pose[:3, 3] - previous_translation)
+                cosine = (np.trace(pose[:3, :3].T @ previous_rotation) - 1) / 2
+                return distance, math.acos(min(max(cosine, -1.0), 1.0))
 
-            def continuity(candidate: tuple[np.ndarray, np.ndarray, float]) -> float:
-                """Compare one-meter translation and half-radian rotation scales."""
-                pose = pose_for(candidate[0], candidate[1])
-                translation = np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3])
-                return float(translation**2 + (rotation_delta(pose) / 0.5) ** 2)
-
-            def is_near_previous(pose: np.ndarray) -> bool:
+            def is_near_previous(distance: float, angle: float) -> bool:
                 """Return whether a candidate remains inside continuity bounds."""
-                return bool(
-                    np.linalg.norm(pose[:3, 3] - previous_pose[:3, 3]) <= 1.0
-                    and rotation_delta(pose) <= 0.35
-                )
+                return distance <= 1.0 and angle <= 0.35
 
-            bounded = [
-                candidate
-                for candidate in tied
-                if is_near_previous(pose_for(candidate[0], candidate[1]))
-            ]
+            # Rank bounded candidates by one-meter translation and half-radian
+            # rotation scales.
+            bounded = []
+            for rotation, translation, error in tied:
+                distance, angle = separation(pose_for(rotation, translation))
+                if is_near_previous(distance, angle):
+                    continuity = float(distance**2 + (angle / 0.5) ** 2)
+                    bounded.append((continuity, rotation, translation, error))
             if not bounded:
                 return self._solve(geometry, image_points)
-            rotation, translation, error = min(bounded, key=continuity)
+            _, rotation, translation, error = min(bounded, key=lambda c: c[0])
+            refined = False
             if iterations:
                 try:
                     refined_rotation, refined_translation = cv2.solvePnPRefineLM(
@@ -312,10 +311,13 @@ class PnpLocalization:
                     )
                     if score(refined_rotation, refined_translation) <= error:
                         rotation, translation = refined_rotation, refined_translation
+                        refined = True
                 except cv2.error:
                     pass
-            pose = pose_for(rotation, translation)
-            if not is_near_previous(pose):
+            # The unrefined pick already passed the bounds check.
+            if refined and not is_near_previous(
+                *separation(pose_for(rotation, translation))
+            ):
                 return self._solve(geometry, image_points)
             return rotation, translation
 
@@ -323,7 +325,7 @@ class PnpLocalization:
         best_error = float("inf")
         for rotation, translation, rms in zip(rotations, translations, initial_rms):
             error = score(rotation, translation, rms)
-            if not np.isfinite(error):
+            if not math.isfinite(error):
                 continue
             if iterations:
                 try:
