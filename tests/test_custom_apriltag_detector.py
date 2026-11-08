@@ -152,6 +152,8 @@ def test_track_many_reads_bgr_windows_as_opencv_grayscale() -> None:
     )
 
     assert from_bgr == from_gray
+    threaded = CustomAprilTagDetector(quad_decimate=1.0, nthreads=4)
+    assert threaded.track_many(bgr, predictions, tag_ids) == from_bgr
     assert from_bgr[1:] == [None, None, None]
     np.testing.assert_allclose(
         np.reshape(from_bgr[0], (4, 2)), corners, atol=0.1, rtol=0

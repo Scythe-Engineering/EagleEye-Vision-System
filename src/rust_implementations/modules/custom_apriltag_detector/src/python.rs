@@ -302,7 +302,8 @@ impl CustomAprilTagDetector {
     ///
     /// `predictions` holds eight OpenCV pixel-centre values per tag, in
     /// pupil_apriltags corner order, matching `tag_ids`. Each tag is confirmed in a
-    /// grayscale window of `frame` (2D grayscale or packed BGR) under one GIL release.
+    /// grayscale window of `frame` (2D grayscale or packed BGR) under one GIL release,
+    /// spread over the detector's `nthreads` workers when there are several.
     /// Returns per tag its full-frame pixel-centre corners, or None when unconfirmed.
     #[pyo3(signature = (frame, predictions, tag_ids))]
     fn track_many(
@@ -322,12 +323,13 @@ impl CustomAprilTagDetector {
         let detector = &self.detector;
         py.detach(|| {
             catch_unwind(AssertUnwindSafe(|| {
-                let mut scratch = Vec::new();
                 let (predictions, _) = predictions.as_chunks::<8>();
-                predictions
-                    .iter()
-                    .zip(&tag_ids)
-                    .map(|(predicted, &tag_id)| {
+                let items: Vec<_> = predictions.iter().zip(&tag_ids).collect();
+                // Tags are independent, so the result does not depend on the thread count.
+                detector.workers.map(
+                    &items,
+                    items.len() > 1,
+                    |scratch: &mut Vec<u8>, &(predicted, &tag_id)| {
                         track_in_frame(
                             &frame,
                             predicted,
@@ -335,10 +337,10 @@ impl CustomAprilTagDetector {
                             0,
                             detector.settings.decode_sharpening,
                             tag_id,
-                            &mut scratch,
+                            scratch,
                         )
-                    })
-                    .collect()
+                    },
+                )
             }))
         })
         .map_err(|_| PyRuntimeError::new_err("native track panicked"))

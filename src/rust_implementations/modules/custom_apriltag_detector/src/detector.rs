@@ -40,7 +40,7 @@ pub(crate) struct Detector {
     pub(crate) settings: Settings,
     pub(crate) selected: Vec<IndexedFamily>,
     pub(crate) results: Vec<Detection>,
-    workers: Workers,
+    pub(crate) workers: Workers,
     scratch: Scratch,
     row_spans: Vec<(usize, usize)>,
     /// Grown bounding boxes of primary proposals that did not decode this frame.

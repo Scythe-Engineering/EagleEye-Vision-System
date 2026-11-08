@@ -23,6 +23,22 @@ impl Workers {
         Ok(Self { pool })
     }
 
+    /// Map `items` in order, each worker reusing one `S::default()` scratch value.
+    pub(crate) fn map<T, S, R, F>(&self, items: &[T], parallel: bool, work: F) -> Vec<R>
+    where
+        T: Sync,
+        S: Default,
+        R: Send,
+        F: Fn(&mut S, &T) -> R + Send + Sync,
+    {
+        if let Some(pool) = self.pool.as_ref().filter(|_| parallel) {
+            pool.install(|| items.par_iter().map_init(S::default, &work).collect())
+        } else {
+            let mut scratch = S::default();
+            items.iter().map(|item| work(&mut scratch, item)).collect()
+        }
+    }
+
     /// Process disjoint output rows and finish all work before borrowed data expires.
     pub(crate) fn rows<T, F>(&self, output: &mut [T], width: usize, parallel: bool, work: F)
     where
