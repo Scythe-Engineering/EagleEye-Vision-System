@@ -116,6 +116,12 @@ class Pipeline:
             )
         )
         self._last_device_input_tokens: dict[str, FrameToken] = {}
+        # The operation set is fixed for a pipeline's lifetime; graph edits
+        # build a new Pipeline.
+        self.has_networktables_publisher = any(
+            operation.name == "publish_to_networktables"
+            for operation in self.operations.values()
+        )
         self.async_docked_operations = tuple(
             operation
             for operation in self.operations.values()
@@ -705,10 +711,7 @@ class Pipeline:
         if completed:
             # Flush after all branches finish so pose and metadata travel together.
             # ntcore rate-limits this; faster periodic options alone are quantized.
-            if any(
-                operation.name == "publish_to_networktables"
-                for operation in self.operations.values()
-            ):
+            if self.has_networktables_publisher:
                 self.network_table.getInstance().flush()
             self.flow_manager.set_latest_profile_cycle_time(elapsed * 1000.0)
             capture_latency_ms = self._capture_latency_ms()

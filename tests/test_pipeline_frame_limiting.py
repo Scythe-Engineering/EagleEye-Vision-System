@@ -111,6 +111,7 @@ def _two_camera_pipeline() -> tuple[Pipeline, _PacketManager]:
         join.uuid: join,
     }
     pipeline.camera_manager = manager
+    pipeline.has_networktables_publisher = False
     pipeline.device_input_uuids = ("source-a", "source-b")
     pipeline._last_device_input_tokens = {}
     pipeline.flow_manager = SimpleNamespace(
