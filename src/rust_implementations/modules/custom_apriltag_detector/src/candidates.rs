@@ -20,6 +20,8 @@ pub(crate) struct Scratch {
     active: Vec<bool>,
     /// Minimum 3x3-tile contrast to threshold a tile, shared by both passes.
     floor: f32,
+    /// Per-pixel threshold of each band of eight rows; NaN where a tile is off.
+    cuts: Vec<f32>,
     /// Dark bit plane of one fragment window.
     window: Vec<u64>,
 }
@@ -32,6 +34,7 @@ impl Scratch {
             ranges: Vec::new(),
             active: Vec::new(),
             floor: MIN_CONTRAST,
+            cuts: Vec::new(),
             window: Vec::new(),
         }
     }
@@ -774,6 +777,44 @@ fn neighbourhood_ranges(lo: &[f32], hi: &[f32], tile_width: usize, ranges: &mut 
     }
 }
 
+/// One 64-bit mask word: bit `i` set when `pixels[i]` is above `cuts[i]`
+/// (`bright`) or below it (dark). A NaN cut never sets a bit.
+///
+/// The compares fill a byte array in one plain loop, which vectorises on any
+/// aarch64; each eight 0/1 bytes then pack into bits with one multiply, since
+/// the partial products of `PACK` put byte `i` at bit `56 + i` and never carry
+/// into the top byte.
+#[inline(always)]
+fn pack_word(pixels: &[f32], cuts: &[f32], bright: bool) -> u64 {
+    const PACK: u64 = 0x0102_0408_1020_4080;
+    let mut flags = [0u8; 64];
+    if bright {
+        for ((flag, &value), &cut) in flags.iter_mut().zip(pixels).zip(cuts) {
+            *flag = u8::from(value > cut);
+        }
+    } else {
+        for ((flag, &value), &cut) in flags.iter_mut().zip(pixels).zip(cuts) {
+            *flag = u8::from(value < cut);
+        }
+    }
+    let mut bits = 0u64;
+    for (k, bytes) in flags.as_chunks::<8>().0.iter().enumerate() {
+        bits |= (u64::from_le_bytes(*bytes).wrapping_mul(PACK) >> 56) << (8 * k);
+    }
+    bits
+}
+
+/// Bit-by-bit `pack_word`, the reference for its packing.
+#[cfg(test)]
+fn pack_word_scalar(pixels: &[f32], cuts: &[f32], bright: bool) -> u64 {
+    let mut bits = 0u64;
+    for (i, (&value, &cut)) in pixels.iter().zip(cuts).enumerate() {
+        let set = if bright { value > cut } else { value < cut };
+        bits |= u64::from(set) << i;
+    }
+    bits
+}
+
 pub(crate) fn proposals(
     prepared: &PreparedImage,
     scratch: &mut Scratch,
@@ -817,11 +858,28 @@ pub(crate) fn proposals(
             }
         }
     }
-    let ranges = scratch.ranges.as_slice();
-    let active = scratch.active.as_slice();
     let fraction = if recovery { 0.3f32 } else { 0.5 };
     let floor = scratch.floor;
+    // The bright plane always cuts at 0.5, which is the dark fraction whenever it runs.
     let pass_light = light && !recovery;
+    // Each tile's cut, repeated across its pixels: one row per band of eight
+    // image rows. Inactive and low-contrast tiles get NaN, which sets no bits.
+    scratch.cuts.resize(tile_height * width, 0.0);
+    let bands = scratch.cuts.chunks_mut(width).zip(
+        scratch
+            .ranges
+            .chunks(tile_width)
+            .zip(scratch.active.chunks(tile_width)),
+    );
+    for (band, (ranges, active)) in bands {
+        for (pixels, (&(low, high), &on)) in band.chunks_mut(8).zip(ranges.iter().zip(active)) {
+            pixels.fill(if on && high - low >= floor {
+                low + fraction * (high - low)
+            } else {
+                f32::NAN
+            });
+        }
+    }
     // One bit per pixel; eight-pixel tiles map to one byte of a little-endian word.
     let words = width.div_ceil(64);
     for (color, mask) in scratch.masks.iter_mut().enumerate() {
@@ -837,6 +895,7 @@ pub(crate) fn proposals(
     }
     {
         let gray = scratch.gray.as_slice();
+        let cuts = scratch.cuts.as_slice();
         let threshold_rows = |mask: &mut [u64], bright: bool| {
             workers.rows(
                 mask,
@@ -844,27 +903,12 @@ pub(crate) fn proposals(
                 width * height > 65536,
                 |y: usize, output: &mut [u64]| {
                     let row = &gray[y * width..(y + 1) * width];
-                    let tile_ranges = &ranges[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-                    let tile_active = &active[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-                    for (tile, ((pixels, &(low, high)), &on)) in
-                        row.chunks(8).zip(tile_ranges).zip(tile_active).enumerate()
+                    let cut_row = &cuts[(y / 8) * width..(y / 8 + 1) * width];
+                    for (word, (pixels, cuts)) in output
+                        .iter_mut()
+                        .zip(row.chunks(64).zip(cut_row.chunks(64)))
                     {
-                        if !on || high - low < floor {
-                            continue;
-                        }
-                        let mut bits = 0u64;
-                        if bright {
-                            let cut = low + 0.5 * (high - low);
-                            for (i, &value) in pixels.iter().enumerate() {
-                                bits |= u64::from(value > cut) << i;
-                            }
-                        } else {
-                            let cut = low + fraction * (high - low);
-                            for (i, &value) in pixels.iter().enumerate() {
-                                bits |= u64::from(value < cut) << i;
-                            }
-                        }
-                        output[tile / 8] |= bits << (8 * (tile % 8));
+                        *word = pack_word(pixels, cuts, bright);
                     }
                 },
             );
@@ -883,4 +927,35 @@ pub(crate) fn proposals(
     let mut out = Vec::new();
     blob_proposals(&mut runs, (0, 0), prepared, recovery, &mut out);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pack_word, pack_word_scalar};
+
+    #[test]
+    fn packed_words_match_scalar_bits() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut value = move || match next() % 16 {
+            0 => f32::NAN,
+            1 => 100.0,
+            _ => (next() % 2560) as f32 * 0.1,
+        };
+        for length in (1..=64).chain([64; 2000]) {
+            let pixels: Vec<f32> = (0..length).map(|_| value()).collect();
+            let cuts: Vec<f32> = (0..length).map(|_| value()).collect();
+            for bright in [false, true] {
+                assert_eq!(
+                    pack_word(&pixels, &cuts, bright),
+                    pack_word_scalar(&pixels, &cuts, bright)
+                );
+            }
+        }
+    }
 }
