@@ -532,6 +532,24 @@ pub(crate) fn decode(
             return None;
         }
     }
+    // Bits and their sharpening neighbours sit on cell centres (i + 0.5) / width.
+    // With a power-of-two width, rotating a centre lands exactly on another
+    // centre, so all four rotations read one lazily filled grid of cells
+    // -1..=width instead of resampling each rotation.
+    let span = (f.width + 2) as usize;
+    let shared = f.width > 0 && (f.width as u32).is_power_of_two();
+    let mut cells: Vec<Option<f64>> = vec![None; if shared { span * span } else { 0 }];
+    let mut cell = |x: i32, y: i32, r: i32| -> f64 {
+        let (mut cx, mut cy) = (x, y);
+        for _ in 0..r {
+            (cx, cy) = (f.width - 1 - cy, cx);
+        }
+        if !shared || !(-1..=f.width).contains(&cx) || !(-1..=f.width).contains(&cy) {
+            return sample(f64::from(x) + 0.5, f64::from(y) + 0.5, r);
+        }
+        let index = (cy + 1) as usize * span + (cx + 1) as usize;
+        *cells[index].get_or_insert_with(|| sample(f64::from(cx) + 0.5, f64::from(cy) + 0.5, 0))
+    };
     let mut best = 3;
     let mut id = -1;
     let mut rotation = 0;
@@ -542,9 +560,8 @@ pub(crate) fn decode(
         let mut sum = 0.0;
         let mut valid = true;
         for b in 0..f.nbits {
-            let x = f64::from(f.bit_x[b]) + 0.5;
-            let y = f64::from(f.bit_y[b]) + 0.5;
-            let mut v = sample(x, y, r);
+            let (x, y) = (f.bit_x[b], f.bit_y[b]);
+            let mut v = cell(x, y, r);
             if !v.is_finite() {
                 valid = false;
                 break;
@@ -552,13 +569,8 @@ pub(crate) fn decode(
             if sharpening != 0.0 {
                 let mut neighbor = 0.0;
                 let mut all = true;
-                for d in [
-                    Point { x: 1.0, y: 0.0 },
-                    Point { x: -1.0, y: 0.0 },
-                    Point { x: 0.0, y: 1.0 },
-                    Point { x: 0.0, y: -1.0 },
-                ] {
-                    let n = sample(x + d.x, y + d.y, r);
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let n = cell(x + dx, y + dy, r);
                     if !n.is_finite() {
                         all = false;
                         break;
@@ -665,4 +677,35 @@ pub(crate) fn decode(
         out.homography[j] = normalized[j] / scale;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rotate;
+    use crate::geometry::Point;
+
+    #[test]
+    fn rotated_cell_centres_are_cell_centres_for_power_of_two_widths() {
+        let width = 8;
+        let centre = |i: i32| (f64::from(i) + 0.5) / f64::from(width);
+        for x in -1..=width {
+            for y in -1..=width {
+                let (mut cx, mut cy) = (x, y);
+                for r in 0..4 {
+                    let p = rotate(
+                        Point {
+                            x: centre(x),
+                            y: centre(y),
+                        },
+                        r,
+                    );
+                    assert_eq!(
+                        (p.x.to_bits(), p.y.to_bits()),
+                        (centre(cx).to_bits(), centre(cy).to_bits())
+                    );
+                    (cx, cy) = (width - 1 - cy, cx);
+                }
+            }
+        }
+    }
 }
