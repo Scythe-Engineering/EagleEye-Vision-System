@@ -525,11 +525,14 @@ class Pipeline:
         Returns:
             Latency in milliseconds, or None when the cycle produced no timing.
         """
-        capture_times_ns = [
-            timing.capture_monotonic_ns
-            for output in self.flow_manager.operation_outputs.values()
-            for timing in collect_timings(output)
-        ]
+        capture_times_ns: list[int] = []
+        for output in self.flow_manager.operation_outputs.values():
+            if type(output) is TimedValue:
+                capture_times_ns.append(output.timing.capture_monotonic_ns)
+            else:
+                capture_times_ns.extend(
+                    timing.capture_monotonic_ns for timing in collect_timings(output)
+                )
         if not capture_times_ns:
             return None
         return (time.monotonic_ns() - min(capture_times_ns)) / 1_000_000.0

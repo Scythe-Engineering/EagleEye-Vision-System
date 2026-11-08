@@ -179,6 +179,8 @@ def attach_output_timing(output: Any, inputs: Any) -> Any:
 
     if output is None or isinstance(output, TimedValue):
         return output
+    if type(inputs) is TimedValue:
+        return TimedValue(output, inputs.timing)
 
     timings = collect_timings(inputs)
     if not timings:
