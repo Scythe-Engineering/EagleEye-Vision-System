@@ -539,36 +539,40 @@ fn blob_proposals(
     profile::add(Stage::Runs, runs.len() as u64);
     let start = profile::clock();
     // Size every component first with compact counters, then outline only those
-    // big enough to propose. Components keep root order; points keep run order.
+    // big enough to propose, in root order.
     let mut roots = Vec::with_capacity(runs.len());
     let mut area = vec![0i32; runs.len()];
     let mut count = vec![0i32; runs.len()];
+    let mut top = vec![i32::MAX; runs.len()];
     for i in 0..runs.len() {
         let id = root(runs, i);
         roots.push(id);
         area[id] += runs[i].x1 - runs[i].x0 + 1;
         count[id] += 1;
+        top[id] = top[id].min(runs[i].y);
     }
-    // Dense slot per kept component, plus where its hull points start.
+    // Dense slot per kept component. Short components get one leftmost/rightmost
+    // pixel pair per horizontal pixel-edge line they span (at most one more line
+    // than runs): points between a line's extremes lie on a hull edge, which the
+    // hull drops as collinear, so the extremes alone give the same hull.
     const NONE: usize = usize::MAX;
     let mut slot = vec![NONE; runs.len()];
     let mut kept: Vec<usize> = Vec::new();
-    let mut point_start: Vec<usize> = vec![0];
+    let mut line_start: Vec<usize> = vec![0];
     for id in 0..runs.len() {
         if area[id] >= 12 && count[id] >= 3 {
             slot[id] = kept.len();
             kept.push(id);
-            let points = if count[id] > HULL_MAX_ROWS {
+            let lines = if count[id] > HULL_MAX_ROWS {
                 0
             } else {
-                4 * count[id] as usize
+                count[id] as usize + 1
             };
-            point_start.push(point_start[kept.len() - 1] + points);
+            line_start.push(line_start[kept.len() - 1] + lines);
         }
     }
     let mut blobs = vec![Blob::default(); kept.len()];
-    let mut points = vec![Point::default(); point_start[kept.len()]];
-    let mut filled = point_start[..kept.len()].to_vec();
+    let mut lines = vec![(i32::MAX, i32::MIN); line_start[kept.len()]];
     for (run, &id) in runs.iter().zip(&roots) {
         let k = slot[id];
         if k == NONE {
@@ -578,16 +582,10 @@ fn blob_proposals(
             blobs[k].add(run);
             continue;
         }
-        for y in [run.y as f64 - 0.5, run.y as f64 + 0.5] {
-            points[filled[k]] = Point {
-                x: run.x0 as f64 - 0.5,
-                y,
-            };
-            points[filled[k] + 1] = Point {
-                x: run.x1 as f64 + 0.5,
-                y,
-            };
-            filled[k] += 2;
+        let line = line_start[k] + (run.y - top[id]) as usize;
+        for (first, last) in &mut lines[line..line + 2] {
+            *first = (*first).min(run.x0);
+            *last = (*last).max(run.x1);
         }
     }
     profile::since(Stage::BlobAccumulate, start);
@@ -597,7 +595,22 @@ fn blob_proposals(
         let rough = if count[i] > HULL_MAX_ROWS {
             blobs[k].quad()
         } else {
-            let boundary = hull(points[point_start[k]..point_start[k + 1]].to_vec());
+            let mut points = Vec::with_capacity(2 * (line_start[k + 1] - line_start[k]));
+            for (line, &(first, last)) in lines[line_start[k]..line_start[k + 1]].iter().enumerate()
+            {
+                if first <= last {
+                    let y = (top[i] + line as i32) as f64 - 0.5;
+                    points.push(Point {
+                        x: first as f64 - 0.5,
+                        y,
+                    });
+                    points.push(Point {
+                        x: last as f64 + 0.5,
+                        y,
+                    });
+                }
+            }
+            let boundary = hull(points);
             if boundary.len() < 4 {
                 continue;
             }
@@ -932,16 +945,59 @@ pub(crate) fn proposals(
 #[cfg(test)]
 mod tests {
     use super::{pack_word, pack_word_scalar};
+    use crate::geometry::{hull, Point};
 
-    #[test]
-    fn packed_words_match_scalar_bits() {
-        let mut state = 0x2545_f491_4f6c_dd1du64;
-        let mut next = move || {
+    fn xorshift(mut state: u64) -> impl FnMut() -> u64 {
+        move || {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
             state
-        };
+        }
+    }
+
+    #[test]
+    fn line_extremes_give_the_full_run_hull() {
+        let mut next = xorshift(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..5_000 {
+            // Up to 12 rows, each with one to three runs.
+            let rows = 1 + next() % 12;
+            let (mut corners, mut lines) = (Vec::new(), vec![(i32::MAX, i32::MIN); 14]);
+            for y in 0..rows as i32 {
+                let mut x = (next() % 6) as i32;
+                for _ in 0..1 + next() % 3 {
+                    let x1 = x + (next() % 5) as i32;
+                    for edge in [y, y + 1] {
+                        for px in [x as f64 - 0.5, x1 as f64 + 0.5] {
+                            corners.push(Point {
+                                x: px,
+                                y: edge as f64 - 0.5,
+                            });
+                        }
+                        let line = &mut lines[edge as usize];
+                        *line = (line.0.min(x), line.1.max(x1));
+                    }
+                    x = x1 + 2 + (next() % 3) as i32;
+                }
+            }
+            let mut extremes = Vec::new();
+            for (edge, &(first, last)) in lines.iter().enumerate() {
+                if first <= last {
+                    for px in [first as f64 - 0.5, last as f64 + 0.5] {
+                        extremes.push(Point {
+                            x: px,
+                            y: edge as f64 - 0.5,
+                        });
+                    }
+                }
+            }
+            assert_eq!(hull(corners), hull(extremes));
+        }
+    }
+
+    #[test]
+    fn packed_words_match_scalar_bits() {
+        let mut next = xorshift(0x2545_f491_4f6c_dd1d);
         let mut value = move || match next() % 16 {
             0 => f32::NAN,
             1 => 100.0,
