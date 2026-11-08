@@ -158,6 +158,28 @@ def test_track_many_reads_bgr_windows_as_opencv_grayscale() -> None:
     )
 
 
+def test_run_warped_finds_full_frame_corners_through_a_crop_map() -> None:
+    """A natively resampled rectified crop reports the full-frame search's corners."""
+    gray = _tag_scene()
+    bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    detector = CustomAprilTagDetector(quad_decimate=1.0)
+    (reference,) = detector.run(gray)
+    # A crop of the frame quad around the tag at about 1:1, rotated a quarter turn.
+    side = 331
+    crop = np.array([[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]])
+    quad = np.array([[360, 20], [360, 350], [30, 350], [30, 20]])
+    frame_from_crop = cv2.getPerspectiveTransform(
+        crop.astype(np.float32), quad.astype(np.float32)
+    )
+
+    (found,) = detector.run_warped(bgr, side, frame_from_crop.ravel().tolist())
+
+    assert found[0] == reference.tag_id
+    np.testing.assert_allclose(
+        np.reshape(found[1], (4, 2)), _corners(reference) - 0.5, atol=0.1, rtol=0
+    )
+
+
 def test_refine_recovers_corners_from_a_rough_external_quad() -> None:
     """refine() re-decodes and grid-fits corners supplied by another detector."""
     frame = _tag_scene()

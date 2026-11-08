@@ -9,6 +9,7 @@ from src.main_operations.definitions.temporal_acceleration_preprocessor_rust imp
     TemporalAccelerationPreprocessorRustDefinition,
 )
 from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
+from src.main_operations.modules.apriltags.custom_native import CustomNativeDetector
 from tests.test_custom_apriltag_detector import _tag_scene
 
 
@@ -51,16 +52,25 @@ def test_tracked_tag_skips_its_segment_and_matches_the_search() -> None:
     assert searched_segments == [1, 0, 0, 0, 1, 1]
 
 
-def test_tracked_tag_never_warps_its_lazy_segment() -> None:
-    """Only segments left after tracking are rectified from the frame."""
+def test_rust_search_never_warps_lazy_segments(monkeypatch) -> None:
+    """Lazy segments are searched natively; a tracked tag's is not searched at all."""
     scene = _tag_scene()
     detector = AprilTagDetector(rust_backend=True, track_tags=True)
+    searched: list[int] = []
+    detect_segment = CustomNativeDetector.detect_segment
+
+    def spy(self, segment):
+        searched.append(len(searched))
+        return detect_segment(self, segment)
+
+    monkeypatch.setattr(CustomNativeDetector, "detect_segment", spy)
     quad = np.array([30, 30, 370, 30, 370, 350, 30, 350], dtype=np.float32)
-    for index, frame in enumerate([_shifted(scene, 1.5 * i, 0.0) for i in range(3)]):
+    for frame in [_shifted(scene, 1.5 * i, 0.0) for i in range(3)]:
         segment = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
             frame, quad
         )
         (tag,) = detector.detect([segment], frame)
         assert tag.tag_id == 1
-        # Frame 0 has no track yet, so only it searches (and builds) the crop.
-        assert (segment._image is not None) == (index == 0)
+        assert segment._image is None
+    # Frame 0 has no track yet, so only it searches.
+    assert searched == [0]

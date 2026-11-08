@@ -1,6 +1,7 @@
 //! Borrowed full camera frames, read as grayscale one window at a time.
 
 use crate::detector::mapped_image;
+use crate::geometry::{project, Homography};
 use crate::image::Image;
 
 /// A grayscale or packed BGR uint8 frame with positive row strides.
@@ -54,11 +55,70 @@ impl<'a> Frame<'a> {
         }
         mapped_image(scratch, width, height, width, None, None)
     }
+
+    /// Grayscale at an integer pixel, or black outside the frame like OpenCV's
+    /// constant border.
+    #[inline(always)]
+    fn gray_at(&self, x: i64, y: i64) -> f32 {
+        if x < 0 || y < 0 || x >= self.width as i64 || y >= self.height as i64 {
+            return 0.0;
+        }
+        let i = y as usize * self.stride + x as usize * self.channels;
+        f32::from(if self.channels == 1 {
+            self.pixels[i]
+        } else {
+            gray(self.pixels[i], self.pixels[i + 1], self.pixels[i + 2])
+        })
+    }
+
+    /// Bilinearly resample a `side` x `side` grayscale crop into `out`, where crop
+    /// pixel centre `(u, v)` samples frame point `frame_from_crop * (u, v, 1)`.
+    pub(crate) fn warp_gray(&self, side: usize, frame_from_crop: &Homography, out: &mut Vec<u8>) {
+        out.clear();
+        out.reserve(side * side);
+        for v in 0..side {
+            for u in 0..side {
+                let p = project(frame_from_crop, u as f64, v as f64);
+                if !(p.x.is_finite() && p.y.is_finite()) {
+                    out.push(0);
+                    continue;
+                }
+                let (x, y) = (p.x.floor(), p.y.floor());
+                let (a, b) = ((p.x - x) as f32, (p.y - y) as f32);
+                let (x, y) = (x as i64, y as i64);
+                let top = (1.0 - a) * self.gray_at(x, y) + a * self.gray_at(x + 1, y);
+                let bottom = (1.0 - a) * self.gray_at(x, y + 1) + a * self.gray_at(x + 1, y + 1);
+                out.push(((1.0 - b) * top + b * bottom + 0.5) as u8);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{gray, Frame};
+
+    #[test]
+    fn warp_samples_shifted_pixels_and_blacks_out_the_border() {
+        let (width, height) = (6, 4);
+        let pixels: Vec<u8> = (0..width * height).map(|i| (i * 10) as u8).collect();
+        let frame = Frame {
+            pixels: &pixels,
+            width,
+            height,
+            stride: width,
+            channels: 1,
+        };
+        // Crop (u, v) reads frame (u + 1.5, v + 1).
+        let shift = [1.0, 0.0, 1.5, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
+        let mut out = Vec::new();
+        frame.warp_gray(5, &shift, &mut out);
+        let at = |x: usize, y: usize| f32::from(pixels[y * width + x]);
+        assert_eq!(out[0], ((at(1, 1) + at(2, 1)) / 2.0).round() as u8);
+        // (5.5, 1) mixes the last column with the black border.
+        assert_eq!(out[4], (at(5, 1) / 2.0).round() as u8);
+        assert_eq!(out[5 * 4], 0);
+    }
 
     #[test]
     fn windows_match_opencv_weights_and_bounds() {

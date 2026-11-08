@@ -17,7 +17,7 @@ class LazySegment:
     utilities rebuild those item by item, which would build every crop.
     """
 
-    __slots__ = ("_crop_from_frame", "_frame", "_image", "mapping", "shape")
+    __slots__ = ("_crop_from_frame", "_image", "frame", "mapping", "shape")
 
     def __init__(
         self,
@@ -35,9 +35,9 @@ class LazySegment:
             crop_from_frame: Nine row-major values of the frame-to-crop transform.
             mapping: Shape-(3, 3) transform from crop to full-frame coordinates.
         """
+        self.frame = frame
         self.mapping = mapping
         self.shape = (side, side) + frame.shape[2:]
-        self._frame = frame
         self._crop_from_frame = crop_from_frame
         self._image: np.ndarray | None = None
 
@@ -47,9 +47,7 @@ class LazySegment:
         if self._image is None:
             side = self.shape[0]
             crop_from_frame = np.array(self._crop_from_frame).reshape(3, 3)
-            self._image = cv2.warpPerspective(
-                self._frame, crop_from_frame, (side, side)
-            )
+            self._image = cv2.warpPerspective(self.frame, crop_from_frame, (side, side))
         return self._image
 
     def __iter__(self):
