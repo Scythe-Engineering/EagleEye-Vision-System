@@ -63,3 +63,41 @@ def test_attach_output_timing_wraps_raw_output() -> None:
     assert isinstance(output, TimedValue)
     assert output.value == "processed"
     assert output.timing is timing
+
+
+def test_deep_unwrap_rebuilds_containers_and_handles_subclasses() -> None:
+    """Fast paths keep the general contract: wrappers removed, containers fresh."""
+    from collections import OrderedDict, namedtuple
+
+    import numpy as np
+
+    from src.utils.timing import collect_timings
+
+    first = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=10)
+    second = TimingMetadata(capture_nt_us=2, capture_monotonic_ns=20)
+    pair = namedtuple("pair", "a b")
+    frame = np.zeros((2, 2))
+    detections = [{"id": 3, "corners": [(1.0, 2.0)], "score": np.float64(0.5)}]
+    source = {
+        "frame": TimedValue(frame, first),
+        "detections": TimedValue(detections, second),
+        "crops": ([TimedValue(frame, first)], frame),
+        "ordered": OrderedDict(x=TimedValue("v", first)),
+        "pair": pair(TimedValue(1, first), [2]),
+    }
+
+    result = unwrap_timed_deep(source)
+
+    assert result["frame"] is frame
+    assert result["detections"] == detections
+    assert result["detections"] is not detections
+    assert result["detections"][0] is not detections[0]
+    assert result["crops"] == ([frame], frame)
+    assert result["ordered"] == {"x": "v"} and type(result["ordered"]) is dict
+    assert result["pair"] == (1, [2]) and type(result["pair"]) is tuple
+    result["detections"][0]["id"] = 99
+    assert detections[0]["id"] == 3
+
+    assert collect_timings(source) == [first, second, first, first, first]
+    assert collect_timings(detections) == []
+    assert collect_timings("text") == []

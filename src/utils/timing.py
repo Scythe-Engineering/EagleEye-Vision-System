@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 import ntcore
+import numpy as np
 
 T = TypeVar("T")
 
@@ -82,13 +83,36 @@ class TimedValue(Generic[T]):
 
 FramePacket = TimedValue[Any]
 
+# Exact types that never contain TimedValue wrappers. Subclasses take the
+# general isinstance path, which gives the same result.
+_LEAF_TYPES: frozenset[type] = frozenset(
+    {np.ndarray, float, int, bool, str, bytes, type(None), np.float64}
+)
+
 
 def unwrap_timed(value: T | TimedValue[T]) -> T:
     return value.value if isinstance(value, TimedValue) else value
 
 
 def unwrap_timed_deep(value: Any) -> Any:
-    """Remove TimedValue wrappers recursively while preserving container shape."""
+    """Remove TimedValue wrappers recursively while preserving container shape.
+
+    Containers are always rebuilt, so callers may mutate the result without
+    touching the stored upstream output. Common exact types are dispatched
+    first because this runs on every operation input of every frame.
+    """
+
+    value_type = type(value)
+    if value_type in _LEAF_TYPES:
+        return value
+    if value_type is TimedValue:
+        return unwrap_timed_deep(value.value)
+    if value_type is dict:
+        return {key: unwrap_timed_deep(item) for key, item in value.items()}
+    if value_type is list:
+        return [unwrap_timed_deep(item) for item in value]
+    if value_type is tuple:
+        return tuple([unwrap_timed_deep(item) for item in value])
 
     if isinstance(value, TimedValue):
         return unwrap_timed_deep(value.value)
@@ -126,19 +150,28 @@ def average_timings(timings: Sequence[TimingMetadata]) -> TimingMetadata:
 def collect_timings(value: Any) -> list[TimingMetadata]:
     """Collect timing metadata from TimedValue wrappers in a current-frame input."""
 
-    if isinstance(value, TimedValue):
+    value_type = type(value)
+    if value_type in _LEAF_TYPES:
+        return []
+    if value_type is TimedValue:
         return [value.timing]
-    if isinstance(value, Mapping):
-        timings: list[TimingMetadata] = []
-        for item in value.values():
-            timings.extend(collect_timings(item))
-        return timings
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        timings = []
-        for item in value:
-            timings.extend(collect_timings(item))
-        return timings
-    return []
+    if value_type is dict:
+        items = value.values()
+    elif value_type is list or value_type is tuple:
+        items = value
+    elif isinstance(value, TimedValue):
+        return [value.timing]
+    elif isinstance(value, Mapping):
+        items = value.values()
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        items = value
+    else:
+        return []
+
+    timings: list[TimingMetadata] = []
+    for item in items:
+        timings.extend(collect_timings(item))
+    return timings
 
 
 def attach_output_timing(output: Any, inputs: Any) -> Any:
