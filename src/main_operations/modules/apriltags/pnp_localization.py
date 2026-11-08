@@ -9,7 +9,16 @@ from pupil_apriltags import Detection
 
 from src.main_operations.modules.apriltags.utils.apriltag import Apriltag
 
+# Optional native LM refiner (built automatically); OpenCV's refiner is the fallback.
+try:
+    from pnp_refiner import PnpRefiner as RustPnpRefiner  # type: ignore
+except ImportError:
+    RustPnpRefiner = None
+
 logger = logging.getLogger(__name__)
+
+# Stop LM refinement once a step's norm falls below this.
+REFINEMENT_EPSILON = 1e-9
 
 # Distinct ordered tag-id tuples seen recently; a field yields far fewer in practice.
 TAG_SET_CACHE_SIZE = 256
@@ -63,7 +72,63 @@ class PnpLocalization:
         self.apriltag_map = apriltag_map
         self._field_corners = self._usable_field_corners(apriltag_map)
         self._tag_set_cache: OrderedDict[tuple, TagSetGeometry] = OrderedDict()
+        self._rust_refiner = self._create_rust_refiner()
         self.set_refinement_iterations(refinement_iterations)
+
+    def _create_rust_refiner(self):
+        """Return the native LM refiner, or None to use OpenCV's.
+
+        The native refiner supports 0, 4, 5 or 8 distortion coefficients; other
+        models, or a missing build, keep OpenCV's ``solvePnPRefineLM``.
+        """
+        if RustPnpRefiner is None:
+            return None
+        try:
+            return RustPnpRefiner(
+                np.ascontiguousarray(self.camera_matrix),
+                np.ascontiguousarray(self.distortion_coefficients.ravel()),
+            )
+        except ValueError as exc:
+            logger.info("Using OpenCV LM refinement: %s", exc)
+            return None
+
+    def _refine(
+        self,
+        object_points: np.ndarray,
+        image_points: np.ndarray,
+        rotation: np.ndarray,
+        translation: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Run at most ``refinement_iterations`` LM steps from a copy of a pose.
+
+        Raises:
+            cv2.error: If OpenCV's refiner rejects the inputs.
+        """
+        if self._rust_refiner is not None:
+            refined_rotation = rotation.astype(np.float64)
+            refined_translation = translation.astype(np.float64)
+            if self._rust_refiner.refine(
+                object_points,
+                image_points,
+                refined_rotation,
+                refined_translation,
+                self.refinement_iterations,
+                REFINEMENT_EPSILON,
+            ):
+                return refined_rotation, refined_translation
+        return cv2.solvePnPRefineLM(
+            object_points,
+            image_points,
+            self.camera_matrix,
+            self.distortion_coefficients,
+            rotation.copy(),
+            translation.copy(),
+            criteria=(
+                cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,
+                self.refinement_iterations,
+                REFINEMENT_EPSILON,
+            ),
+        )
 
     @staticmethod
     def _usable_field_corners(
@@ -86,7 +151,8 @@ class PnpLocalization:
 
         field_points = np.vstack([self._field_corners[tag_id] for tag_id in tag_ids])
         origin = field_points.mean(axis=0)
-        object_points = field_points - origin
+        # Map corners can be Fortran-ordered; the native refiner needs C order.
+        object_points = np.ascontiguousarray(field_points - origin)
         centered_points = object_points - object_points.mean(axis=0)
         singular_values = np.linalg.svd(centered_points, compute_uv=False)
         rank_tolerance = (
@@ -303,18 +369,8 @@ class PnpLocalization:
             distances = None
             if iterations:
                 try:
-                    refined_rotation, refined_translation = cv2.solvePnPRefineLM(
-                        object_points,
-                        image_points,
-                        self.camera_matrix,
-                        self.distortion_coefficients,
-                        rotation.copy(),
-                        translation.copy(),
-                        criteria=(
-                            cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,
-                            iterations,
-                            1e-9,
-                        ),
+                    refined_rotation, refined_translation = self._refine(
+                        object_points, image_points, rotation, translation
                     )
                     refined_error, refined_distances = score(
                         refined_rotation, refined_translation
@@ -339,18 +395,8 @@ class PnpLocalization:
                 continue
             if iterations:
                 try:
-                    refined_rotation, refined_translation = cv2.solvePnPRefineLM(
-                        object_points,
-                        image_points,
-                        self.camera_matrix,
-                        self.distortion_coefficients,
-                        rotation.copy(),
-                        translation.copy(),
-                        criteria=(
-                            cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS,
-                            iterations,
-                            1e-9,
-                        ),
+                    refined_rotation, refined_translation = self._refine(
+                        object_points, image_points, rotation, translation
                     )
                     refined_error, refined_distances = score(
                         refined_rotation, refined_translation
