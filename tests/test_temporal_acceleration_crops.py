@@ -62,7 +62,7 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
 
 
 def test_crop_pixels_and_maps_match_original_perimeter_math() -> None:
-    """Fixed-edge crop sizing stays byte-identical for both windings and channels."""
+    """Crop sizing, maps and pixels match the OpenCV reference for both windings."""
     random = np.random.default_rng(20260929)
     frame = random.integers(0, 256, (100, 120, 3), dtype=np.uint8)
     for image in (frame, cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)):
@@ -90,8 +90,9 @@ def test_crop_pixels_and_maps_match_original_perimeter_math() -> None:
                     image, quad
                 )
             )
+            # The native solve matches cv2's to rounding, so crops rarely differ.
             np.testing.assert_array_equal(actual_crop, expected_crop)
-            np.testing.assert_array_equal(actual_map, expected_map)
+            np.testing.assert_allclose(actual_map, expected_map, rtol=1e-9, atol=1e-12)
 
 
 def test_temporal_run_keeps_roi_order_channels_maps_and_unwarped_fallback() -> None:

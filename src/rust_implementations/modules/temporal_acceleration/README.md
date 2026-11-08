@@ -14,6 +14,8 @@ crop_quads, regions = acceleration.process_frame(width, height)
 
 `camera_matrix` has nine row-major values. `tag_corners` has 12 floats per tag and `tag_centers` has three. `world_from_camera` is a 16-element transform. `process_frame()` returns perspective crop quadrilaterals and `[x, y, width, height]` regions. If no tag can be projected, it returns an empty quadrilateral list and one full-frame region.
 
+`crop_geometry(quad, max_side)` turns one returned quadrilateral into a square crop: its side and the row-major crop-to-frame and frame-to-crop homographies, solved like `cv2.getPerspectiveTransform`. The crop's corners keep the quad's winding. It returns `None` for a degenerate quad.
+
 `update_config(config)` accepts `padding_factor`, `max_regions`, `min_region_size_px`, and `max_detection_distance_m`.
 
 Build from `src/rust_implementations` with `uv run python build.py temporal_acceleration`.

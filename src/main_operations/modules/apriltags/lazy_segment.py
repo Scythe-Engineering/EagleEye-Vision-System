@@ -17,30 +17,28 @@ class LazySegment:
     utilities rebuild those item by item, which would build every crop.
     """
 
-    __slots__ = ("_destination", "_frame", "_image", "_source", "mapping", "shape")
+    __slots__ = ("_crop_from_frame", "_frame", "_image", "mapping", "shape")
 
     def __init__(
         self,
         frame: np.ndarray,
-        source: np.ndarray,
-        destination: np.ndarray,
+        side: int,
+        crop_from_frame: list[float],
         mapping: np.ndarray,
     ) -> None:
-        """Describe a crop without warping it.
+        """Describe a square crop without warping it.
 
         Args:
             frame: Full frame the crop is sampled from; must not change while the
                 segment can still be read.
-            source: Shape-(4, 2) float32 full-frame quad.
-            destination: Shape-(4, 2) float32 square crop corners matching `source`.
+            side: Crop side length in pixels.
+            crop_from_frame: Nine row-major values of the frame-to-crop transform.
             mapping: Shape-(3, 3) transform from crop to full-frame coordinates.
         """
-        side = int(destination.max()) + 1
         self.mapping = mapping
         self.shape = (side, side) + frame.shape[2:]
         self._frame = frame
-        self._source = source
-        self._destination = destination
+        self._crop_from_frame = crop_from_frame
         self._image: np.ndarray | None = None
 
     @property
@@ -48,9 +46,7 @@ class LazySegment:
         """The rectified crop, warped from the frame once."""
         if self._image is None:
             side = self.shape[0]
-            crop_from_frame = cv2.getPerspectiveTransform(
-                self._source, self._destination
-            )
+            crop_from_frame = np.array(self._crop_from_frame).reshape(3, 3)
             self._image = cv2.warpPerspective(
                 self._frame, crop_from_frame, (side, side)
             )

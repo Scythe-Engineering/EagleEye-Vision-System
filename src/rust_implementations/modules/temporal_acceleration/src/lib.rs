@@ -1,11 +1,33 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+
+mod crop;
 
 /// A simple temporal acceleration module
 #[pymodule]
 fn temporal_acceleration(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TemporalAcceleration>()?;
+    m.add_function(wrap_pyfunction!(crop_geometry, m)?)?;
     Ok(())
+}
+
+/// Crop side, then row-major crop-to-frame and frame-to-crop homographies.
+type CropTuple = (i32, [f64; 9], [f64; 9]);
+
+/// Square crop side and row-major crop-to-frame and frame-to-crop homographies.
+///
+/// `quad` holds four perimeter-ordered `(x, y)` frame points, as `process_frame`
+/// returns them. The side is the longest edge rounded up, at most `max_side`;
+/// crop corners keep the quad's winding. Returns None for a degenerate quad.
+#[pyfunction]
+fn crop_geometry(quad: Vec<f32>, max_side: i32) -> PyResult<Option<CropTuple>> {
+    let quad: [f32; 8] = quad
+        .try_into()
+        .map_err(|_| PyValueError::new_err("quad must hold eight values"))?;
+    let quad = [0, 2, 4, 6].map(|i| [quad[i], quad[i + 1]]);
+    Ok(crop::crop_geometry(&quad, max_side)
+        .map(|crop| (crop.side, crop.frame_from_crop, crop.crop_from_frame)))
 }
 
 /// Main class for temporal acceleration functionality
