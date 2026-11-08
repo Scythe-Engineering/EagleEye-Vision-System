@@ -5,8 +5,6 @@ from __future__ import annotations
 import numpy as np
 from pupil_apriltags import Detection
 
-from .lazy_segment import LazySegment
-
 
 class CustomNativeDetector:
     """Expose the Rust detector through pupil_apriltags' constructor and results."""
@@ -95,27 +93,6 @@ class CustomNativeDetector:
             detection.homography = np.array(native.homography).reshape(3, 3)
             detections.append(detection)
         return detections
-
-    def detect_segment(self, segment: LazySegment) -> list[tuple[int, np.ndarray]]:
-        """Detect tags in a lazy segment, resampling it natively from its frame.
-
-        The segment's crop is never warped in Python: the detector bilinearly samples
-        the grayscale frame through the segment's mapping. Pixels mapping outside the
-        frame are ignored.
-
-        Args:
-            segment: Square segment of a 2D grayscale or packed BGR uint8 frame.
-
-        Returns:
-            Tag IDs with shape-(4, 2) full-frame OpenCV pixel-centre corners.
-        """
-        frame = segment.frame
-        if not frame.flags["C_CONTIGUOUS"]:
-            frame = np.ascontiguousarray(frame)
-        found = self._detector.run_warped(
-            frame, segment.shape[0], segment.mapping.ravel().tolist()
-        )
-        return [(tag_id, np.array(corners).reshape(4, 2)) for tag_id, corners in found]
 
     def track(
         self, gray: np.ndarray, corners: list[float], tag_id: int

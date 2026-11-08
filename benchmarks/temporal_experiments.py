@@ -320,16 +320,9 @@ class _TimedNativeDetector:
 
     def detect(self, *args: Any, **kwargs: Any) -> Any:
         """Time calls even when native detection raises or finds no tags."""
-        return self._timed(self.detector.detect, *args, **kwargs)
-
-    def detect_segment(self, *args: Any, **kwargs: Any) -> Any:
-        """Time native searches of lazy temporal segments like `detect`."""
-        return self._timed(self.detector.detect_segment, *args, **kwargs)
-
-    def _timed(self, call: Any, *args: Any, **kwargs: Any) -> Any:
         started = time.perf_counter_ns()
         try:
-            return call(*args, **kwargs)
+            return self.detector.detect(*args, **kwargs)
         finally:
             self.samples.append((time.perf_counter_ns() - started) / 1_000_000)
 

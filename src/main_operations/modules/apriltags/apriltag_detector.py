@@ -10,7 +10,7 @@ import numpy as np
 from pupil_apriltags import Detection, Detector
 
 from .custom_native import CustomNativeDetector
-from .lazy_segment import LazySegment, segment_shape_and_mapping
+from .lazy_segment import segment_shape_and_mapping
 from .tag_tracker import TagTracker, segment_center
 
 logger = logging.getLogger(__name__)
@@ -531,20 +531,24 @@ class AprilTagDetector:
         else:
             detections = []
             with self._detect_lock:
-                for segment in images:
-                    if (
-                        self.rust_backend
-                        and source_shape is not None
-                        and isinstance(segment, LazySegment)
-                    ):
-                        detections.extend(self._detect_lazy_segment(segment))
-                        continue
-                    image, full_frame_mapping = segment
+                for image, full_frame_mapping in images:
                     gray_image = self._preprocess_image(image, segment=True)
                     if gray_image is None:
                         continue
                     try:
-                        detector = self._segment_detector(min(gray_image.shape[:2]))
+                        minimum_dimension = min(gray_image.shape[:2])
+                        if (
+                            self._small_roi_detector is not None
+                            and minimum_dimension < self.small_roi_max_px
+                        ):
+                            detector = self._small_roi_detector
+                        elif (
+                            self._large_roi_detector is not None
+                            and minimum_dimension >= self.large_roi_min_px
+                        ):
+                            detector = self._large_roi_detector
+                        else:
+                            detector = self.detector
                         detected_tags = (
                             detector.detect(
                                 gray_image,
@@ -572,36 +576,6 @@ class AprilTagDetector:
                                 )
                             )
             return detections
-
-    def _segment_detector(
-        self, minimum_dimension: int
-    ) -> Detector | CustomNativeDetector:
-        """Choose the detector bank for a segment by its shorter side."""
-        if (
-            self._small_roi_detector is not None
-            and minimum_dimension < self.small_roi_max_px
-        ):
-            return self._small_roi_detector
-        if (
-            self._large_roi_detector is not None
-            and minimum_dimension >= self.large_roi_min_px
-        ):
-            return self._large_roi_detector
-        return self.detector
-
-    def _detect_lazy_segment(self, segment: LazySegment) -> list[CustomDetection]:
-        """Search a lazy segment resampled natively from its frame, never warping it."""
-        if not self._is_valid_shape(segment.shape):
-            return []
-        detector = cast(CustomNativeDetector, self._segment_detector(segment.shape[0]))
-        try:
-            found = detector.detect_segment(segment)
-        except Exception:
-            logger.exception("AprilTag detection failed")
-            return []
-        return [
-            CustomDetection(tag_id=tag_id, corners=corners) for tag_id, corners in found
-        ]
 
     def detect(
         self,

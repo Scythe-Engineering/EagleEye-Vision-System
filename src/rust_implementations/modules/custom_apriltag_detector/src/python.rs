@@ -7,15 +7,13 @@ use std::slice;
 use crate::detection::Detection;
 use crate::detector::{image_span, mapped_image, Detector, Settings};
 use crate::frame::Frame;
-use crate::geometry::{project, Homography, Quad};
+use crate::geometry::{Homography, Quad};
 use crate::image::Image;
 use crate::track::{decode_quad as quad_from_corners, track_in_frame};
 
 #[pyclass(module = "custom_apriltag_detector")]
 pub(crate) struct CustomAprilTagDetector {
     detector: Detector,
-    /// Reused grayscale crop for `run_warped`.
-    crop: Vec<u8>,
 }
 
 /// A validated 2D uint8 buffer: positive row strides and contiguous pixels.
@@ -161,10 +159,7 @@ impl CustomAprilTagDetector {
             decode_sharpening,
         };
         let detector = Detector::new(families, settings).map_err(PyValueError::new_err)?;
-        Ok(Self {
-            detector,
-            crop: Vec::new(),
-        })
+        Ok(Self { detector })
     }
 
     /// Detect tags in a 2D uint8 buffer, releasing the GIL during native work.
@@ -189,52 +184,6 @@ impl CustomAprilTagDetector {
         let detector = &mut self.detector;
         py.detach(|| catch_unwind(AssertUnwindSafe(|| detector.detect(image).to_vec())))
             .map_err(|_| PyRuntimeError::new_err("native detector panicked"))
-    }
-
-    /// Detect tags in a square grayscale crop resampled from `frame`.
-    ///
-    /// `frame_from_crop` holds nine row-major values taking crop pixel centres to
-    /// frame pixel centres. The crop is bilinearly resampled from the 2D grayscale or
-    /// packed BGR frame, and pixels mapping outside the frame are ignored as in
-    /// `run` with a source map. Returns `(tag_id, corners)` pairs, corners being
-    /// eight full-frame OpenCV pixel-centre values in pupil_apriltags order.
-    #[pyo3(signature = (frame, side, frame_from_crop))]
-    fn run_warped(
-        &mut self,
-        py: Python<'_>,
-        frame: &Bound<'_, PyAny>,
-        side: usize,
-        frame_from_crop: Vec<f64>,
-    ) -> PyResult<Vec<(i32, [f64; 8])>> {
-        let map: Homography = frame_from_crop
-            .try_into()
-            .map_err(|_| PyValueError::new_err("frame_from_crop must have nine elements"))?;
-        let frame = FrameBuffer::new(frame)?;
-        let frame = frame.frame();
-        let source_shape = (frame.height as u32, frame.width as u32);
-        let (detector, crop) = (&mut self.detector, &mut self.crop);
-        py.detach(|| {
-            catch_unwind(AssertUnwindSafe(|| -> Result<Vec<_>, String> {
-                frame.warp_gray(side, &map, crop);
-                let image = mapped_image(crop, side, side, side, Some(map), Some(source_shape))?;
-                Ok(detector
-                    .detect(image)
-                    .iter()
-                    .map(|detection| {
-                        let corners = detection.corners;
-                        let mut mapped = [0.0; 8];
-                        for i in 0..4 {
-                            let p = project(&map, corners[2 * i] - 0.5, corners[2 * i + 1] - 0.5);
-                            mapped[2 * i] = p.x;
-                            mapped[2 * i + 1] = p.y;
-                        }
-                        (detection.tag_id, mapped)
-                    })
-                    .collect())
-            }))
-        })
-        .map_err(|_| PyRuntimeError::new_err("native detector panicked"))?
-        .map_err(PyValueError::new_err)
     }
 
     /// Re-decode and grid-fit corners from another detector.
