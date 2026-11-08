@@ -688,6 +688,72 @@ pub(crate) fn prepare(
     }
 }
 
+/// Minimum and maximum of each 8x8 tile, row-major; edge tiles cover the pixels left.
+///
+/// Each band of eight rows is first reduced down its columns, which vectorises,
+/// then each eight-column chunk is reduced. `f32::min`/`max` ignore NaN pixels.
+fn tile_extrema(gray: &[f32], width: usize, tile_width: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut lo = Vec::with_capacity(tile_width * gray.len().div_ceil(8 * width));
+    let mut hi = Vec::with_capacity(lo.capacity());
+    let mut column_lo = vec![0.0f32; width];
+    let mut column_hi = vec![0.0f32; width];
+    for band in gray.chunks(8 * width) {
+        let mut rows = band.chunks_exact(width);
+        let first = rows.next().unwrap_or_default();
+        column_lo.copy_from_slice(first);
+        column_hi.copy_from_slice(first);
+        for row in rows {
+            for ((low, high), &value) in column_lo.iter_mut().zip(&mut column_hi).zip(row) {
+                *low = low.min(value);
+                *high = high.max(value);
+            }
+        }
+        for (lows, highs) in column_lo.chunks(8).zip(column_hi.chunks(8)) {
+            lo.push(lows.iter().fold(255.0f32, |a, &b| a.min(b)));
+            hi.push(highs.iter().fold(0.0f32, |a, &b| a.max(b)));
+        }
+    }
+    (lo, hi)
+}
+
+/// Per-tile (min, max) over each tile's 3x3 neighbourhood, clipped at the grid edge.
+fn neighbourhood_ranges(lo: &[f32], hi: &[f32], tile_width: usize, ranges: &mut Vec<(f32, f32)>) {
+    // Separable: the 3-wide horizontal extremes first, then three of those rows.
+    let across = |values: &[f32], pick: fn(f32, f32) -> f32| -> Vec<f32> {
+        let mut out = Vec::with_capacity(values.len());
+        for row in values.chunks_exact(tile_width) {
+            for x in 0..tile_width {
+                let mut value = row[x];
+                if x > 0 {
+                    value = pick(value, row[x - 1]);
+                }
+                if x + 1 < tile_width {
+                    value = pick(value, row[x + 1]);
+                }
+                out.push(value);
+            }
+        }
+        out
+    };
+    let (row_lo, row_hi) = (across(lo, f32::min), across(hi, f32::max));
+    let tile_height = lo.len() / tile_width;
+    ranges.clear();
+    for tile_y in 0..tile_height {
+        let above = tile_y.saturating_sub(1) * tile_width;
+        let row = tile_y * tile_width;
+        let below = (tile_height - 1).min(tile_y + 1) * tile_width;
+        for x in 0..tile_width {
+            let low = row_lo[above + x]
+                .min(row_lo[row + x])
+                .min(row_lo[below + x]);
+            let high = row_hi[above + x]
+                .max(row_hi[row + x])
+                .max(row_hi[below + x]);
+            ranges.push((low, high));
+        }
+    }
+}
+
 pub(crate) fn proposals(
     prepared: &PreparedImage,
     scratch: &mut Scratch,
@@ -702,34 +768,9 @@ pub(crate) fn proposals(
     let tile_height = height.div_ceil(8);
     let start = profile::clock();
     if !recovery || scratch.ranges.len() != tile_width * tile_height {
-        let mut lo = vec![255.0f32; tile_width * tile_height];
-        let mut hi = vec![0.0f32; tile_width * tile_height];
-        for (y, row) in scratch.gray.chunks_exact(width).enumerate() {
-            let lows = &mut lo[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-            let highs = &mut hi[(y / 8) * tile_width..(y / 8 + 1) * tile_width];
-            for ((low, high), pixels) in lows.iter_mut().zip(highs).zip(row.chunks(8)) {
-                for &value in pixels {
-                    *low = low.min(value);
-                    *high = high.max(value);
-                }
-            }
-        }
+        let (lo, hi) = tile_extrema(&scratch.gray, width, tile_width);
         scratch.floor = contrast_floor(&lo, &hi);
-        scratch.ranges.clear();
-        for tile_y in 0..tile_height {
-            for tile_x in 0..tile_width {
-                let mut low: f32 = 255.0;
-                let mut high: f32 = 0.0;
-                for yy in tile_y.saturating_sub(1)..=(tile_height - 1).min(tile_y + 1) {
-                    for xx in tile_x.saturating_sub(1)..=(tile_width - 1).min(tile_x + 1) {
-                        let i = yy * tile_width + xx;
-                        low = low.min(lo[i]);
-                        high = high.max(hi[i]);
-                    }
-                }
-                scratch.ranges.push((low, high));
-            }
-        }
+        neighbourhood_ranges(&lo, &hi, tile_width, &mut scratch.ranges);
     }
     profile::since(Stage::TileRanges, start);
     let start = profile::clock();
