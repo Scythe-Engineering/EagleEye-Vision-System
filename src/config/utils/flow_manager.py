@@ -245,20 +245,21 @@ class FlowManager:
 
     @profile
     def run_flow(self) -> bool:
-        """Run the flow and report whether it recorded a profile snapshot.
+        """Run the flow and report whether the cycle completed.
+
+        Skipped cycles still record a profile snapshot (marked ``skipped``),
+        but return ``False`` so completion-only work such as the NetworkTables
+        flush does not run.
 
         Returns:
             ``True`` when the cycle completed, otherwise ``False``.
         """
-        profile_seq_before = self._profile_seq
         if self.num_threads == 1:
-            self._run_flow_direct()
-        else:
-            self._run_flow_threaded()
-        return self._profile_seq > profile_seq_before
+            return self._run_flow_direct()
+        return self._run_flow_threaded()
 
     @profile
-    def _run_flow_direct(self) -> None:
+    def _run_flow_direct(self) -> bool:
         """Direct execution without thread signaling for linear pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
@@ -275,19 +276,26 @@ class FlowManager:
                     operation_start = perf_counter()
                     output = operation.run(input_for_op)
                     operation_end = perf_counter()
-                    if output is SKIP_PIPELINE_CYCLE:
-                        return
                     operation_time_by_uuid_ms[operation.uuid] = max(
                         (operation_end - operation_start) * 1000.0,
                         0.0,
                     )
+                    if output is SKIP_PIPELINE_CYCLE:
+                        self._record_skipped_cycle(
+                            frame_start,
+                            timestep,
+                            timestep_start,
+                            operation_time_by_uuid_ms,
+                            timestep_total_ms,
+                        )
+                        return False
                     if self.on_operation_success is not None:
                         self.on_operation_success(operation)
                     self.operation_outputs[operation.uuid] = output
                 except TypeError as e:
                     if "None" in str(e):
                         # Skip entire frame when operation can't handle None input
-                        return
+                        return False
                     if self.on_operation_error is not None:
                         self.on_operation_error(operation, traceback.format_exc())
                     raise ValueError(
@@ -313,9 +321,10 @@ class FlowManager:
             operation_time_by_uuid_ms=operation_time_by_uuid_ms,
             timestep_total_ms=timestep_total_ms,
         )
+        return True
 
     @profile
-    def _run_flow_threaded(self) -> None:
+    def _run_flow_threaded(self) -> bool:
         """Threaded execution for parallel pipelines."""
         self.previous_operation_outputs = self.operation_outputs.copy()
         self.operation_outputs.clear()
@@ -380,7 +389,7 @@ class FlowManager:
                         and "None" in error_msg
                         and "TypeError" in error_msg
                     ):
-                        return
+                        return False
                     if self.on_operation_error is not None:
                         self.on_operation_error(operation, error_msg or "")
                     raise ValueError(
@@ -389,10 +398,6 @@ class FlowManager:
 
                 output_data = thread_obj.get_output_data()
                 active_thread_objects.discard(thread_obj)
-                if output_data is SKIP_PIPELINE_CYCLE:
-                    self._discard_active_threaded_operations(active_thread_objects)
-                    return
-                self.operation_outputs[operation.uuid] = output_data
                 timing_uuid, execution_time_ms = thread_obj.get_last_cycle_timing(
                     cycle_id
                 )
@@ -400,6 +405,17 @@ class FlowManager:
                     operation_time_by_uuid_ms[operation.uuid] = max(
                         execution_time_ms, 0.0
                     )
+                if output_data is SKIP_PIPELINE_CYCLE:
+                    self._discard_active_threaded_operations(active_thread_objects)
+                    self._record_skipped_cycle(
+                        frame_start,
+                        current_timestep,
+                        timestep_start,
+                        operation_time_by_uuid_ms,
+                        timestep_total_ms,
+                    )
+                    return False
+                self.operation_outputs[operation.uuid] = output_data
                 if self.on_operation_success is not None:
                     self.on_operation_success(operation)
 
@@ -416,6 +432,7 @@ class FlowManager:
             operation_time_by_uuid_ms=operation_time_by_uuid_ms,
             timestep_total_ms=timestep_total_ms,
         )
+        return True
 
     @staticmethod
     def _discard_active_threaded_operations(
@@ -429,6 +446,36 @@ class FlowManager:
                     "Operation did not finish while discarding a skipped pipeline cycle"
                 )
             thread_obj.get_output_data()
+
+    def _record_skipped_cycle(
+        self,
+        frame_start: float,
+        timestep: int,
+        timestep_start: float,
+        operation_time_by_uuid_ms: dict[str, float],
+        timestep_total_ms: dict[int, float],
+    ) -> None:
+        """Record a profile snapshot for a cycle an operation chose to skip.
+
+        The snapshot holds the operations and timesteps that ran, up to and
+        including the skipping operation, so profiling still shows the work
+        done on frames without a result (for example, no tags in view).
+
+        Args:
+            frame_start: ``perf_counter`` value when the cycle started.
+            timestep: Timestep that was running when the cycle was skipped.
+            timestep_start: ``perf_counter`` value when that timestep started.
+            operation_time_by_uuid_ms: Runtimes of the operations that ran.
+            timestep_total_ms: Wall-clock times of the timesteps that finished.
+        """
+        now = perf_counter()
+        timestep_total_ms[timestep] = max((now - timestep_start) * 1000.0, 0.0)
+        self._record_profile_snapshot(
+            frame_time_ms=max((now - frame_start) * 1000.0, 0.0),
+            operation_time_by_uuid_ms=operation_time_by_uuid_ms,
+            timestep_total_ms=timestep_total_ms,
+            skipped=True,
+        )
 
     def _gather_operation_inputs(self, operation: Operation) -> Any:
         """Gather input data for an operation from upstream operations.
@@ -667,6 +714,9 @@ class FlowManager:
         """
         rows: list[dict[str, Any]] = []
         for timestep, operations in enumerate(self.execution_time_groups):
+            # Completed cycles time every timestep; a skipped cycle stops early.
+            if timestep not in timestep_total_ms:
+                continue
             candidate_rows: list[tuple[Operation, float]] = []
             for operation in operations:
                 operation_time_ms = operation_time_by_uuid_ms.get(operation.uuid)
@@ -682,7 +732,7 @@ class FlowManager:
             rows.append(
                 {
                     "timestep": timestep,
-                    "total_time_ms": float(timestep_total_ms.get(timestep, 0.0)),
+                    "total_time_ms": float(timestep_total_ms[timestep]),
                     "max_operation_uuid": max_operation[0].uuid
                     if max_operation
                     else None,
@@ -702,6 +752,7 @@ class FlowManager:
         frame_time_ms: float,
         operation_time_by_uuid_ms: dict[str, float],
         timestep_total_ms: dict[int, float],
+        skipped: bool = False,
     ) -> None:
         """Record the current frame's timings for a later snapshot read.
 
@@ -712,6 +763,7 @@ class FlowManager:
             frame_time_ms: Frame wall-clock runtime.
             operation_time_by_uuid_ms: Per-operation runtime map.
             timestep_total_ms: Per-timestep wall-clock runtime map.
+            skipped: Whether an operation skipped the rest of the cycle.
         """
         timestamp_ms = int(time() * 1000)
         with self._profile_lock:
@@ -722,6 +774,7 @@ class FlowManager:
                 "timestamp_ms": timestamp_ms,
                 "operation_time_by_uuid_ms": operation_time_by_uuid_ms,
                 "timestep_total_ms": timestep_total_ms,
+                "skipped": skipped,
             }
 
     def _build_profile_snapshot(self, timings: dict[str, Any]) -> dict[str, Any] | None:
@@ -765,6 +818,8 @@ class FlowManager:
             for key in ("cycle_time_ms", "capture_latency_ms"):
                 if key in timings:
                     snapshot[key] = timings[key]
+            if timings["skipped"]:
+                snapshot["skipped"] = True
             return snapshot
         except Exception as error:
             self.logger.log(

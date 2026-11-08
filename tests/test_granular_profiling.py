@@ -292,6 +292,7 @@ def test_snapshot_built_on_read_matches_recorded_frame() -> None:
     assert snapshot["cycle_time_ms"] == 11.0
     assert snapshot["capture_latency_ms"] == 30.0
     assert snapshot["pipeline_name"] == "Threaded"
+    assert "skipped" not in snapshot
 
     # Readers get independent copies, and the next frame replaces everything.
     snapshot["operations"].clear()
