@@ -450,19 +450,15 @@ const EXTREME_DIRECTIONS: [(f64, f64); 8] = [
     (-1.0, 0.0),
 ];
 
-/// Pixel count, row count and extreme pixel-edge points of one component.
+/// Extreme pixel-edge points of one component, outlining tall blobs cheaply.
 #[derive(Clone, Copy)]
 struct Blob {
-    area: i32,
-    rows: i32,
     extremes: [(f64, Point); 8],
 }
 
 impl Default for Blob {
     fn default() -> Self {
         Self {
-            area: 0,
-            rows: 0,
             extremes: [(f64::NEG_INFINITY, Point::default()); 8],
         }
     }
@@ -470,8 +466,6 @@ impl Default for Blob {
 
 impl Blob {
     fn add(&mut self, run: &Run) {
-        self.area += run.x1 - run.x0 + 1;
-        self.rows += 1;
         let (left, right) = (run.x0 as f64 - 0.5, run.x1 as f64 + 0.5);
         let (top, bottom) = (run.y as f64 - 0.5, run.y as f64 + 0.5);
         for ((dx, dy), extreme) in EXTREME_DIRECTIONS.iter().zip(&mut self.extremes) {
@@ -541,40 +535,66 @@ fn blob_proposals(
 ) {
     profile::add(Stage::Runs, runs.len() as u64);
     let start = profile::clock();
-    let mut blobs: Vec<Blob> = vec![Blob::default(); runs.len()];
+    // Size every component first with compact counters, then outline only those
+    // big enough to propose. Components keep root order; points keep run order.
+    let mut roots = Vec::with_capacity(runs.len());
+    let mut area = vec![0i32; runs.len()];
+    let mut count = vec![0i32; runs.len()];
     for i in 0..runs.len() {
         let id = root(runs, i);
-        blobs[id].add(&runs[i]);
+        roots.push(id);
+        area[id] += runs[i].x1 - runs[i].x0 + 1;
+        count[id] += 1;
     }
-    let mut points: Vec<Vec<Point>> = vec![Vec::new(); runs.len()];
-    for i in 0..runs.len() {
-        let id = root(runs, i);
-        if blobs[id].rows > HULL_MAX_ROWS {
+    // Dense slot per kept component, plus where its hull points start.
+    const NONE: usize = usize::MAX;
+    let mut slot = vec![NONE; runs.len()];
+    let mut kept: Vec<usize> = Vec::new();
+    let mut point_start: Vec<usize> = vec![0];
+    for id in 0..runs.len() {
+        if area[id] >= 12 && count[id] >= 3 {
+            slot[id] = kept.len();
+            kept.push(id);
+            let points = if count[id] > HULL_MAX_ROWS {
+                0
+            } else {
+                4 * count[id] as usize
+            };
+            point_start.push(point_start[kept.len() - 1] + points);
+        }
+    }
+    let mut blobs = vec![Blob::default(); kept.len()];
+    let mut points = vec![Point::default(); point_start[kept.len()]];
+    let mut filled = point_start[..kept.len()].to_vec();
+    for (run, &id) in runs.iter().zip(&roots) {
+        let k = slot[id];
+        if k == NONE {
             continue;
         }
-        let run = runs[i];
+        if count[id] > HULL_MAX_ROWS {
+            blobs[k].add(run);
+            continue;
+        }
         for y in [run.y as f64 - 0.5, run.y as f64 + 0.5] {
-            points[id].push(Point {
+            points[filled[k]] = Point {
                 x: run.x0 as f64 - 0.5,
                 y,
-            });
-            points[id].push(Point {
+            };
+            points[filled[k] + 1] = Point {
                 x: run.x1 as f64 + 0.5,
                 y,
-            });
+            };
+            filled[k] += 2;
         }
     }
     profile::since(Stage::BlobAccumulate, start);
     let start = profile::clock();
-    for (i, blob) in blobs.iter().enumerate() {
-        if blob.area < 12 || blob.rows < 3 {
-            continue;
-        }
+    for (k, &i) in kept.iter().enumerate() {
         profile::add(Stage::Blobs, 1);
-        let rough = if blob.rows > HULL_MAX_ROWS {
-            blob.quad()
+        let rough = if count[i] > HULL_MAX_ROWS {
+            blobs[k].quad()
         } else {
-            let boundary = hull(std::mem::take(&mut points[i]));
+            let boundary = hull(points[point_start[k]..point_start[k + 1]].to_vec());
             if boundary.len() < 4 {
                 continue;
             }
