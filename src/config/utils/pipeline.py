@@ -1114,10 +1114,18 @@ class Pipeline:
     def clear_operation_error(self, operation: Operation) -> None:
         """Clear an operation error entry after success.
 
+        Runs after every successful operation, so it publishes only when an
+        error was actually removed. The web server's periodic resend repairs
+        any update the browser missed.
+
         Args:
             operation: The operation that succeeded.
         """
         if operation is None:
+            return
+        # Unlocked membership test: only this pipeline's thread records runtime
+        # errors for its operations, so a missing entry cannot appear concurrently.
+        if operation.uuid not in self.operation_errors:
             return
         with self.operation_errors_lock:
             self.operation_errors.pop(operation.uuid, None)
