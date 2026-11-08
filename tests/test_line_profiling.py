@@ -127,3 +127,44 @@ def test_line_profiling_mixin_allows_main_and_secondary_operations() -> None:
     assert status == 200
     assert payload["success"] is True
     assert accepted == [main_operation]
+
+
+class _CountingOperation(OperationInstance):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def run(self, value: Any) -> Any:
+        self.calls += 1
+        return value
+
+
+def test_line_profiling_starts_and_stops_between_operation_runs() -> None:
+    """A session started mid-run profiles the next call and stops cleanly."""
+    from src.config.utils.line_profiling import line_profiling_manager
+
+    instance = _CountingOperation()
+    operation = Operation(instance, "op-count", "count")
+    other = Operation(_CountingOperation(), "op-other", "other")
+
+    operation.run(1)
+    assert not line_profiling_manager.is_active_for(operation.uuid)
+
+    started, status = line_profiling_manager.start_session("Pipe", operation)
+    assert status == 200 and started["success"]
+    try:
+        assert line_profiling_manager.is_active_for(operation.uuid)
+        assert not line_profiling_manager.is_active_for(other.uuid)
+        assert operation.run(2) == 2
+        other.run(3)
+        session = line_profiling_manager._active_session
+        assert session is not None and session.call_count == 1
+    finally:
+        stopped, status = line_profiling_manager.stop_session("Pipe", operation.uuid)
+    assert status == 200 and stopped["profiled_call_count"] == 1
+    assert stopped["report_available"]
+
+    assert not line_profiling_manager.is_active_for(operation.uuid)
+    operation.run(4)
+    assert instance.calls == 3
+    report, _status = line_profiling_manager.get_report("Pipe", operation.uuid)
+    assert report["profiled_call_count"] == 1
