@@ -101,3 +101,31 @@ def test_deep_unwrap_rebuilds_containers_and_handles_subclasses() -> None:
     assert collect_timings(source) == [first, second, first, first, first]
     assert collect_timings(detections) == []
     assert collect_timings("text") == []
+
+
+def test_unknown_objects_pass_through_untouched() -> None:
+    """Plain objects (e.g. lazily built crops) are never iterated or rebuilt."""
+    from src.utils.timing import collect_timings
+
+    class _Lazy:
+        def __init__(self) -> None:
+            self.touched = False
+
+        def __iter__(self):
+            self.touched = True
+            return iter(())
+
+        def __len__(self) -> int:
+            self.touched = True
+            return 0
+
+    timing = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=10)
+    lazy = _Lazy()
+    frame_like = TimedValue(([lazy], "frame"), timing)
+
+    unwrapped = unwrap_timed_deep(frame_like)
+    assert unwrapped[0][0] is lazy
+    assert unwrap_timed_deep(lazy) is lazy
+    assert collect_timings(([lazy], {"x": lazy})) == []
+    assert attach_output_timing(lazy, frame_like).value is lazy
+    assert not lazy.touched
