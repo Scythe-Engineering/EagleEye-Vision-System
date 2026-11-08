@@ -246,3 +246,58 @@ def test_sse_profiling_update_is_published_on_new_sequence() -> None:
 
     EagleEyeInterface._publish_profiling_updates(interface)
     assert len(published_events) == 1
+
+
+def test_snapshot_built_on_read_matches_recorded_frame() -> None:
+    """The lazily built payload carries exactly the latest frame's timings."""
+    flow_manager = _build_threaded_flow_manager()
+    assert flow_manager.run_flow()
+    assert flow_manager.run_flow()
+    groups = flow_manager.execution_time_groups
+    merge = flow_manager.operations["op-merge"]
+    op_times = {uuid: 0.5 for uuid in flow_manager.operations}
+    op_times["op-merge"] = 2.0
+    flow_manager._record_profile_snapshot(
+        frame_time_ms=9.0,
+        operation_time_by_uuid_ms=op_times,
+        timestep_total_ms={step: 1.5 for step in range(len(groups))},
+    )
+    flow_manager.set_latest_profile_cycle_time(11.0)
+    flow_manager.set_latest_profile_capture_latency(30.0)
+
+    snapshot = flow_manager.get_latest_profile_snapshot()
+    assert snapshot is not None
+    thread_info = flow_manager.get_thread_and_timestep_info()
+    assert snapshot["operations"] == {
+        uuid: {
+            "name": operation.name,
+            "timestep": thread_info[uuid]["timestep"],
+            "thread": thread_info[uuid]["thread"],
+            "execution_time_ms": op_times[uuid],
+        }
+        for uuid, operation in flow_manager.operations.items()
+    }
+    merge_row = snapshot["timesteps"][merge.execution_timestep]
+    assert merge_row == {
+        "timestep": merge.execution_timestep,
+        "total_time_ms": 1.5,
+        "max_operation_uuid": "op-merge",
+        "max_operation_name": "merge",
+        "max_operation_time_ms": 2.0,
+        "operation_count": 1,
+    }
+    assert len(snapshot["timesteps"]) == len(groups)
+    assert snapshot["frame_seq"] == 3
+    assert snapshot["frame_time_ms"] == 9.0
+    assert snapshot["cycle_time_ms"] == 11.0
+    assert snapshot["capture_latency_ms"] == 30.0
+    assert snapshot["pipeline_name"] == "Threaded"
+
+    # Readers get independent copies, and the next frame replaces everything.
+    snapshot["operations"].clear()
+    assert flow_manager.get_latest_profile_snapshot()["operations"]
+    assert flow_manager.run_flow()
+    latest = flow_manager.get_latest_profile_snapshot()
+    assert latest["frame_seq"] == 4
+    assert "cycle_time_ms" not in latest
+    _assert_profile_contract(latest)

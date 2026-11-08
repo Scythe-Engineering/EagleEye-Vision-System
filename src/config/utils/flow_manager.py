@@ -238,7 +238,9 @@ class FlowManager:
         self.operation_outputs: dict[str, Any] = {}
         self.previous_operation_outputs: dict[str, Any] = {}
         self._profile_lock = threading.Lock()
-        self._last_frame_profile: dict[str, Any] | None = None
+        # Raw timings of the latest completed frame. The UI samples the snapshot
+        # a few times per second, so the payload is built on read, not per frame.
+        self._last_frame_timings: dict[str, Any] | None = None
         self._profile_seq = 0
 
     @profile
@@ -701,13 +703,37 @@ class FlowManager:
         operation_time_by_uuid_ms: dict[str, float],
         timestep_total_ms: dict[int, float],
     ) -> None:
-        """Record a lock-safe profiling snapshot for the current frame.
+        """Record the current frame's timings for a later snapshot read.
+
+        The maps are freshly created per frame and never mutated afterwards,
+        so they are stored by reference.
 
         Args:
             frame_time_ms: Frame wall-clock runtime.
             operation_time_by_uuid_ms: Per-operation runtime map.
             timestep_total_ms: Per-timestep wall-clock runtime map.
         """
+        timestamp_ms = int(time() * 1000)
+        with self._profile_lock:
+            self._profile_seq += 1
+            self._last_frame_timings = {
+                "frame_seq": self._profile_seq,
+                "frame_time_ms": frame_time_ms,
+                "timestamp_ms": timestamp_ms,
+                "operation_time_by_uuid_ms": operation_time_by_uuid_ms,
+                "timestep_total_ms": timestep_total_ms,
+            }
+
+    def _build_profile_snapshot(self, timings: dict[str, Any]) -> dict[str, Any] | None:
+        """Build the profiling payload served to the UI from raw frame timings.
+
+        Args:
+            timings: Raw timings stored by ``_record_profile_snapshot``.
+
+        Returns:
+            The snapshot payload, or None if it could not be built.
+        """
+        operation_time_by_uuid_ms = timings["operation_time_by_uuid_ms"]
         try:
             operations_payload: dict[str, dict[str, Any]] = {}
             for operation in self.operations.values():
@@ -725,25 +751,27 @@ class FlowManager:
 
             timestep_rows = self._build_timestep_rows(
                 operation_time_by_uuid_ms,
-                timestep_total_ms,
+                timings["timestep_total_ms"],
             )
 
-            with self._profile_lock:
-                self._profile_seq += 1
-                snapshot = {
-                    "pipeline_name": self.pipeline_name,
-                    "frame_seq": self._profile_seq,
-                    "frame_time_ms": float(frame_time_ms),
-                    "timestamp_ms": int(time() * 1000),
-                    "operations": operations_payload,
-                    "timesteps": timestep_rows,
-                }
-                self._last_frame_profile = snapshot
+            snapshot: dict[str, Any] = {
+                "pipeline_name": self.pipeline_name,
+                "frame_seq": timings["frame_seq"],
+                "frame_time_ms": float(timings["frame_time_ms"]),
+                "timestamp_ms": timings["timestamp_ms"],
+                "operations": operations_payload,
+                "timesteps": timestep_rows,
+            }
+            for key in ("cycle_time_ms", "capture_latency_ms"):
+                if key in timings:
+                    snapshot[key] = timings[key]
+            return snapshot
         except Exception as error:
             self.logger.log(
                 f"{Colors.YELLOW}Profiling snapshot failed for pipeline "
                 f"{self.pipeline_name}: {error}{Colors.RESET}"
             )
+            return None
 
     def set_latest_profile_cycle_time(self, cycle_time_ms: float) -> None:
         """Attach the full pipeline cycle time to the latest profile snapshot.
@@ -757,8 +785,8 @@ class FlowManager:
                 completed flow execution.
         """
         with self._profile_lock:
-            if self._last_frame_profile is not None:
-                self._last_frame_profile["cycle_time_ms"] = float(
+            if self._last_frame_timings is not None:
+                self._last_frame_timings["cycle_time_ms"] = float(
                     max(cycle_time_ms, 0.0)
                 )
 
@@ -774,31 +802,21 @@ class FlowManager:
             latency_ms: Milliseconds between frame capture and cycle completion.
         """
         with self._profile_lock:
-            if self._last_frame_profile is not None:
-                self._last_frame_profile["capture_latency_ms"] = float(
+            if self._last_frame_timings is not None:
+                self._last_frame_timings["capture_latency_ms"] = float(
                     max(latency_ms, 0.0)
                 )
 
     def get_latest_profile_snapshot(self) -> dict[str, Any] | None:
-        """Get a copy of the latest profiling snapshot.
+        """Build the latest profiling snapshot.
+
+        Each call returns a freshly built payload the caller may modify.
 
         Returns:
             Latest profiling snapshot or None when unavailable.
         """
         with self._profile_lock:
-            if self._last_frame_profile is None:
+            if self._last_frame_timings is None:
                 return None
-
-            operations = {
-                operation_uuid: row.copy()
-                for operation_uuid, row in self._last_frame_profile.get(
-                    "operations", {}
-                ).items()
-            }
-            timesteps = [
-                row.copy() for row in self._last_frame_profile.get("timesteps", [])
-            ]
-            snapshot = self._last_frame_profile.copy()
-            snapshot["operations"] = operations
-            snapshot["timesteps"] = timesteps
-            return snapshot
+            timings = self._last_frame_timings.copy()
+        return self._build_profile_snapshot(timings)
