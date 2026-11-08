@@ -151,7 +151,7 @@ def test_failed_pull_still_restores_pipeline_configuration(tmp_path: Path) -> No
 def test_release_checkout_fetches_tag_and_stays_detached(tmp_path: Path) -> None:
     updater = _ReleaseCheckoutHarness(tmp_path)
 
-    updater._checkout_ref_preserving_pipeline_config(
+    updater._checkout_ref_preserving_device_config(
         "v1.2.3", target_type="release", phase_count=3
     )
 
@@ -165,6 +165,95 @@ def test_release_checkout_fetches_tag_and_stays_detached(tmp_path: Path) -> None
         ],
         ["git", "checkout", "--detach", "refs/tags/v1.2.3"],
     ]
+
+
+class _BranchCheckoutHarness(_UpdateHarness):
+    def __init__(self, repo_root: Path) -> None:
+        super().__init__(repo_root)
+        self.lines: list[str] = []
+
+    def _publish_system_update_progress(self, *, line: str | None = None, **_) -> None:
+        if line:
+            self.lines.append(line)
+
+
+def _repo_with_branch(tmp_path: Path) -> Path:
+    """Clone of an origin whose ``feature`` branch adds a file and edits code."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "--initial-branch=main")
+    _configure_git_identity(origin)
+    for relative, text in {
+        "src/config/pipeline_config.json": '{"source": "template"}\n',
+        "src/general_conf.json": "{}\n",
+        "src/utils/camera_utils/camera_calibrations/0/intrinsics.json": "{}\n",
+        "app.py": "v1\n",
+    }.items():
+        (origin / relative).parent.mkdir(parents=True, exist_ok=True)
+        (origin / relative).write_text(text, encoding="utf-8")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-m", "Initial")
+    _git(origin, "checkout", "-b", "feature")
+    (origin / "app.py").write_text("v2\n", encoding="utf-8")
+    (origin / "new_module.py").write_text("upstream\n", encoding="utf-8")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-m", "Feature")
+    _git(origin, "checkout", "main")
+
+    working = tmp_path / "working"
+    _git(tmp_path, "clone", str(origin), str(working))
+    _configure_git_identity(working)
+    return working
+
+
+def test_branch_checkout_moves_local_edits_aside_and_keeps_device_settings(
+    tmp_path: Path,
+) -> None:
+    """Local code edits and conflicting untracked files must not block an update."""
+    working = _repo_with_branch(tmp_path)
+    calibration = (
+        working / "src/utils/camera_utils/camera_calibrations/0/intrinsics.json"
+    )
+    new_calibration = (
+        working / "src/utils/camera_utils/camera_calibrations/1/intrinsics.json"
+    )
+    device_files = {
+        working / "src/config/pipeline_config.json": b'{"source": "device"}\n',
+        working / "src/general_conf.json": b'{"network_table_address": "10.0.0.2"}\n',
+        calibration: b'{"fx": 900}\n',
+        new_calibration: b'{"fx": 800}\n',
+    }
+    for path, contents in device_files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+    (working / "app.py").write_text("local edit\n", encoding="utf-8")
+    (working / "new_module.py").write_text("local copy\n", encoding="utf-8")
+
+    updater = _BranchCheckoutHarness(working)
+    updater._checkout_ref_preserving_device_config(
+        "feature", target_type="branch", phase_count=3
+    )
+
+    assert _git(working, "rev-parse", "--abbrev-ref", "HEAD") == "feature"
+    assert (working / "app.py").read_text(encoding="utf-8") == "v2\n"
+    assert (working / "new_module.py").read_text(encoding="utf-8") == "upstream\n"
+    for path, contents in device_files.items():
+        assert path.read_bytes() == contents
+    assert "EagleEye system update backup" in _git(working, "stash", "list")
+    assert "app.py" in _git(working, "stash", "show", "--name-only", "stash@{0}")
+
+
+def test_failed_branch_checkout_restores_local_edits(tmp_path: Path) -> None:
+    working = _repo_with_branch(tmp_path)
+    (working / "app.py").write_text("local edit\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        _BranchCheckoutHarness(working)._checkout_ref_preserving_device_config(
+            "missing", target_type="branch", phase_count=3
+        )
+
+    assert (working / "app.py").read_text(encoding="utf-8") == "local edit\n"
+    assert _git(working, "stash", "list") == ""
 
 
 def test_ref_name_validation_accepts_semver_build_metadata(tmp_path: Path) -> None:
