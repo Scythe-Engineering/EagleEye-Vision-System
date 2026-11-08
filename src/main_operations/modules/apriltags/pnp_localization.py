@@ -24,6 +24,8 @@ class TagSetGeometry(NamedTuple):
     """Mean of ``field_points``; solving around it improves conditioning."""
     object_points: np.ndarray
     """``field_points - origin``."""
+    tag_centers: np.ndarray
+    """Field-space center of each tag, shape (tags, 3)."""
     tag_count: int
     is_degenerate: bool
     """Fewer than two independent directions, so no pose is recoverable."""
@@ -96,6 +98,7 @@ class PnpLocalization:
             field_points=field_points,
             origin=origin,
             object_points=object_points,
+            tag_centers=field_points.reshape(-1, 4, 3).mean(axis=1),
             tag_count=len(tag_ids),
             is_degenerate=bool(np.count_nonzero(singular_values > rank_tolerance) < 2),
             is_coplanar=bool(singular_values[-1] < 1e-6 * singular_values[0]),
@@ -359,6 +362,7 @@ class PnpLocalization:
     def _solution_quality(
         self,
         object_points: np.ndarray,
+        tag_centers: np.ndarray,
         image_points: np.ndarray,
         rotation_vector: np.ndarray,
         rotation_matrix: np.ndarray,
@@ -373,6 +377,7 @@ class PnpLocalization:
 
         Args:
             object_points: Stacked field-space tag corners, shape (4 * tags, 3).
+            tag_centers: Field-space center of each tag, shape (tags, 3).
             image_points: Matching image-space corners, shape (4 * tags, 2).
             rotation_vector: Rodrigues rotation from ``solvePnP``.
             rotation_matrix: Same rotation as a 3x3 matrix.
@@ -389,15 +394,15 @@ class PnpLocalization:
             self.camera_matrix,
             self.distortion_coefficients,
         )
-        reprojection_error = float(
-            np.mean(np.linalg.norm(reprojected.reshape(-1, 2) - image_points, axis=1))
-        )
+        residuals = reprojected.reshape(-1, 2) - image_points
+        reprojection_error = float(np.sqrt((residuals * residuals).sum(axis=1)).mean())
 
-        tag_centers = object_points.reshape(-1, 4, 3).mean(axis=1)
         camera_space_centers = (
             tag_centers @ rotation_matrix.T + translation_vector.reshape(3)
         )
-        mean_distance = float(np.mean(np.linalg.norm(camera_space_centers, axis=1)))
+        mean_distance = float(
+            np.sqrt((camera_space_centers * camera_space_centers).sum(axis=1)).mean()
+        )
 
         return [float(tag_count), mean_distance, reprojection_error]
 
@@ -441,30 +446,31 @@ class PnpLocalization:
         # This improves rotation/translation conditioning, particularly in older
         # OpenCV LM builds, without changing the published field coordinates.
         geometry = self._tag_set_geometry(tuple(tag_ids))
-        object_points = geometry.field_points
-        object_origin = geometry.origin
-        valid_tags_found = geometry.tag_count
         solution = self._solve(geometry, image_points, previous_pose=previous_pose)
         if solution is None:
             return None
         rotation_vector, translation_vector = solution
         rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
         translation_vector = translation_vector.reshape(3, 1) - (
-            rotation_matrix @ object_origin
+            rotation_matrix @ geometry.origin
         ).reshape(3, 1)
-        camera_space_transform = np.eye(4, dtype=np.float64)
-        camera_space_transform[:3, :3] = rotation_matrix
-        camera_space_transform[:3, 3] = translation_vector.reshape(3)
-        global_camera_transform = self.fast_se3_inverse(camera_space_transform)
-        if not np.all(np.isfinite(global_camera_transform)):
+        # Field-from-camera pose: the SE(3) inverse of camera-from-field, built
+        # directly with the same arithmetic as fast_se3_inverse.
+        global_camera_transform = np.eye(4, dtype=np.float64)
+        global_camera_transform[:3, :3] = rotation_matrix.T
+        global_camera_transform[:3, 3] = (
+            -rotation_matrix.T @ translation_vector.reshape(3)
+        )
+        if not np.isfinite(global_camera_transform).all():
             return None
 
         quality = self._solution_quality(
-            object_points,
+            geometry.field_points,
+            geometry.tag_centers,
             image_points,
             rotation_vector,
             rotation_matrix,
             translation_vector,
-            valid_tags_found,
+            geometry.tag_count,
         )
         return global_camera_transform, quality
