@@ -243,12 +243,29 @@ pub(crate) fn refine(q: &mut Quad, im: &Image<'_>, radius: f64, polarity: i32) -
                 x: delta.x.mul_add(phase, q[k].x),
                 y: delta.y.mul_add(phase, q[k].y),
             };
+            // Taps stay within radius + 2.75 of the edge point either way.
+            let reach = radius + 3.0;
+            let interior = im.interior_segment(
+                Point {
+                    x: n.x.mul_add(-reach, p.x),
+                    y: n.y.mul_add(-reach, p.y),
+                },
+                Point {
+                    x: n.x.mul_add(reach, p.x),
+                    y: n.y.mul_add(reach, p.y),
+                },
+            );
             let tap = |m: i32| {
                 let s = 0.25f64.mul_add(f64::from(m), -radius);
-                im.sample(Point {
+                let q = Point {
                     x: n.x.mul_add(s, p.x),
                     y: n.y.mul_add(s, p.y),
-                })
+                };
+                if interior {
+                    im.sample_interior(q)
+                } else {
+                    im.sample(q)
+                }
             };
             for (i, value) in odd.iter_mut().enumerate() {
                 *value = tap(2 * i as i32 - 3);
