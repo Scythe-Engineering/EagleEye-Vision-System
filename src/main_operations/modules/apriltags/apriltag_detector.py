@@ -1,4 +1,5 @@
 import logging
+import math
 from copy import copy
 from dataclasses import dataclass
 from threading import Lock
@@ -671,18 +672,24 @@ class AprilTagDetector:
             tracked = self._tracker.find(self.detector, full_frame)
         if not tracked:
             return tracked, images
-        # Segments are centred on one projected tag each; half an edge tolerates pose lag.
-        corners = np.stack(list(tracked.values()))
-        centers = corners.mean(axis=1)
-        radii = (
-            0.5 * np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1) / np.sqrt(2.0)
-        )
-        segment_centers = np.array(
-            [segment_center(*segment_shape_and_mapping(segment)) for segment in images]
-        ).reshape(-1, 2)
-        distances = np.linalg.norm(segment_centers[:, None] - centers[None], axis=2)
-        covered = (distances < radii).any(axis=1)
-        remaining = [
-            segment for segment, skip in zip(images, covered, strict=True) if not skip
-        ]
+        # Segments are centred on one projected tag each; half an edge tolerates pose
+        # lag. A few tags and segments per frame: plain floats beat numpy calls here.
+        circles = []
+        for corners in tracked.values():
+            points = corners.tolist()
+            (x0, y0), _, (x2, y2), _ = points
+            center_x = sum(point[0] for point in points) / 4.0
+            center_y = sum(point[1] for point in points) / 4.0
+            dx, dy = x0 - x2, y0 - y2
+            radius = 0.5 * math.sqrt(dx * dx + dy * dy) / math.sqrt(2.0)
+            circles.append((center_x, center_y, radius))
+
+        def covered(segment) -> bool:
+            x, y = segment_center(*segment_shape_and_mapping(segment))
+            return any(
+                math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) < radius
+                for cx, cy, radius in circles
+            )
+
+        remaining = [segment for segment in images if not covered(segment)]
         return tracked, remaining
