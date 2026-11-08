@@ -4,6 +4,7 @@ use crate::detection::Detection;
 use crate::families::IndexedFamily;
 use crate::geometry::{dot, homography, min_f64, norm, project, Homography, Point, Quad};
 use crate::image::Image;
+use crate::profile::{self, Stage};
 
 /// Rotate a unit-square coordinate clockwise by quarter turns.
 fn rotate(mut point: Point, rotation: i32) -> Point {
@@ -577,7 +578,9 @@ pub(crate) fn decode(
     }
     if grid {
         let mut refined = h;
-        if refine_grid(&mut refined, image, indexed, id, rotation, FULL_FIT) {
+        if profile::timed(Stage::GridFit, || {
+            refine_grid(&mut refined, image, indexed, id, rotation, FULL_FIT)
+        }) {
             let refined_quad = [
                 project(&refined, 0.0, 0.0),
                 project(&refined, 1.0, 0.0),

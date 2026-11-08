@@ -8,6 +8,7 @@ use crate::detection::Detection;
 use crate::families::{select_families, IndexedFamily};
 use crate::geometry::{max_f64, Homography, Quad};
 use crate::image::Image;
+use crate::profile::{self, Pass, Stage};
 use crate::workers::Workers;
 
 #[derive(Clone, Copy)]
@@ -97,22 +98,27 @@ impl Detector {
         } else {
             image
         };
-        self.detect_prepared(image);
+        profile::set_pass(Pass::Primary);
+        profile::add(Stage::Frames, 1);
+        profile::timed(Stage::Total, || self.detect_prepared(image));
         self.row_spans = spans;
         &self.results
     }
 
     fn detect_prepared(&mut self, image: Image<'_>) {
         self.failed.clear();
+
         self.fragments.clear();
         let light = self.selected.iter().any(|family| family.family.reversed);
-        let prepared = prepare(
-            &image,
-            self.settings.quad_decimate,
-            self.settings.quad_sigma,
-            &self.workers,
-            &mut self.scratch,
-        );
+        let prepared = profile::timed(Stage::Resample, || {
+            prepare(
+                &image,
+                self.settings.quad_decimate,
+                self.settings.quad_sigma,
+                &self.workers,
+                &mut self.scratch,
+            )
+        });
         let primary = proposals(
             &prepared,
             &mut self.scratch,
@@ -124,6 +130,7 @@ impl Detector {
         self.decode_proposals(&image, &primary, false);
         // Recovery runs every frame so one decoded tag cannot hide the rest, but only
         // around primary quads that failed to decode, reusing the primary tile ranges.
+        profile::set_pass(Pass::Recovery);
         let recovery = proposals(
             &prepared,
             &mut self.scratch,
@@ -141,6 +148,7 @@ impl Detector {
                 .iter()
                 .any(|old| inside(region, old.center[0] - 0.5, old.center[1] - 0.5))
         });
+        profile::set_pass(Pass::Fragment);
         if !self.fragments.is_empty() {
             let found = window_proposals(
                 &prepared,
@@ -165,6 +173,7 @@ impl Detector {
                         .unwrap_or(Ordering::Equal)
                 })
         });
+        profile::set_pass(Pass::Primary);
     }
 
     /// Whether a proposal sits on a tag already decoded this frame, using the same
@@ -192,6 +201,7 @@ impl Detector {
                 if self.covers_decoded(&proposal.quad)
                     || !regions.iter().any(|region| inside(region, cx, cy))
                 {
+                    profile::add(Stage::Skipped, 1);
                     continue;
                 }
             }
@@ -214,34 +224,44 @@ impl Detector {
     /// Refine and decode one proposal.
     fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> Outcome {
         let mut quad = proposal.quad;
-        if !self.selected.iter().any(|family| {
-            i32::from(family.family.reversed) == proposal.color && plausible(&quad, image, family)
+        profile::add(Stage::PlausibleCalls, 1);
+        if !profile::timed(Stage::Plausible, || {
+            self.selected.iter().any(|family| {
+                i32::from(family.family.reversed) == proposal.color
+                    && plausible(&quad, image, family)
+            })
         }) {
             return Outcome::Implausible;
         }
+        profile::add(Stage::PlausiblePass, 1);
         if self.settings.refine_edges
-            && !crate::geometry::refine(
-                &mut quad,
-                image,
-                self.settings.quad_decimate + 1.0,
-                if proposal.color != 0 { -1 } else { 1 },
-            )
+            && !profile::timed(Stage::Refine, || {
+                crate::geometry::refine(
+                    &mut quad,
+                    image,
+                    self.settings.quad_decimate + 1.0,
+                    if proposal.color != 0 { -1 } else { 1 },
+                )
+            })
         {
             return Outcome::Failed;
         }
+        profile::add(Stage::RefinePass, 1);
         let mut decoded = false;
         for (index, family) in self.selected.iter().enumerate() {
             if i32::from(family.family.reversed) != proposal.color {
                 continue;
             }
-            let Some(detection) = decode(
-                &quad,
-                image,
-                family,
-                index as u32,
-                self.settings.decode_sharpening,
-                self.settings.refine_edges,
-            ) else {
+            let Some(detection) = profile::timed(Stage::Decode, || {
+                decode(
+                    &quad,
+                    image,
+                    family,
+                    index as u32,
+                    self.settings.decode_sharpening,
+                    self.settings.refine_edges,
+                )
+            }) else {
                 continue;
             };
             decoded = true;
@@ -269,6 +289,7 @@ impl Detector {
             }
         }
         if decoded {
+            profile::add(Stage::Decoded, 1);
             Outcome::Decoded
         } else {
             Outcome::Failed

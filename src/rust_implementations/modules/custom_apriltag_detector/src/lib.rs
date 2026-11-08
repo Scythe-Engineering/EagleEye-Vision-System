@@ -8,6 +8,7 @@ mod families;
 mod family_data;
 mod geometry;
 mod image;
+mod profile;
 mod python;
 mod track;
 mod workers;
@@ -18,5 +19,14 @@ use pyo3::prelude::*;
 fn custom_apriltag_detector(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<python::CustomAprilTagDetector>()?;
     module.add_class::<detection::Detection>()?;
+    #[cfg(feature = "stage-profile")]
+    module.add_function(wrap_pyfunction!(stage_profile, module)?)?;
     Ok(())
+}
+
+/// Accumulated per-stage nanoseconds and candidate counts since the last call.
+#[cfg(feature = "stage-profile")]
+#[pyfunction]
+fn stage_profile() -> Vec<(String, u64)> {
+    profile::take()
 }
