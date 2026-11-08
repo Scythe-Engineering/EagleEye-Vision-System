@@ -6,6 +6,7 @@ mod detection;
 mod detector;
 mod families;
 mod family_data;
+mod frame;
 mod geometry;
 mod image;
 mod profile;

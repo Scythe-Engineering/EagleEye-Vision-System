@@ -677,15 +677,12 @@ class AprilTagDetector:
         radii = (
             0.5 * np.linalg.norm(corners[:, 0] - corners[:, 2], axis=1) / np.sqrt(2.0)
         )
+        segment_centers = np.array(
+            [segment_center(*segment_shape_and_mapping(segment)) for segment in images]
+        ).reshape(-1, 2)
+        distances = np.linalg.norm(segment_centers[:, None] - centers[None], axis=2)
+        covered = (distances < radii).any(axis=1)
         remaining = [
-            segment
-            for segment in images
-            if not np.any(
-                np.linalg.norm(
-                    centers - segment_center(*segment_shape_and_mapping(segment)),
-                    axis=1,
-                )
-                < radii
-            )
+            segment for segment, skip in zip(images, covered, strict=True) if not skip
         ]
         return tracked, remaining

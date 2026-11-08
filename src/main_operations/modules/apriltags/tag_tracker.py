@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import cv2
 import numpy as np
 
 
@@ -37,27 +36,16 @@ class TagTracker:
             native: CustomNativeDetector used to confirm each prediction.
             frame: Full BGR or grayscale frame.
         """
-        found = {}
-        height, width = frame.shape[:2]
-        for tag_id, track in self._tracks.items():
-            predicted = self._predict(track)
-            # The window covers the white quiet zone and the edge-snap retry.
-            edge = float(np.linalg.norm(predicted[0] - predicted[2])) / np.sqrt(2.0)
-            margin = edge / 8.0 * 1.5 + 8.0
-            x0 = max(0, int(np.floor(predicted[:, 0].min() - margin)))
-            y0 = max(0, int(np.floor(predicted[:, 1].min() - margin)))
-            x1 = min(width, int(np.ceil(predicted[:, 0].max() + margin)) + 1)
-            y1 = min(height, int(np.ceil(predicted[:, 1].max() + margin)) + 1)
-            if x1 - x0 < 8 or y1 - y0 < 8:
-                continue
-            window = self._gray(frame[y0:y1, x0:x1])
-            offset = np.array([x0, y0], dtype=np.float64)
-            # Native corners use pixel-edge coordinates.
-            prior = (predicted - offset + 0.5).ravel().tolist()
-            confirmed = native.track(window, prior, tag_id)
-            if confirmed is not None:
-                found[tag_id] = confirmed - 0.5 + offset
-        return found
+        if not self._tracks:
+            return {}
+        tag_ids = list(self._tracks)
+        predicted = [self._predict(track) for track in self._tracks.values()]
+        confirmed = native.track_many(frame, predicted, tag_ids)
+        return {
+            tag_id: corners
+            for tag_id, corners in zip(tag_ids, confirmed)
+            if corners is not None
+        }
 
     def update(self, detections) -> None:
         """Track exactly the tags in this frame's final detections."""
@@ -77,18 +65,15 @@ class TagTracker:
             return track.corners
         return 2.0 * track.corners - track.previous
 
-    @staticmethod
-    def _gray(window: np.ndarray) -> np.ndarray:
-        # Windows change size every frame, so let OpenCV allocate the small output.
-        return window if window.ndim == 2 else cv2.cvtColor(window, cv2.COLOR_BGR2GRAY)
 
-
-def segment_center(shape: tuple[int, ...], mapping: np.ndarray) -> np.ndarray:
+def segment_center(shape: tuple[int, ...], mapping: np.ndarray) -> tuple[float, float]:
     """Full-frame position of a segment's center for a 2D offset or 3x3 map."""
     height, width = shape[:2]
-    center = np.array([(width - 1) * 0.5, (height - 1) * 0.5])
-    mapping = np.asarray(mapping, dtype=np.float64)
-    if mapping.shape == (2,):
-        return center + mapping
-    x, y, z = mapping @ np.array([center[0], center[1], 1.0])
-    return np.array([x / z, y / z])
+    x, y = (width - 1) * 0.5, (height - 1) * 0.5
+    # Scalar math: a few floats per segment are far cheaper than numpy calls.
+    values = np.asarray(mapping, dtype=np.float64).tolist()
+    if len(values) == 2:
+        return x + values[0], y + values[1]
+    (a, b, c), (d, e, f), (g, h, i) = values
+    z = g * x + h * y + i
+    return (a * x + b * y + c) / z, (d * x + e * y + f) / z
