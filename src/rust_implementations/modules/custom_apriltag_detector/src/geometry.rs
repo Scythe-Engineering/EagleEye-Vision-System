@@ -202,7 +202,21 @@ pub(crate) fn intersect(a: Line, b: Line) -> Option<Point> {
 }
 
 /// Refine all four edges from observed gradient lobes; commit only a bounded verified quad.
+///
+/// Every gradient tap along an edge normal sits at `-radius + m / 4` for an
+/// integer `m`: coarse offsets step by 2 quarters and the centroid by 1, with
+/// taps 3 quarters either side. Coarse taps (odd `m`) are sampled once and
+/// shared with the centroid window, which only adds its even taps.
 pub(crate) fn refine(q: &mut Quad, im: &Image<'_>, radius: f64, polarity: i32) -> bool {
+    let mut coarse = 0;
+    let mut s = -radius;
+    while s <= radius {
+        coarse += 1;
+        s += 0.5;
+    }
+    // odd[i] is the tap at m = 2i - 3, covering every coarse offset's two taps.
+    let mut odd = vec![0.0f64; coarse + 3];
+    let polarity = polarity as f64;
     let mut lines = [Line {
         n: Point::default(),
         d: 0.0,
@@ -229,48 +243,50 @@ pub(crate) fn refine(q: &mut Quad, im: &Image<'_>, radius: f64, polarity: i32) -
                 x: delta.x.mul_add(phase, q[k].x),
                 y: delta.y.mul_add(phase, q[k].y),
             };
-            let mut best = 4.0;
-            let mut offset = 0.0;
-            let mut s = -radius;
-            while s <= radius {
-                let a = Point {
+            let tap = |m: i32| {
+                let s = 0.25f64.mul_add(f64::from(m), -radius);
+                im.sample(Point {
                     x: n.x.mul_add(s, p.x),
                     y: n.y.mul_add(s, p.y),
-                };
-                let g = polarity as f64
-                    * (im.sample(Point {
-                        x: n.x.mul_add(0.75, a.x),
-                        y: n.y.mul_add(0.75, a.y),
-                    }) - im.sample(Point {
-                        x: (-n.x).mul_add(0.75, a.x),
-                        y: (-n.y).mul_add(0.75, a.y),
-                    }));
+                })
+            };
+            for (i, value) in odd.iter_mut().enumerate() {
+                *value = tap(2 * i as i32 - 3);
+            }
+            let mut best = 4.0;
+            let mut offset = 0.0;
+            let mut peak = 0;
+            let mut s = -radius;
+            for k in 0..coarse {
+                let g = polarity * (odd[k + 3] - odd[k]);
                 if g > best {
                     best = g;
                     offset = s;
+                    peak = k;
                 }
                 s += 0.5;
             }
             if best <= 4.0 {
                 continue;
             }
+            // window[j] is the tap at m = 2 * peak - 11 + j; odd m are even j.
+            let mut window = [0.0f64; 23];
+            for (j, value) in window.iter_mut().enumerate() {
+                let m = 2 * peak as i32 - 11 + j as i32;
+                let shared = (j % 2 == 0)
+                    .then(|| odd.get(((m + 3) / 2) as usize).filter(|_| m >= -3))
+                    .flatten();
+                *value = match shared {
+                    Some(&value) => value,
+                    None => tap(m),
+                };
+            }
             let mut mass = 0.0;
             let mut moment = 0.0;
             let mut t = -2.0;
-            while t <= 2.0 {
+            for j in 0..17 {
                 let s = offset + t;
-                let a = Point {
-                    x: n.x.mul_add(s, p.x),
-                    y: n.y.mul_add(s, p.y),
-                };
-                let g = polarity as f64
-                    * (im.sample(Point {
-                        x: n.x.mul_add(0.75, a.x),
-                        y: n.y.mul_add(0.75, a.y),
-                    }) - im.sample(Point {
-                        x: (-n.x).mul_add(0.75, a.x),
-                        y: (-n.y).mul_add(0.75, a.y),
-                    }));
+                let g = polarity * (window[j + 6] - window[j]);
                 if g.is_finite() && g > 0.0 {
                     mass += g;
                     moment = s.mul_add(g, moment);
