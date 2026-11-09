@@ -17,7 +17,7 @@ from src.utils.camera_utils.cameras.captured_frame import CapturedFrame
 
 
 class FlakyCamera:
-    """Streams nothing after the first open, like a bad Arducam OV9281 open."""
+    """Streams nothing until reopened, like a camera that was just replugged."""
 
     camera_ready = True
 
@@ -50,7 +50,7 @@ class FlakyCamera:
 
 def test_worker_reopens_a_silent_camera_and_restores_its_settings(monkeypatch) -> None:
     """Frames resume after a reopen, and the saved settings are applied again."""
-    monkeypatch.setattr(camera_thread_manager, "REOPEN_DELAYS_S", (0.0,))
+    monkeypatch.setattr(camera_thread_manager, "REOPEN_DELAY_S", 0.0)
     camera = FlakyCamera()
     frames: list[np.ndarray] = []
     manager = CameraThreadManager.__new__(CameraThreadManager)

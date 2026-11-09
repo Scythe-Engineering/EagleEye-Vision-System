@@ -23,8 +23,8 @@ if TYPE_CHECKING:
     from src.webui.web_server import EagleEyeInterface
 
 
-# Waits before consecutive reopen attempts of a camera that stopped streaming.
-REOPEN_DELAYS_S = (0.5, 1.0, 2.0, 5.0)
+# Wait before reopening a camera that stopped streaming, e.g. while it is replugged.
+REOPEN_DELAY_S = 2.0
 
 
 class FailureTracker:
@@ -212,7 +212,6 @@ class CameraThreadManager:
         )
 
         failure_tracker = FailureTracker(max_failures=10)
-        reopen_attempts = 0
 
         camera_fps = camera.get_achieved_fps()
         target_frame_time = 1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
@@ -228,7 +227,6 @@ class CameraThreadManager:
 
                 if captured is not None:
                     failure_tracker.reset()
-                    reopen_attempts = 0
                     packet = TimedValue(
                         captured.image,
                         TimingMetadata(
@@ -246,9 +244,8 @@ class CameraThreadManager:
                     self.web_interface.update_camera_frame(camera_name, captured.image)
                 else:
                     if failure_tracker.record_failure():
-                        if not self._reopen_camera(worker, reopen_attempts):
+                        if not self._reopen_camera(worker):
                             break
-                        reopen_attempts += 1
                         failure_tracker.reset()
                         continue
 
@@ -271,9 +268,8 @@ class CameraThreadManager:
                     f"{Colors.RED}Error in camera feed worker for {camera_name}: {camera_error}{Colors.RESET}"
                 )
                 if failure_tracker.record_failure():
-                    if not self._reopen_camera(worker, reopen_attempts):
+                    if not self._reopen_camera(worker):
                         break
-                    reopen_attempts += 1
                     failure_tracker.reset()
                     continue
                 time.sleep(0.01)
@@ -282,31 +278,25 @@ class CameraThreadManager:
             f"{Colors.CYAN}Camera feed worker for {camera_name} stopped{Colors.RESET}"
         )
 
-    def _reopen_camera(self, worker: CameraWorker, attempt: int) -> bool:
+    def _reopen_camera(self, worker: CameraWorker) -> bool:
         """Close and reopen a camera that stopped delivering frames.
 
-        Some USB cameras, such as the Arducam OV9281, intermittently stream
-        nothing but broken frames after an open; a fresh open usually fixes it.
-        Waits grow with each consecutive attempt so a missing camera is not
-        hammered.
+        This lets a camera that was unplugged and plugged back in resume
+        without a service restart, with its saved settings applied again.
 
         Args:
             worker: Worker whose camera stopped delivering frames.
-            attempt: Reopens already tried since the last good frame.
 
         Returns:
             False when the worker was stopped while waiting, otherwise True,
             including after a failed open, which the next failures retry.
         """
-        delay_s = REOPEN_DELAYS_S[min(attempt, len(REOPEN_DELAYS_S) - 1)]
         self.logger.log(
             f"{Colors.YELLOW}{worker.camera_name} stopped delivering frames; "
-            f"reopening in {delay_s:g} s (attempt {attempt + 1}){Colors.RESET}"
+            f"reopening in {REOPEN_DELAY_S:g} s{Colors.RESET}"
         )
         worker.camera.close()
-        deadline = time.monotonic() + delay_s
-        while worker.running and time.monotonic() < deadline:
-            time.sleep(0.05)
+        time.sleep(REOPEN_DELAY_S)
         if not worker.running:
             return False
         try:
