@@ -32,7 +32,6 @@ def get_operation_input_builders() -> Dict[str, InputBuilder]:
         "angle_to_objects": dummy_data.dummy_detections,
         "tag_filter": dummy_data.dummy_tag_filter_input,
         "get_networktables_value": dummy_data.dummy_device_input_data,
-        "camera_adjust": dummy_data.dummy_camera_adjust_input,
         "extract_pose": dummy_data.dummy_pose_matrix,
         "flatten_pose": dummy_data.dummy_pose_matrix,
         "camera_to_robot_pose": dummy_data.dummy_pose_matrix,
