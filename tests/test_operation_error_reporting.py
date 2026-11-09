@@ -102,10 +102,7 @@ def _interface(events: list[tuple[str, Any]], drop: list[bool]) -> EagleEyeInter
     interface = EagleEyeInterface.__new__(EagleEyeInterface)
     interface._pipeline_error_lock = threading.Lock()
     interface._pipeline_error_cache = {}
-    interface._pipeline_error_dirty_pipelines = set()
-    interface._pipeline_error_last_seq_sent = {}
     interface._pipeline_error_last_publish_ts = {}
-    interface.pipeline_objects_callback = dict
     interface.log = lambda *_args, **_kwargs: None
 
     def publish(name: str, data: Any) -> None:

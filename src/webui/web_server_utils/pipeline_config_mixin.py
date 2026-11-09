@@ -13,7 +13,6 @@ from flask import request
 from src.config.utils.port_validation import validate_pipeline_connections
 from src.webui.web_server_utils.constants import (
     PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS,
-    PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL,
     PIPELINE_NOT_FOUND_MESSAGE,
     SRC_DIR,
 )
@@ -306,7 +305,6 @@ class PipelineConfigMixin:
         # Stop the heartbeat resending the deleted pipeline's errors.
         with self._pipeline_error_lock:
             self._pipeline_error_cache.pop(pipeline_name, None)
-            self._pipeline_error_dirty_pipelines.discard(pipeline_name)
         return {"message": "Pipeline deleted successfully", **restart_state}, 200
 
     def _analyze_pipeline_restart_state(
@@ -504,7 +502,6 @@ class PipelineConfigMixin:
             # older snapshot after this one.
             with self._pipeline_error_lock:
                 self._pipeline_error_cache[pipeline_name] = normalized_payload
-                self._pipeline_error_dirty_pipelines.add(pipeline_name)
                 try:
                     self._publish_event("pipeline_operation_errors", normalized_payload)
                 except Exception:
@@ -548,74 +545,34 @@ class PipelineConfigMixin:
                     f"Failed to publish profiling_update for {pipeline_name}: {error}"
                 )
 
-    def _publish_cached_pipeline_errors(self) -> None:
-        """Publish cached pipeline operation errors to the active SSE client.
+    def _publish_cached_pipeline_errors(self, *, replay: bool = False) -> None:
+        """Resend cached pipeline operation errors to the active SSE client.
 
-        Error snapshots are published in batches (all operation errors in one
-        payload per pipeline) and throttled to reduce event spam.
+        Changes are already sent as they happen; this resend on a fixed interval
+        repairs a dropped SSE event, including the one that cleared the last error.
+
+        Args:
+            replay: Send every cached snapshot now, e.g. to a newly connected client.
         """
         with self._pipeline_error_lock:
             # Cache entries are replaced, never mutated, so identity marks a snapshot.
             cached_payloads = dict(self._pipeline_error_cache)
-            dirty_pipelines = set(self._pipeline_error_dirty_pipelines)
-            last_seq_sent = self._pipeline_error_last_seq_sent.copy()
             last_publish_ts = self._pipeline_error_last_publish_ts.copy()
 
-        if not cached_payloads:
-            return
-
         now = time.time()
-        frame_seq_by_pipeline: dict[str, int] = {}
-        try:
-            pipelines = self.pipeline_objects_callback() or {}
-            for pipeline_name, pipeline in pipelines.items():
-                snapshot = pipeline.get_latest_profile_snapshot()
-                if not snapshot:
-                    continue
-                frame_seq = int(snapshot.get("frame_seq", 0))
-                if frame_seq > 0:
-                    frame_seq_by_pipeline[pipeline_name] = frame_seq
-        except Exception as error:
-            self.log(f"Failed to read pipelines for error batching: {error}")
-
         for pipeline_name, payload in cached_payloads.items():
-            current_frame_seq = frame_seq_by_pipeline.get(pipeline_name, 0)
-            previously_sent_seq = last_seq_sent.get(pipeline_name, 0)
-            previously_sent_ts = last_publish_ts.get(pipeline_name, 0.0)
-
-            # Dirty pipelines go out every few frames. Every cached pipeline is
-            # also resent on the fallback interval, so a dropped SSE event
-            # (including the one that cleared the last error) self-corrects.
-            frame_gate_open = (
-                pipeline_name in dirty_pipelines
-                and current_frame_seq > 0
-                and current_frame_seq - previously_sent_seq
-                >= PIPELINE_ERROR_PUBLISH_FRAME_INTERVAL
-            )
-            fallback_gate_open = (
-                now - previously_sent_ts
-                >= PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS
-            )
-
-            if not frame_gate_open and not fallback_gate_open:
+            if (
+                not replay
+                and now - last_publish_ts.get(pipeline_name, 0.0)
+                < PIPELINE_ERROR_FALLBACK_PUBLISH_INTERVAL_SECONDS
+            ):
                 continue
-
-            errors = payload.get("errors")
-            normalized_payload = {
-                "pipeline_name": pipeline_name,
-                "errors": errors if isinstance(errors, list) else [],
-            }
             try:
                 with self._pipeline_error_lock:
                     # A newer update replaced this snapshot and was already sent.
                     if self._pipeline_error_cache.get(pipeline_name) is not payload:
                         continue
-                    self._publish_event("pipeline_operation_errors", normalized_payload)
-                    self._pipeline_error_dirty_pipelines.discard(pipeline_name)
+                    self._publish_event("pipeline_operation_errors", payload)
                     self._pipeline_error_last_publish_ts[pipeline_name] = now
-                    if current_frame_seq > 0:
-                        self._pipeline_error_last_seq_sent[pipeline_name] = (
-                            current_frame_seq
-                        )
             except Exception:
                 continue

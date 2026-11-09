@@ -1,5 +1,4 @@
 import logging
-import math
 from copy import copy
 from dataclasses import dataclass
 from threading import Lock
@@ -11,7 +10,7 @@ from pupil_apriltags import Detection, Detector
 
 from .custom_native import CustomNativeDetector
 from .lazy_segment import segment_shape_and_mapping
-from .tag_tracker import TagTracker, segment_center
+from .tag_tracker import TagTracker, uncovered_segments
 
 logger = logging.getLogger(__name__)
 
@@ -611,13 +610,9 @@ class AprilTagDetector:
             if temporal_segments
             else 0
         )
+        usable_frame = full_frame is not None and self._is_valid_image(full_frame)
         tracked: dict[int, np.ndarray] = {}
-        if (
-            self._tracker is not None
-            and temporal_segments
-            and full_frame is not None
-            and self._is_valid_image(full_frame)
-        ):
+        if self._tracker is not None and temporal_segments and usable_frame:
             tracked, images = self._track(images, full_frame)
         # Shapes and mappings only, so lazy segments are not warped here.
         search_regions = (
@@ -630,13 +625,11 @@ class AprilTagDetector:
             else []
         )
 
-        detections = (
-            self.run_detection(images, source_shape=full_frame.shape[:2])
-            if self.rust_backend
-            and temporal_segments
-            and full_frame is not None
-            and self._is_valid_image(full_frame)
-            else self.run_detection(images)
+        detections = self.run_detection(
+            images,
+            source_shape=full_frame.shape[:2]
+            if temporal_segments and usable_frame
+            else None,
         )
         if tracked:
             searched = [d for d in detections or [] if d.tag_id not in tracked]
@@ -651,15 +644,11 @@ class AprilTagDetector:
         # predicted tag that is hidden or too small to decode.
         found_count = len(detections or [])
         self._frames_since_full_search += 1
-        if (
-            full_frame is not None
-            and self._is_valid_image(full_frame)
-            and (
-                found_count == 0
-                or (
-                    found_count < expected_tags
-                    and self._frames_since_full_search >= MISSED_TAG_SEARCH_INTERVAL
-                )
+        if usable_frame and (
+            found_count == 0
+            or (
+                found_count < expected_tags
+                and self._frames_since_full_search >= MISSED_TAG_SEARCH_INTERVAL
             )
         ):
             self._frames_since_full_search = 0
@@ -710,31 +699,4 @@ class AprilTagDetector:
                 return {}, images
         if not tracked:
             return tracked, images
-        # Segments are centred on one projected tag each; half an edge tolerates pose
-        # lag. A few tags and segments per frame: plain floats beat numpy calls here.
-        circles = []
-        for corners in tracked.values():
-            points = corners.tolist()
-            (x0, y0), _, (x2, y2), _ = points
-            center_x = sum(point[0] for point in points) / 4.0
-            center_y = sum(point[1] for point in points) / 4.0
-            dx, dy = x0 - x2, y0 - y2
-            radius = 0.5 * math.sqrt(dx * dx + dy * dy) / math.sqrt(2.0)
-            circles.append((center_x, center_y, radius))
-
-        def covered(segment) -> bool:
-            shape, mapping = segment_shape_and_mapping(segment)
-            if not self._is_valid_shape(shape):
-                return False
-            try:
-                x, y = segment_center(shape, mapping)
-            except ZeroDivisionError:
-                # Center maps to a projective pole: keep the segment searched.
-                return False
-            return any(
-                math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) < radius
-                for cx, cy, radius in circles
-            )
-
-        remaining = [segment for segment in images if not covered(segment)]
-        return tracked, remaining
+        return tracked, uncovered_segments(images, tracked, self._is_valid_shape)

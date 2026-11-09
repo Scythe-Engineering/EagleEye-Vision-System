@@ -7,9 +7,9 @@ use std::slice;
 use crate::detection::Detection;
 use crate::detector::{image_span, mapped_image, Detector, Settings};
 use crate::frame::Frame;
-use crate::geometry::{Homography, Quad};
+use crate::geometry::Homography;
 use crate::image::Image;
-use crate::track::{decode_quad as quad_from_corners, track_in_frame};
+use crate::track::track_in_frame;
 
 #[pyclass(module = "custom_apriltag_detector")]
 pub(crate) struct CustomAprilTagDetector {
@@ -126,16 +126,6 @@ impl FrameBuffer {
     }
 }
 
-/// Convert eight output-order pixel-edge corner values into a decode-order quad.
-fn decode_quad(corners: &[f64]) -> PyResult<Quad> {
-    let corners: &[f64; 8] = corners
-        .try_into()
-        .ok()
-        .filter(|values: &&[f64; 8]| values.iter().all(|value| value.is_finite()))
-        .ok_or_else(|| PyValueError::new_err("corners must be eight finite values"))?;
-    Ok(quad_from_corners(corners))
-}
-
 #[pymethods]
 impl CustomAprilTagDetector {
     #[new]
@@ -184,67 +174,6 @@ impl CustomAprilTagDetector {
         let detector = &mut self.detector;
         py.detach(|| catch_unwind(AssertUnwindSafe(|| detector.detect(image).to_vec())))
             .map_err(|_| PyRuntimeError::new_err("native detector panicked"))
-    }
-
-    /// Re-decode and grid-fit corners from another detector.
-    ///
-    /// `corners` holds eight values in pupil_apriltags order and pixel-edge
-    /// coordinates. Returns None when the quad does not decode as the first family.
-    #[pyo3(signature = (gray, corners))]
-    fn refine(
-        &mut self,
-        py: Python<'_>,
-        gray: &Bound<'_, PyAny>,
-        corners: Vec<f64>,
-    ) -> PyResult<Option<Detection>> {
-        let quad = decode_quad(&corners)?;
-        let gray = GrayBuffer::new(gray)?;
-        let image = gray.image(None, None)?;
-        let detector = &self.detector;
-        py.detach(|| {
-            catch_unwind(AssertUnwindSafe(|| {
-                crate::decode::decode(
-                    &quad,
-                    &image,
-                    &detector.selected[0],
-                    0,
-                    detector.settings.decode_sharpening,
-                    true,
-                )
-            }))
-        })
-        .map_err(|_| PyRuntimeError::new_err("native refine panicked"))
-    }
-
-    /// Re-find a tracked tag of the first family from predicted corners.
-    ///
-    /// `corners` holds the predicted position in pupil_apriltags order and
-    /// pixel-edge coordinates. Returns None unless `tag_id` decodes there.
-    #[pyo3(signature = (gray, corners, tag_id))]
-    fn track(
-        &mut self,
-        py: Python<'_>,
-        gray: &Bound<'_, PyAny>,
-        corners: Vec<f64>,
-        tag_id: i32,
-    ) -> PyResult<Option<Detection>> {
-        let quad = decode_quad(&corners)?;
-        let gray = GrayBuffer::new(gray)?;
-        let image = gray.image(None, None)?;
-        let detector = &self.detector;
-        py.detach(|| {
-            catch_unwind(AssertUnwindSafe(|| {
-                crate::track::track(
-                    &quad,
-                    &image,
-                    &detector.selected[0],
-                    0,
-                    detector.settings.decode_sharpening,
-                    tag_id,
-                )
-            }))
-        })
-        .map_err(|_| PyRuntimeError::new_err("native track panicked"))
     }
 
     /// Re-find tracked tags of the first family around predicted full-frame corners.

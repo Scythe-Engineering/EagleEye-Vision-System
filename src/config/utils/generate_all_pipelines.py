@@ -239,6 +239,6 @@ def generate_all_pipelines(
         pipelines[pipeline_name] = pipeline
         # Seed the server's cache with this pipeline's current (usually clean) error
         # state, so a reconnecting client drops highlights from a previous run.
-        pipeline._publish_operation_error_snapshot()
+        pipeline.publish_operation_error_snapshot()
 
     return pipelines

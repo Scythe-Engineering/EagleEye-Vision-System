@@ -27,7 +27,7 @@ from src.utils.timing import (
 )
 
 
-def _no_detections(input_images: object) -> list[object]:
+def _no_detections(input_images: object, **_: object) -> list[object]:
     """Return no detections for detector fallback tests.
 
     Args:
@@ -206,7 +206,6 @@ def test_visualization_uses_projected_quad_instead_of_axis_aligned_bounds() -> N
 def test_detector_fallback_visualizes_only_the_full_frame() -> None:
     """A full-frame fallback replaces stale ROI visualization regions."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -224,13 +223,12 @@ def test_detector_fallback_visualizes_only_the_full_frame() -> None:
 def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
     """One temporal detection is enough to skip the full-frame fallback."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
     calls: list[object] = []
 
-    def find_one_tag(input_images: object) -> list[object]:
+    def find_one_tag(input_images: object, **_: object) -> list[object]:
         """Record one detector call and return one synthetic detection.
 
         Args:
@@ -255,13 +253,12 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
 def test_detector_searches_full_frame_for_a_missed_predicted_tag() -> None:
     """A tag missing from its predicted crop is found in the full frame."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
     in_crop = SimpleNamespace(tag_id=1, corners=np.zeros((4, 2)))
 
-    def detect(input_images: object) -> list[object]:
+    def detect(input_images: object, **_: object) -> list[object]:
         """Find tag 1 in the crops, and tags 1 and 2 in the full frame.
 
         Args:
@@ -293,7 +290,6 @@ def test_detector_searches_full_frame_for_a_missed_predicted_tag() -> None:
 def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
     """An empty temporal search falls back to the supplied full frame."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -310,7 +306,6 @@ def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
 def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
     """Malformed temporal regions do not prevent a full-frame fallback."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = False
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4
@@ -328,7 +323,6 @@ def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
 def test_detector_ignores_malformed_full_frame_fallback() -> None:
     """A malformed full frame supplies neither fallback nor source bounds."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
-    detector.rust_backend = True
     detector._detect_lock = Lock()
     detector._last_search_regions = []
     detector._min_input_dimension = 4

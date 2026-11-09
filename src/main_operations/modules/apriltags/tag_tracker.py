@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from .lazy_segment import segment_shape_and_mapping
 
 if TYPE_CHECKING:
     from .custom_native import CustomNativeDetector
@@ -92,3 +95,48 @@ def segment_center(shape: tuple[int, ...], mapping: np.ndarray) -> tuple[float, 
     (a, b, c), (d, e, f), (g, h, i) = values
     z = g * x + h * y + i
     return (a * x + b * y + c) / z, (d * x + e * y + f) / z
+
+
+def uncovered_segments(
+    segments: list,
+    tracked: dict[int, np.ndarray],
+    is_searchable: Callable[[tuple[int, ...]], bool],
+) -> list:
+    """Drop the segments centred on a tracked tag, without building them.
+
+    Args:
+        segments: Temporal segments, eager or lazy.
+        tracked: Confirmed full-frame corners by tag ID.
+        is_searchable: Whether a segment of this shape would be searched at all;
+            other segments are kept so the search skips them as before.
+
+    Returns:
+        The segments still to search.
+    """
+    # Segments are centred on one projected tag each; half an edge tolerates pose
+    # lag. A few tags and segments per frame: plain floats beat numpy calls here.
+    circles = []
+    for corners in tracked.values():
+        points = corners.tolist()
+        (x0, y0), _, (x2, y2), _ = points
+        center_x = sum(point[0] for point in points) / 4.0
+        center_y = sum(point[1] for point in points) / 4.0
+        dx, dy = x0 - x2, y0 - y2
+        radius = 0.5 * math.sqrt(dx * dx + dy * dy) / math.sqrt(2.0)
+        circles.append((center_x, center_y, radius))
+
+    def covered(segment) -> bool:
+        shape, mapping = segment_shape_and_mapping(segment)
+        if not is_searchable(shape):
+            return False
+        try:
+            x, y = segment_center(shape, mapping)
+        except ZeroDivisionError:
+            # Center maps to a projective pole: keep the segment searched.
+            return False
+        return any(
+            math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) < radius
+            for cx, cy, radius in circles
+        )
+
+    return [segment for segment in segments if not covered(segment)]

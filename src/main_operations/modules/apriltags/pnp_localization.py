@@ -175,30 +175,6 @@ class PnpLocalization:
             self._tag_set_cache.popitem(last=False)
         return geometry
 
-    @staticmethod
-    def fast_se3_inverse(t: np.ndarray) -> np.ndarray:
-        """Fast analytical inverse for SE(3) transformation matrix.
-
-        Args:
-            t: 4x4 SE(3) transformation matrix.
-
-        Returns:
-            4x4 inverse transformation matrix.
-        """
-        R = t[:3, :3]
-        translation = t[:3, 3]
-
-        r_inv = R.T
-        t_inv = -r_inv @ translation
-
-        t_inv_matrix = np.empty((4, 4), dtype=t.dtype)
-        t_inv_matrix.fill(0)
-        t_inv_matrix[3, 3] = 1
-        t_inv_matrix[:3, :3] = r_inv
-        t_inv_matrix[:3, 3] = t_inv
-
-        return t_inv_matrix
-
     def set_refinement_iterations(self, iterations: int) -> None:
         """Set the bounded, live-updatable LM iteration limit.
 
@@ -317,6 +293,30 @@ class PnpLocalization:
             )
             return float(squared_distances.mean()), squared_distances
 
+        def refine_if_better(
+            rvec: np.ndarray,
+            tvec: np.ndarray,
+            error: float,
+            distances: np.ndarray | None,
+        ) -> tuple[np.ndarray, np.ndarray, float, np.ndarray | None]:
+            """Return the LM-refined candidate when it scores no worse, else the input.
+
+            A failed refinement keeps the input: a valid initializer is preferable
+            to dropping the frame.
+            """
+            if not iterations:
+                return rvec, tvec, error, distances
+            try:
+                refined_rvec, refined_tvec = self._refine(
+                    object_points, image_points, rvec, tvec
+                )
+                refined_error, refined_distances = score(refined_rvec, refined_tvec)
+            except cv2.error:
+                return rvec, tvec, error, distances
+            if refined_error <= error:
+                return refined_rvec, refined_tvec, refined_error, refined_distances
+            return rvec, tvec, error, distances
+
         if tag_count == 1 and previous_pose is not None:
             valid = [
                 (rotation, translation, score(rotation, translation, rms)[0])
@@ -367,20 +367,10 @@ class PnpLocalization:
             if not bounded:
                 return self._solve(geometry, image_points)
             _, rotation, translation, error = min(bounded, key=lambda c: c[0])
-            distances = None
-            if iterations:
-                try:
-                    refined_rotation, refined_translation = self._refine(
-                        object_points, image_points, rotation, translation
-                    )
-                    refined_error, refined_distances = score(
-                        refined_rotation, refined_translation
-                    )
-                    if refined_error <= error:
-                        rotation, translation = refined_rotation, refined_translation
-                        distances = refined_distances
-                except cv2.error:
-                    pass
+            # Distances stay None unless refinement replaced the pick.
+            rotation, translation, _, distances = refine_if_better(
+                rotation, translation, error, None
+            )
             # The unrefined pick already passed the bounds check.
             if distances is not None and not is_near_previous(
                 *separation(pose_for(rotation, translation))
@@ -394,23 +384,9 @@ class PnpLocalization:
             error, distances = score(rotation, translation, rms)
             if not math.isfinite(error):
                 continue
-            if iterations:
-                try:
-                    refined_rotation, refined_translation = self._refine(
-                        object_points, image_points, rotation, translation
-                    )
-                    refined_error, refined_distances = score(
-                        refined_rotation, refined_translation
-                    )
-                    if refined_error <= error:
-                        rotation, translation, error, distances = (
-                            refined_rotation,
-                            refined_translation,
-                            refined_error,
-                            refined_distances,
-                        )
-                except cv2.error:
-                    pass  # A valid initializer is preferable to dropping this frame.
+            rotation, translation, error, distances = refine_if_better(
+                rotation, translation, error, distances
+            )
             if error < best_error:
                 best = rotation, translation, distances
                 best_error = error
@@ -517,8 +493,7 @@ class PnpLocalization:
         translation_vector = translation_vector.reshape(3, 1) - (
             rotation_matrix @ geometry.origin
         ).reshape(3, 1)
-        # Field-from-camera pose: the SE(3) inverse of camera-from-field, built
-        # directly with the same arithmetic as fast_se3_inverse.
+        # Field-from-camera pose: the analytic SE(3) inverse of camera-from-field.
         global_camera_transform = np.eye(4, dtype=np.float64)
         global_camera_transform[:3, :3] = rotation_matrix.T
         global_camera_transform[:3, 3] = (

@@ -9,8 +9,8 @@ import numpy as np
 class LazySegment:
     """A `(crop, mapping)` pair that warps its crop from the frame on first access.
 
-    Unpacks and indexes like the tuple it replaces, so `for crop, mapping in
-    segments` keeps working. Detectors can read `shape` and `mapping` without
+    Unpacks like the tuple it replaces, so `for crop, mapping in segments` keeps
+    working. Detectors can read `shape` and `mapping` without
     building the crop, e.g. for segments a tracker already covers.
 
     Deliberately neither a tuple nor a registered `Sequence`: the pipeline's timing
@@ -55,12 +55,6 @@ class LazySegment:
     def __iter__(self):
         yield self.image
         yield self.mapping
-
-    def __len__(self) -> int:
-        return 2
-
-    def __getitem__(self, index: int):
-        return (self.image, self.mapping)[index]
 
 
 def segment_shape_and_mapping(segment) -> tuple[tuple[int, ...], np.ndarray]:

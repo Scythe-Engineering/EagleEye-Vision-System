@@ -494,10 +494,6 @@ def _run(args: argparse.Namespace) -> int:
                     record, DETECTION_POLICIES[manifest.detection_policy_version]
                 )
                 row = compact_record(record, clip_id)
-                row["reported"] = row["frame_index"] >= args.start_frame
-                row["timing_included"] = (
-                    row["frame_index"] >= args.start_frame + args.warmup_frames
-                )
                 row["native_detector_calls"] = len(samples)
                 row["native_detector_ms"] = sum(samples) if samples else None
                 samples.clear()
@@ -546,17 +542,16 @@ def _run(args: argparse.Namespace) -> int:
                     if deadline
                     else None,
                 )
-            expected_frames = limit
             clip_timed_out = (
                 deadline is not None
                 and time.monotonic() >= deadline
-                and len(rows) < expected_frames
+                and len(rows) < limit
             )
             if any(row["failure"] is not None for row in rows):
                 raise RuntimeError(f"clip {clip.id} contains a failed frame")
-            if not clip_timed_out and len(rows) != expected_frames:
+            if not clip_timed_out and len(rows) != limit:
                 raise ValueError(
-                    f"clip {clip.id} decoded {len(rows)} frames, expected {expected_frames}"
+                    f"clip {clip.id} decoded {len(rows)} frames, expected {limit}"
                 )
             selected = [row for row in rows if row["frame_index"] >= args.start_frame]
             all_rows.extend(selected)
@@ -566,7 +561,7 @@ def _run(args: argparse.Namespace) -> int:
                     "clip": clip.id,
                     "partial": (
                         clip_timed_out
-                        or expected_frames < clip.frame_count
+                        or limit < clip.frame_count
                         or args.start_frame > 0
                     ),
                     "replayed_frames": len(rows),

@@ -603,7 +603,7 @@ class Pipeline:
                 record["last_seen_ts"] = time.time()
                 record["count"] = int(record.get("count", 0)) + 1
 
-        self._publish_operation_error_snapshot()
+        self.publish_operation_error_snapshot()
 
     def _create_operation_instance(
         self, action_name: str, action_params: Dict[str, Any]
@@ -1168,7 +1168,7 @@ class Pipeline:
         except Exception:
             return
 
-    def _publish_operation_error_snapshot(self) -> None:
+    def publish_operation_error_snapshot(self) -> None:
         """Publish SSE update for the current operation error state."""
         try:
             if not self.web_interface:

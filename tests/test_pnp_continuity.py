@@ -91,7 +91,7 @@ def primed_operation() -> PnpCameraLocalizationDefinition:
     operation.use_pose_continuity = True
     operation.uses_timed_inputs = True
     operation._reset_pose_history()
-    camera_from_field = PnpLocalization.fast_se3_inverse(PREVIOUS)
+    camera_from_field = np.linalg.inv(PREVIOUS)
     corners = cv2.projectPoints(
         operation.pose_estimator.apriltag_map[19].global_corners,
         cv2.Rodrigues(camera_from_field[:3, :3])[0],
@@ -148,7 +148,7 @@ def test_invalid_history_keeps_stateless_output(mode: str) -> None:
 
 def projected(solver: PnpLocalization, pose: np.ndarray, tag_id: int) -> np.ndarray:
     """Project one mapped tag into the image for a known field camera pose."""
-    camera = solver.fast_se3_inverse(pose)
+    camera = np.linalg.inv(pose)
     return cv2.projectPoints(
         solver.apriltag_map[tag_id].global_corners,
         cv2.Rodrigues(camera[:3, :3])[0],
