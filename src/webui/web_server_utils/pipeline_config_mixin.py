@@ -303,6 +303,10 @@ class PipelineConfigMixin:
         remove_settings = getattr(self, "remove_pipeline_settings", None)
         if callable(remove_settings):
             remove_settings(pipeline_name)
+        # Stop the heartbeat resending the deleted pipeline's errors.
+        with self._pipeline_error_lock:
+            self._pipeline_error_cache.pop(pipeline_name, None)
+            self._pipeline_error_dirty_pipelines.discard(pipeline_name)
         return {"message": "Pipeline deleted successfully", **restart_state}, 200
 
     def _analyze_pipeline_restart_state(
@@ -496,13 +500,15 @@ class PipelineConfigMixin:
                 "pipeline_name": pipeline_name,
                 "errors": errors if isinstance(errors, list) else [],
             }
+            # Publish under the cache lock so the heartbeat cannot interleave an
+            # older snapshot after this one.
             with self._pipeline_error_lock:
                 self._pipeline_error_cache[pipeline_name] = normalized_payload
                 self._pipeline_error_dirty_pipelines.add(pipeline_name)
-            try:
-                self._publish_event("pipeline_operation_errors", normalized_payload)
-            except Exception:
-                pass
+                try:
+                    self._publish_event("pipeline_operation_errors", normalized_payload)
+                except Exception:
+                    pass
         except Exception as e:
             self.log(f"Failed to publish pipeline_operation_errors: {e}")
 
@@ -549,10 +555,8 @@ class PipelineConfigMixin:
         payload per pipeline) and throttled to reduce event spam.
         """
         with self._pipeline_error_lock:
-            cached_payloads = {
-                pipeline_name: payload.copy()
-                for pipeline_name, payload in self._pipeline_error_cache.items()
-            }
+            # Cache entries are replaced, never mutated, so identity marks a snapshot.
+            cached_payloads = dict(self._pipeline_error_cache)
             dirty_pipelines = set(self._pipeline_error_dirty_pipelines)
             last_seq_sent = self._pipeline_error_last_seq_sent.copy()
             last_publish_ts = self._pipeline_error_last_publish_ts.copy()
@@ -602,8 +606,11 @@ class PipelineConfigMixin:
                 "errors": errors if isinstance(errors, list) else [],
             }
             try:
-                self._publish_event("pipeline_operation_errors", normalized_payload)
                 with self._pipeline_error_lock:
+                    # A newer update replaced this snapshot and was already sent.
+                    if self._pipeline_error_cache.get(pipeline_name) is not payload:
+                        continue
+                    self._publish_event("pipeline_operation_errors", normalized_payload)
                     self._pipeline_error_dirty_pipelines.discard(pipeline_name)
                     self._pipeline_error_last_publish_ts[pipeline_name] = now
                     if current_frame_seq > 0:

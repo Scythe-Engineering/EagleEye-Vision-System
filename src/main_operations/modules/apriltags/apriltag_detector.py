@@ -699,9 +699,15 @@ class AprilTagDetector:
             Confirmed full-frame corners by tag ID, and the segments still to search.
         """
         with self._detect_lock:
-            if not self.ready or self._tracker is None:
+            # Tracking always refines corners, so it is off with refine_edges.
+            if not self.ready or self._tracker is None or not self.refine_edges:
                 return {}, images
-            tracked = self._tracker.find(self.detector, full_frame)
+            try:
+                tracked = self._tracker.find(self.detector, full_frame)
+            except ValueError:
+                # Frames the native tracker rejects (e.g. non-uint8) are still
+                # searched normally, which converts them first.
+                return {}, images
         if not tracked:
             return tracked, images
         # Segments are centred on one projected tag each; half an edge tolerates pose
@@ -717,7 +723,14 @@ class AprilTagDetector:
             circles.append((center_x, center_y, radius))
 
         def covered(segment) -> bool:
-            x, y = segment_center(*segment_shape_and_mapping(segment))
+            shape, mapping = segment_shape_and_mapping(segment)
+            if not self._is_valid_shape(shape):
+                return False
+            try:
+                x, y = segment_center(shape, mapping)
+            except ZeroDivisionError:
+                # Center maps to a projective pole: keep the segment searched.
+                return False
             return any(
                 math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) < radius
                 for cx, cy, radius in circles

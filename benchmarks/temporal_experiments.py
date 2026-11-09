@@ -95,7 +95,13 @@ def compact_record(record: dict[str, Any], clip: str) -> dict[str, Any]:
     detection = metrics["detection"]
     provisional = _provisional_tags(detection.get("by_tag", []))
     output = record.get("output") or {}
-    detections = json_value(output.get("detections") or [])
+    # Match _score_accuracy_record, which drops incomplete detections before
+    # numbering them for unmatched_detection_indices.
+    detections = [
+        item
+        for item in json_value(output.get("detections") or [])
+        if item.get("tag_id") is not None and item.get("corners") is not None
+    ]
     return {
         "clip": clip,
         "frame_index": record["frame_index"],
@@ -342,6 +348,21 @@ class _TimedNativeDetector:
         return getattr(self.detector, name)
 
 
+def _native_library(native: Any) -> str:
+    """Return the shared library path behind a native AprilTag detector.
+
+    Args:
+        native: A pupil_apriltags Detector or a CustomNativeDetector.
+
+    Returns:
+        Path of the loaded library or extension module.
+    """
+    libc = getattr(native, "libc", None)
+    if libc is not None:
+        return libc._name
+    return sys.modules[type(native._detector).__module__].__file__
+
+
 @contextmanager
 def _native_detector_timings(
     pipeline: Any, samples: list[float]
@@ -359,7 +380,7 @@ def _native_detector_timings(
     )
     originals = {name: getattr(detector, name) for name in fields}
     libraries = {
-        str(Path(native.libc._name).resolve())
+        str(Path(_native_library(native)).resolve())
         for native in originals.values()
         if native is not None
     }

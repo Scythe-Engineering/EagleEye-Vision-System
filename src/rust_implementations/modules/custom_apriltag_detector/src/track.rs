@@ -13,8 +13,9 @@ const RETRY_RADIUS: f64 = 3.0;
 /// Confirm `tag_id` at a predicted quad and grid-fit its corners.
 ///
 /// A prediction within about a quarter cell needs only the grid fit. Otherwise the
-/// quad goes through the search path's edge snap, decode and grid fit. Returns None
-/// when the tag is not confirmed, so callers can fall back to a search.
+/// quad goes through the search path's edge snap, decode and grid fit; if that grid
+/// fit fails, the edge-snapped corners are returned. Returns None when the tag is not
+/// confirmed or `tag_id` is outside the family, so callers can fall back to a search.
 pub(crate) fn track(
     prior: &Quad,
     image: &Image<'_>,
@@ -23,6 +24,9 @@ pub(crate) fn track(
     sharpening: f64,
     tag_id: i32,
 ) -> Option<Detection> {
+    if !usize::try_from(tag_id).is_ok_and(|id| id < indexed.family.codes.len()) {
+        return None;
+    }
     decode_known(
         prior,
         image,

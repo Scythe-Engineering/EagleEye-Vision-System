@@ -99,7 +99,9 @@ mod imp {
         add(stage, start.0.elapsed().as_nanos() as u64);
     }
 
-    /// Accumulated `(pass.stage, value)` pairs since the last call, then reset.
+    /// The calling thread's `(pass.stage, value)` pairs since its last call, then reset.
+    ///
+    /// Other threads' totals are neither reported nor reset.
     pub(crate) fn take() -> Vec<(String, u64)> {
         TOTALS.with(|totals| {
             let mut totals = totals.borrow_mut();

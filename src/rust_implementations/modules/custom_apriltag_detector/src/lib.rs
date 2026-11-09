@@ -26,6 +26,9 @@ fn custom_apriltag_detector(module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 /// Accumulated per-stage nanoseconds and candidate counts since the last call.
+///
+/// Totals are per thread: this reports and resets only the calling thread's, so
+/// call it from the thread that ran detection.
 #[cfg(feature = "stage-profile")]
 #[pyfunction]
 fn stage_profile() -> Vec<(String, u64)> {

@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+import pytest
+
 from src.config.utils.flow_manager import FlowManager
 from src.config.utils.operation import Connection, Operation
 from src.config.utils.pipeline import Pipeline
@@ -115,7 +117,9 @@ def _interface(events: list[tuple[str, Any]], drop: list[bool]) -> EagleEyeInter
     return interface
 
 
-def test_dropped_error_events_are_corrected_by_periodic_resend(monkeypatch) -> None:
+def test_dropped_error_events_are_corrected_by_periodic_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     clock = [1000.0]
     monkeypatch.setattr(pipeline_config_mixin.time, "time", lambda: clock[0])
     events: list[tuple[str, Any]] = []

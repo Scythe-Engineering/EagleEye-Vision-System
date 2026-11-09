@@ -406,7 +406,9 @@ class FlowManager:
                         execution_time_ms, 0.0
                     )
                 if output_data is SKIP_PIPELINE_CYCLE:
-                    self._discard_active_threaded_operations(active_thread_objects)
+                    self._discard_active_threaded_operations(
+                        active_thread_objects, cycle_id, operation_time_by_uuid_ms
+                    )
                     self._record_skipped_cycle(
                         frame_start,
                         current_timestep,
@@ -437,8 +439,20 @@ class FlowManager:
     @staticmethod
     def _discard_active_threaded_operations(
         active_thread_objects: set[ThreadObject],
+        cycle_id: int,
+        operation_time_by_uuid_ms: dict[str, float],
     ) -> None:
-        """Wait for concurrent stale work and reset its threads before the next cycle."""
+        """Wait for concurrent stale work and reset its threads before the next cycle.
+
+        Args:
+            active_thread_objects: Threads still running this cycle's operations.
+            cycle_id: Identifier of the cycle being skipped.
+            operation_time_by_uuid_ms: Receives the drained operations' runtimes, so
+                the skipped-cycle profile still shows a slow concurrent operation.
+
+        Raises:
+            ValueError: An operation did not finish while being drained.
+        """
         for thread_obj in active_thread_objects:
             if not thread_obj.wait_done_processing():
                 thread_obj.reset_state()
@@ -446,6 +460,9 @@ class FlowManager:
                     "Operation did not finish while discarding a skipped pipeline cycle"
                 )
             thread_obj.get_output_data()
+            timing_uuid, execution_time_ms = thread_obj.get_last_cycle_timing(cycle_id)
+            if timing_uuid is not None and execution_time_ms is not None:
+                operation_time_by_uuid_ms[timing_uuid] = max(execution_time_ms, 0.0)
 
     def _record_skipped_cycle(
         self,

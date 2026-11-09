@@ -12,8 +12,12 @@ pub(crate) struct CropGeometry {
 /// Reproduces the NumPy/OpenCV code it replaces: the side is the longest edge in
 /// f32, rounded up, limited to `max_side` and at least 2. The crop's corners keep
 /// the quad's winding, because a mirrored AprilTag cannot be decoded. Returns None
-/// for a degenerate quad.
+/// for a degenerate or nonfinite quad, or when either homography is nonfinite.
 pub(crate) fn crop_geometry(quad: &[[f32; 2]; 4], max_side: i32) -> Option<CropGeometry> {
+    // f32::max skips NaN, so check coordinates before measuring edges.
+    if !quad.iter().flatten().all(|value| value.is_finite()) {
+        return None;
+    }
     let mut longest = 0.0f32;
     for (i, a) in quad.iter().enumerate() {
         let b = quad[(i + 1) % 4];
@@ -29,10 +33,16 @@ pub(crate) fn crop_geometry(quad: &[[f32; 2]; 4], max_side: i32) -> Option<CropG
     if oriented_area(quad) < 0.0 {
         corners.reverse();
     }
+    let finite = |matrix: [f64; 9]| {
+        matrix
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some(matrix)
+    };
     Some(CropGeometry {
         side,
-        frame_from_crop: perspective_transform(&corners, quad)?,
-        crop_from_frame: perspective_transform(quad, &corners)?,
+        frame_from_crop: finite(perspective_transform(&corners, quad)?)?,
+        crop_from_frame: finite(perspective_transform(quad, &corners)?)?,
     })
 }
 
@@ -91,6 +101,12 @@ fn perspective_transform(source: &[[f32; 2]; 4], target: &[[f32; 2]; 4]) -> Opti
 #[cfg(test)]
 mod tests {
     use super::crop_geometry;
+
+    #[test]
+    fn rejects_nonfinite_quads() {
+        let quad = [[0.0, 0.0], [f32::NAN, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        assert!(crop_geometry(&quad, 64).is_none());
+    }
 
     fn project(m: &[f64; 9], x: f64, y: f64) -> [f64; 2] {
         let z = m[6] * x + m[7] * y + m[8];

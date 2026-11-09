@@ -149,7 +149,8 @@ pub fn rotation_vector(r: &Mat3) -> [f64; 3] {
     let c = ((r[0][0] + r[1][1] + r[2][2] - 1.0) * 0.5).clamp(-1.0, 1.0);
     if s < 1e-5 {
         if c > 0.0 {
-            return [0.0; 3];
+            // Small angle: axis = 2 sin(theta) k, and sin(theta) ~ theta.
+            return [axis[0] * 0.5, axis[1] * 0.5, axis[2] * 0.5];
         }
         // Near a half turn: recover the axis from the symmetric part.
         let rx = ((r[0][0] + 1.0) * 0.5).max(0.0).sqrt();
@@ -360,7 +361,8 @@ mod tests {
         ] {
             let back = rotation_vector(&rotation_matrix(rvec));
             for i in 0..3 {
-                assert!((back[i] - rvec[i]).abs() < 1e-7, "{rvec:?} -> {back:?}");
+                // Tight enough that a 1e-9 rotation cannot collapse to zero.
+                assert!((back[i] - rvec[i]).abs() < 1e-12, "{rvec:?} -> {back:?}");
             }
         }
     }

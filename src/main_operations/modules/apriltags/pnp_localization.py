@@ -109,7 +109,8 @@ class PnpLocalization:
             refined_translation = translation.astype(np.float64)
             if self._rust_refiner.refine(
                 object_points,
-                image_points,
+                # The native refiner needs C order; concatenation can keep F order.
+                np.ascontiguousarray(image_points),
                 refined_rotation,
                 refined_translation,
                 self.refinement_iterations,

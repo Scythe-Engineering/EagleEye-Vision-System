@@ -97,7 +97,7 @@ class CustomNativeDetector:
     def track(
         self, gray: np.ndarray, corners: list[float], tag_id: int
     ) -> np.ndarray | None:
-        """Confirm a tag at predicted corners and return its grid-fitted corners.
+        """Confirm a tag at predicted corners and return its refined corners.
 
         Args:
             gray: 2D uint8 grayscale image around the prediction.
@@ -106,7 +106,9 @@ class CustomNativeDetector:
             tag_id: Tag expected at the prediction.
 
         Returns:
-            Shape-(4, 2) pixel-edge corners, or None when the tag is not confirmed.
+            Shape-(4, 2) pixel-edge corners, grid-fitted or, when only the edge-snap
+            retry decodes the tag and its grid fit fails, edge-snapped. None when the
+            tag is not confirmed.
         """
         native = self._detector.track(gray, corners, tag_id)
         return None if native is None else np.array(native.corners).reshape(4, 2)
@@ -126,8 +128,8 @@ class CustomNativeDetector:
             tag_ids: Tag expected at each prediction.
 
         Returns:
-            Per tag, shape-(4, 2) grid-fitted pixel-centre corners, or None when the
-            tag is not confirmed.
+            Per tag, shape-(4, 2) pixel-centre corners refined as in ``track``, or
+            None when the tag is not confirmed.
         """
         if not frame.flags["C_CONTIGUOUS"]:
             frame = np.ascontiguousarray(frame)

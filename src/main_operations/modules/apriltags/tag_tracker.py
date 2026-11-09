@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .custom_native import CustomNativeDetector
 
 
 @dataclass
@@ -23,18 +28,24 @@ class TagTracker:
     """
 
     def __init__(self) -> None:
+        """Start with no tracked tags."""
         self._tracks: dict[int, _Track] = {}
 
     def reset(self) -> None:
         """Forget all tracks, e.g. after a detector reconfiguration."""
         self._tracks.clear()
 
-    def find(self, native, frame: np.ndarray) -> dict[int, np.ndarray]:
+    def find(
+        self, native: CustomNativeDetector, frame: np.ndarray
+    ) -> dict[int, np.ndarray]:
         """Return confirmed full-frame corners by tag ID for this frame's tracks.
 
         Args:
             native: CustomNativeDetector used to confirm each prediction.
             frame: Full BGR or grayscale frame.
+
+        Returns:
+            Confirmed shape-(4, 2) corners by tag ID; missed tags are omitted.
         """
         if not self._tracks:
             return {}
@@ -47,8 +58,12 @@ class TagTracker:
             if corners is not None
         }
 
-    def update(self, detections) -> None:
-        """Track exactly the tags in this frame's final detections."""
+    def update(self, detections: Iterable[Any]) -> None:
+        """Track exactly the tags in this frame's final detections.
+
+        Args:
+            detections: Detections with ``tag_id`` and full-frame ``corners``.
+        """
         tracks = {}
         for detection in detections:
             corners = np.asarray(detection.corners, dtype=np.float64).reshape(4, 2)
