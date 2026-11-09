@@ -2,6 +2,7 @@ import abc
 from typing import Callable, Optional
 
 from src.utils.camera_utils.cameras.captured_frame import CapturedFrame
+from src.utils.camera_utils.cameras.v4l2_controls import CameraControl
 from src.utils.colors import Colors
 
 
@@ -56,6 +57,21 @@ class Camera(abc.ABC):
             Achieved FPS value.
         """
         pass
+
+    def list_controls(self) -> list[CameraControl]:
+        """Return the hardware controls this camera exposes; none by default."""
+        return []
+
+    def set_controls(self, values: dict[str, int]) -> list[str]:
+        """Apply control values by key.
+
+        Args:
+            values: Control values keyed by ``CameraControl.key``.
+
+        Returns:
+            Keys that could not be applied; all of them by default.
+        """
+        return list(values)
 
     def close(self) -> None:
         """Release backend resources. Safe to call more than once."""

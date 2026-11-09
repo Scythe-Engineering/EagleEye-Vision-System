@@ -9,6 +9,12 @@ import {
 } from "../ui/notificationSystem.js";
 import { uploadWithProgress } from "../ui/uploadWithProgress.js";
 import { cameraDisplayName } from "../ui/cameraPreviewGrid.js";
+import { fetchJson } from "./fetchJson.js";
+import {
+    initCameraSettings,
+    pauseCameraSettingsFeed,
+    setCameraSettingsCamera,
+} from "./cameraSettings.js";
 import * as THREE from "three";
 import { OrbitControls } from "OrbitControls";
 
@@ -339,32 +345,6 @@ function setCameraMeta(camera) {
 }
 
 /**
- * Fetches JSON from the backend and throws on HTTP errors.
- * @param {string} path - Backend path.
- * @param {RequestInit} [options={}] - Fetch options.
- * @returns {Promise<any>}
- */
-async function fetchJson(path, options = {}) {
-    const response = await fetch(`${BACKEND_BASE_URL}${path}`, options);
-    let data = null;
-    try {
-        data = await response.json();
-    } catch {
-        data = null;
-    }
-
-    if (!response.ok) {
-        const errorMessage =
-            data?.error ||
-            data?.message ||
-            `Request failed: ${response.status}`;
-        throw new Error(errorMessage);
-    }
-
-    return data;
-}
-
-/**
  * Loads the available cameras into the selector.
  */
 async function loadCameraList() {
@@ -387,6 +367,7 @@ async function loadCameraList() {
             setExtrinsicsInputs({});
             setIntrinsicsStatus("No camera selected.");
             setCameraMeta(null);
+            setCameraSettingsCamera("", "");
             return;
         }
 
@@ -418,6 +399,7 @@ async function loadCameraList() {
             selected?.stream_name || selected?.name || "",
         );
         setCameraMeta(selected || null);
+        setCameraSettingsCamera(currentCameraBusId, currentCalibrationStreamName);
         await loadCameraConfig(currentCameraBusId);
     } catch (error) {
         showDanger(`Failed to load camera list: ${error.message}`);
@@ -981,6 +963,7 @@ export function initCameraConfigUtils() {
         currentCameraBusId = cameraSelect.value;
         currentCalibrationStreamName =
             cameraSelect.selectedOptions?.[0]?.dataset?.streamName || "";
+        setCameraSettingsCamera(currentCameraBusId, currentCalibrationStreamName);
         void loadCameraConfig(currentCameraBusId);
         const selectedDisplayName =
             cameraSelect.selectedOptions?.[0]?.dataset?.displayName || "";
@@ -1027,6 +1010,7 @@ export function initCameraConfigUtils() {
     document.addEventListener("backend-disconnected", () => {
         closeCalibrationModal();
         closeDistortionModal();
+        pauseCameraSettingsFeed();
     });
     getElement("utilsDistortionCloseBtn")?.addEventListener(
         "click",
@@ -1083,6 +1067,7 @@ export function initCameraConfigUtils() {
     });
 
     setupDropzone();
+    initCameraSettings();
     void loadCameraList();
     initialized = true;
 }

@@ -319,6 +319,10 @@ class V4l2Capture:
             except InterruptedError:
                 continue
 
+    def ioctl(self, request: int, argument: ctypes.Structure) -> None:
+        """Issue an ioctl on the open device; used by the control helpers."""
+        self._ioctl(request, argument)
+
     def _verify_capture_device(self) -> None:
         """Confirm the node is a video capture device."""
         capability = _Capability()

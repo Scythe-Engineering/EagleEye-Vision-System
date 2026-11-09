@@ -121,12 +121,14 @@ class MainBackend:
                 self.camera_config_registry.get_config(str(camera_bus_id))
             self.camera_configs = self.camera_config_registry.get_all_configs()
             self.web_interface.camera_config_registry = self.camera_config_registry
+            self.web_interface.camera_manager = self.camera_manager
 
             all_cameras_ready = self.camera_manager.wait_for_all_cameras_ready()
             if not all_cameras_ready:
                 self.logger.log(
                     f"{Colors.YELLOW}Proceeding with pipeline creation despite camera readiness timeout.{Colors.RESET}"
                 )
+            self.camera_manager.apply_saved_controls(self.camera_config_registry)
 
             # Pipeline creation and start-up
             self.pipelines = generate_all_pipelines(

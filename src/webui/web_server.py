@@ -68,6 +68,7 @@ __all__ = [
 from src.webui.web_server_utils.asset_manager_mixin import AssetManagerMixin
 from src.webui.web_server_utils.camera_calibration_mixin import CameraCalibrationMixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
+from src.webui.web_server_utils.camera_controls_mixin import CameraControlsMixin
 from src.webui.web_server_utils.camera_stream_mixin import CameraStreamMixin
 from src.webui.web_server_utils.first_boot_mixin import FirstBootMixin
 from src.webui.web_server_utils.line_profiling_mixin import LineProfilingMixin
@@ -89,6 +90,7 @@ class EagleEyeInterface(
     AssetManagerMixin,
     CameraCalibrationMixin,
     CameraConfigMixin,
+    CameraControlsMixin,
     CameraStreamMixin,
     FirstBootMixin,
     LineProfilingMixin,
@@ -241,6 +243,8 @@ class EagleEyeInterface(
         self.frame_list = {}
         self.available_cameras = {}
         self.camera_config_registry: CameraConfigRegistry | None = None
+        # Set by the backend once cameras start; serves live hardware controls.
+        self.camera_manager = None
 
         self.frame_locks = {}
         self.frame_list_structure_lock = threading.Lock()
@@ -466,6 +470,30 @@ class EagleEyeInterface(
             "delete_camera_intrinsics",
             self.delete_camera_intrinsics,
             methods=["DELETE"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/controls",
+            "get_camera_controls",
+            self.get_camera_controls,
+            methods=["GET"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/controls",
+            "set_camera_controls",
+            self.set_camera_controls,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/controls/save",
+            "save_camera_controls",
+            self.save_camera_controls,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/camera-config/<string:camera_bus_id>/apriltag/feed",
+            "apriltag_preview_feed",
+            self.apriltag_preview_feed,
+            methods=["GET"],
         )
         self.app.add_url_rule(
             "/camera-config/<string:camera_bus_id>/calibration/feed",

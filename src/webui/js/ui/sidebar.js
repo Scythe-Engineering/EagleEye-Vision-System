@@ -12,6 +12,10 @@ import {
     initCameraConfigUtils,
     refreshCameraConfigUtils,
 } from "../utils/cameraConfigUtils.js";
+import {
+    pauseCameraSettingsFeed,
+    resumeCameraSettingsFeed,
+} from "../utils/cameraSettings.js";
 import { getSelectedFieldModel } from "../dropdown/fieldDropdown.js";
 
 const VIEWS = {
@@ -121,6 +125,9 @@ class ViewManager {
      * @param {string} viewId - The id of the view being activated.
      */
     handleViewSpecificBehavior(viewId) {
+        if (viewId !== VIEWS.UTILS) {
+            pauseCameraSettingsFeed();
+        }
         switch (viewId) {
             case VIEWS.THREE_D:
                 {
@@ -162,6 +169,7 @@ class ViewManager {
                 pauseCameraFeeds();
                 initCameraConfigUtils();
                 refreshCameraConfigUtils();
+                resumeCameraSettingsFeed();
                 break;
             default:
                 pauseCameraFeeds();

@@ -30,6 +30,67 @@
             <p id="utilsCameraMeta" class="text-xs text-[#ac8a2f] mt-2"></p>
         </div>
 
+        <div class="mb-6 border-b border-[#414141] pb-6">
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                <div>
+                    <h3 class="text-lg font-semibold text-[#f9c845]">
+                        Camera Settings
+                    </h3>
+                    <p class="text-sm text-[#ac8a2f]">
+                        Changes apply live. Save to keep them when the camera
+                        restarts.
+                    </p>
+                </div>
+                <button
+                    id="utilsAprilTagOverlayBtn"
+                    type="button"
+                    aria-pressed="false"
+                    class="px-4 py-2 bg-[#232323] text-[#f9c845] font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                >
+                    Show AprilTag Detections
+                </button>
+            </div>
+            <div
+                class="w-full aspect-video bg-black border border-[#414141] rounded-md overflow-hidden flex items-center justify-center mb-4"
+            >
+                <img
+                    id="utilsCameraSettingsFeed"
+                    alt="Live camera view"
+                    class="w-full h-full object-contain"
+                />
+            </div>
+            <p id="utilsCameraControlsStatus" class="text-sm text-[#ac8a2f] mb-3">
+                No camera selected.
+            </p>
+            <div
+                id="utilsCameraControls"
+                class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mb-4"
+            ></div>
+            <div class="flex flex-wrap gap-3">
+                <button
+                    id="utilsSaveCameraControlsBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#f9c845] text-black font-semibold rounded-md"
+                >
+                    Save Settings
+                </button>
+                <button
+                    id="utilsRevertCameraControlsBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#232323] text-white font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                >
+                    Revert to Saved
+                </button>
+                <button
+                    id="utilsDefaultCameraControlsBtn"
+                    type="button"
+                    class="px-4 py-2 bg-[#232323] text-white font-semibold rounded-md border border-[#414141] hover:border-[#f9c845] transition-colors"
+                >
+                    Driver Defaults
+                </button>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <label class="text-sm text-[#f9c845]"
                 >Pitch

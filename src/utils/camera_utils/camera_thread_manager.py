@@ -19,6 +19,7 @@ from src.utils.timing import (
 )
 
 if TYPE_CHECKING:
+    from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
     from src.webui.web_server import EagleEyeInterface
 
 
@@ -402,6 +403,33 @@ class CameraThreadManager:
 
         self.logger.log(f"{Colors.GREEN}All cameras are ready.{Colors.RESET}")
         return True
+
+    def get_camera_by_bus_id(
+        self, bus_id: str
+    ) -> PhysicalCamera | VideoFileCamera | None:
+        """Return the running camera for a bus ID, or None."""
+        camera_name = self.get_camera_name_by_bus_id(bus_id)
+        worker = self.cameras.get(camera_name) if camera_name is not None else None
+        return worker.camera if worker is not None else None
+
+    def apply_saved_controls(self, registry: CameraConfigRegistry) -> None:
+        """Apply each running camera's saved hardware controls.
+
+        Args:
+            registry: Camera configs holding the saved control values.
+        """
+        for bus_id in self.get_all_bus_ids():
+            camera = self.get_camera_by_bus_id(bus_id)
+            saved = registry.get_config(bus_id).camera_controls
+            if camera is None or not saved:
+                continue
+            refused = camera.set_controls(saved)
+            message = f"Applied {len(saved) - len(refused)} saved controls to {bus_id}"
+            if refused:
+                message += f"; refused: {', '.join(refused)}"
+            self.logger.log(
+                f"{Colors.YELLOW if refused else Colors.GREEN}{message}{Colors.RESET}"
+            )
 
     def get_camera_ready(self, camera_name: str) -> bool:
         """

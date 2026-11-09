@@ -5,8 +5,10 @@ import time
 
 import cv2
 
+from src.utils.camera_utils.cameras import v4l2_controls
 from src.utils.camera_utils.cameras.camera import Camera
 from src.utils.camera_utils.cameras.captured_frame import CapturedFrame
+from src.utils.camera_utils.cameras.v4l2_controls import CameraControl
 from src.utils.camera_utils.cameras.v4l2_capture import (
     CID_FOCUS_AUTO,
     V4l2Capture,
@@ -266,6 +268,43 @@ class PhysicalCamera(Camera):
         if self.backend is None:
             return None
         return self.backend.read()
+
+    def list_controls(self) -> list[CameraControl]:
+        """Return the V4L2 controls the driver exposes, with current values."""
+        if not isinstance(self.backend, V4l2Capture):
+            return []
+        return v4l2_controls.list_controls(self.backend.ioctl)
+
+    def set_controls(self, values: dict[str, int]) -> list[str]:
+        """Apply control values by key, in driver order.
+
+        A value can be refused until another control changes, such as manual
+        exposure while auto exposure is still on, so refused values get a
+        second pass after the rest are applied.
+
+        Args:
+            values: Control values keyed by ``CameraControl.key``.
+
+        Returns:
+            Keys that are unknown, read-only, or refused by the driver.
+        """
+        if not isinstance(self.backend, V4l2Capture):
+            return list(values)
+        controls = {
+            control.key: control
+            for control in self.list_controls()
+            if not control.read_only
+        }
+        pending = [key for key in controls if key in values]
+        for _ in range(2):
+            pending = [
+                key
+                for key in pending
+                if not v4l2_controls.set_control(
+                    self.backend.ioctl, controls[key].id, int(values[key])
+                )
+            ]
+        return pending + [key for key in values if key not in controls]
 
     def get_achieved_fps(self) -> int:
         """Get the FPS that the camera is operating at.
