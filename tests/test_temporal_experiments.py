@@ -1,31 +1,144 @@
-"""Summaries of temporal benchmark runs."""
+"""Compaction and summaries of temporal benchmark runs."""
 
-from benchmarks.temporal_experiments import summarize
+from benchmarks.temporal_experiments import _reacquisition, compact_record, summarize
+
+
+def _row(
+    index: int,
+    truth: int,
+    matched: int,
+    *,
+    pose: bool = False,
+    skipped: bool = False,
+    operation_ms: dict[str, float] | None = None,
+) -> dict:
+    """Build one compact frame row.
+
+    Args:
+        index: Frame index in the synthetic clip.
+        truth: Count of provisional truth tags.
+        matched: Count of matched provisional tags.
+        pose: Whether the row has an available pose.
+        skipped: Whether the pipeline skipped this frame.
+        operation_ms: Per-operation durations; defaults to one detect timing.
+
+    Returns:
+        A compact frame record accepted by ``summarize`` and ``_reacquisition``.
+    """
+    operation_ms = {"detect": 0.25} if operation_ms is None else operation_ms
+    return {
+        "clip": "clip",
+        "frame_index": index,
+        "pipeline_ms": sum(operation_ms.values()),
+        "decode_ms": 0.5,
+        "operation_ms": operation_ms,
+        "skipped": skipped,
+        "provisional_truth_tags": truth,
+        "provisional_matched": matched,
+        "total_matched": matched,
+        "detected_ids": [],
+        "pose_available": pose,
+        "robot_errors": None,
+        "failure": None,
+        "tp": matched,
+        "fp": 0,
+        "fn": truth - matched,
+    }
+
+
+def test_summary_uses_provisional_or_eligible_truth_not_raw_tag_list() -> None:
+    """Only provisional or eligible labels contribute to visibility groups."""
+    record = {
+        "frame_index": 0,
+        "pipeline_duration_ns": 1_000_000,
+        "decode_duration_ns": 500_000,
+        "failure": None,
+        "output": {"detections": [{"tag_id": 4}], "profile": None},
+        "metrics": {
+            "pose_available": False,
+            "robot_pose": None,
+            "detection": {
+                "tp": 1,
+                "fp": 0,
+                "fn": 0,
+                "matches": [{"truth_index": 1, "corner_error_px": 0.2}],
+                "by_tag": [
+                    {
+                        "tag_id": 4,
+                        "eligible": False,
+                        "category": "always-listed",
+                        "detected": True,
+                    },
+                    {
+                        "tag_id": 5,
+                        "eligible": True,
+                        "category": "eligible",
+                        "detected": True,
+                    },
+                ],
+            },
+        },
+    }
+    row = compact_record(record, "clip")
+    assert row["provisional_truth_tags"] == 1
+    summary = summarize([row])
+    assert summary["groups"]["tag_present"]["frames_denominator"] == 1
+    assert (
+        summary["groups"]["all"]["provisional_match_rate_proxy_not_recall"]["rate"] == 1
+    )
+
+
+def test_summary_includes_pose_availability_and_failure_count() -> None:
+    """Summaries retain pose availability and failures as explicit counts."""
+    failed = _row(1, 0, 0, pose=True)
+    failed["failure"] = "pipeline failure"
+    group = summarize([_row(0, 1, 1, pose=True), failed])["groups"]["all"]
+    assert group["pose_available"] == {"count": 2, "rate": 1.0}
+    assert group["failure_count"] == 1
+
+
+def test_reacquisition_keeps_unrecovered_delay_null() -> None:
+    """An unrecovered visible interval retains a null delay."""
+    rows = [_row(0, 0, 0), _row(1, 1, 0), _row(2, 1, 0)]
+    assert _reacquisition(rows, "provisional_matched") == [
+        {
+            "after_no_provisional_start": 0,
+            "visibility_frame": 1,
+            "recovered_frame": None,
+            "delay_frames": None,
+        }
+    ]
+
+
+def test_reacquisition_does_not_cross_a_later_tag_free_gap() -> None:
+    """Recovery must not borrow a detection from a later visible interval."""
+    rows = [
+        _row(0, 0, 0),
+        _row(1, 1, 0),
+        _row(2, 0, 0),
+        _row(3, 1, 1),
+    ]
+    assert _reacquisition(rows, "provisional_matched") == [
+        {
+            "after_no_provisional_start": 0,
+            "visibility_frame": 1,
+            "recovered_frame": None,
+            "delay_frames": None,
+        },
+        {
+            "after_no_provisional_start": 2,
+            "visibility_frame": 3,
+            "recovered_frame": 3,
+            "delay_frames": 0,
+        },
+    ]
 
 
 def test_summary_operation_ms_stays_completed_only() -> None:
     """Skipped rows count toward the all-frames op timings, not operation_ms."""
-    def row(index: int, skipped: bool, ops: dict[str, float]) -> dict[str, object]:
-        return {
-            "clip": "clip",
-            "frame_index": index,
-            "pipeline_ms": sum(ops.values()),
-            "decode_ms": 0.0,
-            "operation_ms": ops,
-            "skipped": skipped,
-            "provisional_truth_tags": 0,
-            "provisional_matched": 0,
-            "tp": 0,
-            "fp": 0,
-            "fn": 0,
-            "failure": None,
-            "pose_available": not skipped,
-            "robot_errors": None,
-        }
-
     rows = [
-        row(0, False, {"detect": 1.0, "pnp": 0.5}),
-        row(1, True, {"detect": 9.0}),
+        _row(0, 0, 0, pose=True, operation_ms={"detect": 1.0, "pnp": 0.5}),
+        _row(1, 0, 0, skipped=True, operation_ms={"detect": 9.0}),
     ]
     group = summarize(rows, include_reacquisition=False)["groups"]["all"]
     assert group["skipped_count"] == 1
