@@ -127,7 +127,6 @@ def get_control(ioctl: Ioctl, control_id: int) -> int | None:
 def list_controls(ioctl: Ioctl) -> list[CameraControl]:
     """Enumerate the device's integer, boolean and menu controls in driver order."""
     controls: list[CameraControl] = []
-    keys: set[str] = set()
     next_id = CTRL_FLAG_NEXT_CTRL
     while True:
         query = _QueryControl(id=next_id)
@@ -143,15 +142,11 @@ def list_controls(ioctl: Ioctl) -> list[CameraControl]:
         if query.flags & CTRL_FLAG_DISABLED or query.type not in _TYPE_NAMES:
             continue
         name = query.name.decode(errors="replace")
-        key = control_key(name)
-        if key in keys:
-            key = f"{key}_{query.id:x}"  # Keep keys unique if two names normalize alike.
-        keys.add(key)
         write_only = bool(query.flags & CTRL_FLAG_WRITE_ONLY)
         controls.append(
             CameraControl(
                 id=int(query.id),
-                key=key,
+                key=control_key(name),
                 name=name,
                 type=_TYPE_NAMES[query.type],
                 minimum=int(query.minimum),

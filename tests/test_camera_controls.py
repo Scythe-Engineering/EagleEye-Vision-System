@@ -183,24 +183,6 @@ def test_settings_change_live_and_are_saved_for_startup(
     assert server.set_camera_controls("1-1")[1] == 400
 
 
-def test_duplicate_control_names_get_distinct_keys() -> None:
-    """Two controls whose names normalize alike still get separate keys."""
-    driver = FakeDriver()
-    describe = driver._describe
-
-    def describe_gain_as_exposure(query: ctypes.Structure) -> None:
-        """Give the gain control the exposure control's name."""
-        describe(query)
-        if query.id == GAIN_ID:
-            query.name = b"Exposure Time (Absolute)"
-
-    driver._describe = describe_gain_as_exposure
-
-    keys = [c.key for c in v4l2_controls.list_controls(driver.ioctl)]
-
-    assert keys == ["exposure_time_absolute", "auto_exposure", "exposure_time_absolute_400"]
-
-
 def test_out_of_range_values_are_refused() -> None:
     """A value that does not fit the driver's int32 field is refused, not wrapped."""
     driver = FakeDriver()

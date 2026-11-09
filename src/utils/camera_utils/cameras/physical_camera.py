@@ -302,16 +302,6 @@ class PhysicalCamera(Camera):
                 for key in pending
                 if not self.backend.set_control(controls[key].id, int(values[key]))
             ]
-        # Some drivers accept a write to an inactive control and then drop it
-        # when its auto mode turns off, so write those once more at the end.
-        for key, control in controls.items():
-            if (
-                control.inactive
-                and key in values
-                and key not in pending
-                and not self.backend.set_control(control.id, int(values[key]))
-            ):
-                pending.append(key)
         return pending + [key for key in values if key not in controls]
 
     def get_achieved_fps(self) -> int:
