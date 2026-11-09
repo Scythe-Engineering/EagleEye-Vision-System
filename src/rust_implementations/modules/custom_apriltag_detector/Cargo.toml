@@ -9,8 +9,6 @@ crate-type = ["cdylib"]
 
 [features]
 extension-module = ["pyo3/extension-module"]
-# Per-stage timers and counters exposed as `stage_profile()`; diagnostics only.
-stage-profile = []
 
 [dependencies]
 pyo3 = "0.29.0"

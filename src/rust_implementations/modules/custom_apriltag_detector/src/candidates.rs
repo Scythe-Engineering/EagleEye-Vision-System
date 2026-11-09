@@ -2,7 +2,6 @@
 
 use crate::geometry::{cross, fit_quad, hull, norm, Point, Quad};
 use crate::image::Image;
-use crate::profile::{self, Stage};
 use crate::workers::Workers;
 
 pub(crate) struct Proposal {
@@ -536,8 +535,6 @@ fn blob_proposals(
     recovery: bool,
     out: &mut Vec<Proposal>,
 ) {
-    profile::add(Stage::Runs, runs.len() as u64);
-    let start = profile::clock();
     // Size every component first with compact counters, then outline only those
     // big enough to propose, in root order.
     // `components` always hangs the older root under the newest run, so a
@@ -594,10 +591,7 @@ fn blob_proposals(
             *last = (*last).max(run.x1);
         }
     }
-    profile::since(Stage::BlobAccumulate, start);
-    let start = profile::clock();
     for (k, &i) in kept.iter().enumerate() {
-        profile::add(Stage::Blobs, 1);
         let rough = if count[i] > HULL_MAX_ROWS {
             blobs[k].quad()
         } else {
@@ -636,14 +630,12 @@ fn blob_proposals(
             }
         }
         quad.rotate_left(top_left);
-        profile::add(Stage::Proposals, 1);
         out.push(Proposal {
             quad,
             color: runs[i].color,
             recovery,
         });
     }
-    profile::since(Stage::HullFit, start);
 }
 
 /// Dark-side cut of the fragment pass. Above the primary 0.5 so a blurred border
@@ -679,7 +671,6 @@ pub(crate) fn window_proposals(
         let window_width = width.min((tx1 + 1) * 8) - left;
         let window_height = height.min((ty1 + 1) * 8) - top;
         let words = window_width.div_ceil(64);
-        let start = profile::clock();
         scratch.window.clear();
         scratch.window.resize(words * window_height, 0);
         for y in 0..window_height {
@@ -694,10 +685,7 @@ pub(crate) fn window_proposals(
                 }
             }
         }
-        profile::since(Stage::Threshold, start);
-        let runs = profile::timed(Stage::Components, || {
-            components([&scratch.window, &[]], words, window_width, false)
-        });
+        let runs = components([&scratch.window, &[]], words, window_width, false);
         blob_proposals(&runs, (left, top), prepared, true, &mut out);
     }
     out
@@ -846,14 +834,11 @@ pub(crate) fn proposals(
     let height = prepared.height;
     let tile_width = width.div_ceil(8);
     let tile_height = height.div_ceil(8);
-    let start = profile::clock();
     if !recovery || scratch.ranges.len() != tile_width * tile_height {
         let (lo, hi) = tile_extrema(&scratch.gray, width, tile_width);
         scratch.floor = contrast_floor(&lo, &hi);
         neighbourhood_ranges(&lo, &hi, tile_width, &mut scratch.ranges);
     }
-    profile::since(Stage::TileRanges, start);
-    let start = profile::clock();
     // Recovery only thresholds tiles overlapping regions where the primary pass failed.
     scratch.active.clear();
     scratch.active.resize(tile_width * tile_height, !recovery);
@@ -938,11 +923,8 @@ pub(crate) fn proposals(
             threshold_rows(bright, true);
         }
     }
-    profile::since(Stage::Threshold, start);
     let [dark, bright] = &scratch.masks;
-    let runs = profile::timed(Stage::Components, || {
-        components([dark, bright], words, width, pass_light)
-    });
+    let runs = components([dark, bright], words, width, pass_light);
     let mut out = Vec::new();
     blob_proposals(&runs, (0, 0), prepared, recovery, &mut out);
     out
