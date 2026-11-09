@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
+
+import pytest
 
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.cameras import v4l2_controls
@@ -28,13 +33,19 @@ class FakeDriver:
     """
 
     def __init__(self) -> None:
+        """Start with auto exposure on and the driver's default values."""
         self.values = {
             EXPOSURE_ID: 157,
             AUTO_EXPOSURE_ID: AUTO_APERTURE_PRIORITY,
             GAIN_ID: 0,
         }
 
-    def _describe(self, query) -> None:
+    def _describe(self, query: ctypes.Structure) -> None:
+        """Fill a ``VIDIOC_QUERYCTRL`` result for ``query.id``.
+
+        Args:
+            query: The query structure to fill in.
+        """
         auto = self.values[AUTO_EXPOSURE_ID] == AUTO_APERTURE_PRIORITY
         query.flags = 0
         if query.id == EXPOSURE_ID:
@@ -53,7 +64,16 @@ class FakeDriver:
             query.minimum, query.maximum, query.step = 0, 100, 1
             query.default_value = 0
 
-    def ioctl(self, request: int, argument) -> None:
+    def ioctl(self, request: int, argument: ctypes.Structure) -> None:
+        """Answer the control ioctls the way a UVC driver does.
+
+        Args:
+            request: The ioctl request code.
+            argument: The ioctl's argument structure, updated in place.
+
+        Raises:
+            OSError: When the driver would refuse the request.
+        """
         ids = [EXPOSURE_ID, AUTO_EXPOSURE_ID, CLASS_ID, GAIN_ID]
         if request == v4l2_controls.VIDIOC_QUERYCTRL:
             requested = argument.id & ~v4l2_controls.CTRL_FLAG_NEXT_CTRL
@@ -131,7 +151,7 @@ class _ControlsServer(CameraControlsMixin, CameraConfigMixin):
         self.log = lambda _message: None
 
 
-def _post(monkeypatch, payload) -> None:
+def _post(monkeypatch: pytest.MonkeyPatch, payload: Any) -> None:
     """Make the next handler call see ``payload`` as its JSON body."""
     monkeypatch.setattr(
         camera_controls_mixin,
@@ -140,7 +160,9 @@ def _post(monkeypatch, payload) -> None:
     )
 
 
-def test_settings_change_live_and_are_saved_for_startup(tmp_path, monkeypatch) -> None:
+def test_settings_change_live_and_are_saved_for_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A live change is saved on request and comes back from the camera config."""
     server = _ControlsServer(_camera(FakeDriver()), CameraConfigRegistry(str(tmp_path)))
 
@@ -158,3 +180,51 @@ def test_settings_change_live_and_are_saved_for_startup(tmp_path, monkeypatch) -
     )
     _post(monkeypatch, {"gain": "high"})
     assert server.set_camera_controls("1-1")[1] == 400
+
+
+def test_duplicate_control_names_get_distinct_keys() -> None:
+    """Two controls whose names normalize alike still get separate keys."""
+    driver = FakeDriver()
+    describe = driver._describe
+
+    def describe_gain_as_exposure(query: ctypes.Structure) -> None:
+        """Give the gain control the exposure control's name."""
+        describe(query)
+        if query.id == GAIN_ID:
+            query.name = b"Exposure Time (Absolute)"
+
+    driver._describe = describe_gain_as_exposure
+
+    keys = [c.key for c in v4l2_controls.list_controls(driver.ioctl)]
+
+    assert keys == ["exposure_time_absolute", "auto_exposure", "exposure_time_absolute_400"]
+
+
+def test_out_of_range_values_are_refused() -> None:
+    """A value that does not fit the driver's int32 field is refused, not wrapped."""
+    driver = FakeDriver()
+
+    refused = _camera(driver).set_controls({"gain": 2**32})
+
+    assert refused == ["gain"]
+    assert driver.values[GAIN_ID] == 0
+
+
+def test_save_fails_without_touching_settings_when_enumeration_breaks(
+    tmp_path: Path,
+) -> None:
+    """An unexpected enumeration error returns 500 and writes no controls file."""
+    driver = FakeDriver()
+
+    def unplugged(request: int, argument: ctypes.Structure) -> None:
+        """Fail every ioctl as a disconnected device does."""
+        raise OSError(19, "No such device")
+
+    camera = _camera(driver)
+    camera.backend.ioctl = unplugged
+    server = _ControlsServer(camera, CameraConfigRegistry(str(tmp_path)))
+
+    _, status = server.save_camera_controls("1-1")
+
+    assert status == 500
+    assert not (tmp_path / "1-1" / "controls.json").exists()

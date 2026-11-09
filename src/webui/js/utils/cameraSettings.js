@@ -5,6 +5,7 @@ import {
     showSuccess,
     showWarning,
 } from "../ui/notificationSystem.js";
+import { subscribeConnectionStatus } from "../ui/connectionStatus.js";
 import { fetchJson } from "./fetchJson.js";
 
 // Slider drags send at most one request per interval.
@@ -20,6 +21,8 @@ let saved = {};
 let pendingValues = {};
 let applyTimer = null;
 let requestChain = Promise.resolve();
+let loadFailed = false;
+let resumeAfterReconnect = false;
 
 const getElement = (id) => document.getElementById(id);
 const controlsPath = (suffix = "") =>
@@ -50,6 +53,7 @@ function updateFeed() {
  * Stop the live view while the Utils tab is hidden.
  */
 export function pauseCameraSettingsFeed() {
+    resumeAfterReconnect = false;
     feedActive = false;
     updateFeed();
 }
@@ -58,8 +62,18 @@ export function pauseCameraSettingsFeed() {
  * Start the live view when the Utils tab is shown.
  */
 export function resumeCameraSettingsFeed() {
+    resumeAfterReconnect = false;
     feedActive = true;
     updateFeed();
+}
+
+/**
+ * Stop the live view while the backend is gone, and restart it on reconnect.
+ */
+function pauseUntilReconnect() {
+    const wasActive = feedActive;
+    pauseCameraSettingsFeed();
+    resumeAfterReconnect = wasActive;
 }
 
 function setOverlay(enabled) {
@@ -181,6 +195,7 @@ function buildControlRow(control) {
         row.appendChild(line);
         inputs.push(slider, number);
     }
+    for (const input of inputs) input.setAttribute("aria-label", control.name);
 
     const hint = document.createElement("p");
     hint.className = "mt-1 text-xs text-[#ac8a2f]";
@@ -249,9 +264,10 @@ function setControlsMessage(message) {
  */
 function sendValues(values) {
     const target = busId;
+    const path = controlsPath();
     requestChain = requestChain.then(async () => {
         try {
-            const payload = await fetchJson(controlsPath(), {
+            const payload = await fetchJson(path, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(values),
@@ -272,21 +288,26 @@ function sendValues(values) {
 
 async function loadControls() {
     const target = busId;
+    loadFailed = false;
     try {
         const payload = await fetchJson(controlsPath());
         if (target === busId) showControls(payload);
     } catch (error) {
-        if (target === busId) setControlsMessage(error.message);
+        if (target !== busId) return;
+        loadFailed = true;
+        setControlsMessage(error.message);
     }
 }
 
 async function saveControls() {
     if (!busId) return;
+    const target = busId;
+    const path = controlsPath("/save");
     await flushPendingValues();
+    if (target !== busId) return;
     try {
-        showControls(
-            await fetchJson(controlsPath("/save"), { method: "POST" }),
-        );
+        const payload = await fetchJson(path, { method: "POST" });
+        if (target === busId) showControls(payload);
         showSuccess("Camera settings saved.");
     } catch (error) {
         showDanger(`Failed to save camera settings: ${error.message}`);
@@ -298,10 +319,12 @@ function revertToSaved() {
         showWarning("No saved settings for this camera yet.");
         return;
     }
+    flushPendingValues();
     void sendValues(saved);
 }
 
 function applyDriverDefaults() {
+    flushPendingValues();
     const values = Object.fromEntries(
         controls
             .filter((control) => !control.read_only)
@@ -316,7 +339,10 @@ function applyDriverDefaults() {
  * @param {string} cameraStreamName - URL-safe name of the camera's view stream.
  */
 export function setCameraSettingsCamera(cameraBusId, cameraStreamName) {
-    if (cameraBusId === busId && cameraStreamName === streamName) return;
+    if (cameraBusId === busId && cameraStreamName === streamName) {
+        if (loadFailed) void loadControls();
+        return;
+    }
     clearTimeout(applyTimer);
     pendingValues = {};
     busId = cameraBusId;
@@ -336,6 +362,12 @@ export function setCameraSettingsCamera(cameraBusId, cameraStreamName) {
 export function initCameraSettings() {
     if (initialized) return;
     initialized = true;
+    document.addEventListener("backend-disconnected", pauseUntilReconnect);
+    subscribeConnectionStatus(({ backendConnected }) => {
+        if (backendConnected && resumeAfterReconnect) {
+            resumeCameraSettingsFeed();
+        }
+    });
     getElement("utilsAprilTagOverlayBtn")?.addEventListener("click", () =>
         setOverlay(!overlayOn),
     );

@@ -10,6 +10,7 @@ its driver name the way ``v4l2-ctl`` does ("Exposure Time, Absolute" becomes
 from __future__ import annotations
 
 import ctypes
+import errno
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -131,6 +132,8 @@ def get_control(ioctl: Ioctl, control_id: int) -> int | None:
 
 def set_control(ioctl: Ioctl, control_id: int, value: int) -> bool:
     """Write a control. Returns whether the driver accepted it."""
+    if not -(2**31) <= value < 2**31:
+        return False  # ctypes would silently wrap it into the int32 field.
     try:
         ioctl(VIDIOC_S_CTRL, _Control(id=control_id, value=int(value)))
     except OSError:
@@ -141,22 +144,29 @@ def set_control(ioctl: Ioctl, control_id: int, value: int) -> bool:
 def list_controls(ioctl: Ioctl) -> list[CameraControl]:
     """Enumerate the device's integer, boolean and menu controls in driver order."""
     controls: list[CameraControl] = []
+    keys: set[str] = set()
     next_id = CTRL_FLAG_NEXT_CTRL
     while True:
         query = _QueryControl(id=next_id)
         try:
             ioctl(VIDIOC_QUERYCTRL, query)
-        except OSError:
-            return controls  # EINVAL marks the end of the list.
+        except OSError as error:
+            if error.errno == errno.EINVAL:
+                return controls  # EINVAL marks the end of the list.
+            raise
         next_id = query.id | CTRL_FLAG_NEXT_CTRL
         if query.flags & CTRL_FLAG_DISABLED or query.type not in _TYPE_NAMES:
             continue
         name = query.name.decode(errors="replace")
+        key = control_key(name)
+        if key in keys:
+            key = f"{key}_{query.id:x}"  # Keep keys unique if two names normalize alike.
+        keys.add(key)
         write_only = bool(query.flags & CTRL_FLAG_WRITE_ONLY)
         controls.append(
             CameraControl(
                 id=int(query.id),
-                key=control_key(name),
+                key=key,
                 name=name,
                 type=_TYPE_NAMES[query.type],
                 minimum=int(query.minimum),

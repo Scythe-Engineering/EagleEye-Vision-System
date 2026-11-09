@@ -5,13 +5,19 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 from flask import Response, request
 
 from src.webui.web_server_utils.constants import VIEW_STREAM_FPS, no_image_jpeg_bytes
+
+if TYPE_CHECKING:
+    from src.main_operations.modules.apriltags.apriltag_detector import (
+        AprilTagDetector,
+    )
+    from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
 
 # The preview runs beside the pipeline, so it uses fewer threads than the live
 # detector and stops when the browser closes the stream.
@@ -24,14 +30,16 @@ class CameraControlsMixin:
 
     _preview_detector: Any = None
     _preview_detector_lock = threading.Lock()
+    # The detector reuses one grayscale buffer, so previews detect one at a time.
+    _preview_detect_lock = threading.Lock()
 
-    def _running_camera(self, camera_bus_id: str):
+    def _running_camera(self, camera_bus_id: str) -> PhysicalCamera | None:
         """Return the running camera for a bus ID, or None."""
         if self.camera_manager is None:
             return None
         return self.camera_manager.get_camera_by_bus_id(str(camera_bus_id))
 
-    def _controls_payload(self, camera_bus_id: str, camera) -> dict:
+    def _controls_payload(self, camera_bus_id: str, camera: PhysicalCamera) -> dict:
         """Describe the camera's controls, with the saved values next to them."""
         config = self._resolve_camera_config(camera_bus_id)
         return {
@@ -76,19 +84,19 @@ class CameraControlsMixin:
         config = self._resolve_camera_config(camera_bus_id)
         if config is None:
             return {"error": "Camera config registry unavailable"}, 503
-        values = {
-            control.key: control.value
-            for control in camera.list_controls()
-            if not control.read_only and control.value is not None
-        }
         try:
+            values = {
+                control.key: control.value
+                for control in camera.list_controls()
+                if not control.read_only and control.value is not None
+            }
             config.save_camera_controls(values)
         except OSError as error:
             self.log(f"Failed saving camera controls for {camera_bus_id}: {error}")
             return {"error": "Failed to save camera settings"}, 500
         return self._controls_payload(camera_bus_id, camera), 200
 
-    def _apriltag_preview_detector(self):
+    def _apriltag_preview_detector(self) -> AprilTagDetector:
         """Return the shared custom-detector instance used by previews."""
         with self._preview_detector_lock:
             if CameraControlsMixin._preview_detector is None:
@@ -105,7 +113,9 @@ class CameraControlsMixin:
             return CameraControlsMixin._preview_detector
 
     @staticmethod
-    def _draw_apriltags(frame: np.ndarray, detections, detect_ms: float) -> np.ndarray:
+    def _draw_apriltags(
+        frame: np.ndarray, detections: list[Any], detect_ms: float
+    ) -> np.ndarray:
         """Draw detected tag outlines, IDs and the detection time on a copy of the frame."""
         output = (
             cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.ndim == 2 else frame.copy()
@@ -144,9 +154,10 @@ class CameraControlsMixin:
             frame = self._latest_camera_frame(camera_bus_id)
             jpeg = no_image_jpeg_bytes
             if frame is not None:
-                detect_start = time.perf_counter()
-                detections = detector.run_detection(frame) or []
-                detect_ms = (time.perf_counter() - detect_start) * 1e3
+                with self._preview_detect_lock:
+                    detect_start = time.perf_counter()
+                    detections = detector.run_detection(frame) or []
+                    detect_ms = (time.perf_counter() - detect_start) * 1e3
                 output = self._resize_view_stream_frame(
                     self._draw_apriltags(frame, detections, detect_ms)
                 )

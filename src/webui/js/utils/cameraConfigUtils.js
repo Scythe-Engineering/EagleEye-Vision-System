@@ -12,7 +12,6 @@ import { cameraDisplayName } from "../ui/cameraPreviewGrid.js";
 import { fetchJson } from "./fetchJson.js";
 import {
     initCameraSettings,
-    pauseCameraSettingsFeed,
     setCameraSettingsCamera,
 } from "./cameraSettings.js";
 import * as THREE from "three";
@@ -1010,7 +1009,6 @@ export function initCameraConfigUtils() {
     document.addEventListener("backend-disconnected", () => {
         closeCalibrationModal();
         closeDistortionModal();
-        pauseCameraSettingsFeed();
     });
     getElement("utilsDistortionCloseBtn")?.addEventListener(
         "click",
