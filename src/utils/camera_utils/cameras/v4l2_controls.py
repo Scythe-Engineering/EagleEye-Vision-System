@@ -153,6 +153,8 @@ def list_controls(ioctl: Ioctl) -> list[CameraControl]:
         except OSError as error:
             if error.errno == errno.EINVAL:
                 return controls  # EINVAL marks the end of the list.
+            if error.errno == errno.ENOTTY:
+                return controls  # The driver has no control support.
             raise
         next_id = query.id | CTRL_FLAG_NEXT_CTRL
         if query.flags & CTRL_FLAG_DISABLED or query.type not in _TYPE_NAMES:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -209,6 +210,20 @@ def test_out_of_range_values_are_refused() -> None:
     assert refused == ["gain"]
     assert driver.values[GAIN_ID] == 0
 
+
+
+def test_driver_without_control_support_lists_no_controls() -> None:
+    """ENOTTY from VIDIOC_QUERYCTRL means no controls, so saved values are refused, not raised."""
+
+    def no_controls(request: int, argument: ctypes.Structure) -> None:
+        """Reject the control ioctls as a driver without control support does."""
+        raise OSError(errno.ENOTTY, "Inappropriate ioctl for device")
+
+    camera = _camera(FakeDriver())
+    camera.backend.ioctl = no_controls
+
+    assert camera.list_controls() == []
+    assert camera.set_controls({"gain": 5}) == ["gain"]
 
 def test_save_fails_without_touching_settings_when_enumeration_breaks(
     tmp_path: Path,

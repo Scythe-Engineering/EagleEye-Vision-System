@@ -22,6 +22,7 @@ let pendingValues = {};
 let applyTimer = null;
 let requestChain = Promise.resolve();
 let loadFailed = false;
+let loadGeneration = 0;
 let resumeAfterReconnect = false;
 
 const getElement = (id) => document.getElementById(id);
@@ -287,13 +288,13 @@ function sendValues(values) {
 }
 
 async function loadControls() {
-    const target = busId;
+    const generation = ++loadGeneration;
     loadFailed = false;
     try {
         const payload = await fetchJson(controlsPath());
-        if (target === busId) showControls(payload);
+        if (generation === loadGeneration) showControls(payload);
     } catch (error) {
-        if (target !== busId) return;
+        if (generation !== loadGeneration) return;
         loadFailed = true;
         setControlsMessage(error.message);
     }
