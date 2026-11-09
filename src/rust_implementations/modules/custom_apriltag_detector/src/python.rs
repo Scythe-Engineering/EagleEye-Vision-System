@@ -176,7 +176,7 @@ impl CustomAprilTagDetector {
             .map_err(|_| PyRuntimeError::new_err("native detector panicked"))
     }
 
-    /// Re-find tracked tags of the first family around predicted full-frame corners.
+    /// Re-find tracked tags around predicted full-frame corners.
     ///
     /// `predictions` holds eight OpenCV pixel-centre values per tag, in
     /// pupil_apriltags corner order, matching `tag_ids`. Each tag is confirmed in a
@@ -211,8 +211,7 @@ impl CustomAprilTagDetector {
                         track_in_frame(
                             &frame,
                             predicted,
-                            &detector.selected[0],
-                            0,
+                            &detector.family,
                             detector.settings.decode_sharpening,
                             tag_id,
                             scratch,

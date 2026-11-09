@@ -20,29 +20,19 @@ pub(crate) fn track(
     prior: &Quad,
     image: &Image<'_>,
     indexed: &IndexedFamily,
-    family_index: u32,
     sharpening: f64,
     tag_id: i32,
 ) -> Option<Detection> {
     if !usize::try_from(tag_id).is_ok_and(|id| id < indexed.family.codes.len()) {
         return None;
     }
-    decode_known(
-        prior,
-        image,
-        indexed,
-        family_index,
-        sharpening,
-        tag_id,
-        TRACK_FIT,
-    )
-    .or_else(|| {
+    decode_known(prior, image, indexed, sharpening, tag_id, TRACK_FIT).or_else(|| {
         let mut quad = *prior;
         let polarity = if indexed.family.reversed { -1 } else { 1 };
         if !refine(&mut quad, image, RETRY_RADIUS, polarity) {
             return None;
         }
-        decode(&quad, image, indexed, family_index, sharpening, true)
+        decode(&quad, image, indexed, sharpening, true)
             .filter(|detection| detection.tag_id == tag_id)
     })
 }
@@ -69,7 +59,6 @@ pub(crate) fn track_in_frame(
     frame: &Frame<'_>,
     predicted: &[f64; 8],
     indexed: &IndexedFamily,
-    family_index: u32,
     sharpening: f64,
     tag_id: i32,
     scratch: &mut Vec<u8>,
@@ -101,14 +90,7 @@ pub(crate) fn track_in_frame(
     let image = frame.gray_window((x0, y0, x1, y1), scratch).ok()?;
     let offset = [x0 as f64, y0 as f64];
     let prior: [f64; 8] = std::array::from_fn(|i| predicted[i] - offset[i % 2] + 0.5);
-    let found = track(
-        &decode_quad(&prior),
-        &image,
-        indexed,
-        family_index,
-        sharpening,
-        tag_id,
-    )?;
+    let found = track(&decode_quad(&prior), &image, indexed, sharpening, tag_id)?;
     Some(std::array::from_fn(|i| {
         found.corners[i] - 0.5 + offset[i % 2]
     }))

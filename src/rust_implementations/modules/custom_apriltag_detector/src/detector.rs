@@ -5,7 +5,7 @@ use crate::candidates::{
 };
 use crate::decode::{decode, plausible};
 use crate::detection::Detection;
-use crate::families::{select_families, IndexedFamily};
+use crate::families::{select_family, IndexedFamily};
 use crate::geometry::{max_f64, Homography, Quad};
 use crate::image::Image;
 use crate::workers::Workers;
@@ -37,7 +37,7 @@ impl Settings {
 
 pub(crate) struct Detector {
     pub(crate) settings: Settings,
-    pub(crate) selected: Vec<IndexedFamily>,
+    pub(crate) family: IndexedFamily,
     pub(crate) results: Vec<Detection>,
     pub(crate) workers: Workers,
     scratch: Scratch,
@@ -65,13 +65,13 @@ const FRAGMENT_MAX_EXTENT: f64 = 48.0;
 const FRAGMENT_GROWTH: f64 = 0.5;
 
 impl Detector {
-    pub(crate) fn new(names: &str, settings: Settings) -> Result<Self, String> {
+    pub(crate) fn new(family: &str, settings: Settings) -> Result<Self, String> {
         settings.validate()?;
-        let selected = select_families(names)?;
+        let family = select_family(family)?;
         let workers = Workers::new(settings.nthreads)?;
         Ok(Self {
             settings,
-            selected,
+            family,
             results: Vec::new(),
             workers,
             scratch: Scratch::new(),
@@ -106,7 +106,7 @@ impl Detector {
         self.failed.clear();
 
         self.fragments.clear();
-        let light = self.selected.iter().any(|family| family.family.reversed);
+        let light = self.family.family.reversed;
         let prepared = prepare(
             &image,
             self.settings.quad_decimate,
@@ -152,9 +152,8 @@ impl Detector {
             self.decode_proposals(&image, &found, true);
         }
         self.results.sort_unstable_by(|a, b| {
-            a.family_index
-                .cmp(&b.family_index)
-                .then_with(|| a.tag_id.cmp(&b.tag_id))
+            a.tag_id
+                .cmp(&b.tag_id)
                 .then_with(|| {
                     a.center[1]
                         .partial_cmp(&b.center[1])
@@ -215,9 +214,9 @@ impl Detector {
     /// Refine and decode one proposal.
     fn decode_one(&mut self, image: &Image<'_>, proposal: &Proposal) -> Outcome {
         let mut quad = proposal.quad;
-        if !self.selected.iter().any(|family| {
-            i32::from(family.family.reversed) == proposal.color && plausible(&quad, image, family)
-        }) {
+        if i32::from(self.family.family.reversed) != proposal.color
+            || !plausible(&quad, image, &self.family)
+        {
             return Outcome::Implausible;
         }
         if self.settings.refine_edges
@@ -230,50 +229,34 @@ impl Detector {
         {
             return Outcome::Failed;
         }
-        let mut decoded = false;
-        for (index, family) in self.selected.iter().enumerate() {
-            if i32::from(family.family.reversed) != proposal.color {
-                continue;
-            }
-            let Some(detection) = decode(
-                &quad,
-                image,
-                family,
-                index as u32,
-                self.settings.decode_sharpening,
-                self.settings.refine_edges,
-            ) else {
-                continue;
-            };
-            decoded = true;
-            let mut duplicate = false;
-            for old in &mut self.results {
-                let distance = (old.center[0] - detection.center[0])
-                    .hypot(old.center[1] - detection.center[1]);
-                let size = (detection.corners[0] - detection.corners[2])
-                    .hypot(detection.corners[1] - detection.corners[3]);
-                if old.family_index == detection.family_index && distance < max_f64(2.0, size * 0.2)
+        let Some(detection) = decode(
+            &quad,
+            image,
+            &self.family,
+            self.settings.decode_sharpening,
+            self.settings.refine_edges,
+        ) else {
+            return Outcome::Failed;
+        };
+        let size = (detection.corners[0] - detection.corners[2])
+            .hypot(detection.corners[1] - detection.corners[3]);
+        let duplicate = self.results.iter_mut().find(|old| {
+            (old.center[0] - detection.center[0]).hypot(old.center[1] - detection.center[1])
+                < max_f64(2.0, size * 0.2)
+        });
+        match duplicate {
+            Some(old) => {
+                if !proposal.recovery
+                    && (detection.hamming < old.hamming
+                        || (detection.hamming == old.hamming
+                            && detection.decision_margin > old.decision_margin))
                 {
-                    duplicate = true;
-                    if !proposal.recovery
-                        && (detection.hamming < old.hamming
-                            || (detection.hamming == old.hamming
-                                && detection.decision_margin > old.decision_margin))
-                    {
-                        *old = detection;
-                    }
-                    break;
+                    *old = detection;
                 }
             }
-            if !duplicate {
-                self.results.push(detection);
-            }
+            None => self.results.push(detection),
         }
-        if decoded {
-            Outcome::Decoded
-        } else {
-            Outcome::Failed
-        }
+        Outcome::Decoded
     }
 }
 

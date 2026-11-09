@@ -295,7 +295,6 @@ pub(crate) fn decode_known(
     quad: &Quad,
     image: &Image<'_>,
     indexed: &IndexedFamily,
-    family_index: u32,
     sharpening: f64,
     id: i32,
     fit: GridFit,
@@ -310,8 +309,7 @@ pub(crate) fn decode_known(
         project(&h, 1.0, 1.0),
         project(&h, 0.0, 1.0),
     ];
-    decode(&fitted, image, indexed, family_index, sharpening, false)
-        .filter(|detection| detection.tag_id == id)
+    decode(&fitted, image, indexed, sharpening, false).filter(|detection| detection.tag_id == id)
 }
 
 /// Cheap screen of an unrefined proposal before edge refinement and decoding.
@@ -405,7 +403,6 @@ pub(crate) fn decode(
     quad: &Quad,
     image: &Image<'_>,
     indexed: &IndexedFamily,
-    family_index: u32,
     sharpening: f64,
     grid: bool,
 ) -> Option<Detection> {
@@ -612,14 +609,7 @@ pub(crate) fn decode(
                 project(&refined, 1.0, 1.0),
                 project(&refined, 0.0, 1.0),
             ];
-            if let Some(verified) = decode(
-                &refined_quad,
-                image,
-                indexed,
-                family_index,
-                sharpening,
-                false,
-            ) {
+            if let Some(verified) = decode(&refined_quad, image, indexed, sharpening, false) {
                 if verified.tag_id == id && verified.hamming <= best {
                     return Some(verified);
                 }
@@ -627,7 +617,6 @@ pub(crate) fn decode(
         }
     }
     let mut out = Detection {
-        family_index,
         tag_id: id,
         hamming: best,
         rotation,

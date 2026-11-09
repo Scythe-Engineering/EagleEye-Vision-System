@@ -4,7 +4,6 @@ use pyo3::prelude::*;
 #[pyclass(frozen, get_all, skip_from_py_object, module = "custom_apriltag_detector")]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Detection {
-    pub(crate) family_index: u32,
     pub(crate) tag_id: i32,
     pub(crate) hamming: i32,
     pub(crate) rotation: i32,

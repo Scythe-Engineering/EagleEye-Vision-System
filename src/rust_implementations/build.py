@@ -103,7 +103,7 @@ class RustModuleBuilder:
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
-        """Hash module sources and the default native build profile.
+        """Hash a module's sources, its locked dependencies and the target Python.
 
         Args:
             module_dir: Directory containing the module sources.
@@ -111,57 +111,15 @@ class RustModuleBuilder:
         Returns:
             The module hash as a hexadecimal string.
         """
-        hasher = hashlib.sha256(b"maturin-develop-release-build-policy-v3")
-        paths = [
-            Path(__file__),
-            module_dir / "Cargo.toml",
-            module_dir / "Cargo.lock",
-            module_dir / "build.py",
-            module_dir / "build.rs",
-        ]
+        # The salt invalidates cached debug builds from before release-only builds.
+        hasher = hashlib.sha256(b"maturin-develop-release")
+        hasher.update(sys.executable.encode())
+        paths = [module_dir / "Cargo.toml", module_dir / "Cargo.lock"]
         paths.extend(sorted((module_dir / "src").rglob("*.rs")))
         for path in paths:
             if path.is_file():
-                hasher.update(str(path).encode())
+                hasher.update(path.relative_to(module_dir).as_posix().encode())
                 hasher.update(path.read_bytes())
-
-        env = self._get_clean_env()
-        hasher.update(sys.executable.encode())
-        build_environment = {
-            key: value
-            for key, value in env.items()
-            if key
-            in {
-                "RUSTFLAGS",
-                "CARGO_ENCODED_RUSTFLAGS",
-                "CARGO_BUILD_TARGET",
-                "CARGO_BUILD_RUSTFLAGS",
-                "CARGO_BUILD_RUSTC",
-                "RUSTC",
-                "RUSTUP_TOOLCHAIN",
-                "CARGO_HOME",
-                "CARGO_BUILD_JOBS",
-                "RUSTC_WRAPPER",
-                "RUSTC_WORKSPACE_WRAPPER",
-                "CARGO_BUILD_RUSTC_WRAPPER",
-                "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
-            }
-            or (key.startswith("CARGO_TARGET_") and key.endswith("_RUSTFLAGS"))
-        }
-        hasher.update(json.dumps(build_environment, sort_keys=True).encode())
-        try:
-            compiler = subprocess.run(
-                [env.get("RUSTC", "rustc"), "-vV"],
-                cwd=module_dir,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            hasher.update(compiler.stdout.encode())
-            hasher.update(str(compiler.returncode).encode())
-        except OSError:
-            hasher.update(b"rustc-unavailable")
         return hasher.hexdigest()
 
     def load_build_cache(self) -> dict:

@@ -94,26 +94,12 @@ impl IndexedFamily {
     }
 }
 
-pub(crate) fn select_families(names: &str) -> Result<Vec<IndexedFamily>, String> {
-    if names.len() > 1024 {
-        return Err("family list too long".into());
-    }
-    let mut selected: Vec<IndexedFamily> = Vec::new();
-    for name in names
-        .split([',', ' ', '\t', '\r', '\n'])
-        .filter(|name| !name.is_empty())
-    {
-        let family = FAMILIES
-            .iter()
-            .find(|family| family.name == name)
-            .ok_or_else(|| format!("unknown family: {name}"))?;
-        if selected.iter().any(|indexed| indexed.family.name == name) {
-            return Err(format!("duplicate family: {name}"));
-        }
-        selected.push(IndexedFamily::new(family));
-    }
-    if selected.is_empty() {
-        return Err("empty family list".into());
-    }
-    Ok(selected)
+/// Index the built-in family called `name`.
+pub(crate) fn select_family(name: &str) -> Result<IndexedFamily, String> {
+    let name = name.trim();
+    FAMILIES
+        .iter()
+        .find(|family| family.name == name)
+        .map(IndexedFamily::new)
+        .ok_or_else(|| format!("unknown family: {name}"))
 }

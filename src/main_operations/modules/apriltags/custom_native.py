@@ -21,7 +21,7 @@ class CustomNativeDetector:
         """Create the Rust detector.
 
         Args:
-            families: Comma or whitespace separated AprilTag family names.
+            families: AprilTag family name; only tag36h11 is built in.
             nthreads: Worker threads for large images.
             quad_decimate: Decimation for quad detection.
             quad_sigma: Gaussian blur (positive) or sharpening (negative) sigma.
@@ -39,9 +39,7 @@ class CustomNativeDetector:
                 "Custom Rust detector is not built. Run: "
                 "uv run python src/rust_implementations/build.py custom_apriltag_detector"
             ) from exc
-        self._family_names = [
-            name.encode("ascii") for name in families.replace(",", " ").split()
-        ]
+        self._family = families.strip().encode("ascii")
         self._detector = CustomAprilTagDetector(
             families=families,
             nthreads=nthreads,
@@ -84,7 +82,7 @@ class CustomNativeDetector:
             gray, source_map=mapping, source_shape=source_shape
         ):
             detection = Detection()
-            detection.tag_family = self._family_names[native.family_index]
+            detection.tag_family = self._family
             detection.tag_id = native.tag_id
             detection.hamming = native.hamming
             detection.decision_margin = native.decision_margin
