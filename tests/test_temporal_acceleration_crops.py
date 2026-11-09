@@ -14,7 +14,10 @@ from src.main_operations.definitions.temporal_acceleration_preprocessor_rust imp
     TemporalAccelerationPreprocessorRustDefinition,
 )
 from src.main_operations.modules.apriltags import lazy_segment
-from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
+from src.main_operations.modules.apriltags.apriltag_detector import (
+    MISSED_TAG_SEARCH_INTERVAL,
+    AprilTagDetector,
+)
 from src.utils.timing import (
     TimedValue,
     TimingMetadata,
@@ -247,6 +250,44 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
 
     assert len(calls) == 1
     assert len(detector.get_last_search_regions()) == 1
+
+
+def test_detector_searches_full_frame_for_a_missed_predicted_tag() -> None:
+    """A tag missing from its predicted crop is found in the full frame."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector.rust_backend = False
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    detector._min_input_dimension = 4
+    in_crop = SimpleNamespace(tag_id=1, corners=np.zeros((4, 2)))
+
+    def detect(input_images: object) -> list[object]:
+        """Find tag 1 in the crops, and tags 1 and 2 in the full frame.
+
+        Args:
+            input_images: Crops, or the full frame.
+
+        Returns:
+            The synthetic detections for that input.
+        """
+        if isinstance(input_images, np.ndarray):
+            return [SimpleNamespace(tag_id=1), SimpleNamespace(tag_id=2)]
+        return [in_crop]
+
+    detector.run_detection = detect
+    crop = np.zeros((10, 10), dtype=np.uint8)
+    full_frame = np.zeros((20, 30), dtype=np.uint8)
+
+    crops = [(crop, np.array([2, 3])), (crop, np.array([12, 3]))]
+
+    detections = detector.detect(crops, full_frame)
+
+    assert [d.tag_id for d in detections] == [1, 2]
+    assert detections[0] is in_crop
+    # The next frames rely on the crops until the search interval has passed.
+    for _ in range(MISSED_TAG_SEARCH_INTERVAL - 1):
+        assert [d.tag_id for d in detector.detect(crops, full_frame)] == [1]
+    assert [d.tag_id for d in detector.detect(crops, full_frame)] == [1, 2]
 
 
 def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:

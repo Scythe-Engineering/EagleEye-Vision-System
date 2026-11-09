@@ -15,6 +15,9 @@ from .tag_tracker import TagTracker, segment_center
 
 logger = logging.getLogger(__name__)
 
+# Frames between full-frame searches for predicted tags the crops missed.
+MISSED_TAG_SEARCH_INTERVAL = 4
+
 
 @dataclass
 class CustomDetection:
@@ -38,6 +41,8 @@ class AprilTagDetector:
 
     rust_backend = False
     _tracker: TagTracker | None = None
+    # Starts due, so the first miss is searched at once.
+    _frames_since_full_search = MISSED_TAG_SEARCH_INTERVAL
 
     def __init__(
         self,
@@ -597,6 +602,15 @@ class AprilTagDetector:
             the full frame is searched once before returning no detections.
         """
         temporal_segments = not isinstance(images, np.ndarray)
+        # The temporal step builds one segment per tag it expects to be in view.
+        expected_tags = (
+            sum(
+                self._is_valid_shape(segment_shape_and_mapping(segment)[0])
+                for segment in images
+            )
+            if temporal_segments
+            else 0
+        )
         tracked: dict[int, np.ndarray] = {}
         if (
             self._tracker is not None
@@ -631,11 +645,24 @@ class AprilTagDetector:
                 for tag_id, corners in tracked.items()
             ] + searched
             search_regions = search_regions + list(tracked.values())
+        # Search the whole frame when nothing was found, and every few frames when
+        # a predicted tag was missed: a stale or drifting pose keeps its crops away
+        # from a tag that is still visible. The interval bounds the cost of a
+        # predicted tag that is hidden or too small to decode.
+        found_count = len(detections or [])
+        self._frames_since_full_search += 1
         if (
             full_frame is not None
             and self._is_valid_image(full_frame)
-            and (detections is None or len(detections) == 0)
+            and (
+                found_count == 0
+                or (
+                    found_count < expected_tags
+                    and self._frames_since_full_search >= MISSED_TAG_SEARCH_INTERVAL
+                )
+            )
         ):
+            self._frames_since_full_search = 0
             full_frame_detections = self.run_detection(full_frame)
             if temporal_segments:
                 search_regions = [
@@ -650,7 +677,12 @@ class AprilTagDetector:
                     )
                 ]
             if full_frame_detections:
-                detections = full_frame_detections
+                found = {detection.tag_id for detection in detections or []}
+                detections = list(detections or []) + [
+                    detection
+                    for detection in full_frame_detections
+                    if detection.tag_id not in found
+                ]
 
         with self._detect_lock:
             self._last_search_regions = search_regions
