@@ -73,6 +73,12 @@ class Camera(abc.ABC):
         """
         return list(values)
 
+    def reopen(self) -> None:
+        """Release and open the backend again, for a camera that stopped streaming."""
+        self.close()
+        self.camera_ready = False
+        self._start_camera()
+
     def close(self) -> None:
         """Release backend resources. Safe to call more than once."""
 

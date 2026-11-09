@@ -23,6 +23,10 @@ if TYPE_CHECKING:
     from src.webui.web_server import EagleEyeInterface
 
 
+# Waits before consecutive reopen attempts of a camera that stopped streaming.
+REOPEN_DELAYS_S = (0.5, 1.0, 2.0, 5.0)
+
+
 class FailureTracker:
     """Tracks consecutive failures for a camera feed."""
 
@@ -172,6 +176,7 @@ class CameraThreadManager:
         self.cameras: Dict[str, CameraWorker] = {}
         self.known_cameras: list[dict[str, str | int]] = []
         self.bus_id_to_name: Dict[str, str] = {}
+        self._config_registry: CameraConfigRegistry | None = None
         self._initialize_cameras()
 
     def _initialize_cameras(self) -> None:
@@ -207,6 +212,7 @@ class CameraThreadManager:
         )
 
         failure_tracker = FailureTracker(max_failures=10)
+        reopen_attempts = 0
 
         camera_fps = camera.get_achieved_fps()
         target_frame_time = 1.0 / (camera_fps + 5) if camera_fps > 0 else 0.033
@@ -222,6 +228,7 @@ class CameraThreadManager:
 
                 if captured is not None:
                     failure_tracker.reset()
+                    reopen_attempts = 0
                     packet = TimedValue(
                         captured.image,
                         TimingMetadata(
@@ -239,10 +246,11 @@ class CameraThreadManager:
                     self.web_interface.update_camera_frame(camera_name, captured.image)
                 else:
                     if failure_tracker.record_failure():
-                        self.logger.log(
-                            f"{Colors.RED}Too many consecutive failures from {camera_name}, stopping worker{Colors.RESET}"
-                        )
-                        break
+                        if not self._reopen_camera(worker, reopen_attempts):
+                            break
+                        reopen_attempts += 1
+                        failure_tracker.reset()
+                        continue
 
                     cached_packet = worker.get_cached_packet()
                     if cached_packet is not None:
@@ -263,15 +271,55 @@ class CameraThreadManager:
                     f"{Colors.RED}Error in camera feed worker for {camera_name}: {camera_error}{Colors.RESET}"
                 )
                 if failure_tracker.record_failure():
-                    self.logger.log(
-                        f"{Colors.RED}Too many errors from {camera_name}, stopping worker{Colors.RESET}"
-                    )
-                    break
+                    if not self._reopen_camera(worker, reopen_attempts):
+                        break
+                    reopen_attempts += 1
+                    failure_tracker.reset()
+                    continue
                 time.sleep(0.01)
 
         self.logger.log(
             f"{Colors.CYAN}Camera feed worker for {camera_name} stopped{Colors.RESET}"
         )
+
+    def _reopen_camera(self, worker: CameraWorker, attempt: int) -> bool:
+        """Close and reopen a camera that stopped delivering frames.
+
+        Some USB cameras, such as the Arducam OV9281, intermittently stream
+        nothing but broken frames after an open; a fresh open usually fixes it.
+        Waits grow with each consecutive attempt so a missing camera is not
+        hammered.
+
+        Args:
+            worker: Worker whose camera stopped delivering frames.
+            attempt: Reopens already tried since the last good frame.
+
+        Returns:
+            False when the worker was stopped while waiting, otherwise True,
+            including after a failed open, which the next failures retry.
+        """
+        delay_s = REOPEN_DELAYS_S[min(attempt, len(REOPEN_DELAYS_S) - 1)]
+        self.logger.log(
+            f"{Colors.YELLOW}{worker.camera_name} stopped delivering frames; "
+            f"reopening in {delay_s:g} s (attempt {attempt + 1}){Colors.RESET}"
+        )
+        worker.camera.close()
+        deadline = time.monotonic() + delay_s
+        while worker.running and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if not worker.running:
+            return False
+        try:
+            worker.camera.reopen()
+        except (RuntimeError, OSError) as error:
+            self.logger.log(
+                f"{Colors.RED}Reopening {worker.camera_name} failed: {error}{Colors.RESET}"
+            )
+            return True
+        bus_id = self.get_bus_id_for_camera_name(worker.camera_name)
+        if bus_id is not None:
+            self._apply_saved_controls(bus_id)
+        return True
 
     def start_camera_thread(
         self,
@@ -418,18 +466,26 @@ class CameraThreadManager:
         Args:
             registry: Camera configs holding the saved control values.
         """
+        # Kept so a camera that is reopened later gets its settings back.
+        self._config_registry = registry
         for bus_id in self.get_all_bus_ids():
-            camera = self.get_camera_by_bus_id(bus_id)
-            saved = registry.get_config(bus_id).camera_controls
-            if camera is None or not saved:
-                continue
-            refused = camera.set_controls(saved)
-            message = f"Applied {len(saved) - len(refused)} saved controls to {bus_id}"
-            if refused:
-                message += f"; refused: {', '.join(refused)}"
-            self.logger.log(
-                f"{Colors.YELLOW if refused else Colors.GREEN}{message}{Colors.RESET}"
-            )
+            self._apply_saved_controls(bus_id)
+
+    def _apply_saved_controls(self, bus_id: str) -> None:
+        """Apply one running camera's saved hardware controls, if any."""
+        if self._config_registry is None:
+            return
+        camera = self.get_camera_by_bus_id(bus_id)
+        saved = self._config_registry.get_config(bus_id).camera_controls
+        if camera is None or not saved:
+            return
+        refused = camera.set_controls(saved)
+        message = f"Applied {len(saved) - len(refused)} saved controls to {bus_id}"
+        if refused:
+            message += f"; refused: {', '.join(refused)}"
+        self.logger.log(
+            f"{Colors.YELLOW if refused else Colors.GREEN}{message}{Colors.RESET}"
+        )
 
     def get_camera_ready(self, camera_name: str) -> bool:
         """
