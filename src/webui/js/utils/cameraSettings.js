@@ -23,7 +23,7 @@ let applyTimer = null;
 let requestChain = Promise.resolve();
 let loadFailed = false;
 let loadGeneration = 0;
-let resumeAfterReconnect = false;
+let backendConnected = false;
 
 const getElement = (id) => document.getElementById(id);
 const controlsPath = (suffix = "") =>
@@ -36,7 +36,7 @@ function updateFeed() {
     const image = getElement("utilsCameraSettingsFeed");
     if (!image) return;
     let url = "";
-    if (feedActive && busId) {
+    if (feedActive && backendConnected && busId) {
         url = overlayOn
             ? `${BACKEND_BASE_URL}/camera-config/${encodeURIComponent(busId)}/apriltag/feed`
             : streamName
@@ -54,7 +54,6 @@ function updateFeed() {
  * Stop the live view while the Utils tab is hidden.
  */
 export function pauseCameraSettingsFeed() {
-    resumeAfterReconnect = false;
     feedActive = false;
     updateFeed();
 }
@@ -63,18 +62,8 @@ export function pauseCameraSettingsFeed() {
  * Start the live view when the Utils tab is shown.
  */
 export function resumeCameraSettingsFeed() {
-    resumeAfterReconnect = false;
     feedActive = true;
     updateFeed();
-}
-
-/**
- * Stop the live view while the backend is gone, and restart it on reconnect.
- */
-function pauseUntilReconnect() {
-    const wasActive = feedActive;
-    pauseCameraSettingsFeed();
-    resumeAfterReconnect = wasActive;
 }
 
 function setOverlay(enabled) {
@@ -363,17 +352,16 @@ export function setCameraSettingsCamera(cameraBusId, cameraStreamName) {
 export function initCameraSettings() {
     if (initialized) return;
     initialized = true;
-    document.addEventListener("backend-disconnected", pauseUntilReconnect);
-    subscribeConnectionStatus(({ backendConnected }) => {
-        if (backendConnected && resumeAfterReconnect) {
-            resumeCameraSettingsFeed();
-        }
+    // The live view is open only while the tab is shown and the backend is up.
+    subscribeConnectionStatus((status) => {
+        backendConnected = status.backendConnected;
+        updateFeed();
     });
     getElement("utilsAprilTagOverlayBtn")?.addEventListener("click", () =>
         setOverlay(!overlayOn),
     );
     getElement("utilsCameraSettingsFeed")?.addEventListener("error", () => {
-        if (!overlayOn || !feedActive) return;
+        if (!overlayOn || !feedActive || !backendConnected) return;
         showWarning("AprilTag preview is unavailable on this device.");
         setOverlay(false);
     });

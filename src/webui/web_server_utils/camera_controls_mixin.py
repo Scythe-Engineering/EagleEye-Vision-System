@@ -5,12 +5,16 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Generator
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 from flask import Response, request
 
+from src.main_operations.modules.apriltags.utils.visualization import (
+    draw_apriltag_overlay,
+)
 from src.webui.web_server_utils.constants import VIEW_STREAM_FPS, no_image_jpeg_bytes
 
 if TYPE_CHECKING:
@@ -44,7 +48,7 @@ class CameraControlsMixin:
         config = self._resolve_camera_config(camera_bus_id)
         return {
             "camera_bus_id": str(camera_bus_id),
-            "controls": [control.to_dict() for control in camera.list_controls()],
+            "controls": [asdict(control) for control in camera.list_controls()],
             "saved": config.camera_controls if config is not None else {},
         }
 
@@ -117,24 +121,10 @@ class CameraControlsMixin:
         frame: np.ndarray, detections: list[Any], detect_ms: float
     ) -> np.ndarray:
         """Draw detected tag outlines, IDs and the detection time on a copy of the frame."""
-        output = (
-            cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.ndim == 2 else frame.copy()
+        color = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.ndim == 2 else frame
+        output = draw_apriltag_overlay(
+            color, [(d.tag_id, d.corners) for d in detections], []
         )
-        for detection in detections:
-            corners = np.rint(np.asarray(detection.corners)).astype(np.int32)
-            cv2.polylines(output, [corners], True, (0, 255, 0), 2)
-            # The first corner marks the tag's orientation.
-            cv2.circle(output, tuple(int(v) for v in corners[0]), 5, (0, 0, 255), -1)
-            center = corners.mean(axis=0).astype(int)
-            cv2.putText(
-                output,
-                str(detection.tag_id),
-                (int(center[0]) - 10, int(center[1]) + 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.0,
-                (0, 255, 255),
-                2,
-            )
         cv2.putText(
             output,
             f"Tags: {len(detections)} | detect {detect_ms:.1f} ms",

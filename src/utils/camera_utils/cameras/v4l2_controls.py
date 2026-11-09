@@ -13,10 +13,9 @@ import ctypes
 import errno
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 from src.utils.camera_utils.cameras.v4l2_capture import (
-    VIDIOC_S_CTRL,
     _Control,
     _iowr,
 )
@@ -92,11 +91,6 @@ class CameraControl:
     read_only: bool
     menu: list[dict[str, int | str]] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        """Return the control as JSON-ready data."""
-        return asdict(self)
-
-
 def control_key(name: str) -> str:
     """Return the ``v4l2-ctl`` style key for a driver control name."""
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
@@ -128,17 +122,6 @@ def get_control(ioctl: Ioctl, control_id: int) -> int | None:
     except OSError:
         return None
     return int(control.value)
-
-
-def set_control(ioctl: Ioctl, control_id: int, value: int) -> bool:
-    """Write a control. Returns whether the driver accepted it."""
-    if not -(2**31) <= value < 2**31:
-        return False  # ctypes would silently wrap it into the int32 field.
-    try:
-        ioctl(VIDIOC_S_CTRL, _Control(id=control_id, value=int(value)))
-    except OSError:
-        return False
-    return True
 
 
 def list_controls(ioctl: Ioctl) -> list[CameraControl]:

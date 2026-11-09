@@ -14,7 +14,7 @@ import pytest
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.cameras import v4l2_controls
 from src.utils.camera_utils.cameras.physical_camera import PhysicalCamera
-from src.utils.camera_utils.cameras.v4l2_capture import V4l2Capture
+from src.utils.camera_utils.cameras.v4l2_capture import VIDIOC_S_CTRL, V4l2Capture
 from src.webui.web_server_utils import camera_controls_mixin
 from src.webui.web_server_utils.camera_config_mixin import CameraConfigMixin
 from src.webui.web_server_utils.camera_controls_mixin import CameraControlsMixin
@@ -90,7 +90,7 @@ class FakeDriver:
             argument.item.name = labels[argument.index]
         elif request == v4l2_controls.VIDIOC_G_CTRL:
             argument.value = self.values[argument.id]
-        elif request == v4l2_controls.VIDIOC_S_CTRL:
+        elif request == VIDIOC_S_CTRL:
             if (
                 argument.id == EXPOSURE_ID
                 and self.values[AUTO_EXPOSURE_ID] == AUTO_APERTURE_PRIORITY
@@ -104,7 +104,7 @@ class FakeDriver:
 def _camera(driver: FakeDriver) -> PhysicalCamera:
     """A PhysicalCamera wired to the fake driver, without opening a device."""
     capture = V4l2Capture.__new__(V4l2Capture)
-    capture.ioctl = driver.ioctl
+    capture.ioctl = capture._ioctl = driver.ioctl
     camera = PhysicalCamera.__new__(PhysicalCamera)
     camera.backend = capture
     return camera

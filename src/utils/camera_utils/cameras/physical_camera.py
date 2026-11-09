@@ -300,9 +300,7 @@ class PhysicalCamera(Camera):
             pending = [
                 key
                 for key in pending
-                if not v4l2_controls.set_control(
-                    self.backend.ioctl, controls[key].id, int(values[key])
-                )
+                if not self.backend.set_control(controls[key].id, int(values[key]))
             ]
         # Some drivers accept a write to an inactive control and then drop it
         # when its auto mode turns off, so write those once more at the end.
@@ -311,9 +309,7 @@ class PhysicalCamera(Camera):
                 control.inactive
                 and key in values
                 and key not in pending
-                and not v4l2_controls.set_control(
-                    self.backend.ioctl, control.id, int(values[key])
-                )
+                and not self.backend.set_control(control.id, int(values[key]))
             ):
                 pending.append(key)
         return pending + [key for key in values if key not in controls]
