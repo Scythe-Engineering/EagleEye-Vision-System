@@ -1,4 +1,3 @@
-import { mountingPoseToViewMatrix } from "./fieldSpaceTransforms.js";
 // Utilities for camera configuration UI, including intrinsics, extrinsics, and calibration flows.
 import { BACKEND_BASE_URL } from "../config.js";
 import {
@@ -14,8 +13,7 @@ import {
     initCameraSettings,
     setCameraSettingsCamera,
 } from "./cameraSettings.js";
-import * as THREE from "three";
-import { OrbitControls } from "OrbitControls";
+import { createCameraPoseScene } from "./cameraPoseScene.js";
 
 const EXTRINSICS_KEYS = [
     "pitch",
@@ -45,7 +43,6 @@ let distortionModalOpen = false;
 let selectedCalibrationFrameIndex = null;
 let calibrationHistoryFrames = [];
 
-const DEG_TO_RAD = Math.PI / 180;
 const POSE_VIZ_MAX_FPS = 30;
 const POSE_VIZ_FRAME_MS = 1000 / POSE_VIZ_MAX_FPS;
 
@@ -56,40 +53,6 @@ const POSE_VIZ_FRAME_MS = 1000 / POSE_VIZ_MAX_FPS;
  */
 function getElement(id) {
     return document.getElementById(id);
-}
-
-/**
- * Creates a text sprite label for the 3D view.
- * @param {string} text - Label text.
- * @param {string} [color="#f9c845"] - Text color.
- * @returns {THREE.Sprite | null}
- */
-function createLabelSprite(text, color = "#f9c845") {
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 80;
-    const context = canvas.getContext("2d");
-    if (!context) {
-        return null;
-    }
-
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = "600 30px sans-serif";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillStyle = color;
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    const material = new THREE.SpriteMaterial({
-        map: texture,
-        transparent: true,
-        depthTest: false,
-    });
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.45, 0.14, 1);
-    return sprite;
 }
 
 /**
@@ -106,113 +69,8 @@ function initCameraPoseVisualization() {
         return;
     }
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x232323);
-
-    const width = Math.max(container.clientWidth, 1);
-    const height = Math.max(container.clientHeight, 1);
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100);
-    camera.position.set(1.2, 1.0, 1.2);
-
-    const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        powerPreference: "default",
-    });
-    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 1.5));
-    renderer.setSize(width, height);
-    container.appendChild(renderer.domElement);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 0.4;
-    controls.maxDistance = 4;
-    controls.target.set(0, 0.1, 0);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(2, 3, 2);
-    scene.add(directional);
-
-    const grid = new THREE.GridHelper(2, 20, 0x666666, 0x3a3a3a);
-    grid.position.y = -0.001;
-    scene.add(grid);
-
-    const robotGroup = new THREE.Group();
-    const chassis = new THREE.Mesh(
-        new THREE.BoxGeometry(0.72, 0.12, 0.72),
-        new THREE.MeshStandardMaterial({
-            color: 0x4a5568,
-            metalness: 0.2,
-            roughness: 0.7,
-        }),
-    );
-    chassis.position.y = 0.06;
-    robotGroup.add(chassis);
-
-    const bumperFront = new THREE.Mesh(
-        new THREE.BoxGeometry(0.03, 0.14, 0.72),
-        new THREE.MeshStandardMaterial({ color: 0xf9c845 }),
-    );
-    bumperFront.position.set(0.375, 0.07, 0);
-    robotGroup.add(bumperFront);
-
-    const frontLabel = createLabelSprite("FRONT");
-    if (frontLabel) {
-        frontLabel.position.set(0.48, 0.22, 0);
-        robotGroup.add(frontLabel);
-    }
-
-    const wheelGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.04, 16);
-    const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x1f1f1f });
-    const wheelOffsets = [
-        [0.27, 0.05, 0.32],
-        [0.27, 0.05, -0.32],
-        [-0.27, 0.05, 0.32],
-        [-0.27, 0.05, -0.32],
-    ];
-    wheelOffsets.forEach((offset) => {
-        const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(offset[0], offset[1], offset[2]);
-        robotGroup.add(wheel);
-    });
-
-    scene.add(robotGroup);
-
-    const cameraMarkerGroup = new THREE.Group();
-    const cameraBody = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.05, 0.05),
-        new THREE.MeshStandardMaterial({ color: 0x38bdf8 }),
-    );
-    cameraMarkerGroup.add(cameraBody);
-
-    const lens = new THREE.Mesh(
-        new THREE.ConeGeometry(0.018, 0.05, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0ea5e9 }),
-    );
-    lens.rotation.z = -Math.PI / 2;
-    lens.position.set(0.06, 0, 0);
-    cameraMarkerGroup.add(lens);
-
-    const cameraAxes = new THREE.AxesHelper(0.2);
-    cameraMarkerGroup.add(cameraAxes);
-
-    const cameraLabel = createLabelSprite("CAMERA", "#7dd3fc");
-    if (cameraLabel) {
-        cameraLabel.position.set(0, 0.15, 0);
-        cameraMarkerGroup.add(cameraLabel);
-    }
-
-    scene.add(cameraMarkerGroup);
-
     poseVizState = {
-        container,
-        scene,
-        camera,
-        renderer,
-        controls,
-        cameraMarkerGroup,
+        poseScene: createCameraPoseScene(container),
         frameHandle: 0,
         lastFrameMs: 0,
     };
@@ -235,12 +93,12 @@ function initCameraPoseVisualization() {
         }
 
         poseVizState.lastFrameMs = timestampMs;
-        poseVizState.controls.update();
-        poseVizState.renderer.render(poseVizState.scene, poseVizState.camera);
+        poseVizState.poseScene.render();
         poseVizState.frameHandle =
             globalThis.requestAnimationFrame(poseVizRenderFrame);
     };
 
+    updateCameraPoseVisualization();
     startCameraPoseVisualizationLoop();
 }
 
@@ -264,11 +122,7 @@ function resizeCameraPoseVisualization() {
         return;
     }
 
-    const width = Math.max(poseVizState.container.clientWidth, 1);
-    const height = Math.max(poseVizState.container.clientHeight, 1);
-    poseVizState.camera.aspect = width / height;
-    poseVizState.camera.updateProjectionMatrix();
-    poseVizState.renderer.setSize(width, height);
+    poseVizState.poseScene.resize();
 }
 
 /**
@@ -279,9 +133,7 @@ function updateCameraPoseVisualization() {
         return;
     }
 
-    const matrix = mountingPoseToViewMatrix(getExtrinsicsPayload());
-    matrix.decompose(poseVizState.cameraMarkerGroup.position,
-        poseVizState.cameraMarkerGroup.quaternion, poseVizState.cameraMarkerGroup.scale);
+    poseVizState.poseScene.setPose(getExtrinsicsPayload());
 }
 
 /**
