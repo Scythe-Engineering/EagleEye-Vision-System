@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from benchmarks.replay import (
+    CONFIG_DIR,
     DecodedFrame,
     ReplayCameraManager,
     ReplayError,
@@ -202,9 +203,13 @@ def test_accuracy_does_not_reuse_a_stale_profile() -> None:
     assert records[0]["output"]["profile"] is None
 
 
-@pytest.mark.parametrize("temporal", [False, True])
-def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) -> None:
-    """Both graphs must initialize their real production operation classes."""
+@pytest.mark.parametrize(
+    "temporal", [False, True, CONFIG_DIR / "temporal_rust.json"]
+)
+def test_real_benchmark_graph_constructs_and_runs_blank_frame(
+    temporal: bool | Path,
+) -> None:
+    """Every benchmark graph must initialize its real production operation classes."""
     calibration = {
         "camera_matrix": [[762.7, 0.0, 640.0], [0.0, 762.7, 400.0], [0.0, 0.0, 1.0]],
         "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],

@@ -9,12 +9,6 @@ import numpy as np
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
 
-
-def _request():
-    """Return the current Flask request, allowing monkeypatching via web_server.request."""
-    import src.webui.web_server as _ws
-    return _ws.request
-
 from src.webui.web_server_utils.apriltag_map_sanitizer import sanitize_apriltag_map_file
 from src.webui.web_server_utils.constants import (
     APRILTAG_MAP_EXTENSIONS,
@@ -30,6 +24,12 @@ from src.webui.web_server_utils.constants import (
     ROBOT_ASSET_DIR_NAME,
     WEBUI_DIR,
 )
+
+
+def _request():
+    """Return the current Flask request, allowing monkeypatching via web_server.request."""
+    import src.webui.web_server as _ws
+    return _ws.request
 
 
 class AssetManagerMixin:

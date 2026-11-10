@@ -1,7 +1,12 @@
 use pyo3::prelude::*;
 
 /// One decoded tag in image pixel-edge coordinates.
-#[pyclass(frozen, get_all, skip_from_py_object, module = "custom_apriltag_detector")]
+#[pyclass(
+    frozen,
+    get_all,
+    skip_from_py_object,
+    module = "custom_apriltag_detector"
+)]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Detection {
     pub(crate) tag_id: i32,

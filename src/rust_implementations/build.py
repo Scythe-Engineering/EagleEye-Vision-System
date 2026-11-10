@@ -5,11 +5,11 @@ This script manages building multiple Rust extension modules.
 It detects changes in source files and rebuilds only modules that have changed
 or haven't been built yet.
 
-Usage:
-    python build.py                    # Build all modules that need rebuilding
-    python build.py --all             # Force rebuild all modules
-    python build.py module_name       # Build specific module
-    python build.py --clean           # Clean all build artifacts
+Usage, from the repository root:
+    uv run python src/rust_implementations/build.py               # Build modules that changed
+    uv run python src/rust_implementations/build.py --all         # Force rebuild all modules
+    uv run python src/rust_implementations/build.py module_name   # Build one module
+    uv run python src/rust_implementations/build.py --clean       # Clean all build artifacts
 """
 
 import argparse
@@ -208,8 +208,6 @@ class RustModuleBuilder:
 
     def test_module_import(self, module_name: str) -> bool:
         """Test that a module can be imported in Python."""
-        self._log(f"{Colors.CYAN}Testing import of {module_name}...{Colors.RESET}")
-
         try:
             result = subprocess.run(
                 [*self._python_command(), "-c", f"import {module_name}"],
@@ -221,9 +219,6 @@ class RustModuleBuilder:
             )
 
             if result.returncode == 0:
-                self._log(
-                    f"{Colors.GREEN}✓ Successfully imported {module_name}{Colors.RESET}"
-                )
                 return True
             else:
                 self._log(f"{Colors.RED}✗ Failed to import {module_name}{Colors.RESET}")
@@ -378,6 +373,7 @@ class RustModuleBuilder:
 
         cache = self.load_build_cache()
         success = True
+        up_to_date: list[str] = []
 
         for module_dir in modules:
             module_name = module_dir.name
@@ -391,14 +387,18 @@ class RustModuleBuilder:
                         "hash": self.get_module_hash(module_dir),
                         "last_built": str(time.time()),
                     }
+            elif self.test_module_import(module_name):
+                up_to_date.append(module_name)
             else:
-                self._log(f"{Colors.GREEN}✓ {module_name} is up to date{Colors.RESET}")
-                # Even if up to date, verify the package is properly installed
-                if not self.test_module_import(module_name):
-                    self._log(
-                        f"{Colors.RED}✗ {module_name} is up to date but not installed{Colors.RESET}"
-                    )
-                    success = False
+                self._log(
+                    f"{Colors.RED}✗ {module_name} is up to date but not installed{Colors.RESET}"
+                )
+                success = False
+
+        if up_to_date:
+            self._log(
+                f"{Colors.GREEN}✓ Rust modules up to date: {', '.join(up_to_date)}{Colors.RESET}"
+            )
 
         if success:
             # Clean cache of non-existent modules and save

@@ -69,15 +69,13 @@ static TAG36H11_BIT_Y: [i32; 36] = [
     5, 5, 4, 6, 5, 4, 3, 2, 5, 4, 3, 4,
 ];
 
-pub(crate) static FAMILIES: [Family; 1] = [
-    Family {
-        name: "tag36h11",
-        nbits: 36,
-        width: 8,
-        total: 10,
-        reversed: false,
-        codes: &TAG36H11_CODES,
-        bit_x: &TAG36H11_BIT_X,
-        bit_y: &TAG36H11_BIT_Y,
-    },
-];
+pub(crate) static FAMILIES: [Family; 1] = [Family {
+    name: "tag36h11",
+    nbits: 36,
+    width: 8,
+    total: 10,
+    reversed: false,
+    codes: &TAG36H11_CODES,
+    bit_x: &TAG36H11_BIT_X,
+    bit_y: &TAG36H11_BIT_Y,
+}];
