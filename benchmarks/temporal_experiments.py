@@ -25,6 +25,7 @@ from .replay import (
     SequentialVideoDecoder,
     build_pipeline,
     collect_pipeline_outputs,
+    load_benchmark_config,
     run_accuracy,
     stream_annotations,
 )
@@ -404,8 +405,7 @@ def _run(args: argparse.Namespace) -> int:
     if args.start_frame < 0 or args.warmup_frames < 0:
         raise ValueError("start-frame and warmup-frames must be nonnegative")
     config = args.config.resolve()
-    if config.name != "temporal.json":
-        raise ValueError("temporal experiments require a config named temporal.json")
+    load_benchmark_config(config, expected_temporal=True)
     if args.opencv_threads is not None:
         if args.opencv_threads <= 0:
             raise ValueError("opencv-threads must be greater than zero")

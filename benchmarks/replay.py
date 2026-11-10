@@ -203,7 +203,7 @@ def build_pipeline(
         config_path = Path(config)
         if not config_path.is_absolute():
             config_path = REPOSITORY_ROOT / config_path
-        expected_temporal = config_path.stem == "temporal"
+        expected_temporal = None
     graph = json.loads(
         json.dumps(load_benchmark_config(config_path, expected_temporal))
     )
@@ -633,12 +633,15 @@ def run_accuracy(
         raise
 
 
+def _operation_name(node: dict[str, Any]) -> str:
+    """Return a node's operation name, counting the Rust detector as detect_apriltags."""
+    name = str(node.get("action_name", "")).removesuffix(".py")
+    return "detect_apriltags" if name == "detect_apriltags_rust" else name
+
+
 def _graph_edges(nodes: list[dict[str, Any]]) -> set[tuple[str, str, str, str, bool]]:
     """Normalize graph edges to operation names instead of UUIDs."""
-    names = {
-        str(node["uuid"]): str(node["action_name"]).removesuffix(".py")
-        for node in nodes
-    }
+    names = {str(node["uuid"]): _operation_name(node) for node in nodes}
     relevant = {
         "device_input",
         "temporal_acceleration_preprocessor_rust",
@@ -674,13 +677,22 @@ def _validate_template_contract(
 
 
 def load_benchmark_config(
-    path: str | Path, expected_temporal: bool
+    path: str | Path, expected_temporal: bool | None = None
 ) -> list[dict[str, Any]]:
-    """Load a matched graph and enforce required production operation identity."""
+    """Load a matched graph and enforce required production operation identity.
+
+    Args:
+        path: Graph JSON file.
+        expected_temporal: Whether the graph must have the temporal preprocessor;
+            None accepts either and checks the matching template.
+
+    Returns:
+        The graph's nodes.
+    """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ReplayError("benchmark pipeline configuration must be a JSON list")
-    names = [str(node.get("action_name", "")).removesuffix(".py") for node in data]
+    names = [_operation_name(node) for node in data]
     required = {
         "device_input",
         "detect_apriltags",
@@ -693,7 +705,7 @@ def load_benchmark_config(
             f"benchmark graph lacks required operations: {sorted(required - set(names))}"
         )
     temporal = "temporal_acceleration_preprocessor_rust" in names
-    if temporal != expected_temporal:
+    if expected_temporal is not None and temporal != expected_temporal:
         raise ReplayError(
             "benchmark graph temporal identity does not match requested mode"
         )
@@ -702,5 +714,5 @@ def load_benchmark_config(
         raise ReplayError("benchmark graph contains a UI or publishing sink")
     if len(names) != len(set(names)):
         raise ReplayError("benchmark graph contains duplicate operation identities")
-    _validate_template_contract(data, expected_temporal)
+    _validate_template_contract(data, temporal)
     return data
