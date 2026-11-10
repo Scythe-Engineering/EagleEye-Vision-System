@@ -145,6 +145,12 @@ class _ControlsServer(CameraControlsMixin, CameraConfigMixin):
     """Just the web server parts the control routes use."""
 
     def __init__(self, camera: PhysicalCamera, registry: CameraConfigRegistry) -> None:
+        """Serve one camera for every bus ID.
+
+        Args:
+            camera: Camera returned for any bus ID.
+            registry: Camera configs the routes read and save.
+        """
         self.camera_config_registry = registry
         self.camera_manager = type(
             "Manager", (), {"get_camera_by_bus_id": lambda _self, bus_id: camera}
@@ -225,3 +231,17 @@ def test_save_fails_without_touching_settings_when_enumeration_breaks(
 
     assert status == 500
     assert not (tmp_path / "1-1" / "controls.json").exists()
+
+
+def test_save_is_refused_while_the_camera_is_unplugged(tmp_path: Path) -> None:
+    """A closed camera lists no controls, so saving must not erase its settings."""
+    registry = CameraConfigRegistry(str(tmp_path))
+    registry.get_config("1-1").save_camera_controls({"gain": 10})
+    camera = _camera(FakeDriver())
+    camera.backend = None
+    server = _ControlsServer(camera, registry)
+
+    _, status = server.save_camera_controls("1-1")
+
+    assert status == 409
+    assert json.loads((tmp_path / "1-1" / "controls.json").read_text()) == {"gain": 10}

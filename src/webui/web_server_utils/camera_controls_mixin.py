@@ -94,6 +94,9 @@ class CameraControlsMixin:
                 for control in camera.list_controls()
                 if not control.read_only and control.value is not None
             }
+            if not values:
+                # An unplugged camera lists no controls; saving would erase its settings.
+                return {"error": "Camera settings are unavailable; nothing saved"}, 409
             config.save_camera_controls(values)
         except OSError as error:
             self.log(f"Failed saving camera controls for {camera_bus_id}: {error}")

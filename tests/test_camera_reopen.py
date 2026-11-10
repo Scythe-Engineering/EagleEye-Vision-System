@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from src.utils.camera_utils import camera_thread_manager
 from src.utils.camera_utils.camera_thread_manager import (
@@ -22,6 +23,7 @@ class FlakyCamera:
     camera_ready = True
 
     def __init__(self) -> None:
+        """Start as opened once, with no settings applied."""
         self.opens = 1
         self.applied: list[dict[str, int]] = []
 
@@ -48,7 +50,9 @@ class FlakyCamera:
         """Nothing to release."""
 
 
-def test_worker_reopens_a_silent_camera_and_restores_its_settings(monkeypatch) -> None:
+def test_worker_reopens_a_silent_camera_and_restores_its_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Frames resume after a reopen, and the saved settings are applied again."""
     monkeypatch.setattr(camera_thread_manager, "REOPEN_DELAY_S", 0.0)
     camera = FlakyCamera()

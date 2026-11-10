@@ -469,7 +469,15 @@ class CameraThreadManager:
         saved = self._config_registry.get_config(bus_id).camera_controls
         if camera is None or not saved:
             return
-        refused = camera.set_controls(saved)
+        try:
+            refused = camera.set_controls(saved)
+        except OSError as error:
+            # A camera that drops again right after opening must not stop startup
+            # or its worker; the worker's reopen applies the settings later.
+            self.logger.log(
+                f"{Colors.RED}Applying saved controls to {bus_id} failed: {error}{Colors.RESET}"
+            )
+            return
         message = f"Applied {len(saved) - len(refused)} saved controls to {bus_id}"
         if refused:
             message += f"; refused: {', '.join(refused)}"
