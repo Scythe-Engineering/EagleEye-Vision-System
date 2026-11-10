@@ -688,7 +688,7 @@ class AprilTagDetector:
             Confirmed full-frame corners by tag ID, and the segments still to search.
         """
         with self._detect_lock:
-            # Tracking always refines corners, so it is off with refine_edges.
+            # Tracking always refines corners, so it only runs with refine_edges on.
             if not self.ready or self._tracker is None or not self.refine_edges:
                 return {}, images
             try:
