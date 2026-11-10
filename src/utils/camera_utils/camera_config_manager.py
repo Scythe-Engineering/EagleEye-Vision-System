@@ -96,6 +96,7 @@ class CameraConfig:
         self._intrinsics_path: Optional[str] = self._intrinsics_file
         self._extrinsics_file: str = os.path.join(base_path, "extrinsics.json")
         self._metadata_file: str = os.path.join(base_path, "metadata.json")
+        self._controls_file: str = os.path.join(base_path, "controls.json")
         self._display_name: Optional[str] = None
         self._metadata_lock = threading.Lock()
         self._load_display_name()
@@ -157,23 +158,60 @@ class CameraConfig:
             raise ValueError("Camera name cannot contain control characters")
 
         with self._metadata_lock:
-            os.makedirs(self._base_path, exist_ok=True)
-            file_descriptor, temporary_file = tempfile.mkstemp(
-                dir=self._base_path, prefix=".metadata.", suffix=".tmp", text=True
+            self._write_json_atomically(
+                self._metadata_file, {"display_name": normalized_name}
             )
-            try:
-                with os.fdopen(file_descriptor, "w", encoding="utf-8") as metadata_file:
-                    json.dump(
-                        {"display_name": normalized_name}, metadata_file, indent=4
-                    )
-                    metadata_file.write("\n")
-                    metadata_file.flush()
-                    os.fsync(metadata_file.fileno())
-                os.replace(temporary_file, self._metadata_file)
-                self._display_name = normalized_name
-            finally:
-                if os.path.exists(temporary_file):
-                    os.unlink(temporary_file)
+            self._display_name = normalized_name
+
+    def _write_json_atomically(self, path: str, data: dict) -> None:
+        """Write JSON beside its target and swap it in, so readers never see half a file."""
+        os.makedirs(self._base_path, exist_ok=True)
+        prefix = f".{os.path.splitext(os.path.basename(path))[0]}."
+        file_descriptor, temporary_file = tempfile.mkstemp(
+            dir=self._base_path, prefix=prefix, suffix=".tmp", text=True
+        )
+        try:
+            with os.fdopen(file_descriptor, "w", encoding="utf-8") as output:
+                json.dump(data, output, indent=4)
+                output.write("\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary_file, path)
+        finally:
+            if os.path.exists(temporary_file):
+                os.unlink(temporary_file)
+
+    @property
+    def camera_controls(self) -> dict[str, int]:
+        """Saved hardware control values keyed by control key, applied at startup.
+
+        Returns:
+            dict[str, int]: Saved values; empty when none were saved or the
+                file is unreadable.
+        """
+        try:
+            with open(self._controls_file, "r", encoding="utf-8") as controls_file:
+                data = json.load(controls_file)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(key): int(value)
+            for key, value in data.items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+
+    def save_camera_controls(self, values: dict[str, int]) -> None:
+        """Persist hardware control values for this camera.
+
+        Args:
+            values: Control values keyed by control key, in apply order.
+        """
+        with self._metadata_lock:
+            self._write_json_atomically(
+                self._controls_file, {key: int(value) for key, value in values.items()}
+            )
 
     @property
     def intrinsics_path(self) -> Optional[str]:

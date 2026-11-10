@@ -319,6 +319,10 @@ class V4l2Capture:
             except InterruptedError:
                 continue
 
+    def ioctl(self, request: int, argument: ctypes.Structure) -> None:
+        """Issue an ioctl on the open device; used by the control helpers."""
+        self._ioctl(request, argument)
+
     def _verify_capture_device(self) -> None:
         """Confirm the node is a video capture device."""
         capability = _Capability()
@@ -392,6 +396,8 @@ class V4l2Capture:
 
     def set_control(self, control_id: int, value: int) -> bool:
         """Best-effort control write. Returns whether the driver accepted it."""
+        if not -(2**31) <= value < 2**31:
+            return False  # ctypes would silently wrap it into the int32 field.
         control = _Control(id=control_id, value=value)
         try:
             self._ioctl(VIDIOC_S_CTRL, control)

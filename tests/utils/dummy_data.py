@@ -81,12 +81,6 @@ def dummy_temporal_acceleration_input() -> Dict[str, Any]:
     }
 
 
-def dummy_camera_adjust_input() -> np.ndarray:
-    """Create input payload for camera adjust operation."""
-
-    return dummy_frame()
-
-
 def dummy_networktables_payload() -> Dict[str, Any]:
     """Create a payload compatible with Flatpack schemas."""
 
