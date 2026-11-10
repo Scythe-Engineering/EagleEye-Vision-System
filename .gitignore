@@ -337,3 +337,6 @@ ROADMAP.md
 
 # Archived local scripts, experiment results, and notes.
 /.local-misc/
+
+# Local agent notes, such as device access.
+/CLAUDE.local.md
