@@ -54,6 +54,7 @@ dev = [
   "pytest-anyio",
   "faker",
   "requests-mock",
+  "ruff==0.17.4",
 ]
 
 [tool.uv]

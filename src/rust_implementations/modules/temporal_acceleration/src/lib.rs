@@ -193,9 +193,7 @@ impl TemporalAcceleration {
                 continue;
             }
             let distance_3d = vec3_norm(center_camera);
-            if self.max_detection_distance_m > 0.0
-                && distance_3d > self.max_detection_distance_m
-            {
+            if self.max_detection_distance_m > 0.0 && distance_3d > self.max_detection_distance_m {
                 continue;
             }
 
@@ -287,28 +285,32 @@ impl TemporalAcceleration {
 
 fn invert_se3(t: &[f32; 16]) -> [f32; 16] {
     // R is top-left 3x3, t is top-right 3x1
-    let r = [
-        [t[0], t[1], t[2]],
-        [t[4], t[5], t[6]],
-        [t[8], t[9], t[10]],
-    ];
+    let r = [[t[0], t[1], t[2]], [t[4], t[5], t[6]], [t[8], t[9], t[10]]];
     let r_t = transpose3(r);
     let trans = [t[3], t[7], t[11]];
     let t_inv = mat3_mul_vec3(&r_t, [-trans[0], -trans[1], -trans[2]]);
     let mut out = [0.0f32; 16];
-    out[0] = r_t[0][0]; out[1] = r_t[0][1]; out[2] = r_t[0][2]; out[3] = t_inv[0];
-    out[4] = r_t[1][0]; out[5] = r_t[1][1]; out[6] = r_t[1][2]; out[7] = t_inv[1];
-    out[8] = r_t[2][0]; out[9] = r_t[2][1]; out[10] = r_t[2][2]; out[11] = t_inv[2];
-    out[12] = 0.0; out[13] = 0.0; out[14] = 0.0; out[15] = 1.0;
+    out[0] = r_t[0][0];
+    out[1] = r_t[0][1];
+    out[2] = r_t[0][2];
+    out[3] = t_inv[0];
+    out[4] = r_t[1][0];
+    out[5] = r_t[1][1];
+    out[6] = r_t[1][2];
+    out[7] = t_inv[1];
+    out[8] = r_t[2][0];
+    out[9] = r_t[2][1];
+    out[10] = r_t[2][2];
+    out[11] = t_inv[2];
+    out[12] = 0.0;
+    out[13] = 0.0;
+    out[14] = 0.0;
+    out[15] = 1.0;
     out
 }
 
 fn decompose_rt(t: &[f32; 16]) -> ([[f32; 3]; 3], [f32; 3]) {
-    let r = [
-        [t[0], t[1], t[2]],
-        [t[4], t[5], t[6]],
-        [t[8], t[9], t[10]],
-    ];
+    let r = [[t[0], t[1], t[2]], [t[4], t[5], t[6]], [t[8], t[9], t[10]]];
     let trans = [t[3], t[7], t[11]];
     (r, trans)
 }
@@ -329,7 +331,9 @@ fn mat3_mul_vec3(m: &[[f32; 3]; 3], v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+fn vec3_add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
 
 fn vec3_norm(v: [f32; 3]) -> f32 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
@@ -343,7 +347,9 @@ fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-fn is_finite3(v: &[f32; 3]) -> bool { v[0].is_finite() && v[1].is_finite() && v[2].is_finite() }
+fn is_finite3(v: &[f32; 3]) -> bool {
+    v[0].is_finite() && v[1].is_finite() && v[2].is_finite()
+}
 
 /// Transform four world-space tag corners into camera coordinates.
 fn transform_corners_to_camera(
@@ -365,13 +371,7 @@ fn transform_corners_to_camera(
 ///
 /// For finite positive focal lengths, comparing normalized-image slopes is equivalent
 /// to the former `atan` angle comparison while avoiding eight transcendental calls.
-fn frustum_cull(
-    corners_camera: &[[f32; 3]; 4],
-    width: i32,
-    height: i32,
-    fx: f32,
-    fy: f32,
-) -> bool {
+fn frustum_cull(corners_camera: &[[f32; 3]; 4], width: i32, height: i32, fx: f32, fy: f32) -> bool {
     let min_depth = 0.01f32;
     if corners_camera.iter().all(|c| c[2] < min_depth) {
         return false;
@@ -382,9 +382,7 @@ fn frustum_cull(
     let max_y_slope = (height as f32 * 0.5) * (1.0 + margin_factor) / fy;
 
     corners_camera.iter().any(|c| {
-        c[2] > min_depth
-            && c[0].abs() / c[2] < max_x_slope
-            && c[1].abs() / c[2] < max_y_slope
+        c[2] > min_depth && c[0].abs() / c[2] < max_x_slope && c[1].abs() / c[2] < max_y_slope
     })
 }
 
@@ -407,10 +405,22 @@ fn padded_quad_and_bbox(
         ]
     });
 
-    let min_x = padded.iter().map(|point| point[0]).fold(f32::INFINITY, f32::min);
-    let min_y = padded.iter().map(|point| point[1]).fold(f32::INFINITY, f32::min);
-    let max_x = padded.iter().map(|point| point[0]).fold(f32::NEG_INFINITY, f32::max);
-    let max_y = padded.iter().map(|point| point[1]).fold(f32::NEG_INFINITY, f32::max);
+    let min_x = padded
+        .iter()
+        .map(|point| point[0])
+        .fold(f32::INFINITY, f32::min);
+    let min_y = padded
+        .iter()
+        .map(|point| point[1])
+        .fold(f32::INFINITY, f32::min);
+    let max_x = padded
+        .iter()
+        .map(|point| point[0])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let max_y = padded
+        .iter()
+        .map(|point| point[1])
+        .fold(f32::NEG_INFINITY, f32::max);
     let projected_span = (max_x - min_x).max(max_y - min_y);
     if projected_span < min_region_size_px as f32 {
         return None;
@@ -429,22 +439,30 @@ fn padded_quad_and_bbox(
 }
 
 fn extract_brown_conrady_coefficients(coefficients: &Vec<f32>) -> (f32, f32, f32, f32, f32) {
-	let k1 = *coefficients.get(0).unwrap_or(&0.0);
-	let k2 = *coefficients.get(1).unwrap_or(&0.0);
-	let p1 = *coefficients.get(2).unwrap_or(&0.0);
-	let p2 = *coefficients.get(3).unwrap_or(&0.0);
-	let k3 = *coefficients.get(4).unwrap_or(&0.0);
-	(k1, k2, p1, p2, k3)
+    let k1 = *coefficients.get(0).unwrap_or(&0.0);
+    let k2 = *coefficients.get(1).unwrap_or(&0.0);
+    let p1 = *coefficients.get(2).unwrap_or(&0.0);
+    let p2 = *coefficients.get(3).unwrap_or(&0.0);
+    let k3 = *coefficients.get(4).unwrap_or(&0.0);
+    (k1, k2, p1, p2, k3)
 }
 
-fn distort_brown_conrady(x: f32, y: f32, k1: f32, k2: f32, p1: f32, p2: f32, k3: f32) -> (f32, f32) {
-	let r2 = x * x + y * y;
-	let r4 = r2 * r2;
-	let r6 = r4 * r2;
-	let radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
-	let x_tangential = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
-	let y_tangential = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
-	(x * radial + x_tangential, y * radial + y_tangential)
+fn distort_brown_conrady(
+    x: f32,
+    y: f32,
+    k1: f32,
+    k2: f32,
+    p1: f32,
+    p2: f32,
+    k3: f32,
+) -> (f32, f32) {
+    let r2 = x * x + y * y;
+    let r4 = r2 * r2;
+    let r6 = r4 * r2;
+    let radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
+    let x_tangential = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+    let y_tangential = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
+    (x * radial + x_tangential, y * radial + y_tangential)
 }
 
 #[cfg(test)]
@@ -482,7 +500,12 @@ mod tests {
         let corners = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 1.0, 2.0];
         assert_eq!(
             transform_corners_to_camera(&rotation, [10.0, 20.0, 30.0], &corners),
-            [[8.0, 21.0, 33.0], [5.0, 24.0, 36.0], [2.0, 27.0, 39.0], [9.0, 20.0, 32.0]]
+            [
+                [8.0, 21.0, 33.0],
+                [5.0, 24.0, 36.0],
+                [2.0, 27.0, 39.0],
+                [9.0, 20.0, 32.0]
+            ]
         );
     }
 
@@ -495,9 +518,15 @@ mod tests {
             [3.0, 0.0, 1.0, 3.1, 0.0, 1.0, 3.0, 0.1, 1.0, 3.1, 0.1, 1.0],
             [0.0, 3.0, 1.0, 0.1, 3.0, 1.0, 0.0, 3.1, 1.0, 0.1, 3.1, 1.0],
             // Strict near-plane and horizontal-slope boundaries.
-            [0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01],
-            [1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0],
-            [1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0],
+            [
+                0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01, 0.0, 0.0, 0.01,
+            ],
+            [
+                1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0, 1.24, 0.0, 1.0,
+            ],
+            [
+                1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0, 1.26, 0.0, 1.0,
+            ],
         ];
 
         for corners_world in cases {
@@ -516,28 +545,28 @@ mod tests {
         }
     }
 
-	#[test]
-	fn distort_identity_when_zero_coefficients() {
-		let (xd, yd) = distort_brown_conrady(0.1, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0);
-		assert!((xd - 0.1).abs() < 1e-6);
-		assert!((yd + 0.2).abs() < 1e-6);
-	}
+    #[test]
+    fn distort_identity_when_zero_coefficients() {
+        let (xd, yd) = distort_brown_conrady(0.1, -0.2, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert!((xd - 0.1).abs() < 1e-6);
+        assert!((yd + 0.2).abs() < 1e-6);
+    }
 
-	#[test]
-	fn distort_radial_only_positive_k1() {
-		let x = 0.2f32;
-		let y = 0.1f32;
-		let k1 = 0.5f32;
-		let k2 = 0.0f32;
-		let k3 = 0.0f32;
-		let p1 = 0.0f32;
-		let p2 = 0.0f32;
-		let r2 = x * x + y * y;
-		let radial = 1.0 + k1 * r2;
-		let (xd, yd) = distort_brown_conrady(x, y, k1, k2, p1, p2, k3);
-		assert!((xd - x * radial).abs() < 1e-6);
-		assert!((yd - y * radial).abs() < 1e-6);
-	}
+    #[test]
+    fn distort_radial_only_positive_k1() {
+        let x = 0.2f32;
+        let y = 0.1f32;
+        let k1 = 0.5f32;
+        let k2 = 0.0f32;
+        let k3 = 0.0f32;
+        let p1 = 0.0f32;
+        let p2 = 0.0f32;
+        let r2 = x * x + y * y;
+        let radial = 1.0 + k1 * r2;
+        let (xd, yd) = distort_brown_conrady(x, y, k1, k2, p1, p2, k3);
+        assert!((xd - x * radial).abs() < 1e-6);
+        assert!((yd - y * radial).abs() < 1e-6);
+    }
 
     #[test]
     fn off_axis_face_uses_the_camera_position_not_forward_axis() {

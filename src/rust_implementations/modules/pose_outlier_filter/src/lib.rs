@@ -1,6 +1,6 @@
-use ndarray::{Array2, Array1, s};
-use pyo3::prelude::*;
+use ndarray::{s, Array1, Array2};
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -36,7 +36,6 @@ pub struct PoseOutlierFilter {
     #[pyo3(get, set)]
     relax_factor: f64,
 
-
     /// Max angular difference in radians for acceptance
     #[pyo3(get, set)]
     angular_gate_threshold: f64,
@@ -55,8 +54,6 @@ pub struct PoseOutlierFilter {
     last_velocity: Array1<f64>,
     consecutive_rejections: usize,
     pos_uncertainty: f64,
-
-
 
     // State flags
     has_previous_pose: bool,
@@ -139,7 +136,9 @@ impl PoseOutlierFilter {
     #[pyo3(signature = (pose))]
     fn run(&mut self, pose: Vec<f64>) -> PyResult<Option<Vec<f64>>> {
         if pose.len() != 16 {
-            return Err(PyValueError::new_err("Pose must be a 16-element array representing a 4x4 matrix"));
+            return Err(PyValueError::new_err(
+                "Pose must be a 16-element array representing a 4x4 matrix",
+            ));
         }
 
         let pose_array = Array2::from_shape_vec((4, 4), pose)
@@ -162,14 +161,18 @@ impl PoseOutlierFilter {
         }
 
         // Calculate dynamic uncertainty
-        let current_sigma = self.base_sigma * (1.0 + self.growth_rate * self.consecutive_rejections as f64);
+        let current_sigma =
+            self.base_sigma * (1.0 + self.growth_rate * self.consecutive_rejections as f64);
         self.pos_uncertainty = current_sigma;
 
         // Predict next position based on velocity
         let predicted_position = self.predict_next_position(current_timestamp);
 
         // Calculate Euclidean distance to predicted position
-        let position_error = (&current_position - &predicted_position).mapv(|x| x * x).sum().sqrt();
+        let position_error = (&current_position - &predicted_position)
+            .mapv(|x| x * x)
+            .sum()
+            .sqrt();
 
         // Calculate angular error if we have a previous accepted pose
         let angular_error = if let Some(ref last_pose) = self.last_accepted_pose {
@@ -205,18 +208,29 @@ impl PoseOutlierFilter {
     /// Update configuration parameters
     #[pyo3(signature = (config))]
     fn update_config(&mut self, config: &Bound<'_, PyDict>) -> PyResult<()> {
-
         if let Some(val) = config.get_item("history_size")? {
             let history_size_candidate: usize = val.extract()?;
             if history_size_candidate == 0 || history_size_candidate > 1000 {
-                return Err(PyValueError::new_err("history_size must be between 1 and 1000"));
+                return Err(PyValueError::new_err(
+                    "history_size must be between 1 and 1000",
+                ));
             }
             self.history_size = history_size_candidate;
             // Resize deques
             let old_poses: Vec<_> = self.accepted_poses.iter().cloned().collect();
             let old_timestamps: Vec<_> = self.accepted_timestamps.iter().cloned().collect();
-            self.accepted_poses = old_poses.into_iter().rev().take(self.history_size).rev().collect();
-            self.accepted_timestamps = old_timestamps.into_iter().rev().take(self.history_size).rev().collect();
+            self.accepted_poses = old_poses
+                .into_iter()
+                .rev()
+                .take(self.history_size)
+                .rev()
+                .collect();
+            self.accepted_timestamps = old_timestamps
+                .into_iter()
+                .rev()
+                .take(self.history_size)
+                .rev()
+                .collect();
         }
 
         if let Some(val) = config.get_item("base_sigma")? {
@@ -246,7 +260,9 @@ impl PoseOutlierFilter {
         if let Some(val) = config.get_item("max_consecutive_rejections")? {
             let max_consecutive_rejections_candidate: usize = val.extract()?;
             if max_consecutive_rejections_candidate == 0 {
-                return Err(PyValueError::new_err("max_consecutive_rejections must be greater than 0"));
+                return Err(PyValueError::new_err(
+                    "max_consecutive_rejections must be greater than 0",
+                ));
             }
             self.max_consecutive_rejections = max_consecutive_rejections_candidate;
         }
@@ -261,16 +277,23 @@ impl PoseOutlierFilter {
 
         if let Some(val) = config.get_item("angular_gate_threshold")? {
             let angular_gate_threshold_candidate: f64 = val.extract()?;
-            if angular_gate_threshold_candidate < 0.0 || angular_gate_threshold_candidate > std::f64::consts::PI {
-                return Err(PyValueError::new_err("angular_gate_threshold must be between 0 and π radians"));
+            if angular_gate_threshold_candidate < 0.0
+                || angular_gate_threshold_candidate > std::f64::consts::PI
+            {
+                return Err(PyValueError::new_err(
+                    "angular_gate_threshold must be between 0 and π radians",
+                ));
             }
             self.angular_gate_threshold = angular_gate_threshold_candidate;
         }
 
         if let Some(val) = config.get_item("velocity_smoothing_alpha")? {
             let velocity_smoothing_alpha_candidate: f64 = val.extract()?;
-            if velocity_smoothing_alpha_candidate < 0.0 || velocity_smoothing_alpha_candidate > 1.0 {
-                return Err(PyValueError::new_err("velocity_smoothing_alpha must be between 0 and 1"));
+            if velocity_smoothing_alpha_candidate < 0.0 || velocity_smoothing_alpha_candidate > 1.0
+            {
+                return Err(PyValueError::new_err(
+                    "velocity_smoothing_alpha must be between 0 and 1",
+                ));
             }
             self.velocity_smoothing_alpha = velocity_smoothing_alpha_candidate;
         }
@@ -278,7 +301,9 @@ impl PoseOutlierFilter {
         if let Some(val) = config.get_item("full_reset_threshold")? {
             let full_reset_threshold_candidate: usize = val.extract()?;
             if full_reset_threshold_candidate == 0 {
-                return Err(PyValueError::new_err("full_reset_threshold must be greater than 0"));
+                return Err(PyValueError::new_err(
+                    "full_reset_threshold must be greater than 0",
+                ));
             }
             self.full_reset_threshold = full_reset_threshold_candidate;
         }
@@ -306,7 +331,9 @@ impl PoseOutlierFilter {
     }
 
     fn predict_next_position(&self, current_timestamp: f64) -> Array1<f64> {
-        if let (Some(last_pose), Some(last_timestamp)) = (&self.last_accepted_pose, self.last_accepted_timestamp) {
+        if let (Some(last_pose), Some(last_timestamp)) =
+            (&self.last_accepted_pose, self.last_accepted_timestamp)
+        {
             let last_position = last_pose.slice(s![..3, 3]);
             if current_timestamp > last_timestamp {
                 let dt = current_timestamp - last_timestamp;
@@ -336,7 +363,9 @@ impl PoseOutlierFilter {
 
     fn accept_pose(&mut self, pose: &Array2<f64>, timestamp: f64, position: &Array1<f64>) {
         // Calculate velocity from last accepted pose
-        if let (Some(last_pose), Some(last_timestamp)) = (&self.last_accepted_pose, self.last_accepted_timestamp) {
+        if let (Some(last_pose), Some(last_timestamp)) =
+            (&self.last_accepted_pose, self.last_accepted_timestamp)
+        {
             let dt = timestamp - last_timestamp;
             if dt > 1e-6 {
                 let last_position = last_pose.slice(s![..3, 3]);
@@ -397,7 +426,6 @@ impl PoseOutlierFilter {
             self.has_previous_pose = false;
         }
     }
-
 }
 
 /// Python module initialization

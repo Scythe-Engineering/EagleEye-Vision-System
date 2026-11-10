@@ -1,2 +1,7 @@
+[lint]
+# Pyflakes plus pycodestyle's error rules, which the whole repo passes. CI runs this.
+select = ["E4", "E7", "E9", "F"]
+
 [lint.per-file-ignores]
-"tests/**" = ["S603", "S607"]
+# Blender runs this as a script, so it extends sys.path before importing its siblings.
+"benchmarks/blender/generate.py" = ["E402"]
