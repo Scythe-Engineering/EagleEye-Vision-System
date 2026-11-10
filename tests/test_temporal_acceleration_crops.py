@@ -1,6 +1,7 @@
 """Checks for perspective-aligned temporal acceleration crops."""
 
 from threading import Lock
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -12,10 +13,21 @@ from src.main_operations.definitions.detect_apriltags import (
 from src.main_operations.definitions.temporal_acceleration_preprocessor_rust import (
     TemporalAccelerationPreprocessorRustDefinition,
 )
-from src.main_operations.modules.apriltags.apriltag_detector import AprilTagDetector
+from src.main_operations.modules.apriltags import lazy_segment
+from src.main_operations.modules.apriltags.apriltag_detector import (
+    MISSED_TAG_SEARCH_INTERVAL,
+    AprilTagDetector,
+)
+from src.utils.timing import (
+    TimedValue,
+    TimingMetadata,
+    attach_output_timing,
+    collect_timings,
+    unwrap_timed_deep,
+)
 
 
-def _no_detections(input_images: object) -> list[object]:
+def _no_detections(input_images: object, **_: object) -> list[object]:
     """Return no detections for detector fallback tests.
 
     Args:
@@ -33,7 +45,7 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     source_quad = np.array([[10, 20], [70, 10], [80, 80], [20, 90]], dtype=np.float32)
 
     crop, full_frame_from_crop = (
-        TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+        TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
             frame, source_quad.flatten()
         )
     )
@@ -44,10 +56,104 @@ def test_perspective_crop_maps_detection_corners_back_to_full_frame() -> None:
     )
 
     restored = AprilTagDetector._map_segment_corners(crop_corners, full_frame_from_crop)
-    search_region = AprilTagDetector._segment_search_region(crop, full_frame_from_crop)
+    search_region = AprilTagDetector._segment_search_region(
+        crop.shape, full_frame_from_crop
+    )
 
     np.testing.assert_allclose(restored, source_quad, atol=1e-4)
     np.testing.assert_allclose(search_region, source_quad, atol=1e-4)
+
+
+def test_crop_pixels_and_maps_match_original_perimeter_math() -> None:
+    """Crop sizing, maps and pixels match the OpenCV reference for both windings."""
+    random = np.random.default_rng(20260929)
+    frame = random.integers(0, 256, (100, 120, 3), dtype=np.uint8)
+    for image in (frame, cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)):
+        for _ in range(40):
+            quad = np.array(
+                [[10, 10], [100, 10], [100, 90], [10, 90]], dtype=np.float32
+            )
+            quad += random.uniform(-20, 20, (4, 2)).astype(np.float32)
+            if random.integers(2):
+                quad = quad[::-1].copy()
+            edges = np.linalg.norm(quad - np.roll(quad, -1, axis=0), axis=1)
+            side = max(2, min(int(np.ceil(float(edges.max()))), max(image.shape[:2])))
+            destination = np.array(
+                [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
+                dtype=np.float32,
+            )
+            if cv2.contourArea(quad, oriented=True) < 0:
+                destination = destination[::-1].copy()
+            expected_map = cv2.getPerspectiveTransform(destination, quad)
+            expected_crop = cv2.warpPerspective(
+                image, cv2.getPerspectiveTransform(quad, destination), (side, side)
+            )
+            actual_crop, actual_map = (
+                TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
+                    image, quad
+                )
+            )
+            # The native solve matches cv2's to rounding, so crops rarely differ.
+            np.testing.assert_array_equal(actual_crop, expected_crop)
+            np.testing.assert_allclose(actual_map, expected_map, rtol=1e-9, atol=1e-12)
+
+
+def test_temporal_run_keeps_roi_order_channels_maps_and_unwarped_fallback() -> None:
+    """Crop optimization leaves the public mapped-segment/full-frame contract intact."""
+    operation = TemporalAccelerationPreprocessorRustDefinition.__new__(
+        TemporalAccelerationPreprocessorRustDefinition
+    )
+    operation._last_visualization_quads = []
+    operation._last_visualization_quads_lock = Lock()
+    frame = np.random.default_rng(1).integers(0, 256, (100, 120, 3), dtype=np.uint8)
+    quads = [
+        [10, 20, 70, 10, 80, 80, 20, 90],
+        [80, 60, 100, 60, 100, 40, 80, 40],
+    ]
+    operation._rust_impl = SimpleNamespace(
+        process_frame=lambda width, height: (
+            quads,
+            [[10, 10, 80, 90], [80, 40, 100, 60]],
+        )
+    )
+    segments, original = operation.run(frame)
+    assert original is frame
+    assert len(segments) == 2
+    for (crop, mapping), quad in zip(segments, quads):
+        expected_crop, expected_mapping = operation._perspective_segment(
+            frame, np.array(quad, dtype=np.float32)
+        )
+        np.testing.assert_array_equal(crop, expected_crop)
+        np.testing.assert_array_equal(mapping, expected_mapping)
+        assert crop.shape[2] == 3
+    operation._rust_impl = SimpleNamespace(
+        process_frame=lambda width, height: ([], [[0, 0, width, height]])
+    )
+    segments, original = operation.run(frame)
+    assert original is frame and len(segments) == 1
+    assert np.shares_memory(segments[0][0], frame)
+    np.testing.assert_array_equal(segments[0][0], frame)
+    np.testing.assert_array_equal(segments[0][1], [0, 0])
+
+
+def test_timing_utilities_pass_lazy_segments_through_unbuilt(monkeypatch) -> None:
+    """Moving processed_frame between operations never warps a lazy crop."""
+    frame = np.zeros((100, 120, 3), dtype=np.uint8)
+    quad = np.array([10, 20, 70, 10, 80, 80, 20, 90], dtype=np.float32)
+    segment = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
+        frame, quad
+    )
+
+    def no_warp(*args, **kwargs):
+        raise AssertionError("crop was built")
+
+    monkeypatch.setattr(lazy_segment.cv2, "warpPerspective", no_warp)
+    timing = TimingMetadata(capture_nt_us=1, capture_monotonic_ns=2)
+    output = attach_output_timing(([segment], frame), TimedValue(frame, timing))
+
+    assert collect_timings(output) == [timing]
+    segments, original = unwrap_timed_deep({"frame": output})["frame"]
+    assert segments[0] is segment and original is frame
 
 
 def test_perspective_crop_preserves_decodable_tag_winding() -> None:
@@ -72,7 +178,7 @@ def test_perspective_crop_preserves_decodable_tag_winding() -> None:
         canonical, frame_from_canonical, (400, 400), borderValue=255
     )
 
-    crop, _ = TemporalAccelerationPreprocessorRustDefinition._perspective_crop(
+    crop, _ = TemporalAccelerationPreprocessorRustDefinition._perspective_segment(
         frame, projected_quad
     )
     detections = Detector(families="tag36h11", quad_decimate=1).detect(crop)
@@ -122,7 +228,7 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
     detector._min_input_dimension = 4
     calls: list[object] = []
 
-    def find_one_tag(input_images: object) -> list[object]:
+    def find_one_tag(input_images: object, **_: object) -> list[object]:
         """Record one detector call and return one synthetic detection.
 
         Args:
@@ -142,6 +248,43 @@ def test_detector_stays_with_temporal_regions_when_a_tag_is_found() -> None:
 
     assert len(calls) == 1
     assert len(detector.get_last_search_regions()) == 1
+
+
+def test_detector_searches_full_frame_for_a_missed_predicted_tag() -> None:
+    """A tag missing from its predicted crop is found in the full frame."""
+    detector = AprilTagDetector.__new__(AprilTagDetector)
+    detector._detect_lock = Lock()
+    detector._last_search_regions = []
+    detector._min_input_dimension = 4
+    in_crop = SimpleNamespace(tag_id=1, corners=np.zeros((4, 2)))
+
+    def detect(input_images: object, **_: object) -> list[object]:
+        """Find tag 1 in the crops, and tags 1 and 2 in the full frame.
+
+        Args:
+            input_images: Crops, or the full frame.
+
+        Returns:
+            The synthetic detections for that input.
+        """
+        if isinstance(input_images, np.ndarray):
+            return [SimpleNamespace(tag_id=1), SimpleNamespace(tag_id=2)]
+        return [in_crop]
+
+    detector.run_detection = detect
+    crop = np.zeros((10, 10), dtype=np.uint8)
+    full_frame = np.zeros((20, 30), dtype=np.uint8)
+
+    crops = [(crop, np.array([2, 3])), (crop, np.array([12, 3]))]
+
+    detections = detector.detect(crops, full_frame)
+
+    assert [d.tag_id for d in detections] == [1, 2]
+    assert detections[0] is in_crop
+    # The next frames rely on the crops until the search interval has passed.
+    for _ in range(MISSED_TAG_SEARCH_INTERVAL - 1):
+        assert [d.tag_id for d in detector.detect(crops, full_frame)] == [1]
+    assert [d.tag_id for d in detector.detect(crops, full_frame)] == [1, 2]
 
 
 def test_detector_uses_full_frame_when_no_temporal_regions_exist() -> None:
@@ -178,7 +321,7 @@ def test_detector_skips_malformed_temporal_regions_before_fallback() -> None:
 
 
 def test_detector_ignores_malformed_full_frame_fallback() -> None:
-    """A malformed full frame is not recorded as a searched region."""
+    """A malformed full frame supplies neither fallback nor source bounds."""
     detector = AprilTagDetector.__new__(AprilTagDetector)
     detector._detect_lock = Lock()
     detector._last_search_regions = []

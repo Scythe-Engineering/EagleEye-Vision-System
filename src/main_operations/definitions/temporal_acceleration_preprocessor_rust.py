@@ -6,10 +6,11 @@ import numpy as np
 
 # Import the Rust module (built automatically)
 try:
-    from temporal_acceleration import TemporalAcceleration  # type: ignore
+    from temporal_acceleration import TemporalAcceleration, crop_geometry  # type: ignore
 except ImportError:
     TemporalAcceleration = None
 
+from src.main_operations.modules.apriltags.lazy_segment import LazySegment
 from src.main_operations.modules.apriltags.utils.fmap_parser import load_fmap_file
 from src.utils.camera_utils.camera_config_manager import CameraConfigRegistry
 from src.utils.camera_utils.load_camera_parameters import load_camera_parameters
@@ -72,9 +73,7 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 f"{camera_bus_id}/intrinsics.json"
             )
 
-        camera_matrix, distortion_coefficients = load_camera_parameters(
-            intrinsics_path
-        )
+        camera_matrix, distortion_coefficients = load_camera_parameters(intrinsics_path)
         apriltag_map = load_fmap_file(apriltag_map_path)
 
         # Convert data for Rust consumption
@@ -115,12 +114,13 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             max_detection_distance_m=max_detection_distance_m,
         )
 
-        self._last_visualization_quads: List[np.ndarray] = []
+        # Perimeter-ordered quads as 8 values or (4, 2) arrays, converted when drawn.
+        self._last_visualization_quads: list = []
         self._last_visualization_quads_lock: Lock = Lock()
 
     def run(
         self, input_data: Any
-    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+    ) -> Tuple[List[Tuple[np.ndarray, np.ndarray] | LazySegment], np.ndarray]:
         """Generate predicted ROIs for the current frame using Rust implementation.
 
         Args:
@@ -130,6 +130,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
             Tuple containing the cropped images and original frame. Each crop is
             paired with either a shape-(2,) XY offset for an unwarped crop or a
             shape-(3, 3) transform from crop coordinates to full-frame coordinates.
+            Rectified crops are `LazySegment`s, warped only when their pixels are
+            read.
         """
         if isinstance(input_data, dict):
             frame = input_data.get("frame")
@@ -156,8 +158,8 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         height, width = frame.shape[:2]
         crop_quads, crop_regions = self._rust_impl.process_frame(width, height)
 
-        cropped_images: List[Tuple[np.ndarray, np.ndarray]] = []
-        visualization_quads: List[np.ndarray] = []
+        cropped_images: List[Tuple[np.ndarray, np.ndarray] | LazySegment] = []
+        visualization_quads: list = []
         use_perspective_crops = len(crop_quads) == len(crop_regions)
         for index, region in enumerate(crop_regions):
             left, top, right, bottom = region
@@ -169,9 +171,11 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
                 continue
 
             if use_perspective_crops:
-                quad = np.asarray(crop_quads[index], dtype=np.float32).reshape(4, 2)
-                crop, full_frame_from_crop = self._perspective_crop(frame, quad)
-                cropped_images.append((crop, full_frame_from_crop))
+                quad = crop_quads[index]
+                segment = self._perspective_segment(frame, quad)
+                if segment is None:
+                    continue
+                cropped_images.append(segment)
                 visualization_quads.append(quad)
             else:
                 crop = frame[top:bottom, left:right]
@@ -189,35 +193,36 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
         return (cropped_images, frame)
 
     @staticmethod
-    def _perspective_crop(
-        frame: np.ndarray, flattened_quad: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Rectify a projected tag region and return its full-frame mapping.
+    def _perspective_segment(
+        frame: np.ndarray, quad: list[float] | np.ndarray
+    ) -> LazySegment | None:
+        """Describe a rectified projected tag region and its full-frame mapping.
+
+        The square crop's side is the quad's longest edge, and its corners keep
+        the quad's winding because mirrored AprilTags cannot be decoded.
 
         Args:
             frame: Source camera frame.
-            flattened_quad: Four perimeter-ordered `(x, y)` coordinates in the
-                full frame with shape `(8,)` or `(4, 2)`.
+            quad: Four perimeter-ordered `(x, y)` full-frame coordinates, as eight
+                values or a `(4, 2)` array.
 
         Returns:
-            Square rectified crop and a shape-(3, 3) transform from crop
-            coordinates to full-frame coordinates.
+            Square rectified segment, warped when first read, with a shape-(3, 3)
+            transform from crop coordinates to full-frame coordinates; None for a
+            degenerate quad.
         """
-        source = flattened_quad.reshape(4, 2)
-        edge_lengths = np.linalg.norm(source - np.roll(source, -1, axis=0), axis=1)
-        side = min(int(np.ceil(float(edge_lengths.max()))), max(frame.shape[:2]))
-        side = max(side, 2)
-        destination = np.array(
-            [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]],
-            dtype=np.float32,
+        if isinstance(quad, np.ndarray):
+            quad = quad.astype(np.float32).ravel().tolist()
+        geometry = crop_geometry(quad, max(frame.shape[:2]))
+        if geometry is None:
+            return None
+        side, full_frame_from_crop, crop_from_full_frame = geometry
+        return LazySegment(
+            frame,
+            side,
+            crop_from_full_frame,
+            np.array(full_frame_from_crop).reshape(3, 3),
         )
-        # Preserve winding because mirrored AprilTags cannot be decoded.
-        if cv2.contourArea(source, oriented=True) < 0:
-            destination = destination[::-1].copy()
-        crop_from_full_frame = cv2.getPerspectiveTransform(source, destination)
-        full_frame_from_crop = cv2.getPerspectiveTransform(destination, source)
-        crop = cv2.warpPerspective(frame, crop_from_full_frame, (side, side))
-        return crop, full_frame_from_crop
 
     def update_config(self, json_config: Dict[str, Any]) -> None:
         """Update live configuration for the temporal acceleration.
@@ -245,7 +250,10 @@ class TemporalAccelerationPreprocessorRustDefinition(OperationInstance):
 
         visualization_frame = cv2.convertScaleAbs(frame, alpha=0.3, beta=0)
         mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-        polygons = [np.rint(quad).astype(np.int32) for quad in quads]
+        polygons = [
+            np.rint(np.asarray(quad, dtype=np.float32).reshape(4, 2)).astype(np.int32)
+            for quad in quads
+        ]
         if polygons:
             cv2.fillPoly(mask, polygons, 255)
             visualization_frame[mask != 0] = frame[mask != 0]

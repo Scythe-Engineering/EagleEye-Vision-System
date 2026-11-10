@@ -1,9 +1,17 @@
-"""Pure checks for temporal experiment compaction and summaries."""
+"""Compaction and summaries of temporal benchmark runs."""
 
 from benchmarks.temporal_experiments import _reacquisition, compact_record, summarize
 
 
-def _row(index: int, truth: int, matched: int, pose: bool = False) -> dict:
+def _row(
+    index: int,
+    truth: int,
+    matched: int,
+    *,
+    pose: bool = False,
+    skipped: bool = False,
+    operation_ms: dict[str, float] | None = None,
+) -> dict:
     """Build one compact frame row.
 
     Args:
@@ -11,16 +19,20 @@ def _row(index: int, truth: int, matched: int, pose: bool = False) -> dict:
         truth: Count of provisional truth tags.
         matched: Count of matched provisional tags.
         pose: Whether the row has an available pose.
+        skipped: Whether the pipeline skipped this frame.
+        operation_ms: Per-operation durations; defaults to one detect timing.
 
     Returns:
         A compact frame record accepted by ``summarize`` and ``_reacquisition``.
     """
+    operation_ms = {"detect": 0.25} if operation_ms is None else operation_ms
     return {
         "clip": "clip",
         "frame_index": index,
-        "pipeline_ms": 1.0,
+        "pipeline_ms": sum(operation_ms.values()),
         "decode_ms": 0.5,
-        "operation_ms": {"detect": 0.25},
+        "operation_ms": operation_ms,
+        "skipped": skipped,
         "provisional_truth_tags": truth,
         "provisional_matched": matched,
         "total_matched": matched,
@@ -49,7 +61,7 @@ def test_summary_uses_provisional_or_eligible_truth_not_raw_tag_list() -> None:
                 "tp": 1,
                 "fp": 0,
                 "fn": 0,
-                "matches": [{}],
+                "matches": [{"truth_index": 1, "corner_error_px": 0.2}],
                 "by_tag": [
                     {
                         "tag_id": 4,
@@ -120,3 +132,18 @@ def test_reacquisition_does_not_cross_a_later_tag_free_gap() -> None:
             "delay_frames": 0,
         },
     ]
+
+
+def test_summary_operation_ms_stays_completed_only() -> None:
+    """Skipped rows count toward the all-frames op timings, not operation_ms."""
+    rows = [
+        _row(0, 0, 0, pose=True, operation_ms={"detect": 1.0, "pnp": 0.5}),
+        _row(1, 0, 0, skipped=True, operation_ms={"detect": 9.0}),
+    ]
+    group = summarize(rows, include_reacquisition=False)["groups"]["all"]
+    assert group["skipped_count"] == 1
+    assert group["operation_ms"]["detect"]["mean"] == 1.0
+    assert group["operation_ms"]["detect"]["denominator"] == 1
+    assert group["operation_ms_all_frames"]["detect"]["mean"] == 5.0
+    assert group["operation_ms_all_frames"]["pnp"]["denominator"] == 1
+    assert group["pose_available"]["count"] == 1

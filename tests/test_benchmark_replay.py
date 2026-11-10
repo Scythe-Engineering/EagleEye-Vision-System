@@ -67,7 +67,8 @@ def test_sequential_decoder_stops_at_finite_eof(tmp_path: Path) -> None:
 
 
 def test_fmap_corner_order_matches_detector_contract() -> None:
-    """Map corners should use pupil-apriltags' canonical decoded order."""
+    """Map corners follow pupil-apriltags' order for an upright printed tag:
+    bottom-left, bottom-right, top-right, top-left, seen from in front (+X)."""
     tag = Apriltag(
         tag_id=1,
         family="apriltag3_36h11_classic",
@@ -80,10 +81,10 @@ def test_fmap_corner_order_matches_detector_contract() -> None:
     np.testing.assert_allclose(
         tag.global_corners,
         [
-            [0.0, 0.5, 0.5],
-            [0.0, -0.5, 0.5],
             [0.0, -0.5, -0.5],
             [0.0, 0.5, -0.5],
+            [0.0, 0.5, 0.5],
+            [0.0, -0.5, 0.5],
         ],
     )
 
@@ -218,3 +219,43 @@ def test_real_benchmark_graph_constructs_and_runs_blank_frame(temporal: bool) ->
             manager.end_cycle()
         assert pipeline.get_operation_errors() == []
         assert pipeline.get_operation_by_uuid("bench-detect") is not None
+
+
+def test_accuracy_keeps_the_profile_of_a_skipped_cycle() -> None:
+    """A skipped cycle's own snapshot is kept, but the frame is not completed."""
+
+    class Pipeline:
+        def __init__(self) -> None:
+            self.profile: dict[str, object] = {"frame_seq": 1}
+
+        def run(self) -> None:
+            """Publish a fresh snapshot flagged as skipped."""
+            self.profile = {
+                "frame_seq": 2,
+                "skipped": True,
+                "operations": {"bench-detect": {"execution_time_ms": 4.0}},
+            }
+
+        def get_latest_profile_snapshot(self) -> dict[str, object]:
+            """Return the latest snapshot."""
+            return dict(self.profile)
+
+        def get_operation_errors(self) -> list[object]:
+            """Return no operation failures."""
+            return []
+
+    manager = ReplayCameraManager(epoch_ns=1)
+    records = run_accuracy(
+        _Decoder(1),
+        manager,
+        Pipeline(),
+        120,
+        aligned_truth=iter([{"frame_index": 0}]),
+        collect=lambda pipeline, index: {
+            "frame_index": index,
+            "profile": pipeline.get_latest_profile_snapshot(),
+        },
+    )
+    assert records[0]["completed"] is False
+    assert records[0]["skipped"] is True
+    assert records[0]["output"]["profile"]["frame_seq"] == 2

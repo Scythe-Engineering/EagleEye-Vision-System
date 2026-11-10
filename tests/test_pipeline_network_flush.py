@@ -30,11 +30,7 @@ def test_flush_follows_completed_publisher_branches(
     events = []
     pipeline = Pipeline.__new__(Pipeline)
     pipeline.limit_frames_to_camera_capture_speed = False
-    pipeline.operations = {
-        "output": SimpleNamespace(
-            name="publish_to_networktables" if publisher else "robot_pose_output"
-        )
-    }
+    pipeline.has_networktables_publisher = publisher
     pipeline.network_table = SimpleNamespace(
         getInstance=lambda: SimpleNamespace(flush=lambda: events.append("flush"))
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from importlib import import_module
 from pathlib import Path
 from typing import Any, List
 
@@ -39,6 +40,13 @@ class OperationConfigMixin:
                 try:
                     with open(config_data_path, "r") as f:
                         config_data = json.load(f)
+                    required_module = config_data.get("requires_rust_module")
+                    if required_module:
+                        try:
+                            import_module(required_module)
+                        except (ImportError, OSError) as exc:
+                            self.log(f"Rust operation {file} unavailable: {exc}")
+                            continue
                     description = config_data.get(
                         "description", NO_DESCRIPTION_AVAILABLE_MESSAGE
                     )

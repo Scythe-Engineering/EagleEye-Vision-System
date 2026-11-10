@@ -8,7 +8,14 @@ import cv2
 import numpy as np
 from pupil_apriltags import Detection, Detector
 
+from .custom_native import CustomNativeDetector
+from .lazy_segment import segment_shape_and_mapping
+from .tag_tracker import TagTracker, uncovered_segments
+
 logger = logging.getLogger(__name__)
+
+# Frames between full-frame searches for predicted tags the crops missed.
+MISSED_TAG_SEARCH_INTERVAL = 4
 
 
 @dataclass
@@ -31,6 +38,11 @@ class AprilTagDetector:
     over all detector parameters. It can be used independently from pose estimation.
     """
 
+    rust_backend = False
+    _tracker: TagTracker | None = None
+    # Starts due, so the first miss is searched at once.
+    _frames_since_full_search = MISSED_TAG_SEARCH_INTERVAL
+
     def __init__(
         self,
         families: str = "tag36h11",
@@ -43,6 +55,9 @@ class AprilTagDetector:
         large_roi_min_px: int = 96,
         full_frame_nthreads: int = 0,
         small_roi_max_px: int = 32,
+        *,
+        rust_backend: bool = False,
+        track_tags: bool = True,
     ) -> None:
         """Initialize the AprilTag detector with configurable parameters.
 
@@ -71,7 +86,14 @@ class AprilTagDetector:
                 Zero uses ``nthreads`` without creating another native detector.
             small_roi_max_px: ROIs smaller than this use a native decimate-1 detector.
                 Zero disables the extra detector.
+            rust_backend: Use the built custom_apriltag_detector module instead of
+                pupil_apriltags for every detector bank.
+            track_tags: With the Rust backend and temporal segments, re-find tags
+                from the previous frame at their predicted corners and skip their
+                segments. Missed tags fall back to the segment search.
         """
+        self.rust_backend = rust_backend
+        self._tracker = TagTracker() if track_tags and rust_backend else None
         self.families = families
         self.nthreads = nthreads
         self.quad_decimate = quad_decimate
@@ -150,9 +172,9 @@ class AprilTagDetector:
         quad_sigma: float,
         refine_edges: int,
         decode_sharpening: float,
-    ) -> Detector:
+    ) -> Detector | CustomNativeDetector:
         """Create the native AprilTag detector with normalized parameters."""
-        return Detector(
+        return (CustomNativeDetector if self.rust_backend else Detector)(
             families=families,
             nthreads=max(1, int(nthreads)),
             quad_decimate=max(1.0, float(quad_decimate)),
@@ -161,7 +183,9 @@ class AprilTagDetector:
             decode_sharpening=float(decode_sharpening),
         )
 
-    def _disable_native_destructor(self, detector: Detector) -> None:
+    def _disable_native_destructor(
+        self, detector: Detector | CustomNativeDetector
+    ) -> None:
         """Prevent a known unsafe pupil_apriltags destructor path during reconfigure.
 
         pupil_apriltags.Detector.__del__ releases C pointers. On macOS this has
@@ -170,6 +194,8 @@ class AprilTagDetector:
         clearing these attributes lets Python drop the wrapper without entering
         the crashing native destroy path.
         """
+        if isinstance(detector, CustomNativeDetector):
+            return
         try:
             if hasattr(detector, "tag_detector_ptr"):
                 detector.tag_detector_ptr = None
@@ -196,12 +222,15 @@ class AprilTagDetector:
 
     def _is_valid_image(self, image: np.ndarray) -> bool:
         """Return whether an image is large enough for AprilTag processing."""
+        return image is not None and self._is_valid_shape(image.shape)
+
+    def _is_valid_shape(self, shape: tuple[int, ...]) -> bool:
+        """Return whether an image of this shape is large enough for detection."""
         return (
-            image is not None
-            and image.size != 0
-            and image.ndim >= 2
-            and image.shape[0] >= self._min_input_dimension
-            and image.shape[1] >= self._min_input_dimension
+            len(shape) >= 2
+            and 0 not in shape
+            and shape[0] >= self._min_input_dimension
+            and shape[1] >= self._min_input_dimension
         )
 
     def _preprocess_image(
@@ -398,6 +427,8 @@ class AprilTagDetector:
             self._preprocess_mode = None
             self._gray_buffer = None
             self._segment_gray_buffers.clear()
+            if self._tracker is not None:
+                self._tracker.reset()
             self._disable_native_destructor(old_detector)
             if old_full_frame_detector is not None:
                 self._disable_native_destructor(old_full_frame_detector)
@@ -450,18 +481,18 @@ class AprilTagDetector:
 
     @staticmethod
     def _segment_search_region(
-        image: np.ndarray, full_frame_mapping: np.ndarray
+        shape: tuple[int, ...], full_frame_mapping: np.ndarray
     ) -> np.ndarray:
         """Return an image segment's oriented boundary in full-frame coordinates.
 
         Args:
-            image: Image segment sent to the detector.
+            shape: Shape of the image segment sent to the detector.
             full_frame_mapping: Segment offset or perspective transform.
 
         Returns:
             Four perimeter-ordered full-frame corners.
         """
-        height, width = image.shape[:2]
+        height, width = shape[:2]
         corners = np.array(
             [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
             dtype=np.float32,
@@ -474,9 +505,15 @@ class AprilTagDetector:
             return [region.copy() for region in self._last_search_regions]
 
     def run_detection(
-        self, images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray
+        self,
+        images: list[tuple[np.ndarray, np.ndarray]] | np.ndarray,
+        *,
+        source_shape: tuple[int, int] | None = None,
     ) -> Optional[list[Detection] | list[CustomDetection]]:
-        """Run detection on a single image or a list of mapped image segments."""
+        """Run detection; mapped custom segments use optional physical source bounds.
+
+        Direct callers without source_shape intentionally leave inputs unmasked.
+        """
         # prevents issues with detector settings being changed mid-frame / mid-run
         if not self.ready:
             return None
@@ -516,7 +553,15 @@ class AprilTagDetector:
                             detector = self._large_roi_detector
                         else:
                             detector = self.detector
-                        detected_tags = detector.detect(gray_image)
+                        detected_tags = (
+                            detector.detect(
+                                gray_image,
+                                source_map=full_frame_mapping,
+                                source_shape=source_shape,
+                            )
+                            if self.rust_backend and source_shape is not None
+                            else detector.detect(gray_image)
+                        )
                     except Exception as exc:
                         logger.exception("AprilTag detection failed: %s", exc)
                         continue
@@ -548,29 +593,65 @@ class AprilTagDetector:
         Args:
             images: Input image or image segments paired with either an XY offset
                 or a 3x3 transform from segment coordinates to the full frame.
-            full_frame: Optional fallback used when the first search finds no tags.
+            full_frame: Physical source image for custom segment validity, and
+                optional fallback used when the first search finds no tags.
 
         Returns:
             Detected tags from the supplied image or regions. If no tag is found,
             the full frame is searched once before returning no detections.
         """
         temporal_segments = not isinstance(images, np.ndarray)
+        # The temporal step builds one segment per tag it expects to be in view.
+        expected_tags = (
+            sum(
+                self._is_valid_shape(segment_shape_and_mapping(segment)[0])
+                for segment in images
+            )
+            if temporal_segments
+            else 0
+        )
+        usable_frame = full_frame is not None and self._is_valid_image(full_frame)
+        tracked: dict[int, np.ndarray] = {}
+        if self._tracker is not None and temporal_segments and usable_frame:
+            tracked, images = self._track(images, full_frame)
+        # Shapes and mappings only, so lazy segments are not warped here.
         search_regions = (
             [
-                self._segment_search_region(image, mapping)
-                for image, mapping in images
-                if self._is_valid_image(image)
+                self._segment_search_region(shape, mapping)
+                for shape, mapping in map(segment_shape_and_mapping, images)
+                if self._is_valid_shape(shape)
             ]
             if temporal_segments
             else []
         )
 
-        detections = self.run_detection(images)
-        if (
-            full_frame is not None
-            and self._is_valid_image(full_frame)
-            and (detections is None or len(detections) == 0)
+        detections = self.run_detection(
+            images,
+            source_shape=full_frame.shape[:2]
+            if temporal_segments and usable_frame
+            else None,
+        )
+        if tracked:
+            searched = [d for d in detections or [] if d.tag_id not in tracked]
+            detections = [
+                CustomDetection(tag_id=tag_id, corners=corners)
+                for tag_id, corners in tracked.items()
+            ] + searched
+            search_regions = search_regions + list(tracked.values())
+        # Search the whole frame when nothing was found, and every few frames when
+        # a predicted tag was missed: a stale or drifting pose keeps its crops away
+        # from a tag that is still visible. The interval bounds the cost of a
+        # predicted tag that is hidden or too small to decode.
+        found_count = len(detections or [])
+        self._frames_since_full_search += 1
+        if usable_frame and (
+            found_count == 0
+            or (
+                found_count < expected_tags
+                and self._frames_since_full_search >= MISSED_TAG_SEARCH_INTERVAL
+            )
         ):
+            self._frames_since_full_search = 0
             full_frame_detections = self.run_detection(full_frame)
             if temporal_segments:
                 search_regions = [
@@ -585,8 +666,37 @@ class AprilTagDetector:
                     )
                 ]
             if full_frame_detections:
-                detections = full_frame_detections
+                found = {detection.tag_id for detection in detections or []}
+                detections = list(detections or []) + [
+                    detection
+                    for detection in full_frame_detections
+                    if detection.tag_id not in found
+                ]
 
         with self._detect_lock:
             self._last_search_regions = search_regions
+            if self._tracker is not None:
+                self._tracker.update(detections or [])
         return detections
+
+    def _track(
+        self, images: list[tuple[np.ndarray, np.ndarray]], full_frame: np.ndarray
+    ) -> tuple[dict[int, np.ndarray], list[tuple[np.ndarray, np.ndarray]]]:
+        """Confirm tracked tags and drop the segments centred on them, unbuilt.
+
+        Returns:
+            Confirmed full-frame corners by tag ID, and the segments still to search.
+        """
+        with self._detect_lock:
+            # Tracking always refines corners, so it only runs with refine_edges on.
+            if not self.ready or self._tracker is None or not self.refine_edges:
+                return {}, images
+            try:
+                tracked = self._tracker.find(self.detector, full_frame)
+            except ValueError:
+                # Frames the native tracker rejects (e.g. non-uint8) are still
+                # searched normally, which converts them first.
+                return {}, images
+        if not tracked:
+            return tracked, images
+        return tracked, uncovered_segments(images, tracked, self._is_valid_shape)

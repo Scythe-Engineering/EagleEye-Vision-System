@@ -103,7 +103,7 @@ class RustModuleBuilder:
         ]
 
     def get_module_hash(self, module_dir: Path) -> str:
-        """Hash module sources and the default native build profile.
+        """Hash a module's sources, its locked dependencies and the target Python.
 
         Args:
             module_dir: Directory containing the module sources.
@@ -111,20 +111,15 @@ class RustModuleBuilder:
         Returns:
             The module hash as a hexadecimal string.
         """
-        # Invalidate cached debug builds when switching inference to release mode.
-        hasher = hashlib.md5(b"maturin-develop-release")
-
-        # Include Cargo.toml
-        cargo_toml = module_dir / self.CARGO_TOML_FILENAME
-        if cargo_toml.exists():
-            hasher.update(cargo_toml.read_bytes())
-
-        # Include all Rust source files
-        src_dir = module_dir / "src"
-        if src_dir.exists():
-            for rust_file in src_dir.rglob("*.rs"):
-                hasher.update(rust_file.read_bytes())
-
+        # The salt invalidates cached debug builds from before release-only builds.
+        hasher = hashlib.sha256(b"maturin-develop-release")
+        hasher.update(sys.executable.encode())
+        paths = [module_dir / "Cargo.toml", module_dir / "Cargo.lock"]
+        paths.extend(sorted((module_dir / "src").rglob("*.rs")))
+        for path in paths:
+            if path.is_file():
+                hasher.update(path.relative_to(module_dir).as_posix().encode())
+                hasher.update(path.read_bytes())
         return hasher.hexdigest()
 
     def load_build_cache(self) -> dict:
@@ -173,6 +168,13 @@ class RustModuleBuilder:
 
         return current_hash != cached_hash
 
+    def _module_build_command(self, module_dir: Path) -> list[str]:
+        """Use the module's policy for both builds and reinstalls."""
+        script = module_dir / "build.py"
+        if script.is_file():
+            return [*self._python_command(), str(script)]
+        return [*self._maturin_command(), "develop", "--release"]
+
     def reinstall_package(self, module_dir: Path) -> bool:
         """Reinstall a package using maturin develop."""
         module_name = module_dir.name
@@ -182,7 +184,7 @@ class RustModuleBuilder:
             return False
 
         result = subprocess.run(
-            [*self._maturin_command(), "develop", "--release"],
+            self._module_build_command(module_dir),
             cwd=module_dir,
             check=False,
             capture_output=True,
@@ -262,31 +264,16 @@ class RustModuleBuilder:
         module_name = module_dir.name
         self._log(f"{Colors.CYAN}Building module: {module_name}{Colors.RESET}")
 
-        # Check if module has its own build.py
-        build_script = module_dir / "build.py"
-        if build_script.exists():
-            # Run module-specific build script
-            result = subprocess.run(
-                [*self._python_command(), str(build_script)],
-                cwd=module_dir,
-                check=False,
-                capture_output=True,
-                text=True,
-                env=self._get_clean_env(),
-            )
-        else:
-            # Fallback to direct maturin build
-            if not self.check_dependencies():
-                return False
-
-            result = subprocess.run(
-                [*self._maturin_command(), "develop", "--release"],
-                cwd=module_dir,
-                check=False,
-                capture_output=True,
-                text=True,
-                env=self._get_clean_env(),
-            )
+        if not (module_dir / "build.py").is_file() and not self.check_dependencies():
+            return False
+        result = subprocess.run(
+            self._module_build_command(module_dir),
+            cwd=module_dir,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=self._get_clean_env(),
+        )
 
         if result.returncode == 0:
             self._log(f"{Colors.GREEN}✓ Successfully built {module_name}{Colors.RESET}")

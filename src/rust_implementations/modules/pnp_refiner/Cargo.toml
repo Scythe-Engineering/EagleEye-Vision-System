@@ -1,0 +1,24 @@
+[package]
+name = "pnp_refiner"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pnp_refiner"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Off for `cargo test`, which links against libpython instead of loading as a module.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pyo3 = "0.29.0"
+
+[package.metadata.maturin]
+features = ["extension-module"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"

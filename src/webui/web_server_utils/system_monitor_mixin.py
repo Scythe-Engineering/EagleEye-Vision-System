@@ -44,6 +44,15 @@ SYSTEM_UPDATE_APT_PHASES: list[tuple[str, list[str], float]] = [
 SYSTEM_UPDATE_PHASE_COUNT = 1 + len(SYSTEM_UPDATE_APT_PHASES)
 SYSTEM_UPDATE_DEFAULT_BRANCH = "main"
 SYSTEM_UPDATE_DEFAULT_TARGET = "release"
+# Device settings and uploads kept across updates; directories cover every file
+# inside them.
+SYSTEM_UPDATE_DEVICE_PATHS = (
+    "src/config/pipeline_config.json",
+    "src/general_conf.json",
+    "src/utils/camera_utils/camera_calibrations",
+    "files/apriltag_map_path",
+    "files/models/manifest.json",
+)
 _GIT_REF_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._/\-+]+$")
 _GITHUB_REMOTE_PATTERN = re.compile(
     r"(?:github\.com(?::\d+)?[/:])(?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?$"
@@ -538,7 +547,7 @@ class SystemMonitorMixin:
         target = self._system_update_target or SYSTEM_UPDATE_DEFAULT_BRANCH
         target_type = self._system_update_target_type
         try:
-            self._checkout_ref_preserving_pipeline_config(
+            self._checkout_ref_preserving_device_config(
                 target,
                 target_type=target_type,
                 phase_count=phase_count,
@@ -586,44 +595,51 @@ class SystemMonitorMixin:
             with self._system_update_lock:
                 self._system_update_in_progress = False
 
-    def _checkout_ref_preserving_pipeline_config(
+    def _snapshot_device_config(self, repo_root: Path) -> dict[Path, bytes | None]:
+        """Read the device settings an update must keep; None marks a missing file."""
+        snapshot: dict[Path, bytes | None] = {}
+        for relative_path in SYSTEM_UPDATE_DEVICE_PATHS:
+            path = repo_root / relative_path
+            if path.is_dir():
+                for file in path.rglob("*"):
+                    if file.is_file():
+                        snapshot[file] = file.read_bytes()
+            else:
+                snapshot[path] = path.read_bytes() if path.exists() else None
+        return snapshot
+
+    def _checkout_ref_preserving_device_config(
         self,
         target: str,
         *,
         target_type: str,
         phase_count: int,
     ) -> None:
-        """Fetch and checkout a branch or immutable release tag."""
-        repo_root = self._repo_root()
-        pipeline_path = repo_root / "src" / "config" / "pipeline_config.json"
-        relative_path = pipeline_path.relative_to(repo_root).as_posix()
-        pipeline_existed = pipeline_path.exists()
-        pipeline_contents = pipeline_path.read_bytes() if pipeline_existed else None
+        """Fetch and checkout a branch or release tag, keeping the device's settings.
 
-        status = self._run_git_command(
-            ["status", "--porcelain", "--", relative_path],
-            timeout=30.0,
+        Other local edits and untracked files would block the checkout, so they are
+        moved into a git stash that stays available after a successful update.
+        """
+        repo_root = self._repo_root()
+        device_config = self._snapshot_device_config(repo_root)
+
+        stash_message = (
+            f"EagleEye system update backup {time.strftime('%Y-%m-%d %H:%M:%S')}"
         )
-        stash_created = bool(status)
+        stash_created = bool(
+            self._run_git_command(["status", "--porcelain"], timeout=30.0)
+        )
         if stash_created:
             self._publish_system_update_progress(
                 phase="git_pull",
                 phase_index=0,
                 phase_count=phase_count,
                 percent=0,
-                line="Backing up local pipeline configuration...",
+                line="Backing up local changes...",
             )
             self._run_git_command(
-                [
-                    "stash",
-                    "push",
-                    "--include-untracked",
-                    "--message",
-                    "EagleEye system update pipeline backup",
-                    "--",
-                    relative_path,
-                ],
-                timeout=30.0,
+                ["stash", "push", "--include-untracked", "--message", stash_message],
+                timeout=60.0,
             )
 
         try:
@@ -660,25 +676,35 @@ class SystemMonitorMixin:
                 percent_start=15,
                 percent_end=30,
             )
+        except Exception:
+            # The checkout did not happen, so the stash applies cleanly onto HEAD.
+            if stash_created:
+                self._run_git_command(["stash", "pop"], timeout=60.0)
+            raise
         finally:
-            if pipeline_contents is None:
-                pipeline_path.unlink(missing_ok=True)
-            else:
-                pipeline_path.parent.mkdir(parents=True, exist_ok=True)
-                pipeline_path.write_bytes(pipeline_contents)
+            for path, contents in device_config.items():
+                if contents is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(contents)
+            if any(contents is not None for contents in device_config.values()):
                 self._publish_system_update_progress(
                     phase="git_pull",
                     phase_index=0,
                     phase_count=phase_count,
                     percent=30,
-                    line="Restored src/config/pipeline_config.json",
+                    line="Restored device settings, calibrations and field maps",
                 )
 
-            if stash_created:
-                self._run_git_command(
-                    ["stash", "drop", "stash@{0}"],
-                    timeout=30.0,
-                )
+        if stash_created:
+            self._publish_system_update_progress(
+                phase="git_pull",
+                phase_index=0,
+                phase_count=phase_count,
+                percent=30,
+                line=f"Other local changes saved in git stash '{stash_message}'",
+            )
 
     def _pull_updates_preserving_pipeline_config(self) -> str:
         """Pull repository updates while restoring the local pipeline configuration.

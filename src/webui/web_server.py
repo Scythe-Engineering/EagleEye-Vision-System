@@ -230,8 +230,6 @@ class EagleEyeInterface(
         self._sse_queue_lock = threading.Lock()
         self._pipeline_error_lock = threading.Lock()
         self._pipeline_error_cache: dict[str, dict[str, Any]] = {}
-        self._pipeline_error_dirty_pipelines: set[str] = set()
-        self._pipeline_error_last_seq_sent: dict[str, int] = {}
         self._pipeline_error_last_publish_ts: dict[str, float] = {}
         self._pipeline_profile_last_seq_sent: dict[str, int] = {}
         self._profiling_publish_interval = PROFILING_PUBLISH_INTERVAL_SECONDS
@@ -966,12 +964,7 @@ class EagleEyeInterface(
         with self._sse_queue_lock:
             self._sse_queue = q
 
-        with self._pipeline_error_lock:
-            self._pipeline_error_dirty_pipelines.update(
-                self._pipeline_error_cache.keys()
-            )
-
-        self._publish_cached_pipeline_errors()
+        self._publish_cached_pipeline_errors(replay=True)
         if hasattr(self, "_replay_cached_system_update_progress"):
             self._replay_cached_system_update_progress()
 
