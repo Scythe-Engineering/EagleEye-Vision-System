@@ -37,7 +37,7 @@ DEFAULT_CACHE = REPOSITORY_ROOT / "benchmarks" / "cache"
 
 def _parser() -> argparse.ArgumentParser:
     """Build the deliberately narrow temporal experiment CLI."""
-    parser = argparse.ArgumentParser(prog="python -m benchmarks.temporal_experiments")
+    parser = argparse.ArgumentParser(prog="uv run python -m benchmarks.temporal_experiments")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=CONFIG_DIR / "temporal.json")

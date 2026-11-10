@@ -57,7 +57,7 @@ DETECTION_POLICIES = {
 
 def _parser() -> argparse.ArgumentParser:
     """Build the local accuracy benchmark command-line parser."""
-    parser = argparse.ArgumentParser(prog="python -m benchmarks")
+    parser = argparse.ArgumentParser(prog="uv run python -m benchmarks")
     commands = parser.add_subparsers(dest="command", required=True)
     verify = commands.add_parser("verify")
     verify.add_argument("manifest", type=Path)

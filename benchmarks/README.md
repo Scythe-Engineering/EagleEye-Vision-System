@@ -2,7 +2,7 @@
 
 The benchmark commands, dataset contract, Blender workflows, and report interpretation now live in the [EagleEye documentation site](https://scythe-engineering.github.io/EagleEye-Docs/docs/codebase/synthetic-video-benchmarks).
 
-The implementation remains in this directory. Start with `python -m benchmarks --help` or use the documentation for the full workflow.
+The implementation remains in this directory. Start with `uv run python -m benchmarks --help` or use the documentation for the full workflow.
 ## Comparing detector builds
 
 `temporal_experiments` replays the cached clips through a real pipeline graph. It writes per-frame rows to `frames.jsonl.gz` and totals to `summary.json`.

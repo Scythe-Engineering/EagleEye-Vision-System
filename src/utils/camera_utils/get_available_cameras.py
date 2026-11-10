@@ -13,7 +13,7 @@ if platform.system() == "Windows":
         from pygrabber.dshow_graph import FilterGraph
     except ImportError:
         raise ImportError(
-            "pygrabber is required on Windows. Install with: pip install pygrabber"
+            "pygrabber is required on Windows. Install the project dependencies with: uv sync"
         )
 
 

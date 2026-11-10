@@ -5,11 +5,11 @@ This script manages building multiple Rust extension modules.
 It detects changes in source files and rebuilds only modules that have changed
 or haven't been built yet.
 
-Usage:
-    python build.py                    # Build all modules that need rebuilding
-    python build.py --all             # Force rebuild all modules
-    python build.py module_name       # Build specific module
-    python build.py --clean           # Clean all build artifacts
+Usage, from the repository root:
+    uv run python src/rust_implementations/build.py               # Build modules that changed
+    uv run python src/rust_implementations/build.py --all         # Force rebuild all modules
+    uv run python src/rust_implementations/build.py module_name   # Build one module
+    uv run python src/rust_implementations/build.py --clean       # Clean all build artifacts
 """
 
 import argparse
