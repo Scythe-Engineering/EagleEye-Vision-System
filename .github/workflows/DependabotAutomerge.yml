@@ -6,30 +6,76 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  checks: read
+
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   worker:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    timeout-minutes: 45
     steps:
-      - name: Automerge Dependabot PRs
-        uses: actions/github-script@v6
+      - name: Automerge Dependabot PRs once every other check passes
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
             if (!pr) throw new Error("No pull_request payload");
 
+            const { owner, repo } = context.repo;
+            const sha = pr.head.sha;
+            const ownRun = `/actions/runs/${context.runId}/`;
+            const passing = new Set(["success", "skipped", "neutral"]);
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            // Give the other workflows time to register their check runs.
+            await sleep(60 * 1000);
+
+            const deadline = Date.now() + 40 * 60 * 1000;
+            let checks = [];
+            while (true) {
+              const all = await github.paginate(github.rest.checks.listForRef, {
+                owner,
+                repo,
+                ref: sha,
+                per_page: 100,
+              });
+              checks = all.filter(
+                (c) => !(c.details_url || "").includes(ownRun) && !(c.html_url || "").includes(ownRun),
+              );
+              const pending = checks.filter((c) => c.status !== "completed");
+              if (checks.length > 0 && pending.length === 0) break;
+              if (Date.now() > deadline) {
+                core.setFailed(`Timed out waiting for checks: ${pending.map((c) => c.name).join(", ")}`);
+                return;
+              }
+              await sleep(30 * 1000);
+            }
+
+            const failed = checks.filter((c) => !passing.has(c.conclusion));
+            if (failed.length > 0) {
+              core.setFailed(
+                `Not merging: ${failed.map((c) => `${c.name} (${c.conclusion})`).join(", ")}`,
+              );
+              return;
+            }
+
             await github.rest.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               pull_number: pr.number,
-              event: 'APPROVE'
+              commit_id: sha,
+              event: "APPROVE",
             });
 
             await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               pull_number: pr.number,
-              merge_method: 'squash'
+              sha,
+              merge_method: "squash",
             });
